@@ -82,8 +82,8 @@ export const ScratchPad: React.FC<ScratchPadProps> = ({
 
   return (
     <div className={`
-      fixed top-0 right-0 h-full w-96 bg-background
-      transform transition-transform duration-300 ease-in-out z-30
+      fixed top-0 right-0 h-full w-96 bg-sidebar-background border-l border-sidebar-border
+      transform transition-transform duration-300 ease-in-out z-50 shadow-2xl
       ${isVisible ? 'translate-x-0' : 'translate-x-full'}
     `}>
       {/* Close Button */}
@@ -95,9 +95,9 @@ export const ScratchPad: React.FC<ScratchPadProps> = ({
           e.stopPropagation();
           onClose && onClose();
         }}
-        className="absolute top-4 right-4 h-8 w-8 p-0 hover:bg-slate-200 z-40"
+        className="absolute top-4 right-4 h-8 w-8 p-0 hover:bg-sidebar-accent z-40"
       >
-        <X className="h-4 w-4 text-slate-600" />
+        <X className="h-4 w-4 text-sidebar-foreground" />
       </Button>
 
       {/* Content */}
@@ -133,18 +133,18 @@ export const ScratchPad: React.FC<ScratchPadProps> = ({
                 {/* Context Header - Collapsible */}
                 <button
                   onClick={() => toggleGroup(contextKey)}
-                  className="flex items-center gap-2 pb-2 border-b border-slate-200 w-full text-left hover:bg-slate-50 rounded px-1 -mx-1 transition-colors"
+                  className="flex items-center gap-2 pb-2 border-b border-sidebar-border w-full text-left hover:bg-sidebar-accent rounded px-1 -mx-1 transition-colors"
                 >
                   <div className="flex-shrink-0">
                     {collapsedGroups.has(contextKey) ? (
-                      <ChevronRight className="w-3 h-3 text-slate-400" />
+                      <ChevronRight className="w-3 h-3 text-sidebar-foreground" />
                     ) : (
-                      <ChevronDown className="w-3 h-3 text-slate-400" />
+                      <ChevronDown className="w-3 h-3 text-sidebar-foreground" />
                     )}
                   </div>
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500 flex-shrink-0"></div>
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-sm font-medium text-slate-800 truncate">
+                    <h3 className="text-sm font-medium text-sidebar-foreground truncate">
                       {getContextDisplayName(contextGroup.context)}
                     </h3>
                   </div>
@@ -156,8 +156,8 @@ export const ScratchPad: React.FC<ScratchPadProps> = ({
                     {Object.entries(contextGroup.executorSessions).map(([executorSessionKey, executorSession]) => (
                       <div key={executorSessionKey} className="space-y-2">
                         {/* Executor/Session Header */}
-                        <div className="flex items-center gap-2 text-xs text-slate-600">
-                          <div className="w-1 h-1 rounded-full bg-slate-400"></div>
+                        <div className="flex items-center gap-2 text-xs text-sidebar-foreground">
+                          <div className="w-1 h-1 rounded-full bg-sidebar-foreground opacity-60"></div>
                           <span className="font-medium">
                             {getExecutorDisplayName(executorSession.executor)} #{executorSession.sessionId.split('_').pop()?.slice(0, 4)}
                           </span>
@@ -175,7 +175,7 @@ export const ScratchPad: React.FC<ScratchPadProps> = ({
                                 key={uniqueKey}
                                 className={`
                                   flex items-center gap-2 py-1 group rounded px-1 -mx-1 
-                                  transition-colors duration-200 ease-in-out hover:bg-slate-50
+                                  transition-colors duration-200 ease-in-out hover:bg-sidebar-accent
                                   ${isLatest ? 'animate-in slide-in-from-left-2 duration-300' : ''}
                                 `}
                                 style={{
@@ -188,13 +188,13 @@ export const ScratchPad: React.FC<ScratchPadProps> = ({
                                 <div className="flex-1 min-w-0">
                                   <p className={`
                                     text-xs leading-relaxed truncate transition-colors duration-150
-                                    ${isLatest ? 'text-slate-800 font-medium' : 'text-slate-700'}
+                                    ${isLatest ? 'text-sidebar-foreground font-medium' : 'text-sidebar-foreground opacity-80'}
                                   `}>
                                     {progress.message}
                                   </p>
                                 </div>
                                 <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                                  <span className="text-xs text-slate-400">
+                                  <span className="text-xs text-sidebar-foreground opacity-60">
                                     {formatTimestamp(progress.timestamp)}
                                   </span>
                                 </div>
@@ -213,10 +213,10 @@ export const ScratchPad: React.FC<ScratchPadProps> = ({
 
         {/* Empty State */}
         {progressStates.length === 0 && (
-          <div className="text-center py-8 text-slate-500">
-            <Activity className="w-8 h-8 mx-auto mb-3 text-slate-300" />
+          <div className="text-center py-8 text-sidebar-foreground">
+            <Activity className="w-8 h-8 mx-auto mb-3 text-sidebar-foreground opacity-50" />
             <p className="text-sm">No active operations</p>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-sidebar-foreground opacity-60 mt-1">
               Tool progress will appear here
             </p>
           </div>

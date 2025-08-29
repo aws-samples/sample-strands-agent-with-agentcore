@@ -252,7 +252,7 @@ function PureAgentPanel({ analysisStates, progressStates, isConnected, sessionId
         {/* Chat panel for desktop */}
         {!isMobile && (
           <motion.div
-            className="relative w-[400px] bg-muted dark:bg-background h-dvh shrink-0"
+            className="relative w-[400px] bg-sidebar-background h-dvh shrink-0"
             initial={{ opacity: 0, x: 10, scale: 1 }}
             animate={{
               opacity: 1,
@@ -275,8 +275,8 @@ function PureAgentPanel({ analysisStates, progressStates, isConnected, sessionId
             <div className="flex flex-col h-full justify-center items-center p-8">
               <div className="text-center">
                 <Brain className="h-16 w-16 text-blue-500 mx-auto mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Agent Analysis</h3>
-                <p className="text-sm text-muted-foreground">
+                <h3 className="text-lg font-semibold mb-2 text-sidebar-foreground">Agent Analysis</h3>
+                <p className="text-sm text-sidebar-foreground opacity-70">
                   Your comprehensive analysis is being generated in the panel on the right.
                 </p>
               </div>
@@ -286,7 +286,7 @@ function PureAgentPanel({ analysisStates, progressStates, isConnected, sessionId
 
         {/* Main analysis panel */}
         <motion.div
-          className="fixed dark:bg-muted bg-background h-dvh flex flex-col overflow-hidden md:border-l dark:border-zinc-700 border-zinc-200"
+          className="fixed bg-sidebar-background h-dvh flex flex-col overflow-hidden md:border-l border-sidebar-border"
           initial={{
             opacity: 1,
             x: agentAnalysis.boundingBox.left,
@@ -342,7 +342,7 @@ function PureAgentPanel({ analysisStates, progressStates, isConnected, sessionId
           }}
         >
           {/* Header */}
-          <div className="p-4 flex flex-row justify-between items-start border-b dark:border-zinc-700 border-zinc-200">
+          <div className="p-4 flex flex-row justify-between items-start border-b border-sidebar-border">
             <div className="flex flex-row gap-4 items-start">
               <Button
                 variant="ghost"
@@ -354,20 +354,20 @@ function PureAgentPanel({ analysisStates, progressStates, isConnected, sessionId
               </Button>
 
               <div className="flex flex-col">
-                <div className="font-medium flex items-center gap-2">
+                <div className="font-medium flex items-center gap-2 text-sidebar-foreground">
                   <Brain className="h-4 w-4 text-blue-500" />
                   {agentAnalysis.title || 'Agent Analysis'}
                 </div>
 
                 {agentAnalysis.status === 'streaming' && agentAnalysis.currentStep && (
-                  <div className="text-sm text-muted-foreground flex items-center gap-2">
+                  <div className="text-sm text-sidebar-foreground opacity-70 flex items-center gap-2">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {agentAnalysis.stepDescription || `Processing ${agentAnalysis.currentStep}...`}
                   </div>
                 )}
 
                 {agentAnalysis.status === 'idle' && (
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-sm text-sidebar-foreground opacity-70">
                     Analysis complete
                   </div>
                 )}
@@ -388,10 +388,10 @@ function PureAgentPanel({ analysisStates, progressStates, isConnected, sessionId
                 {((agentAnalysis.chartIds && agentAnalysis.chartIds.length > 0) || 
                   (currentAnalysisState && currentAnalysisState.chartIds && currentAnalysisState.chartIds.length > 0)) && (
                   <div className="space-y-4">
-                    <h3 className="text-lg font-semibold text-foreground">Visual Analysis</h3>
+                    <h3 className="text-lg font-semibold text-sidebar-foreground">Visual Analysis</h3>
                     {/* Use stream chart IDs first, fallback to stored chart IDs */}
                     {(currentAnalysisState?.chartIds || agentAnalysis.chartIds || []).map((chartId: string) => (
-                      <div key={chartId} className="border rounded-lg p-4 bg-background">
+                      <div key={chartId} className="border border-sidebar-border rounded-lg p-4 bg-sidebar-background">
                         <ChartRenderer chartId={chartId} sessionId={sessionId} toolUseId={currentAnalysisState?.toolUseId || agentAnalysis.id} />
                       </div>
                     ))}
@@ -401,8 +401,8 @@ function PureAgentPanel({ analysisStates, progressStates, isConnected, sessionId
             ) : (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <Loader2 className="h-8 w-8 animate-spin text-blue-500 mb-4" />
-                <h3 className="text-lg font-semibold mb-2">Generating Analysis</h3>
-                <p className="text-muted-foreground mb-4">
+                <h3 className="text-lg font-semibold mb-2 text-sidebar-foreground">Generating Analysis</h3>
+                <p className="text-sidebar-foreground opacity-70 mb-4">
                   Please wait while the analysis is being generated...
                 </p>
                 {!isConnected && !analysisStates.length && !progressStates.length && (

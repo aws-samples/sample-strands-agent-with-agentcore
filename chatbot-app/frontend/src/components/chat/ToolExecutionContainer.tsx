@@ -400,35 +400,35 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
         return (
           <div key={toolExecution.id} className={`${
             compact 
-              ? "bg-slate-50/80 rounded-md border border-slate-200/60" 
-              : "bg-white/80 rounded-md border border-slate-200 shadow-sm"
+              ? "bg-card/80 rounded-md border border-border/60" 
+              : "bg-card/80 rounded-md border border-border shadow-sm"
           } overflow-hidden`} style={{ maxWidth: '100%', width: '100%' }}>
             {/* Tool Header - More Compact */}
             <button
               onClick={() => toggleToolExpansion(toolExecution.id)}
-              className={`w-full ${compact ? "px-3 py-2" : "px-3 py-2.5"} flex items-center justify-between hover:bg-slate-50 transition-colors`}
+              className={`w-full ${compact ? "px-3 py-2" : "px-3 py-2.5"} flex items-center justify-between hover:bg-muted/50 transition-colors`}
             >
               <div className="flex items-center gap-2">
-                <div className="p-1 bg-blue-50 rounded border border-blue-200">
-                  <IconComponent className="h-3 w-3 text-blue-600" />
+                <div className="p-1 bg-primary/10 rounded border border-primary/20">
+                  <IconComponent className="h-3 w-3 text-primary" />
                 </div>
                 <div className="text-left">
                   <div className="flex items-center gap-1.5">
-                    <p className="font-medium text-xs text-gray-900">{toolExecution.toolName}</p>
+                    <p className="font-medium text-xs text-foreground">{toolExecution.toolName}</p>
                     {toolExecution.isComplete ? (
                       <CheckCircle className="h-3 w-3 text-green-500" />
                     ) : (
-                      <Clock className="h-3 w-3 text-blue-500 animate-pulse" />
+                      <Clock className="h-3 w-3 text-primary animate-pulse" />
                     )}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
-                <Badge variant="outline" className="text-xs px-1.5 py-0.5 bg-white/70 text-blue-700 border-blue-300">
+                <Badge variant="outline" className="text-xs px-1.5 py-0.5 bg-background/70 text-primary border-primary/30">
                   {toolExecution.isComplete ? 'Completed' : 'Running'}
                 </Badge>
                 <ChevronRight 
-                  className="h-3 w-3 text-gray-400 transition-transform" 
+                  className="h-3 w-3 text-muted-foreground transition-transform" 
                   style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
                 />
               </div>
@@ -436,17 +436,17 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
 
             {/* Tool Content */}
             {isExpanded && (
-              <div className={`border-t ${compact ? "border-slate-200/60 bg-white/50" : "border-blue-200 bg-white/70"} backdrop-blur-sm`}>
+              <div className={`border-t ${compact ? "border-border/60 bg-background/50" : "border-primary/20 bg-background/70"} backdrop-blur-sm`}>
                 <div className={`${compact ? "p-3" : "p-4"} min-w-0 max-w-full overflow-hidden`}>
                   {/* Tool Input */}
                   {toolExecution.toolInput !== undefined && (
                     <div className={compact ? "mb-4" : "mb-6"}>
                       <div className="flex items-center gap-2 mb-3">
-                        <Zap className="h-4 w-4 text-blue-500" />
-                        <h4 className="text-sm font-semibold text-gray-900">Input Parameters</h4>
+                        <Zap className="h-4 w-4 text-primary" />
+                        <h4 className="text-sm font-semibold text-foreground">Input Parameters</h4>
                       </div>
                       {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 ? (
-                        <div className="bg-white rounded-lg border border-slate-200" style={{ maxWidth: '100%', width: '100%' }}>
+                        <div className="bg-background rounded-lg border border-border" style={{ maxWidth: '100%', width: '100%' }}>
                           <div className="p-3" style={{ maxWidth: '100%', overflow: 'hidden' }}>
                             <JsonDisplay 
                               data={toolExecution.toolInput}
@@ -456,8 +456,8 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                           </div>
                         </div>
                       ) : (
-                        <div className="bg-white rounded-lg border border-slate-200 p-3" style={{ maxWidth: '100%', width: '100%' }}>
-                          <div className="text-sm text-gray-500 italic">
+                        <div className="bg-background rounded-lg border border-border p-3" style={{ maxWidth: '100%', width: '100%' }}>
+                          <div className="text-sm text-muted-foreground italic">
                             No input parameters (this tool takes no arguments)
                           </div>
                         </div>
@@ -469,10 +469,10 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                   {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
                     <div className={compact ? "mb-4" : "mb-6"}>
                       <div className="flex items-center gap-2 mb-3">
-                        <Brain className="h-4 w-4 text-purple-500" />
-                        <h4 className="text-sm font-semibold text-gray-900">AI Reasoning Process</h4>
+                        <Brain className="h-4 w-4 text-secondary" />
+                        <h4 className="text-sm font-semibold text-foreground">AI Reasoning Process</h4>
                       </div>
-                      <div className="bg-white rounded-lg border-l-4 border-purple-300" style={{ maxWidth: '100%', width: '100%' }}>
+                      <div className="bg-background rounded-lg border-l-4 border-secondary" style={{ maxWidth: '100%', width: '100%' }}>
                         <div className="p-3" style={{ maxWidth: '100%', overflow: 'hidden' }}>
                           <JsonDisplay 
                             data={toolExecution.reasoningText}
@@ -490,11 +490,11 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                     <div className={compact ? "mb-4" : "mb-6"}>
                       <div className="flex items-center gap-2 mb-3">
                         <CheckCircle className="h-4 w-4 text-green-500" />
-                        <h4 className="text-sm font-semibold text-gray-900">Tool Result</h4>
+                        <h4 className="text-sm font-semibold text-foreground">Tool Result</h4>
                         {(toolExecution.toolName === 'bedrock_code_interpreter' || toolExecution.toolName === 'run_python_code') && toolExecution.isComplete && (
                           <button
                             onClick={() => handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult)}
-                            className="ml-auto p-1.5 hover:bg-gray-100 rounded transition-colors flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800"
+                            className="ml-auto p-1.5 hover:bg-muted rounded transition-colors flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                             title="Download all files as ZIP"
                           >
                             <Download className="h-3 w-3" />
@@ -502,7 +502,7 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                           </button>
                         )}
                       </div>
-                      <div className="bg-white rounded-lg border-l-4 border-green-300" style={{ maxWidth: '100%', width: '100%' }}>
+                      <div className="bg-background rounded-lg border-l-4 border-green-500/30 dark:border-green-400/30" style={{ maxWidth: '100%', width: '100%' }}>
                         <div className="p-3" style={{ maxWidth: '100%', overflow: 'hidden' }}>
                           <JsonDisplay 
                             data={toolExecution.toolResult}
@@ -519,7 +519,7 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                     <div>
                       <div className="flex items-center gap-2 mb-3">
                         <CheckCircle className="h-4 w-4 text-green-500" />
-                        <h4 className="text-sm font-semibold text-gray-900">Generated Images</h4>
+                        <h4 className="text-sm font-semibold text-foreground">Generated Images</h4>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {toolExecution.images.map((image, idx) => {
@@ -529,7 +529,7 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                               <img
                                 src={imageSrc}
                                 alt={`Tool generated image ${idx + 1}`}
-                                className="w-full h-auto rounded-lg border border-slate-200 shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                                className="w-full h-auto rounded-lg border border-border shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
                                 style={{ maxHeight: '325px', objectFit: 'contain' }}
                                 onClick={() => setSelectedImage({ src: imageSrc, alt: `Tool generated image ${idx + 1}` })}
                               />
@@ -539,7 +539,7 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                                 </Badge>
                               </div>
                               <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-lg pointer-events-none">
-                                <div className="bg-white/90 px-2 py-1 rounded text-xs font-medium text-gray-700">
+                                <div className="bg-background/90 px-2 py-1 rounded text-xs font-medium text-foreground">
                                   Click to enlarge
                                 </div>
                               </div>

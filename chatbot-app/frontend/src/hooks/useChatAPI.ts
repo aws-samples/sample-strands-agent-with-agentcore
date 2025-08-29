@@ -294,6 +294,7 @@ export const useChatAPI = ({
     clearChat,
     sendMessage,
     cleanup,
-    sessionId
+    sessionId,
+    isLoadingTools: false
   }
 }

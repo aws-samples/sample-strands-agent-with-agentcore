@@ -69,6 +69,20 @@ export const useChat = (): UseChatReturn => {
     initBackend()
   }, [])
 
+  // Clear progress states on page refresh/reload
+  useEffect(() => {
+    const isPageRefresh = typeof window !== 'undefined' && 
+      (window.performance?.navigation?.type === 1 || 
+       (window.performance?.getEntriesByType('navigation')?.[0] as any)?.type === 'reload');
+    
+    if (isPageRefresh) {
+      setSessionState(prev => ({ 
+        ...prev, 
+        toolProgress: [] 
+      }));
+    }
+  }, []);
+
   const handleLegacyEvent = useCallback((data: any) => {
     switch (data.type) {
       case 'init':

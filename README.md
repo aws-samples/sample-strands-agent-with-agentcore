@@ -14,6 +14,8 @@ This demo platform serves as a testing ground for AI agents tailored to specific
 
 ## Key Features
 
+![Home](docs/images/home.gif)
+
 - **AI-Powered Chat**: Built on AWS Bedrock with Claude Sonnet 4
 - **Real-time Streaming**: Server-Sent Events for live responses
 - **Plug & Play Tools**: Easy integration of Built-in, Custom, MCP tools, and Agents
@@ -79,10 +81,6 @@ Business-specific tools tailored to your requirements:
 - **Visualization Creator**: Create interactive charts and visualizations from data
 - **Bedrock Code Interpreter**: Execute Python code using AWS Bedrock Code Interpreter with automatic file download support
 
-<img src="docs/images/custom-tools.png" 
-     alt="Custom Tools" 
-     width="600">
-
 ### MCP Servers
 Modular Context Protocol servers providing external integrations:
 
@@ -92,32 +90,24 @@ Modular Context Protocol servers providing external integrations:
 - **Bedrock Knowledge Base Retrieval**: Query Amazon Bedrock Knowledge Bases using natural language
 - **Tavily Web Search**: Perform web search using Tavily AI
 
-<img src="docs/images/mcp-server.png" 
-     alt="SubAgent" 
-     width="600">
-
+![Home](docs/images/mcp.gif)
 
 #### Stateful MCP Servers (ECS)
 - **Playwright Browser**: Browser automation and web scraping using Playwright
 - **Python Runtime**: Execute Python code safely in a sandboxed environment using Pyodide
+
+![Home](docs/images/browser-mcp.gif)
 
 ### Agents (Sub-Agents)
 Specialized AI agents for complex workflows:
 - **Spending Analysis Tool**: Personal spending pattern analysis with demographic comparisons and behavioral insights
 - **Financial Narrative Tool**: Creative storytelling tool that transforms spending data into narratives with AI-generated images
 
-<img src="docs/images/sub-agent.png" 
-     alt="SubAgent" 
-     width="600">
-
+![Home](docs/images/sub-agent.gif)
 
 ### Adding MCP Servers
 
 You can easily add new MCP servers through the intuitive interface:
-
-<img src="docs/images/add-mcp-server.png" 
-     alt="Add MCP Server Interface" 
-     width="600">
 
 1. **Name**: Provide a descriptive name for your MCP server
 2. **Description**: Brief description of what the server provides
@@ -135,7 +125,7 @@ Configure AI models, temperature, and system prompts:
 
 <img src="docs/images/model-config.png" 
      alt="Model Configuration Interface" 
-     width="600">
+     width="400">
 
 **Model Selection**: Choose from various AI models including Claude Sonnet 4
 **Temperature Control**: Adjust creativity vs. focus (0.0 = Focused, 1.0 = Creative)
@@ -368,6 +358,10 @@ See `DEPLOYMENT.md` for detailed AWS deployment instructions using CDK.
 ## 🔍 AgentCore Observability Setup
 
 This application includes full AgentCore observability integration with AWS CloudWatch for comprehensive trace and log monitoring.
+
+<img src="docs/images/observability.png" 
+     alt="Model Configuration Interface" 
+     width="800">
 
 ### Prerequisites
 - AWS CLI installed and configured

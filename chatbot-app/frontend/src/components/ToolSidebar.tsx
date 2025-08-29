@@ -1,11 +1,12 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Settings, Wrench, Server, Trash2, Brain } from 'lucide-react';
+import { Settings, Wrench, Server, Trash2, Brain, Moon, Sun } from 'lucide-react';
 import { Tool } from '@/types/chat';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { getApiUrl } from '@/config/environment';
+import { useTheme } from 'next-themes';
 import {
   Sidebar,
   SidebarContent,
@@ -56,6 +57,7 @@ interface CustomTool {
 
 export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refreshTools, sessionId }: ToolSidebarProps) {
   const { setOpenMobile } = useSidebar();
+  const { theme, setTheme } = useTheme();
 
   // Extract MCP servers from availableTools
   const mcpServers = useMemo(() => {
@@ -172,15 +174,25 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
   };
 
   return (
-    <Sidebar side="left" className="group-data-[side=left]:border-r-0">
+    <Sidebar side="left" className="group-data-[side=left]:border-r-0 bg-sidebar-background border-sidebar-border text-sidebar-foreground">
       <SidebarHeader>
         <SidebarMenu>
           <div className="flex flex-row justify-between items-center">
             <div className="flex items-center gap-2">
-              <Settings className="h-5 w-5 text-slate-600" />
-              <span className="text-lg font-semibold">Tools</span>
+              <Settings className="h-5 w-5 text-sidebar-foreground" />
+              <span className="text-lg font-semibold text-sidebar-foreground">Tools</span>
             </div>
             <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                className="h-8 w-8 p-0 relative"
+              >
+                <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
+                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
+                <span className="sr-only">Toggle theme</span>
+              </Button>
               <ModelConfigDialog sessionId={sessionId} />
               <Button
                 variant="ghost"
@@ -192,7 +204,7 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
               </Button>
             </div>
           </div>
-          <p className="text-sm text-slate-600 px-2">
+          <p className="text-sm text-sidebar-foreground px-2">
             {enabledCount} of {totalCount} tools enabled
           </p>
         </SidebarMenu>
@@ -213,12 +225,12 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
                   <SidebarMenu>
                     {groupedTools['built-in'].map((tool) => (
                       <SidebarMenuItem key={tool.id}>
-                        <div className="flex items-center justify-between p-2 rounded-md hover:bg-slate-100 transition-colors duration-150">
+                        <div className="flex items-center justify-between p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors duration-150">
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm text-slate-900 truncate">
+                            <div className="font-medium text-sm text-sidebar-foreground truncate">
                               {tool.name}
                             </div>
-                            <div className="text-xs text-slate-600 truncate">
+                            <div className="text-xs text-sidebar-foreground truncate">
                               {tool.description}
                             </div>
                           </div>
@@ -246,12 +258,12 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
                   <SidebarMenu>
                     {groupedTools['custom'].map((tool) => (
                       <SidebarMenuItem key={tool.id}>
-                        <div className="flex items-center justify-between p-2 rounded-md hover:bg-slate-100 transition-colors duration-150">
+                        <div className="flex items-center justify-between p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors duration-150">
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm text-slate-900 truncate">
+                            <div className="font-medium text-sm text-sidebar-foreground truncate">
                               {tool.name}
                             </div>
-                            <div className="text-xs text-slate-600 truncate">
+                            <div className="text-xs text-sidebar-foreground truncate">
                               {tool.description}
                             </div>
                           </div>
@@ -279,12 +291,12 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
                   <SidebarMenu>
                     {groupedTools['agent'].map((tool) => (
                       <SidebarMenuItem key={tool.id}>
-                        <div className="flex items-center justify-between p-2 rounded-md hover:bg-slate-100 transition-colors duration-150">
+                        <div className="flex items-center justify-between p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors duration-150">
                           <div className="flex-1 min-w-0">
-                            <div className="font-medium text-sm text-slate-900 truncate">
+                            <div className="font-medium text-sm text-sidebar-foreground truncate">
                               {tool.name}
                             </div>
-                            <div className="text-xs text-slate-600 truncate">
+                            <div className="text-xs text-sidebar-foreground truncate">
                               {tool.description}
                             </div>
                           </div>
@@ -316,12 +328,12 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
                 <SidebarMenu>
                   {mcpServers.map((server) => (
                     <SidebarMenuItem key={server.id}>
-                      <div className="flex items-center justify-between p-2 rounded-md hover:bg-slate-100 transition-colors duration-150 group">
+                      <div className="flex items-center justify-between p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors duration-150 group">
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-slate-900 truncate">
+                          <div className="font-medium text-sm text-sidebar-foreground truncate">
                             {server.name}
                           </div>
-                          <div className="text-xs text-slate-600 truncate">
+                          <div className="text-xs text-sidebar-foreground truncate">
                             {server.description}
                           </div>
                           <div className="text-xs mt-1">
@@ -355,7 +367,7 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
                     </SidebarMenuItem>
                   ))}
                   {mcpServers.length === 0 && (
-                    <div className="text-center py-4 text-slate-500">
+                    <div className="text-center py-4 text-sidebar-foreground">
                       <Server className="h-6 w-6 mx-auto mb-2 opacity-50" />
                       <p className="text-xs">No MCP servers configured</p>
                     </div>
@@ -368,8 +380,8 @@ export function ToolSidebar({ availableTools, onToggleTool, onClearChat, refresh
       </SidebarContent>
 
       <SidebarFooter>
-        <div className="text-xs text-slate-500 text-center">
-          Press <kbd className="px-1 py-0.5 bg-slate-200 rounded text-xs">⌘B</kbd> to toggle
+        <div className="text-xs text-sidebar-foreground text-center">
+          Press <kbd className="px-1 py-0.5 bg-sidebar-accent rounded text-xs">⌘B</kbd> to toggle
         </div>
       </SidebarFooter>
     </Sidebar>

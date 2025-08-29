@@ -51,6 +51,7 @@ function BarChartComponent({ data }: { data: ChartData }) {
               tickLine={false}
               tickMargin={10}
               axisLine={false}
+              tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
                 return value.length > 20
                   ? `${value.substring(0, 17)}...`
@@ -63,7 +64,7 @@ function BarChartComponent({ data }: { data: ChartData }) {
             />
             <Bar
               dataKey={dataKey}
-              fill={`var(--color-${dataKey})`}
+              fill={`var(--color-${dataKey}, hsl(var(--chart-1)))`}
               radius={8}
             />
           </BarChart>
@@ -107,6 +108,7 @@ function MultiBarChartComponent({ data }: { data: ChartData }) {
               tickLine={false}
               tickMargin={10}
               axisLine={false}
+              tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
                 return value.length > 20
                   ? `${value.substring(0, 17)}...`
@@ -117,11 +119,11 @@ function MultiBarChartComponent({ data }: { data: ChartData }) {
               cursor={false}
               content={<ChartTooltipContent indicator="dashed" />}
             />
-            {Object.keys(data.chartConfig).map((key) => (
+            {Object.keys(data.chartConfig).map((key, index) => (
               <Bar
                 key={key}
                 dataKey={key}
-                fill={`var(--color-${key})`}
+                fill={`var(--color-${key}, hsl(var(--chart-${index + 1})))`}
                 radius={4}
               />
             ))}
@@ -173,6 +175,7 @@ function LineChartComponent({ data }: { data: ChartData }) {
               tickLine={false}
               axisLine={false}
               tickMargin={8}
+              tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
                 return value.length > 20
                   ? `${value.substring(0, 17)}...`
@@ -183,12 +186,12 @@ function LineChartComponent({ data }: { data: ChartData }) {
               cursor={false}
               content={<ChartTooltipContent hideLabel />}
             />
-            {Object.keys(data.chartConfig).map((key) => (
+            {Object.keys(data.chartConfig).map((key, index) => (
               <Line
                 key={key}
                 type="natural"
                 dataKey={key}
-                stroke={`var(--color-${key})`}
+                stroke={`var(--color-${key}, hsl(var(--chart-${index + 1})))`}
                 strokeWidth={2}
                 dot={false}
               />
@@ -338,6 +341,7 @@ function AreaChartComponent({
               tickLine={false}
               axisLine={false}
               tickMargin={8}
+              tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
                 return value.length > 20
                   ? `${value.substring(0, 17)}...`
@@ -350,14 +354,14 @@ function AreaChartComponent({
                 <ChartTooltipContent indicator={stacked ? "dot" : "line"} />
               }
             />
-            {Object.keys(data.chartConfig).map((key) => (
+            {Object.keys(data.chartConfig).map((key, index) => (
               <Area
                 key={key}
                 type="natural"
                 dataKey={key}
-                fill={`var(--color-${key})`}
+                fill={`var(--color-${key}, hsl(var(--chart-${index + 1})))`}
                 fillOpacity={0.4}
-                stroke={`var(--color-${key})`}
+                stroke={`var(--color-${key}, hsl(var(--chart-${index + 1})))`}
                 stackId={stacked ? "a" : undefined}
               />
             ))}

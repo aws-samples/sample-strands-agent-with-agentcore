@@ -193,7 +193,7 @@ const Sidebar = React.forwardRef<
           )}
           <div
             className={cn(
-              'fixed inset-y-0 left-0 z-50 w-[--sidebar-width] bg-white transform transition-transform duration-200 ease-in-out',
+              'fixed inset-y-0 left-0 z-50 w-[--sidebar-width] bg-sidebar-background transform transition-transform duration-200 ease-in-out',
               openMobile ? 'translate-x-0' : '-translate-x-full'
             )}
             style={
@@ -233,12 +233,12 @@ const Sidebar = React.forwardRef<
               : state === 'collapsed'
                 ? 'right-[calc(var(--sidebar-width)*-1)]'
                 : 'right-0',
-            'border-r border-slate-200',
+            'border-r border-sidebar-border',
             className,
           )}
           {...props}
         >
-          <div className="flex h-full w-full flex-col bg-white">
+          <div className="flex h-full w-full flex-col bg-sidebar-background">
             {children}
           </div>
         </div>
@@ -280,7 +280,7 @@ const SidebarHeader = React.forwardRef<
   return (
     <div
       ref={ref}
-      className={cn('flex flex-col gap-2 p-4 border-b border-slate-200', className)}
+      className={cn('flex flex-col gap-2 p-4 border-b border-sidebar-border', className)}
       {...props}
     />
   );
@@ -311,7 +311,7 @@ const SidebarFooter = React.forwardRef<
   return (
     <div
       ref={ref}
-      className={cn('flex flex-col gap-2 p-4 border-t border-slate-200', className)}
+      className={cn('flex flex-col gap-2 p-4 border-t border-sidebar-border', className)}
       {...props}
     />
   );
@@ -326,7 +326,7 @@ const SidebarInset = React.forwardRef<
     <main
       ref={ref}
       className={cn(
-        'relative flex min-h-svh flex-1 flex-col bg-background',
+        'relative flex min-h-svh flex-1 flex-col',
         className,
       )}
       {...props}
@@ -383,7 +383,7 @@ const SidebarGroupLabel = React.forwardRef<
     <Comp
       ref={ref}
       className={cn(
-        'flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-slate-600 outline-none transition-colors',
+        'flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground outline-none transition-colors',
         className,
       )}
       {...props}

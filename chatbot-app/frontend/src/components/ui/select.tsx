@@ -53,7 +53,7 @@ const SelectTrigger = ({ className = "", children }: SelectTriggerProps) => {
   return (
     <button
       type="button"
-      className={`flex h-10 w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-sm ring-offset-white placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
       onClick={() => context.setOpen(!context.open)}
     >
       {children}
@@ -76,7 +76,7 @@ const SelectContent = ({ children }: SelectContentProps) => {
   if (!context.open) return null
 
   return (
-    <div className="absolute top-full left-0 z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg">
+    <div className="absolute top-full left-0 z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg text-popover-foreground">
       <div className="p-1">
         {children}
       </div>
@@ -90,7 +90,7 @@ const SelectItem = ({ value, children }: SelectItemProps) => {
 
   return (
     <div
-      className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-gray-100 focus:bg-gray-100"
+      className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
       onClick={() => {
         context.onValueChange(value)
         context.setOpen(false)
