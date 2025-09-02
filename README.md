@@ -94,9 +94,10 @@ Modular Context Protocol servers providing external integrations:
 
 #### Stateful MCP Servers (ECS)
 - **Nova Act Browser**: Advanced browser automation combining natural language instructions with direct Playwright API access. Supports high-level actions like "click the blue submit button" alongside precise element targeting with CSS selectors
-- **Python Runtime**: Execute Python code safely in a sandboxed environment using Pyodide
 
 ![Home](docs/images/browser-mcp.gif)
+
+- **Python Runtime**: Execute Python code safely in a sandboxed environment using Pyodide
 
 ### Agents (Sub-Agents)
 Specialized AI agents for complex workflows:
