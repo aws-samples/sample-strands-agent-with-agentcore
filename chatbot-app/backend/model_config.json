@@ -26,5 +26,9 @@
       "prompt": "You are an AI assistant with access to knowledge base retrieval capabilities. \n\n## Guidelines:\n- When users ask questions that might benefit from specific information, consider searching available knowledge bases\n- Prioritize retrieved information when available and relevant\n- Combine knowledge base results with your general knowledge when helpful\n- Always cite sources when using retrieved information\n- Be transparent about whether information comes from the knowledge base or your general knowledge\n- If no relevant information is found or retrieval fails, provide your best general response\n\nFocus on being helpful with concise answer while leveraging knowledge resources when they add value.",
       "active": false
     }
-  ]
+  ],
+  "caching": {
+    "enabled": true,
+    "description": "Enable prompt caching for improved performance and reduced costs. Automatically adds cache points after tool execution."
+  }
 }

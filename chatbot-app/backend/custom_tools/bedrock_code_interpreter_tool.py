@@ -616,9 +616,26 @@ print(f"Total revenue: ${df['revenue'].sum()} million")
         # Log full result for debugging
         logger.info(f"Bedrock Code Interpreter result: {json.dumps(result, indent=2)}")
         
-        # Return JSON result for frontend
-        return json.dumps(result)
+        # Return result in Strands ToolResult format
+        content = []
+        
+        # Add text output
+        if result.get('output'):
+            content.append({"text": result['output']})
+        elif result.get('success'):
+            content.append({"text": "Code executed successfully"})
+        
+        # Add JSON data for additional information
+        content.append({"json": result})
+        
+        return {
+            "status": "success" if result.get('success') else "error",
+            "content": content
+        }
         
     except Exception as e:
         logger.error(f"Error in bedrock_code_interpreter: {e}")
-        return f"Error executing Python code in Bedrock Code Interpreter: {str(e)}"
+        return {
+            "status": "error",
+            "content": [{"text": f"Error executing Python code in Bedrock Code Interpreter: {str(e)}"}]
+        }

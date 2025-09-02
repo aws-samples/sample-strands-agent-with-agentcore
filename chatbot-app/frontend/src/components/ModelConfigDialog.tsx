@@ -6,6 +6,7 @@ import { getApiUrl } from '@/config/environment';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from './ui/label';
+import { Switch } from './ui/switch';
 import {
   Select,
   SelectContent,
@@ -33,6 +34,9 @@ interface ModelConfig {
     prompt: string;
     active: boolean;
   } | null;
+  caching?: {
+    enabled: boolean;
+  };
 }
 
 interface SystemPrompt {
@@ -67,6 +71,7 @@ export function ModelConfigDialog({ sessionId }: ModelConfigDialogProps) {
   const [selectedModelId, setSelectedModelId] = useState('');
   const [selectedTemperature, setSelectedTemperature] = useState(0.7);
   const [selectedPromptId, setSelectedPromptId] = useState('');
+  const [cachingEnabled, setCachingEnabled] = useState(true);
   
   // Prompt editing
   const [editingPrompt, setEditingPrompt] = useState<SystemPrompt | null>(null);
@@ -88,6 +93,7 @@ export function ModelConfigDialog({ sessionId }: ModelConfigDialogProps) {
       setSelectedModelId(currentConfig.model_id);
       setSelectedTemperature(currentConfig.temperature);
       setSelectedPromptId(currentConfig.active_prompt?.id || '');
+      setCachingEnabled(currentConfig.caching?.enabled ?? true);
     }
   }, [currentConfig]);
 
@@ -132,7 +138,8 @@ export function ModelConfigDialog({ sessionId }: ModelConfigDialogProps) {
         setCurrentConfig({
           model_id: config.model_id,
           temperature: config.temperature,
-          active_prompt: activePrompt
+          active_prompt: activePrompt,
+          caching: config.caching || { enabled: true }
         });
       }
     } catch (error) {
@@ -208,6 +215,9 @@ export function ModelConfigDialog({ sessionId }: ModelConfigDialogProps) {
         body: JSON.stringify({
           model_id: selectedModelId,
           temperature: selectedTemperature,
+          caching: {
+            enabled: cachingEnabled
+          }
         }),
       });
       
@@ -404,6 +414,26 @@ export function ModelConfigDialog({ sessionId }: ModelConfigDialogProps) {
               <div className="flex justify-between text-xs text-muted-foreground">
                 <span>Focused (0.0)</span>
                 <span>Creative (1.0)</span>
+              </div>
+            </div>
+
+            {/* Caching Configuration */}
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Brain className="h-4 w-4" />
+                Prompt Caching
+              </Label>
+              <div className="flex items-center justify-between p-3 bg-muted rounded-md">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Enable Prompt Caching</div>
+                  <div className="text-xs text-muted-foreground">
+                    Automatically adds cache points after tool execution for improved performance and reduced costs
+                  </div>
+                </div>
+                <Switch
+                  checked={cachingEnabled}
+                  onCheckedChange={setCachingEnabled}
+                />
               </div>
             </div>
 

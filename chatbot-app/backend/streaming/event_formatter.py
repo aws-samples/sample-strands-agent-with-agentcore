@@ -84,8 +84,33 @@ class StreamEventFormatter:
     
     @staticmethod
     def create_tool_result_event(tool_result: Dict[str, Any]) -> str:
-        """Create tool result event"""
-        # Extract text and images from tool result
+        """Create tool result event - refactored for clarity"""
+        # 1. Extract all content (text and images)
+        result_text, result_images = StreamEventFormatter._extract_all_content(tool_result)
+        
+        # 2. Handle storage based on tool type
+        StreamEventFormatter._handle_tool_storage(tool_result, result_text)
+        
+        # 3. Build and return the event
+        return StreamEventFormatter._build_tool_result_event(tool_result, result_text, result_images)
+    
+    @staticmethod
+    def _extract_all_content(tool_result: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
+        """Extract text content and images from tool result"""
+        # Extract basic content from MCP format
+        result_text, result_images = StreamEventFormatter._extract_basic_content(tool_result)
+        
+        # Process JSON content for screenshots and additional images
+        json_images, cleaned_text = StreamEventFormatter._process_json_content(result_text)
+        result_images.extend(json_images)
+        
+        return cleaned_text, result_images
+    
+    @staticmethod
+    def _extract_basic_content(tool_result: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
+        """Extract basic text and image content from MCP format"""
+        import base64
+        
         result_text = ""
         result_images = []
         
@@ -95,14 +120,12 @@ class StreamEventFormatter:
                     if "text" in item:
                         result_text += item["text"]
                     elif "image" in item and "source" in item["image"]:
-                        # Improved image extraction
                         image_source = item["image"]["source"]
                         image_data = ""
                         
                         if "data" in image_source:
                             image_data = image_source["data"]
                         elif "bytes" in image_source:
-                            # Handle bytes format
                             if isinstance(image_source["bytes"], bytes):
                                 image_data = base64.b64encode(image_source["bytes"]).decode('utf-8')
                             else:
@@ -114,72 +137,28 @@ class StreamEventFormatter:
                                 "data": image_data
                             })
         
-        # Auto-save agent type tool results to markdown files
-        # Skip financial_narrative_tool as it handles its own memory storage
-        # Handle Python MCP results specially
-        tool_use_id = tool_result.get("toolUseId")
-        if tool_use_id and result_text:
-            # Check if this is financial_narrative_tool or run_python_code
-            try:
-                from agent import get_global_stream_processor
-                processor = get_global_stream_processor()
-                if processor and hasattr(processor, 'tool_use_registry'):
-                    tool_info = processor.tool_use_registry.get(tool_use_id)
-                    tool_name = tool_info.get('tool_name') if tool_info else None
-                    
-                    print(f"🔍 TOOL RESULT DEBUG: tool_use_id={tool_use_id}, tool_name={tool_name}")
-                    print(f"🔍 TOOL INFO: {tool_info}")
-                    
-                    if tool_name == 'financial_narrative_tool':
-                        # Skip auto-save for financial_narrative_tool as it handles its own storage
-                        print(f"⏭️ Skipping auto-save for financial_narrative_tool: {tool_use_id}")
-                        # Do not call _save_agent_tool_result for financial_narrative_tool
-                        pass
-                    elif tool_name == 'run_python_code':
-                        print(f"🎯 DETECTED PYTHON MCP TOOL: {tool_name}")
-                        # Get session_id from tool_info
-                        session_id = tool_info.get('session_id') if tool_info else None
-                        if session_id:
-                            # Use Base64 interception for file handling with session_id
-                            processed_text, file_info = StreamEventFormatter._handle_python_mcp_base64(tool_use_id, result_text, session_id)
-                            
-                            if file_info:
-                                print(f"📁 Processed and saved {len(file_info)} files for {tool_use_id}")
-                                result_text = processed_text
-                        else:
-                            print(f"⚠️ No session_id found for Python MCP tool: {tool_use_id}")
-                        StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
-                    else:
-                        print(f"🔍 NON-MCP TOOL: {tool_name} (tool_type: {tool_info.get('tool_type') if tool_info else 'None'})")
-                        StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
-                else:
-                    print(f"🔴 No processor or tool_use_registry found for {tool_use_id}")
-                    StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
-            except Exception as e:
-                # For financial_narrative_tool, skip even on error to avoid raw data storage
-                try:
-                    from agent import get_global_stream_processor
-                    processor = get_global_stream_processor()
-                    if processor and hasattr(processor, 'tool_use_registry'):
-                        tool_info = processor.tool_use_registry.get(tool_use_id)
-                        tool_name = tool_info.get('tool_name') if tool_info else None
-                        if tool_name == 'financial_narrative_tool':
-                            print(f"⏭️ Skipping auto-save for financial_narrative_tool even on error: {tool_use_id}")
-                            pass
-                        elif tool_name == 'run_python_code':
-                            print(f"Warning: Error checking tool type, proceeding with Python MCP processing: {e}")
-                            StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
-                        else:
-                            print(f"Warning: Error checking tool type, proceeding with auto-save: {e}")
-                            StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
-                    else:
-                        print(f"Warning: Error checking tool type, proceeding with auto-save: {e}")
-                        StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
-                except:
-                    # Ultimate fallback - proceed with auto-save only if we can't determine tool type
-                    print(f"Warning: Error checking tool type, proceeding with auto-save: {e}")
-                    StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
-        
+        return result_text, result_images
+    
+    @staticmethod
+    def _process_json_content(result_text: str) -> Tuple[List[Dict[str, str]], str]:
+        """Process JSON content to extract screenshots and clean text"""
+        try:
+            import json
+            parsed_result = json.loads(result_text)
+            extracted_images = StreamEventFormatter._extract_images_from_json_response(parsed_result)
+            
+            if extracted_images:
+                cleaned_text = StreamEventFormatter._clean_result_text_for_display(result_text, parsed_result)
+                return extracted_images, cleaned_text
+            else:
+                return [], result_text
+                
+        except (json.JSONDecodeError, TypeError):
+            return [], result_text
+    
+    @staticmethod
+    def _build_tool_result_event(tool_result: Dict[str, Any], result_text: str, result_images: List[Dict[str, str]]) -> str:
+        """Build the final tool result event"""
         tool_result_data = {
             "type": "tool_result",
             "toolUseId": tool_result.get("toolUseId"),
@@ -189,6 +168,117 @@ class StreamEventFormatter:
             tool_result_data["images"] = result_images
         
         return StreamEventFormatter.format_sse_event(tool_result_data)
+    
+    @staticmethod
+    def _handle_tool_storage(tool_result: Dict[str, Any], result_text: str):
+        """Handle storage based on tool type using handler pattern"""
+        tool_use_id = tool_result.get("toolUseId")
+        if not (tool_use_id and result_text):
+            return
+        
+        try:
+            handler = StreamEventFormatter._get_tool_handler(tool_use_id)
+            handler.save(tool_use_id, result_text)
+        except Exception as e:
+            # Fallback error handling
+            print(f"Warning: Storage error for {tool_use_id}: {e}")
+            try:
+                fallback_handler = StreamEventFormatter._get_fallback_handler(tool_use_id)
+                fallback_handler.save(tool_use_id, result_text)
+            except Exception as fallback_error:
+                print(f"Warning: Fallback storage also failed for {tool_use_id}: {fallback_error}")
+    
+    @staticmethod
+    def _get_tool_handler(tool_use_id: str):
+        """Get appropriate handler for tool based on its type"""
+        tool_info = StreamEventFormatter._get_tool_info(tool_use_id)
+        
+        if not tool_info:
+            return StreamEventFormatter._DefaultToolHandler()
+        
+        tool_name = tool_info.get('tool_name')
+        storage_behavior = StreamEventFormatter._get_tool_storage_behavior(tool_name)
+        
+        print(f"🔍 TOOL RESULT DEBUG: tool_use_id={tool_use_id}, tool_name={tool_name}")
+        print(f"🔍 TOOL INFO: {tool_info}")
+        
+        if storage_behavior == 'self_managed':
+            return StreamEventFormatter._SelfManagedToolHandler(tool_name)
+        elif tool_name == 'run_python_code':
+            session_id = tool_info.get('session_id')
+            return StreamEventFormatter._PythonMCPToolHandler(tool_name, session_id)
+        else:
+            return StreamEventFormatter._DefaultToolHandler(tool_name)
+    
+    @staticmethod
+    def _get_fallback_handler(tool_use_id: str):
+        """Get fallback handler when primary handler fails"""
+        try:
+            tool_info = StreamEventFormatter._get_tool_info(tool_use_id)
+            tool_name = tool_info.get('tool_name') if tool_info else 'unknown'
+            storage_behavior = StreamEventFormatter._get_tool_storage_behavior(tool_name)
+            
+            if storage_behavior == 'self_managed':
+                return StreamEventFormatter._SelfManagedToolHandler(tool_name)
+            else:
+                return StreamEventFormatter._DefaultToolHandler(tool_name)
+        except:
+            return StreamEventFormatter._DefaultToolHandler('unknown')
+    
+    @staticmethod
+    def _get_tool_info(tool_use_id: str) -> Dict[str, Any]:
+        """Get tool information from global processor"""
+        try:
+            from agent import get_global_stream_processor
+            processor = get_global_stream_processor()
+            if processor and hasattr(processor, 'tool_use_registry'):
+                return processor.tool_use_registry.get(tool_use_id, {})
+            return {}
+        except Exception:
+            return {}
+    
+    class _ToolHandler:
+        """Base class for tool storage handlers"""
+        def __init__(self, tool_name: str = 'unknown'):
+            self.tool_name = tool_name
+        
+        def save(self, tool_use_id: str, result_text: str):
+            raise NotImplementedError
+    
+    class _SelfManagedToolHandler(_ToolHandler):
+        """Handler for tools that manage their own storage"""
+        def save(self, tool_use_id: str, result_text: str):
+            print(f"⏭️ Skipping auto-save for self-managed tool: {self.tool_name} ({tool_use_id})")
+            # Intentionally do nothing - tool handles its own storage
+    
+    class _PythonMCPToolHandler(_ToolHandler):
+        """Handler for Python MCP tools with special Base64 processing"""
+        def __init__(self, tool_name: str, session_id: str = None):
+            super().__init__(tool_name)
+            self.session_id = session_id
+        
+        def save(self, tool_use_id: str, result_text: str):
+            print(f"🎯 DETECTED PYTHON MCP TOOL: {self.tool_name}")
+            
+            if self.session_id:
+                try:
+                    processed_text, file_info = StreamEventFormatter._handle_python_mcp_base64(
+                        tool_use_id, result_text, self.session_id)
+                    if file_info:
+                        print(f"📁 Processed and saved {len(file_info)} files for {tool_use_id}")
+                        result_text = processed_text
+                except Exception as e:
+                    print(f"⚠️ Error processing Base64 files: {e}")
+            else:
+                print(f"⚠️ No session_id found for Python MCP tool: {tool_use_id}")
+            
+            StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
+    
+    class _DefaultToolHandler(_ToolHandler):
+        """Default handler for regular tools"""
+        def save(self, tool_use_id: str, result_text: str):
+            print(f"🔍 DEFAULT TOOL: {self.tool_name} (tool_use_id: {tool_use_id})")
+            StreamEventFormatter._save_agent_tool_result(tool_use_id, result_text)
     
     @staticmethod
     def create_complete_event(message: str, images: List[Dict[str, str]] = None) -> str:
@@ -330,6 +420,97 @@ class StreamEventFormatter:
             print(f"❌ Error in _handle_python_mcp_base64: {e}")
         
         return processed_text, file_info
+
+    @staticmethod
+    def _extract_images_from_json_response(response_data):
+        """Extract images from any JSON tool response automatically"""
+        images = []
+        
+        if isinstance(response_data, dict):
+            # Support common image field patterns
+            image_fields = ['screenshot', 'image', 'diagram', 'chart', 'visualization', 'figure']
+            
+            for field in image_fields:
+                if field in response_data and isinstance(response_data[field], dict):
+                    img_data = response_data[field]
+                    
+                    # Handle new lightweight screenshot format (Nova Act optimized)
+                    if img_data.get("available") and "description" in img_data:
+                        # This is the new optimized format - no actual image data
+                        # Just skip extraction since there's no base64 data to process
+                        print(f"📷 Found optimized screenshot reference: {img_data.get('description')}")
+                        continue
+                    
+                    # Handle legacy format with actual base64 data
+                    elif "data" in img_data and "format" in img_data:
+                        images.append({
+                            "format": img_data["format"],
+                            "data": img_data["data"]
+                        })
+            
+            # Preserve existing images array
+            if "images" in response_data and isinstance(response_data["images"], list):
+                images.extend(response_data["images"])
+        
+        return images
+
+    @staticmethod
+    def _clean_result_text_for_display(original_text: str, parsed_result: dict) -> str:
+        """Clean result text by removing large image data but keeping other information"""
+        try:
+            import json
+            import copy
+            
+            # Create a copy to avoid modifying the original
+            cleaned_result = copy.deepcopy(parsed_result)
+            
+            # Remove large image data fields but keep metadata
+            image_fields = ['screenshot', 'image', 'diagram', 'chart', 'visualization', 'figure']
+            
+            for field in image_fields:
+                if field in cleaned_result and isinstance(cleaned_result[field], dict):
+                    if "data" in cleaned_result[field]:
+                        # Keep format and size info, remove the large base64 data
+                        data_size = len(cleaned_result[field]["data"])
+                        cleaned_result[field] = {
+                            "format": cleaned_result[field].get("format", "unknown"),
+                            "size": f"{data_size} characters",
+                            "note": "Image data extracted and displayed separately"
+                        }
+            
+            # Return the cleaned JSON string
+            return json.dumps(cleaned_result, indent=2)
+            
+        except Exception as e:
+            # If cleaning fails, return the original
+            print(f"Warning: Failed to clean result text: {e}")
+            return original_text
+
+    @staticmethod
+    def _get_tool_storage_behavior(tool_name: str) -> str:
+        """Get storage behavior for a tool from config"""
+        try:
+            import json
+            import os
+            
+            config_path = os.path.join(os.path.dirname(__file__), '..', 'unified_tools_config.json')
+            
+            if not os.path.exists(config_path):
+                return 'default'
+            
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            
+            # Find tool in config
+            for tool in config.get('tools', []):
+                if tool.get('id') == tool_name:
+                    return tool.get('storage_behavior', 'default')
+            
+            return 'default'
+            
+        except Exception as e:
+            print(f"Warning: Failed to get storage behavior for {tool_name}: {e}")
+            return 'default'
 
     @staticmethod
     def _save_agent_tool_result(tool_use_id: str, result_text: str):

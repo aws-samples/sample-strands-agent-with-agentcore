@@ -12,9 +12,13 @@ router = APIRouter(prefix="/model", tags=["model"])
 # Import session registry
 from session.global_session_registry import global_session_registry
 
+class CachingConfig(BaseModel):
+    enabled: bool
+
 class ModelConfig(BaseModel):
     model_id: str
     temperature: float
+    caching: Optional[CachingConfig] = None
 
 class SystemPrompt(BaseModel):
     id: str
@@ -96,9 +100,14 @@ async def update_model_config(model_config: ModelConfig, x_session_id: Optional[
         session_id, session_manager, agent = global_session_registry.get_or_create_session(x_session_id)
         
         # Update session-specific model configuration (exactly like tool toggle)
+        caching_dict = None
+        if model_config.caching is not None:
+            caching_dict = {"enabled": model_config.caching.enabled}
+        
         success = session_manager.update_model_config(
             model_id=model_config.model_id,
-            temperature=model_config.temperature
+            temperature=model_config.temperature,
+            caching=caching_dict
         )
         
         if success:

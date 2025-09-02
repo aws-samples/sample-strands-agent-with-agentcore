@@ -275,6 +275,49 @@ class InMemorySessionManager(SessionManager):
                 ]
             }
     
+    def add_cache_point_to_last_message(self) -> bool:
+        """Add cache point to the last message if it contains tool results"""
+        try:
+            if self.messages and len(self.messages) > 0:
+                last_message = self.messages[-1]
+                
+                # Check if this message contains tool results (could be user or assistant message)
+                has_tool_result = False
+                if isinstance(last_message.content, list):
+                    has_tool_result = any(
+                        isinstance(item, dict) and "toolResult" in item 
+                        for item in last_message.content
+                    )
+                
+                # Add cache point to messages with tool results
+                if has_tool_result:
+                    if isinstance(last_message.content, list):
+                        # Check if cache point already exists
+                        has_cache_point = any(
+                            isinstance(item, dict) and "cachePoint" in item 
+                            for item in last_message.content
+                        )
+                        
+                        if not has_cache_point:
+                            last_message.content.append({
+                                "cachePoint": {"type": "default"}
+                            })
+                            logger.debug(f"Session {self.session_id}: Cache point added to last message")
+                            return True
+                    elif isinstance(last_message.content, str):
+                        # Convert string to list with cache point
+                        last_message.content = [
+                            {"text": last_message.content},
+                            {"cachePoint": {"type": "default"}}
+                        ]
+                        logger.debug(f"Session {self.session_id}: Cache point added to converted message")
+                        return True
+            return False
+                        
+        except Exception as e:
+            logger.warning(f"Session {self.session_id}: Failed to add cache point: {e}")
+            return False
+    
     def get_tool_config(self) -> Dict[str, Any]:
         """Get current session-specific tool configuration.
         
@@ -389,12 +432,13 @@ class InMemorySessionManager(SessionManager):
         """
         return self.model_config.copy()
     
-    def update_model_config(self, model_id: str = None, temperature: float = None) -> bool:
+    def update_model_config(self, model_id: str = None, temperature: float = None, caching: Dict[str, Any] = None) -> bool:
         """Update model configuration for this session.
         
         Args:
             model_id: New model ID (optional)
             temperature: New temperature (optional)
+            caching: New caching configuration (optional)
             
         Returns:
             True if config was updated, False otherwise
@@ -409,6 +453,11 @@ class InMemorySessionManager(SessionManager):
             if temperature is not None:
                 self.model_config["temperature"] = temperature
                 config_changed = True
+            
+            if caching is not None:
+                self.model_config["caching"] = caching
+                config_changed = True
+                logger.info(f"Session {self.session_id}: Caching configuration updated to {caching}")
             
             if config_changed:
                 self.model_config_changed = True  # Set change flag

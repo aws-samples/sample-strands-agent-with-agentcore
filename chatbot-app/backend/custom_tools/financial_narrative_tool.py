@@ -366,8 +366,15 @@ async def financial_narrative_tool(query: str) -> str:
         agent = get_narrative_agent()
         response = await agent.create_narratives(customer_id, session_id, tool_use_id)
         
-        return response
+        # Return in Strands ToolResult format
+        return {
+            "status": "success",
+            "content": [{"text": response}]
+        }
         
     except Exception as e:
         logger.error(f"Error in financial narrative agent: {e}")
-        return f"I encountered an error while creating your financial narratives: {str(e)}. Please try again or contact support if the issue persists."
+        return {
+            "status": "error",
+            "content": [{"text": f"I encountered an error while creating your financial narratives: {str(e)}. Please try again or contact support if the issue persists."}]
+        }

@@ -102,7 +102,8 @@
       "category": "entertainment",
       "icon": "book-open",
       "enabled": false,
-      "tool_type": "agent"
+      "tool_type": "agent",
+      "storage_behavior": "self_managed"
     },
     {
       "id": "aws-documentation",
@@ -157,19 +158,6 @@
       "tool_type": "mcp"
     },
     {
-      "id": "playwright-mcp",
-      "name": "Playwright Browser",
-      "description": "Browser automation and web scraping using Playwright",
-      "type": "mcp",
-      "config": {
-        "url": "ssm:///mcp/endpoints/stateful/playwright-mcp"
-      },
-      "category": "web",
-      "icon": "browser",
-      "enabled": false,
-      "tool_type": "mcp"
-    },
-    {
       "id": "python-mcp",
       "name": "Python Runtime",
       "description": "Execute Python code safely in a sandboxed environment using Pyodide",
@@ -193,6 +181,19 @@
       "icon": "cloud-code",
       "enabled": false,
       "tool_type": "custom"
+    },
+    {
+      "id": "nova-act-browser",
+      "name": "Nova Act Browser Automation",
+      "description": "Advanced browser automation and control using Nova Act",
+      "type": "mcp",
+      "config": {
+        "url": "ssm:///mcp/endpoints/stateful/nova-act-mcp"
+      },
+      "category": "web",
+      "icon": "browser",
+      "enabled": false,
+      "tool_type": "mcp"
     }
   ]
 }

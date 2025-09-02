@@ -296,7 +296,11 @@ async def spending_analysis_tool(query: str) -> str:
                     {'executor': 'analysis_coordinator'}
                 )
             
-            return final_result
+            # Return in Strands ToolResult format
+            return {
+                "status": "success",
+                "content": [{"text": final_result}]
+            }
             
         except Exception as e:
             logger.error(f"Error in agent invoke: {e}")
@@ -318,7 +322,10 @@ async def spending_analysis_tool(query: str) -> str:
                     f'Analysis failed: {str(e)}'
                 )
             
-            return error_message
+            return {
+                "status": "error",
+                "content": [{"text": error_message}]
+            }
         
     except Exception as e:
         logger.error(f"Error in spending analysis tool: {e}")
@@ -335,4 +342,7 @@ async def spending_analysis_tool(query: str) -> str:
             except:
                 pass  # Don't fail on progress error
         
-        return error_message
+        return {
+            "status": "error",
+            "content": [{"text": error_message}]
+        }

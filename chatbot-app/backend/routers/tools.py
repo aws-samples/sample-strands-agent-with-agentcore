@@ -74,7 +74,9 @@ async def check_mcp_url_validity(url: str) -> str:
     """Check if MCP URL is valid and reachable
     Returns: 'connected', 'disconnected', or 'invalid'
     """
+    print(f"🔍 MCP URL validation started for: {url}")
     if not url or url == "https://{your-mcp-endpoint}/mcp":
+        print(f"🔍 MCP URL validation - Empty or placeholder URL: {url}")
         return 'invalid'
     
     # Parameter Store URLs are always considered valid
@@ -89,21 +91,37 @@ async def check_mcp_url_validity(url: str) -> str:
     
     # Check cache first
     now = time.time()
-    if url in _mcp_status_cache:
-        cached_result, cached_time = _mcp_status_cache[url]
-        if now - cached_time < _cache_duration:
-            return cached_result
+    # Temporarily disable cache for debugging
+    # if url in _mcp_status_cache:
+    #     cached_result, cached_time = _mcp_status_cache[url]
+    #     if now - cached_time < _cache_duration:
+    #         print(f"🔍 MCP URL validation - Using cached result: {url} -> {cached_result}")
+    #         return cached_result
     
     try:
         # Parse URL to validate format
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
+            print(f"🔍 MCP URL validation - Invalid format: {url} (scheme: {parsed.scheme}, netloc: {parsed.netloc})")
             result = 'invalid'
         else:
             # Try to connect with timeout
             timeout = aiohttp.ClientTimeout(total=3)  # Reduced timeout for faster response
+            headers = {}
+            
+            # Special handling for MCP servers that require SSE headers
+            if '/mcp' in url.lower():
+                headers = {
+                    'Accept': 'text/event-stream',
+                    'X-Session-ID': 'health-check'
+                }
+                print(f"🔍 MCP URL validation - Testing {url} with SSE headers")
+            else:
+                print(f"🔍 MCP URL validation - Testing {url} with standard headers")
+            
             async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as response:
+                async with session.get(url, headers=headers) as response:
+                    print(f"🔍 MCP URL validation - Response: {url} -> {response.status}")
                     # Consider 2xx, 3xx, and even some 4xx as "connected" 
                     # since the server is responding
                     if response.status < 500:
@@ -111,7 +129,8 @@ async def check_mcp_url_validity(url: str) -> str:
                     else:
                         result = 'disconnected'
                         
-    except (aiohttp.ClientError, asyncio.TimeoutError, Exception):
+    except (aiohttp.ClientError, asyncio.TimeoutError, Exception) as e:
+        print(f"🔍 MCP URL validation - Exception: {url} -> {type(e).__name__}: {e}")
         result = 'disconnected'
     
     # Cache the result

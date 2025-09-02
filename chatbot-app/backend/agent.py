@@ -245,13 +245,28 @@ class ChatbotAgent:
                 retries={"max_attempts": 3, "mode": "adaptive"}
             )
             
-            bedrock_model = BedrockModel(
-                model_id=config["model_id"],
-                temperature=config["temperature"],
-                streaming=True,
-                region_name="us-west-2",
-                boto_client_config=boto_config
-            )
+            # Load caching configuration (simplified)
+            caching_config = config.get("caching", {})
+            self.caching_enabled = caching_config.get("enabled", True)  # Default ON
+            
+            # Apply caching settings to BedrockModel
+            bedrock_model_params = {
+                "model_id": config["model_id"],
+                "temperature": config["temperature"],
+                "streaming": True,
+                "region_name": "us-west-2",
+                "boto_client_config": boto_config
+            }
+            
+            # Add caching options if enabled
+            if self.caching_enabled:
+                bedrock_model_params["cache_prompt"] = "default"
+                bedrock_model_params["cache_tools"] = "default"
+                print(f"🔄 Prompt caching ENABLED - Cache points will be added after tool execution")
+            else:
+                print(f"❌ Prompt caching DISABLED - No cache points will be added")
+            
+            bedrock_model = BedrockModel(**bedrock_model_params)
             
             # Get active system prompt
             system_prompt = self.get_active_system_prompt()
@@ -457,6 +472,11 @@ class ChatbotAgent:
             # No need for separate context management - much simpler!
             async for event in self.stream_processor.process_stream(self.agent, message, file_paths, session_id):
                 yield event
+                
+                # Insert cache point after tool execution if caching is enabled
+                if self.caching_enabled:
+                    if self._is_tool_result_complete(event):
+                        await self._insert_cache_point_after_tool(event)
                         
         except GeneratorExit:
             # Client disconnected - this is normal, don't log as error
@@ -470,3 +490,76 @@ class ChatbotAgent:
         finally:
             # Detach the context to clean up
             context.detach(token)
+    
+    def _is_tool_result_complete(self, event) -> bool:
+        """Check if tool result is complete"""
+        try:
+            # Check for tool result completion in streaming events
+            if isinstance(event, str):
+                # SSE format event
+                return "tool_result" in event.lower() and "completed" in event.lower()
+            elif isinstance(event, dict):
+                # Dict format event
+                event_type = event.get("type", "")
+                return (
+                    event_type == "tool_result" or
+                    (event_type == "message" and 
+                     event.get("delta", {}).get("stopReason") == "tool_use")
+                )
+            return False
+        except Exception:
+            return False
+    
+    async def _insert_cache_point_after_tool(self, event):
+        """Insert cache point after tool execution"""
+        try:
+            cache_points_added = 0
+            
+            # Add cache point to Strands Agent's messages
+            if hasattr(self.agent, 'messages') and self.agent.messages:
+                last_message = self.agent.messages[-1]
+                if self._add_cache_point_to_message(last_message):
+                    cache_points_added += 1
+            
+            # Sync with session manager
+            if self.session_manager:
+                if self.session_manager.add_cache_point_to_last_message():
+                    cache_points_added += 1
+                    
+            if cache_points_added > 0:
+                print(f"✅ CACHE POINT INSERTED - {cache_points_added} locations updated")
+                logger.info(f"Prompt caching: Cache point added after tool execution ({cache_points_added} locations)")
+            else:
+                print(f"⚠️  CACHE POINT INSERTION SKIPPED - No suitable messages found")
+                
+        except Exception as e:
+            print(f"❌ CACHE POINT INSERTION FAILED: {e}")
+            logger.warning(f"Cache point insertion failed: {e}")
+    
+    def _add_cache_point_to_message(self, message) -> bool:
+        """Add cache point to message content"""
+        try:
+            if hasattr(message, 'content'):
+                if isinstance(message.content, list):
+                    # Check if cache point already exists
+                    has_cache_point = any(
+                        isinstance(item, dict) and "cachePoint" in item 
+                        for item in message.content
+                    )
+                    
+                    if not has_cache_point:
+                        message.content.append({
+                            "cachePoint": {"type": "default"}
+                        })
+                        return True
+                elif isinstance(message.content, str):
+                    # Convert string to list with cache point
+                    message.content = [
+                        {"text": message.content},
+                        {"cachePoint": {"type": "default"}}
+                    ]
+                    return True
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to add cache point to message: {e}")
+            return False

@@ -361,6 +361,8 @@ class UnifiedToolManager:
         # Create the actual function that will be called
         def http_tool_function(**kwargs):
             """HTTP tool function that calls the MCP server"""
+            print(f"🔍 [DEBUG] Calling MCP tool: {tool_name} with args: {kwargs}")
+            print(f"🔍 [DEBUG] Server URL: {url}")
             try:
                 # Get server configuration
                 url = server_config["config"]["url"]
@@ -407,20 +409,149 @@ class UnifiedToolManager:
                     if result and "result" in result:
                         # Extract the actual result content
                         tool_result = result["result"]
+                        print(f"🔍 [DEBUG] MCP tool result for {tool_name}: {type(tool_result)} - {str(tool_result)[:200]}...")
                         if isinstance(tool_result, dict) and "content" in tool_result:
                             # Handle MCP tool result format
                             content = tool_result["content"]
                             if isinstance(content, list) and len(content) > 0:
-                                # Get the first content item
-                                first_content = content[0]
-                                if isinstance(first_content, dict) and "text" in first_content:
-                                    return first_content["text"]
+                                # Process all content items to handle both text and images
+                                result_text = ""
+                                result_images = []
+                                
+                                for content_item in content:
+                                    if isinstance(content_item, dict):
+                                        if "text" in content_item:
+                                            # Handle text content
+                                            text_content = content_item["text"]
+                                            try:
+                                                import json
+                                                parsed_response = json.loads(text_content)
+                                                
+                                                # Extract images from JSON response
+                                                extracted_images = self._extract_images_from_response(parsed_response)
+                                                result_images.extend(extracted_images)
+                                                
+                                                # Clean response for display
+                                                cleaned_response = self._clean_response_for_display(parsed_response)
+                                                result_text += json.dumps(cleaned_response, indent=2)
+                                                
+                                            except (json.JSONDecodeError, TypeError):
+                                                # Not JSON, use as-is
+                                                result_text += text_content
+                                        
+                                        elif "data" in content_item and "mimeType" in content_item:
+                                            # Handle ImageContent from FastMCP Image objects
+                                            mime_type = content_item["mimeType"]
+                                            if mime_type.startswith("image/"):
+                                                image_format = mime_type.split("/")[-1]  # e.g., "png", "jpeg"
+                                                result_images.append({
+                                                    "format": image_format,
+                                                    "data": content_item["data"]  # Already base64 encoded
+                                                })
+                                                
+                                                # Add alt_text as result text if available  
+                                                if "alt_text" in content_item:
+                                                    result_text += content_item["alt_text"]
+                                        
+                                        else:
+                                            result_text += str(content_item)
+                                    else:
+                                        result_text += str(content_item)
+                                
+                                # Return structured response if we have images, otherwise just text
+                                if result_images:
+                                    # Return in Strands ToolResult format for proper image handling
+                                    tool_result_content = []
+                                    
+                                    # Add text content if available
+                                    if result_text.strip():
+                                        tool_result_content.append({"text": result_text.strip()})
+                                    
+                                    # Add image content
+                                    for image in result_images:
+                                        import base64
+                                        try:
+                                            # Convert base64 string to bytes for Strands SDK
+                                            image_bytes = base64.b64decode(image["data"])
+                                            image_content = {
+                                                "image": {
+                                                    "format": image["format"],
+                                                    "source": {
+                                                        "bytes": image_bytes  # Actual bytes for Strands SDK
+                                                    }
+                                                }
+                                            }
+                                            tool_result_content.append(image_content)
+                                        except Exception as e:
+                                            print(f"❌ Failed to decode image data: {e}")
+                                            # Skip this image if decoding fails
+                                    
+                                    return {
+                                        "content": tool_result_content,
+                                        "status": "success"
+                                    }
                                 else:
-                                    return str(first_content)
+                                    # Return simple text in ToolResult format
+                                    return {
+                                        "content": [{"text": result_text.strip() or str(content)}],
+                                        "status": "success"
+                                    }
                             else:
                                 return str(content)
                         else:
-                            return str(tool_result)
+                            # Check if this is already a Strands ToolResult format
+                            if isinstance(tool_result, dict) and "status" in tool_result and "content" in tool_result:
+                                # Already in Strands ToolResult format, return as-is
+                                print(f"🔍 [DEBUG] Tool {tool_name} returned Strands ToolResult format with {len(tool_result.get('content', []))} content items")
+                                for i, content_item in enumerate(tool_result.get('content', [])):
+                                    if isinstance(content_item, dict):
+                                        content_keys = list(content_item.keys())
+                                        print(f"  Content[{i}]: {content_keys}")
+                                        if 'image' in content_item:
+                                            print(f"    Image format: {content_item['image'].get('format')}")
+                                            print(f"    Image source keys: {list(content_item['image'].get('source', {}).keys())}")
+                                return tool_result
+                            
+                            # Direct tool result - try to extract images
+                            extracted_images = self._extract_images_from_response(tool_result)
+                            if extracted_images:
+                                cleaned_response = self._clean_response_for_display(tool_result)
+                                
+                                # Return in Strands ToolResult format
+                                tool_result_content = []
+                                
+                                # Add text content if available
+                                if str(cleaned_response).strip():
+                                    tool_result_content.append({"text": str(cleaned_response)})
+                                
+                                # Add image content
+                                for image in extracted_images:
+                                    import base64
+                                    try:
+                                        # Convert base64 string to bytes for Strands SDK
+                                        image_bytes = base64.b64decode(image["data"])
+                                        image_content = {
+                                            "image": {
+                                                "format": image["format"],
+                                                "source": {
+                                                    "bytes": image_bytes  # Actual bytes for Strands SDK
+                                                }
+                                            }
+                                        }
+                                        tool_result_content.append(image_content)
+                                    except Exception as e:
+                                        print(f"❌ Failed to decode image data: {e}")
+                                        # Skip this image if decoding fails
+                                
+                                return {
+                                    "content": tool_result_content,
+                                    "status": "success"
+                                }
+                            else:
+                                return {
+                                    "content": [{"text": str(tool_result)}],
+                                    "status": "success"
+                                }
                     elif "error" in result:
                         return f"Error: {result['error'].get('message', 'Unknown error')}"
                     else:
@@ -441,6 +572,48 @@ class UnifiedToolManager:
             tool_spec=tool_spec,
             tool_function=http_tool_function
         )
+    
+    def _extract_images_from_response(self, response_data):
+        """Extract images from any tool response automatically"""
+        images = []
+        
+        if isinstance(response_data, dict):
+            # Support common image field patterns
+            image_fields = ['screenshot', 'image', 'diagram', 'chart', 'visualization', 'figure']
+            
+            for field in image_fields:
+                if field in response_data and isinstance(response_data[field], dict):
+                    img_data = response_data[field]
+                    if "data" in img_data and "format" in img_data:
+                        images.append({
+                            "format": img_data["format"],
+                            "data": img_data["data"]
+                        })
+            
+            # Preserve existing images array
+            if "images" in response_data and isinstance(response_data["images"], list):
+                images.extend(response_data["images"])
+        
+        return images
+    
+    def _clean_response_for_display(self, response_data):
+        """Clean response data for display, removing large image data"""
+        if isinstance(response_data, dict):
+            cleaned = response_data.copy()
+            
+            # Remove image data fields to avoid cluttering the text display
+            image_fields = ['screenshot', 'image', 'diagram', 'chart', 'visualization', 'figure']
+            for field in image_fields:
+                if field in cleaned and isinstance(cleaned[field], dict):
+                    if "data" in cleaned[field]:
+                        # Keep metadata but remove the large base64 data
+                        cleaned[field] = {
+                            "format": cleaned[field].get("format", "unknown"),
+                            "size": f"{len(cleaned[field]['data'])} characters" if isinstance(cleaned[field]['data'], str) else "binary data"
+                        }
+            
+            return cleaned
+        return response_data
     
     def _wrap_tool_with_otel_span(self, tool, tool_name: str = None):
         """Wrap a tool function with OpenTelemetry instrumentation"""

@@ -318,8 +318,9 @@ async def create_visualization(chart_data: dict, chart_name: str) -> str:
             except Exception as e:
                 logger.debug(f"Progress completion failed (non-critical): {e}")
         
-        # Return success response with chart data for direct rendering
-        result = {
+        # Return success response with chart data for direct rendering in Strands ToolResult format
+        result_text = f"Chart '{chart_data['config']['title']}' created successfully"
+        result_data = {
             "success": True,
             "chart_id": chart_id,
             "chart_type": chart_data["chartType"],
@@ -329,28 +330,28 @@ async def create_visualization(chart_data: dict, chart_name: str) -> str:
         }
         
         logger.info(f"Chart created successfully: {chart_id}")
-        return json.dumps(result, ensure_ascii=False)
+        return {
+            "status": "success",
+            "content": [
+                {"text": result_text},
+                {"json": result_data}
+            ]
+        }
         
     except ValueError as e:
         error_msg = str(e)
         logger.error(f"Chart validation error: {error_msg}")
         
-        result = {
-            "success": False,
-            "error": error_msg,
-            "message": f"❌ Chart creation failed: {error_msg}"
+        return {
+            "status": "error",
+            "content": [{"text": f"❌ Chart creation failed: {error_msg}"}]
         }
-        
-        return json.dumps(result, ensure_ascii=False)
         
     except Exception as e:
         error_msg = f"Unexpected error: {str(e)}"
         logger.error(f"Chart creation error: {error_msg}")
         
-        result = {
-            "success": False,
-            "error": error_msg,
-            "message": f"❌ An error occurred while creating the chart: {str(e)}"
+        return {
+            "status": "error",
+            "content": [{"text": f"❌ An error occurred while creating the chart: {str(e)}"}]
         }
-        
-        return json.dumps(result, ensure_ascii=False)
