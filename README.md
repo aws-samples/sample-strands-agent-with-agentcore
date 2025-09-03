@@ -92,7 +92,7 @@ Modular Context Protocol servers providing external integrations:
 - **AWS Pricing**: Access real-time AWS pricing information and analyze cost
 - **Bedrock Knowledge Base Retrieval**: Query Amazon Bedrock Knowledge Bases using natural language
 - **Tavily Web Search**: Perform web search using Tavily AI
-- **Financial Analysis**: Aalyze stock prices and market trends using Yahoo Finance API
+- **Financial Analysis**: Analyze stock prices and market trends using Yahoo Finance API
 
 <img src="docs/images/finance.gif" alt="Fiannce" width="800">
 
