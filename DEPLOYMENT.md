@@ -7,8 +7,8 @@ This guide provides step-by-step instructions for deploying the complete Sample 
 The deployment consists of three main components:
 
 1. **Web Application** (Frontend + Backend) - The main chat interface with dynamic tool management
-2. **MCP Servers** - External tools and data sources
-3. **Integration** - Connecting MCP servers to the web application
+2. **MCP Servers** - External tools and data sources (Lambda-based and Fargate-based)
+3. **Security Layer** - CloudFront CDN with Cognito authentication
 
 ## Prerequisites
 
@@ -16,8 +16,8 @@ The deployment consists of three main components:
 
 - **AWS CLI** - Configured with appropriate permissions
 - **Docker** - For containerized deployment
-- **Node.js** (v18+) - For local development
-- **jq** - JSON processor for MCP deployment
+- **Node.js** (v18+) - For local development and CDK
+- **Python 3.8+** - For Python-based CDK stacks
 - **Git** - For cloning and version control
 
 ### AWS Setup
@@ -37,15 +37,62 @@ aws configure
 - CloudFormation (create, update, delete stacks)
 - Lambda (create, update functions)
 - API Gateway (create, manage APIs)
-- ECS/Fargate (for web application)
+- ECS/Fargate (for web application and containerized MCP servers)
 - ECR (for Docker images)
 - IAM (create roles and policies)
+- Cognito (for user authentication)
+- CloudFront (for CDN and security)
+- ElasticLoadBalancingV2 (for load balancers)
 
-## Deployment Steps
+## Quick Deployment (Recommended)
 
-**Important**: Deploy components in this specific order due to infrastructure dependencies.
+For complete system deployment with all components, use the automated deployment script:
 
-### Step 1: Configure Region and Deploy Web Application (~15-20 minutes)
+```bash
+cd agent-blueprint
+./deploy-all.sh
+```
+
+This script will:
+1. Deploy the web application with Cognito authentication
+2. Deploy all serverless MCP servers (Lambda-based)
+3. Deploy shared infrastructure for Fargate MCP servers
+4. Deploy containerized MCP servers (Python MCP, Nova Act MCP)
+5. Configure all MCP endpoints automatically
+
+**Security Features:**
+- **CloudFront CDN**: All user traffic goes through CloudFront for performance and security
+- **Cognito Authentication**: Users must sign up and verify email before access
+- **ALB Protection**: Application Load Balancer only accepts traffic from CloudFront
+- **VPC Isolation**: MCP servers run in private subnets with controlled access
+
+### Clean Removal
+
+To remove all deployed components:
+
+```bash
+cd agent-blueprint
+./destroy-all.sh
+```
+
+## Local Development
+
+For local development and testing:
+
+```bash
+# Frontend only (no authentication required)
+cd chatbot-app/frontend
+npm install
+npm run dev
+```
+
+**Note**: For testing MCP servers locally, you'll need to deploy the MCP Farm to AWS first, as MCP servers require cloud infrastructure for proper testing.
+
+## Individual Component Deployment
+
+If you need to deploy components individually (for debugging or partial deployment):
+
+### Step 1: Deploy Web Application (~15-20 minutes)
 
 The web application creates the VPC that other components will use.
 
@@ -79,6 +126,35 @@ npm install
 ```
 
 **Estimated Time:** 15-20 minutes
+
+#### Authentication Setup
+
+The application now includes **AWS Cognito authentication** to meet security compliance requirements. After deployment, you'll need to:
+
+1. **Create your first user account:**
+   ```bash
+   # Get the Cognito login URL from deployment output
+   aws cloudformation describe-stacks --stack-name ChatbotStack --query 'Stacks[0].Outputs[?OutputKey==`CognitoLoginUrl`].OutputValue' --output text
+
+   # Or check the application URL - it will redirect to Cognito login
+   ```
+
+2. **Sign up process:**
+   - Visit the application URL (it will redirect to Cognito login)
+   - Click "Sign up" to create a new account
+   - Provide email and password (must meet policy: 8+ chars, uppercase, lowercase, number, symbol)
+   - Check your email for verification code
+   - Complete email verification
+
+3. **Subsequent logins:**
+   - Use your email and password to access the application
+   - Sessions persist for the configured duration
+
+**Security Features:**
+- All endpoints except `/health` require authentication
+- Strong password policy enforced
+- Email verification required
+- Secure session management via Cognito
 
 #### Option B: Local Development
 

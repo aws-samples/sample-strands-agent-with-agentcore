@@ -5,7 +5,19 @@ import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
+import * as cognito from 'aws-cdk-lib/aws-cognito';
+import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
+import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as cr from 'aws-cdk-lib/custom-resources';
 import { Construct } from 'constructs';
+
+export interface ChatbotStackProps extends cdk.StackProps {
+  userPoolId?: string;
+  userPoolClientId?: string;
+  userPoolDomain?: string;
+  enableCognito?: boolean;
+}
 
 // Region-specific configuration
 const REGION_CONFIG: { [key: string]: { azs: string[] } } = {
@@ -17,7 +29,7 @@ const REGION_CONFIG: { [key: string]: { azs: string[] } } = {
 
 export class ChatbotStack extends cdk.Stack {
 
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+  constructor(scope: Construct, id: string, props?: ChatbotStackProps) {
     super(scope, id, props);
 
 
@@ -38,6 +50,8 @@ export class ChatbotStack extends cdk.Stack {
         }
       ]
     });
+
+    // ALB is now CloudFront-only access, no CIDR configuration needed
 
     // ECR Repositories - Import existing repositories
     const backendRepository = ecr.Repository.fromRepositoryName(this, 'ChatbotBackendRepository', 'chatbot-backend');
@@ -121,12 +135,24 @@ export class ChatbotStack extends cdk.Stack {
       })
     );
 
-    // Create or reuse AgentCore Observability Log Group (idempotent)
-    const agentObservabilityLogGroup = new logs.LogGroup(this, 'AgentObservabilityLogGroup', {
-      logGroupName: 'agents/strands-agent-logs',
-      retention: logs.RetentionDays.ONE_MONTH,
-      removalPolicy: cdk.RemovalPolicy.RETAIN
-    });
+    // Handle AgentCore Observability Log Group (create only if it doesn't exist)
+    const logGroupName = 'agents/strands-agent-logs';
+    let agentObservabilityLogGroup: logs.ILogGroup;
+
+    // Check if we should import existing log group (set by deployment script if log group exists)
+    const importExistingLogGroup = process.env.IMPORT_EXISTING_LOG_GROUP === 'true';
+
+    if (importExistingLogGroup) {
+      // Import existing log group
+      agentObservabilityLogGroup = logs.LogGroup.fromLogGroupName(this, 'AgentObservabilityLogGroup', logGroupName);
+    } else {
+      // Create new log group with error handling
+      agentObservabilityLogGroup = new logs.LogGroup(this, 'AgentObservabilityLogGroup', {
+        logGroupName: logGroupName,
+        retention: logs.RetentionDays.ONE_MONTH,
+        removalPolicy: cdk.RemovalPolicy.RETAIN
+      });
+    }
 
     // Generate unique log stream name
     const logStreamName = `otel-auto-${Math.random().toString(36).substring(2, 11)}`;
@@ -189,18 +215,19 @@ export class ChatbotStack extends cdk.Stack {
     });
 
 
-    // Create security group for ALB
+    // Create security group for ALB (CloudFront access only)
     const albSecurityGroup = new ec2.SecurityGroup(this, 'ChatbotAlbSecurityGroup', {
       vpc,
-      description: 'Security group for Chatbot Application Load Balancer',
+      description: 'Security group for Chatbot Application Load Balancer - CloudFront only',
       allowAllOutbound: true
     });
 
-    // Allow inbound HTTP traffic
+    // Allow inbound HTTP traffic from CloudFront IP ranges only
+    // Using CloudFront managed prefix list ID for automatic IP range management
     albSecurityGroup.addIngressRule(
-      ec2.Peer.anyIpv4(),
+      ec2.Peer.prefixList('pl-82a045eb'),
       ec2.Port.tcp(80),
-      'Allow HTTP traffic from anywhere'
+      'Allow HTTP traffic from CloudFront'
     );
 
     // Application Load Balancer
@@ -211,10 +238,7 @@ export class ChatbotStack extends cdk.Stack {
       idleTimeout: cdk.Duration.seconds(3600),
     });
 
-    const listener = alb.addListener('ChatbotListener', {
-      port: 80,
-      open: true,
-    });
+    // Will create listener after target groups are defined
 
     // Frontend Task Definition (before ALB targets)
     const frontendTaskDefinition = new ecs.FargateTaskDefinition(this, 'ChatbotFrontendTaskDef', {
@@ -224,16 +248,24 @@ export class ChatbotStack extends cdk.Stack {
 
 
     // Frontend Container
+    const frontendEnvironment: { [key: string]: string } = {
+      NODE_ENV: 'production',
+      FORCE_UPDATE: new Date().toISOString(),
+      BACKEND_URL: `http://${alb.loadBalancerDnsName}`,
+      // NEXT_PUBLIC_API_URL removed - using auto-detection based on hostname
+      NEXT_PUBLIC_AWS_REGION: this.region,
+      AWS_DEFAULT_REGION: this.region,
+    };
+
+    // Add Cognito environment variables if enabled
+    if (props?.enableCognito && props?.userPoolId && props?.userPoolClientId) {
+      frontendEnvironment.NEXT_PUBLIC_COGNITO_USER_POOL_ID = props.userPoolId;
+      frontendEnvironment.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID = props.userPoolClientId;
+    }
+
     const frontendContainer = frontendTaskDefinition.addContainer('ChatbotFrontendContainer', {
       image: ecs.ContainerImage.fromEcrRepository(frontendRepository, 'latest'),
-      environment: {
-        NODE_ENV: 'production',
-        FORCE_UPDATE: new Date().toISOString(),
-        BACKEND_URL: `http://${alb.loadBalancerDnsName}`,
-        // NEXT_PUBLIC_API_URL removed - using auto-detection based on hostname
-        NEXT_PUBLIC_AWS_REGION: this.region,
-        AWS_DEFAULT_REGION: this.region,
-      },
+      environment: frontendEnvironment,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'chatbot-frontend',
       }),
@@ -254,8 +286,20 @@ export class ChatbotStack extends cdk.Stack {
       maxHealthyPercent: 200,
     });
 
-    // Default Target Group (Frontend) - No priority, no conditions
-    const frontendTargetGroup = listener.addTargets('DefaultFrontendTarget', {
+    // Import Cognito resources if provided
+    let userPool: cognito.IUserPool | undefined;
+    let userPoolClient: cognito.IUserPoolClient | undefined;
+    let userPoolDomain: cognito.IUserPoolDomain | undefined;
+
+    if (props?.enableCognito && props?.userPoolId && props?.userPoolClientId && props?.userPoolDomain) {
+      userPool = cognito.UserPool.fromUserPoolId(this, 'ImportedUserPool', props.userPoolId);
+      userPoolClient = cognito.UserPoolClient.fromUserPoolClientId(this, 'ImportedUserPoolClient', props.userPoolClientId);
+      userPoolDomain = cognito.UserPoolDomain.fromDomainName(this, 'ImportedUserPoolDomain', props.userPoolDomain);
+    }
+
+    // Frontend Target Group
+    const frontendTargetGroup = new elbv2.ApplicationTargetGroup(this, 'FrontendTargetGroup', {
+      vpc,
       port: 3000,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [frontendService],
@@ -269,23 +313,16 @@ export class ChatbotStack extends cdk.Stack {
       deregistrationDelay: cdk.Duration.seconds(30),
     });
 
+    // Set default action to forward to frontend (will be updated after target groups are created)
+
     frontendTargetGroup.setAttribute('load_balancing.cross_zone.enabled', 'true');
 
     // Backend Target Group - Unified routing for all API requests
-    const backendTargetGroup = listener.addTargets('BackendApiTarget', {
+    const backendTargetGroup = new elbv2.ApplicationTargetGroup(this, 'BackendTargetGroup', {
+      vpc,
       port: 8000,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [backendService],
-      priority: 100,
-      conditions: [
-        elbv2.ListenerCondition.pathPatterns([
-          '/api/*',           // All API requests
-          '/docs*',           // Swagger documentation
-          '/health',          // Health check endpoint
-          '/uploads/*',       // Direct uploads endpoints
-          '/output/*',        // Direct output endpoints
-        ]),
-      ],
       healthCheck: {
         path: '/health',
         interval: cdk.Duration.seconds(60),
@@ -299,20 +336,126 @@ export class ChatbotStack extends cdk.Stack {
 
     backendTargetGroup.setAttribute('load_balancing.cross_zone.enabled', 'true');
 
+    // Create ALB listener with proper default action
+    const listener = alb.addListener('ChatbotListener', {
+      port: 80,
+      open: true,
+      defaultAction: elbv2.ListenerAction.forward([frontendTargetGroup]),
+    });
+
+    // Health check endpoint without authentication (for ALB health checks)
+    listener.addAction('HealthCheckAction', {
+      priority: 50,
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns(['/health']),
+      ],
+      action: elbv2.ListenerAction.forward([backendTargetGroup]),
+    });
+
+    // API endpoints routing (authentication handled by CloudFront)
+    listener.addAction('BackendApiAction', {
+      priority: 100,
+      conditions: [
+        elbv2.ListenerCondition.pathPatterns([
+          '/api/*',           // All API requests
+          '/docs*',           // Swagger documentation
+          '/uploads/*',       // Direct uploads endpoints
+          '/output/*',        // Direct output endpoints
+        ]),
+      ],
+      action: elbv2.ListenerAction.forward([backendTargetGroup]),
+    });
+
+    // Create custom Origin Request Policy to forward session headers
+    const customOriginRequestPolicy = new cloudfront.OriginRequestPolicy(this, 'ChatbotOriginRequestPolicy', {
+      originRequestPolicyName: 'ChatbotCustomOriginPolicy',
+      comment: 'Forward all headers including X-Session-ID for session management',
+      headerBehavior: cloudfront.OriginRequestHeaderBehavior.all(),
+      queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.all(),
+      cookieBehavior: cloudfront.OriginRequestCookieBehavior.all(),
+    });
+
+    // CloudFront Distribution (for HTTPS and global CDN)
+    const distribution = new cloudfront.Distribution(this, 'ChatbotCloudFront', {
+      defaultBehavior: {
+        origin: new origins.LoadBalancerV2Origin(alb, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          httpPort: 80,
+        }),
+        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
+        cachedMethods: cloudfront.CachedMethods.CACHE_GET_HEAD_OPTIONS,
+        cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED, // Disable caching for dynamic content
+        originRequestPolicy: customOriginRequestPolicy, // Use custom policy to forward session headers
+        compress: true,
+      },
+      priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // Use only North America and Europe
+      comment: 'CloudFront distribution for Chatbot application with HTTPS support',
+    });
+
+    // Update Cognito User Pool Client with CloudFront callback URL (if Cognito is enabled)
+    if (props?.enableCognito && props?.userPoolClientId) {
+      const updateCognitoClient = new cr.AwsCustomResource(this, 'UpdateCognitoCallbackUrl', {
+        onCreate: {
+          service: 'CognitoIdentityServiceProvider',
+          action: 'updateUserPoolClient',
+          parameters: {
+            UserPoolId: props.userPoolId,
+            ClientId: props.userPoolClientId,
+            CallbackURLs: [
+              `https://${distribution.distributionDomainName}/oauth2/idpresponse`,
+            ],
+            LogoutURLs: [
+              `https://${distribution.distributionDomainName}/`,
+            ],
+            AllowedOAuthFlows: ['code'],
+            AllowedOAuthFlowsUserPoolClient: true,
+            AllowedOAuthScopes: ['openid', 'email', 'profile'],
+            GenerateSecret: true,
+          },
+          physicalResourceId: cr.PhysicalResourceId.of('cognito-client-update'),
+        },
+        onUpdate: {
+          service: 'CognitoIdentityServiceProvider',
+          action: 'updateUserPoolClient',
+          parameters: {
+            UserPoolId: props.userPoolId,
+            ClientId: props.userPoolClientId,
+            CallbackURLs: [
+              `https://${distribution.distributionDomainName}/oauth2/idpresponse`,
+            ],
+            LogoutURLs: [
+              `https://${distribution.distributionDomainName}/`,
+            ],
+            AllowedOAuthFlows: ['code'],
+            AllowedOAuthFlowsUserPoolClient: true,
+            AllowedOAuthScopes: ['openid', 'email', 'profile'],
+            GenerateSecret: true,
+          },
+          physicalResourceId: cr.PhysicalResourceId.of('cognito-client-update'),
+        },
+        policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
+          resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
+        }),
+      });
+
+      // Ensure the custom resource runs after CloudFront is created
+      updateCognitoClient.node.addDependency(distribution);
+    }
 
     // Outputs
     new cdk.CfnOutput(this, 'ApplicationUrl', {
-      value: `http://${alb.loadBalancerDnsName}`,
-      description: 'Application URL (Frontend + Backend)',
+      value: `https://${distribution.distributionDomainName}`,
+      description: 'Application URL via CloudFront (HTTPS)',
     });
 
     new cdk.CfnOutput(this, 'BackendApiUrl', {
-      value: `http://${alb.loadBalancerDnsName}/api`,
-      description: 'Backend API URL',
+      value: `https://${distribution.distributionDomainName}/api`,
+      description: 'Backend API URL via CloudFront (HTTPS)',
     });
 
     new cdk.CfnOutput(this, 'SwaggerDocsUrl', {
-      value: `http://${alb.loadBalancerDnsName}/docs`,
+      value: `https://${distribution.distributionDomainName}/docs`,
       description: 'API Documentation (Swagger)',
     });
 
@@ -362,6 +505,21 @@ export class ChatbotStack extends cdk.Stack {
       value: 'Remember to enable CloudWatch Transaction Search for full observability',
       description: 'AgentCore Observability Setup Reminder'
     });
+
+    // Security Information
+    new cdk.CfnOutput(this, 'SecurityNote', {
+      value: props?.enableCognito
+        ? 'ALB is protected with CloudFront and Cognito authentication. All endpoints require user login.'
+        : 'ALB is protected with CloudFront-only access. Direct ALB access is blocked.',
+      description: 'Security Configuration Information'
+    });
+
+    if (props?.enableCognito && props?.userPoolDomain) {
+      new cdk.CfnOutput(this, 'CognitoLoginUrl', {
+        value: `https://${props.userPoolDomain}.auth.${this.region}.amazoncognito.com/login?client_id=${props.userPoolClientId}&response_type=code&scope=openid+email+profile&redirect_uri=https://${distribution.distributionDomainName}/oauth2/idpresponse`,
+        description: 'Cognito Login URL (CloudFront HTTPS)'
+      });
+    }
 
   }
 

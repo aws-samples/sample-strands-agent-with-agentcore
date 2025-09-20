@@ -183,4 +183,4 @@ else
 fi
 
 echo ""
-echo -e "${BLUE}📝 Note: Serverless MCP stacks are independent and don't affect ChatbotStack.${NC}">
+echo -e "${BLUE}📝 Note: Serverless MCP stacks are independent and don't affect ChatbotStack.${NC}"

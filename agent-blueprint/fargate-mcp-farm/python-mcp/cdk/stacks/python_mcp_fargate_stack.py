@@ -8,16 +8,16 @@ from aws_cdk import (
     Duration,
     RemovalPolicy,
     Fn,
-    aws_ec2 as ec2,
-    aws_ecs as ecs,
-    aws_ecs_patterns as ecs_patterns,
-    aws_ecr as ecr,
-    aws_logs as logs,
-    aws_iam as iam,
-    aws_elasticloadbalancingv2 as elbv2,
-    aws_ssm as ssm,
     CfnOutput
 )
+from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_ecs as ecs
+from aws_cdk import aws_ecs_patterns as ecs_patterns
+from aws_cdk import aws_ecr as ecr
+from aws_cdk import aws_logs as logs
+from aws_cdk import aws_iam as iam
+from aws_cdk import aws_elasticloadbalancingv2 as elbv2
+from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
 

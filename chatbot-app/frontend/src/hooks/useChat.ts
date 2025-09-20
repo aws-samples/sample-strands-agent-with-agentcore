@@ -153,62 +153,72 @@ export const useChat = (): UseChatReturn => {
     
     handlePageLoad()
     
-    // Also clear on window focus (when user returns to tab)
+    // Only clear analysis on window focus (not progress events)
     const handleFocus = () => {
-      clearProgress()
       clearAnalysis()
     }
     
     // Clear stored progress events before page unload
     const handleBeforeUnload = () => {
-      if (sessionId) {
-        navigator.sendBeacon(getApiUrl(`stream/tools/clear?session_id=${sessionId}`), '')
+      const currentSessionId = sessionStorage.getItem('chat-session-id')
+      if (currentSessionId) {
+        navigator.sendBeacon(getApiUrl(`stream/tools/clear?session_id=${currentSessionId}`), '')
       }
     }
     
     window.addEventListener('focus', handleFocus)
     window.addEventListener('beforeunload', handleBeforeUnload)
-    
+
     return () => {
       window.removeEventListener('focus', handleFocus)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [clearProgress, clearAnalysis, setSessionState, backendUrl, sessionId])
+  }, [clearProgress, clearAnalysis, setSessionState, backendUrl])
 
   // Function to clear stored progress events
   const clearProgressEvents = useCallback(async () => {
-    if (!sessionId) return
-    
+    // Get current sessionId from sessionStorage to avoid stale closure
+    const currentSessionId = sessionStorage.getItem('chat-session-id')
+    if (!currentSessionId) return
+
     try {
-      const response = await fetch(getApiUrl(`stream/tools/clear?session_id=${sessionId}`), {
+      const response = await fetch(getApiUrl(`stream/tools/clear?session_id=${currentSessionId}`), {
         method: 'POST',
       })
-      
+
       if (response.ok) {
-        console.log('Progress events cleared for session:', sessionId)
+        console.log('Progress events cleared for session:', currentSessionId)
       }
     } catch (error) {
       console.warn('Failed to clear progress events:', error)
     }
-  }, [sessionId])
+  }, [])
 
-  // Clear progress events and load tools when backend is ready
+  // Load tools when backend is ready (only clear progress events on initial load)
   useEffect(() => {
     if (uiState.isConnected) {
       const timeoutId = setTimeout(async () => {
-        // Clear stored progress events from previous sessions
-        await clearProgressEvents()
-        // Then load tools
+        // Only clear progress events on the very first connection
+        const isFirstLoad = sessionStorage.getItem('chat-first-load') !== 'false'
+        if (isFirstLoad) {
+          await clearProgressEvents()
+          sessionStorage.setItem('chat-first-load', 'false')
+        }
+        // Always load tools
         await loadTools()
       }, 1000)
       return () => clearTimeout(timeoutId)
     }
-  }, [uiState.isConnected, loadTools, clearProgressEvents])
+  }, [uiState.isConnected, clearProgressEvents])
 
   // Wrapper functions to maintain the same interface
   const toggleTool = useCallback(async (toolId: string) => {
     await apiToggleTool(toolId)
   }, [apiToggleTool])
+
+  const refreshTools = useCallback(async () => {
+    await loadTools()
+  }, [])
 
   const clearChat = useCallback(async () => {
     const success = await apiClearChat()
@@ -342,7 +352,7 @@ export const useChat = (): UseChatReturn => {
     sendMessage,
     clearChat,
     toggleTool,
-    refreshTools: loadTools,
+    refreshTools,
     sessionId
   }
 }

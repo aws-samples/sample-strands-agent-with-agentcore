@@ -85,7 +85,7 @@ export const useChatAPI = ({
     } catch (error) {
       setAvailableTools([])
     }
-  }, [setAvailableTools, sessionId, setSessionId])
+  }, [setAvailableTools, sessionId])
 
   const toggleTool = useCallback(async (toolId: string) => {
     try {
@@ -125,7 +125,7 @@ export const useChatAPI = ({
     } catch (error) {
       logger.error('Failed to toggle tool:', error)
     }
-  }, [setAvailableTools, sessionId, setSessionId])
+  }, [setAvailableTools, sessionId])
 
   const clearChat = useCallback(async () => {
     try {

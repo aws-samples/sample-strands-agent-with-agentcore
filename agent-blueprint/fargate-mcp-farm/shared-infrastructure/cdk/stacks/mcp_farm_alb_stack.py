@@ -8,11 +8,11 @@ from aws_cdk import (
     Duration,
     RemovalPolicy,
     Fn,
-    aws_ec2 as ec2,
-    aws_elasticloadbalancingv2 as elbv2,
-    aws_logs as logs,
     CfnOutput
 )
+from aws_cdk import aws_ec2 as ec2
+from aws_cdk import aws_elasticloadbalancingv2 as elbv2
+from aws_cdk import aws_logs as logs
 from constructs import Construct
 
 
@@ -21,8 +21,12 @@ class McpFarmAlbStack(Stack):
     CDK Stack for MCP Farm Shared Application Load Balancer
     """
 
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, allowed_mcp_cidrs=None, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
+
+        # Default CIDR ranges if none provided
+        if allowed_mcp_cidrs is None:
+            allowed_mcp_cidrs = ["10.0.0.0/8"]  # VPC internal by default
 
         # Get stack name for resource naming
         stack_name = self.stack_name.lower()
@@ -42,37 +46,53 @@ class McpFarmAlbStack(Stack):
             ]
         )
 
-        # Create security group for the ALB
+        # Create security group for the ALB with CIDR restrictions
         alb_security_group = ec2.SecurityGroup(
             self, "McpFarmAlbSecurityGroup",
             vpc=vpc,
-            description="Security group for MCP Farm Application Load Balancer",
+            description="Security group for MCP Farm ALB with CIDR restrictions",
             allow_all_outbound=True
         )
 
-        # Allow inbound HTTP traffic
+        # Auto-allow ECS private subnets for backend access to MCP servers
+        # Add VPC CIDR for internal access (ECS backend)
         alb_security_group.add_ingress_rule(
-            peer=ec2.Peer.any_ipv4(),
+            peer=ec2.Peer.ipv4(Fn.import_value(f"ChatbotStack-vpc-cidr")),
             connection=ec2.Port.tcp(80),
-            description="Allow HTTP traffic from anywhere"
+            description="ECS backend HTTP access from VPC"
         )
 
-        # Allow inbound HTTPS traffic (for future use)
         alb_security_group.add_ingress_rule(
-            peer=ec2.Peer.any_ipv4(),
+            peer=ec2.Peer.ipv4(Fn.import_value(f"ChatbotStack-vpc-cidr")),
             connection=ec2.Port.tcp(443),
-            description="Allow HTTPS traffic from anywhere"
+            description="ECS backend HTTPS access from VPC"
         )
 
-        # Create Application Load Balancer
+        # Allow inbound traffic from user-specified CIDR blocks for development access
+        for i, cidr in enumerate(allowed_mcp_cidrs):
+            # Skip VPC internal CIDRs as they're already added above
+            if not cidr.startswith("10.0."):
+                alb_security_group.add_ingress_rule(
+                    peer=ec2.Peer.ipv4(cidr),
+                    connection=ec2.Port.tcp(80),
+                    description=f"Developer HTTP access {i+1}: {cidr}"
+                )
+
+                alb_security_group.add_ingress_rule(
+                    peer=ec2.Peer.ipv4(cidr),
+                    connection=ec2.Port.tcp(443),
+                    description=f"Developer HTTPS access {i+1}: {cidr}"
+                )
+
+        # Create Application Load Balancer with CIDR restrictions (for MCP servers)
         alb = elbv2.ApplicationLoadBalancer(
             self, "McpFarmAlb",
             vpc=vpc,
-            internet_facing=True,
+            internet_facing=True,  # Internet-facing for development access
             load_balancer_name=f"{stack_name}-mcp-farm-alb",
             security_group=alb_security_group,
             vpc_subnets=ec2.SubnetSelection(
-                subnet_type=ec2.SubnetType.PUBLIC
+                subnet_type=ec2.SubnetType.PUBLIC  # Must use public subnets for internet-facing ALB
             ),
             idle_timeout=Duration.seconds(3600)
         )

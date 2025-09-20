@@ -2,6 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useEffect, useCallback } from "react"
+import AuthWrapper from "@/components/auth-wrapper"
 import { useChat } from "@/hooks/useChat"
 import { ChatMessage } from "@/components/chat/ChatMessage"
 import { AssistantTurn } from "@/components/chat/AssistantTurn"
@@ -354,10 +355,12 @@ function AppContent() {
 
 export default function Home() {
   return (
-    <div className="min-h-screen gradient-subtle text-foreground transition-all duration-300">
-      <SidebarProvider defaultOpen={false}>
-        <AppContent />
-      </SidebarProvider>
-    </div>
+    <AuthWrapper>
+      <div className="min-h-screen gradient-subtle text-foreground transition-all duration-300">
+        <SidebarProvider defaultOpen={false}>
+          <AppContent />
+        </SidebarProvider>
+      </div>
+    </AuthWrapper>
   )
 }

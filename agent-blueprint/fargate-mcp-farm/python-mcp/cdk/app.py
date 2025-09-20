@@ -5,10 +5,10 @@ CDK App Entry Point
 """
 
 import os
-import aws_cdk as cdk
+from aws_cdk import App, Environment
 from stacks.python_mcp_fargate_stack import PythonMcpFargateStack
 
-app = cdk.App()
+app = App()
 
 # Get configuration from context or environment
 region = app.node.try_get_context("region") or "us-west-2"
@@ -18,7 +18,7 @@ stack_name = f"python-mcp-fargate"
 PythonMcpFargateStack(
     app, 
     stack_name,
-    env=cdk.Environment(
+    env=Environment(
         account=os.environ.get('CDK_DEFAULT_ACCOUNT'),
         region=region
     ),

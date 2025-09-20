@@ -33,6 +33,83 @@ print_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+# Function to collect API keys for MCP servers
+collect_api_keys() {
+    print_status "🔑 Collecting required API keys and configuration..."
+    echo ""
+
+    # Create .env file if it doesn't exist
+    if [ ! -f ".env" ]; then
+        touch .env
+    fi
+
+    # Source existing .env to check for values (check both locations)
+    if [ -f "../.env" ]; then
+        # Source from parent agent-blueprint directory first
+        set -a
+        source ../.env 2>/dev/null || true
+        set +a
+        echo "📋 Loaded environment variables from ../agent-blueprint/.env"
+    fi
+
+    # Source existing .env to check for values (local serverless-mcp-farm)
+    if [ -f ".env" ]; then
+        set -a
+        source .env 2>/dev/null || true
+        set +a
+    fi
+
+    # Tavily API Key for web search
+    if [ -z "$TAVILY_API_KEY" ]; then
+        echo "🔍 Tavily Web Search MCP requires an API key:"
+        echo "   1. Sign up at: https://tavily.com/"
+        echo "   2. Get your API key from the dashboard"
+        echo ""
+        read -p "Enter your Tavily API Key (or press Enter to skip tavily-web-search): " tavily_key
+        if [ -n "$tavily_key" ]; then
+            export TAVILY_API_KEY="$tavily_key"
+            echo "TAVILY_API_KEY=$tavily_key" >> .env
+            print_success "Tavily API key saved"
+        else
+            print_warning "Tavily Web Search will be skipped"
+            # Update config to disable tavily
+            jq '.deployment.servers."tavily-web-search".enabled = false' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+        fi
+        echo ""
+    fi
+
+    # Bedrock Knowledge Base ID
+    if [ -z "$BEDROCK_KNOWLEDGE_BASE_ID" ]; then
+        echo "🧠 Bedrock KB Retrieval MCP requires a Knowledge Base ID:"
+        echo "   1. Go to Amazon Bedrock console"
+        echo "   2. Create or select a Knowledge Base"
+        echo "   3. Copy the Knowledge Base ID"
+        echo ""
+        read -p "Enter your Bedrock Knowledge Base ID (or press Enter to skip bedrock-kb-retrieval): " kb_id
+        if [ -n "$kb_id" ]; then
+            export BEDROCK_KNOWLEDGE_BASE_ID="$kb_id"
+            echo "BEDROCK_KNOWLEDGE_BASE_ID=$kb_id" >> .env
+            print_success "Bedrock Knowledge Base ID saved"
+        else
+            print_warning "Bedrock KB Retrieval will be skipped"
+            # Update config to disable bedrock-kb-retrieval
+            jq '.deployment.servers."bedrock-kb-retrieval".enabled = false' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+        fi
+        echo ""
+    fi
+
+    # Update config file with actual values
+    if [ -n "$TAVILY_API_KEY" ]; then
+        jq --arg key "$TAVILY_API_KEY" '.environment_variables."tavily-web-search".TAVILY_API_KEY = $key' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+    fi
+
+    if [ -n "$BEDROCK_KNOWLEDGE_BASE_ID" ]; then
+        jq --arg kb_id "$BEDROCK_KNOWLEDGE_BASE_ID" '.environment_variables."bedrock-kb-retrieval".KNOWLEDGE_BASE_ID = $kb_id' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
+    fi
+
+    print_success "API key collection completed!"
+}
+
 # Function to check and install dependencies
 check_and_install_dependencies() {
     print_status "Checking system dependencies..."
@@ -521,10 +598,15 @@ main() {
     
     # Check dependencies
     check_and_install_dependencies
-    
+
     # Load configuration
     load_config
-    
+
+    # Collect API keys (only when deploying, not testing, and not from master script)
+    if [ "$test_only" != true ] && [ "$SKIP_API_KEY_COLLECTION" != "true" ]; then
+        collect_api_keys
+    fi
+
     if [ "$test_only" = true ]; then
         print_status "Running tests only..."
         run_tests

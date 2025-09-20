@@ -43,6 +43,48 @@ print_status "Region: $REGION"
 print_status "Stage: $STAGE"
 print_status "Stack name: $STACK_NAME"
 
+# Function to collect Nova Act API key
+collect_nova_act_key() {
+    print_status "🔑 Nova Act MCP requires an API key..."
+    echo ""
+
+    # Create .env file if it doesn't exist
+    if [ ! -f ".env" ]; then
+        touch .env
+    fi
+
+    # Source existing .env to check for values
+    if [ -f ".env" ]; then
+        set -a
+        source .env 2>/dev/null || true
+        set +a
+    fi
+
+    if [ -z "$NOVA_ACT_API_KEY" ]; then
+        echo "🤖 Nova Act API Key Required:"
+        echo "   This MCP server provides browser automation capabilities"
+        echo ""
+        echo "   1. Sign up at: https://www.browserbase.com/"
+        echo "   2. Get your API key from the dashboard"
+        echo "   3. The key enables web browsing and automation features"
+        echo ""
+        read -p "Enter your Nova Act API Key: " nova_key
+
+        if [ -z "$nova_key" ]; then
+            print_error "Nova Act API key is required for deployment!"
+            print_error "Please get your API key from https://www.browserbase.com/ and try again."
+            exit 1
+        fi
+
+        export NOVA_ACT_API_KEY="$nova_key"
+        echo "NOVA_ACT_API_KEY=$nova_key" >> .env
+        print_success "Nova Act API key configured"
+    else
+        print_success "Nova Act API key already configured"
+    fi
+    echo ""
+}
+
 # Check prerequisites
 check_prerequisites() {
     print_status "Checking prerequisites..."
@@ -362,6 +404,12 @@ main() {
     
     # Run deployment steps
     check_prerequisites
+
+    # Collect Nova Act API key (skip if called from master script)
+    if [ "$SKIP_API_KEY_COLLECTION" != "true" ]; then
+        collect_nova_act_key
+    fi
+
     setup_cdk_environment
     bootstrap_cdk
     deploy_cdk_stack

@@ -7,8 +7,26 @@ RUN npm ci
 
 FROM node:20-alpine AS builder
 WORKDIR /app
+
+# Build arguments for Next.js environment variables
+ARG NEXT_PUBLIC_AWS_REGION
+ARG NEXT_PUBLIC_COGNITO_USER_POOL_ID
+ARG NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID
+
+# Set environment variables for build
+ENV NEXT_PUBLIC_AWS_REGION=$NEXT_PUBLIC_AWS_REGION
+ENV NEXT_PUBLIC_COGNITO_USER_POOL_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_ID
+ENV NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID
+
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# Debug: Print environment variables
+RUN echo "🔍 Build-time env vars:"
+RUN echo "NEXT_PUBLIC_AWS_REGION=$NEXT_PUBLIC_AWS_REGION"
+RUN echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_ID"
+RUN echo "NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID"
+
 RUN npm run build
 
 # Production stage with Node.js (standalone mode)
