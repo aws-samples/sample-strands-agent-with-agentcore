@@ -1,0 +1,197 @@
+Sample Strands Agent Chatbot - Project Structure
+================================================
+
+Root Directory
+├── README.md                    # Main project documentation
+├── DEPLOYMENT.md               # Deployment instructions
+├── CONTRIBUTING.md             # Contribution guidelines
+├── CODE_OF_CONDUCT.md          # Code of conduct
+├── LICENSE                     # MIT license
+├── .gitignore                  # Git ignore rules
+├── PROJECT_STRUCTURE.txt       # This file - project structure overview
+├── setup-observability.sh     # CloudWatch observability setup
+└── guides/                     # Developer guides and documentation
+    └── ADDING_NEW_MCP_SERVER.md # Guide for adding new MCP servers
+
+Main Application (chatbot-app/)
+├── start.sh                    # Application startup script
+├── setup.sh                    # Environment setup script
+├── frontend/                   # Next.js React frontend
+│   ├── src/
+│   │   ├── app/               # Next.js app router pages
+│   │   ├── components/        # React components
+│   │   ├── hooks/             # Custom React hooks
+│   │   ├── lib/               # Utility libraries
+│   │   ├── types/             # TypeScript type definitions
+│   │   └── utils/             # Helper utilities
+│   ├── public/                # Static assets
+│   ├── package.json           # Frontend dependencies
+│   ├── tailwind.config.js     # Tailwind CSS configuration
+│   └── Dockerfile             # Frontend container config
+└── backend/                    # FastAPI Python backend
+    ├── app.py                 # Main FastAPI application
+    ├── agent.py               # Strands agent implementation
+    ├── config.py              # Configuration management
+    ├── requirements.txt       # Python dependencies
+    ├── routers/               # API route handlers
+    ├── custom_tools/          # Business-specific tools
+    ├── streaming/             # Real-time streaming logic
+    ├── services/              # Business logic services
+    ├── session/               # Session management
+    ├── utils/                 # Helper utilities
+    ├── unified_tool_manager.py # Tool orchestration
+    ├── mcp_client_*.py        # MCP server clients
+    ├── unified_tools_config.json # Tool configuration
+    ├── model_config.json      # AI model settings
+    └── Dockerfile             # Backend container config
+
+Infrastructure & Deployment (agent-blueprint/)
+├── deploy-all.sh              # Master deployment script (all components)
+├── destroy-all.sh             # Master cleanup script (all components)
+├── requirements.txt           # Infrastructure dependencies
+├── .env                       # Global environment variables
+│
+├── chatbot-deployment/        # Main Application Deployment
+│   ├── README.md              # Deployment-specific documentation
+│   └── infrastructure/        # CDK infrastructure code
+│       ├── scripts/
+│       │   └── deploy.sh      # Individual main app deployment
+│       ├── lib/               # CDK stack definitions
+│       ├── package.json       # CDK dependencies
+│       └── cdk.json           # CDK configuration
+│
+├── serverless-mcp-farm/       # Lambda-based MCP Servers
+│   ├── deploy-server.sh       # Deploy all serverless MCP servers
+│   ├── destroy-all-mcp.sh     # Destroy all serverless MCP servers
+│   ├── deploy-config.json     # Serverless deployment configuration
+│   ├── deployed-servers.txt   # Track deployed servers
+│   ├── .env                   # Serverless-specific environment
+│   │
+│   ├── aws-documentation/     # AWS Documentation MCP Server
+│   │   ├── README.md          # Server-specific documentation
+│   │   ├── src/               # Lambda function source
+│   │   └── infrastructure/    # CDK deployment code
+│   │       └── deploy.sh      # Individual server deployment
+│   │
+│   ├── aws-pricing/           # AWS Pricing MCP Server
+│   │   ├── README.md
+│   │   ├── src/
+│   │   └── infrastructure/
+│   │       └── deploy.sh      # Individual server deployment
+│   │
+│   ├── bedrock-kb-retrieval/  # Knowledge Base MCP Server
+│   │   ├── README.md
+│   │   ├── src/
+│   │   └── infrastructure/
+│   │       └── deploy.sh      # Individual server deployment
+│   │
+│   ├── tavily-web-search/     # Web Search MCP Server
+│   │   ├── src/
+│   │   └── infrastructure/
+│   │       └── deploy.sh      # Individual server deployment
+│   │
+│   └── financial-market/      # Financial Data MCP Server
+│       ├── README.md
+│       ├── src/
+│       ├── create-layer.sh    # Create Lambda layer
+│       └── infrastructure/
+│           └── deploy.sh      # Individual server deployment
+│
+└── fargate-mcp-farm/          # ECS-based MCP Servers
+    ├── deploy-all.sh          # Deploy all stateful MCP servers
+    ├── destroy-all-mcp.sh     # Destroy all stateful MCP servers
+    ├── deploy-config.json     # Stateful deployment configuration
+    │
+    ├── shared-infrastructure/ # Shared ECS Resources
+    │   ├── deploy.sh          # Deploy shared infrastructure (VPC, ALB, etc.)
+    │   └── cdk/               # CDK code for shared resources
+    │
+    ├── nova-act-mcp/          # Browser Automation MCP Server
+    │   ├── README.md          # Server-specific documentation
+    │   ├── deploy.sh          # Individual server deployment
+    │   ├── destroy.sh         # Individual server cleanup
+    │   ├── docker/            # Docker configuration
+    │   ├── src/               # Server source code
+    │   └── cdk/               # CDK deployment code
+    │
+    └── python-mcp/            # Python Runtime MCP Server
+        ├── README.md
+        ├── deploy.sh          # Individual server deployment
+        ├── destroy.sh         # Individual server cleanup
+        ├── docker/            # Docker configuration
+        ├── src/               # Server source code
+        └── cdk/               # CDK deployment code
+
+Documentation & Guides
+├── docs/                      # Documentation assets
+│   └── images/                # Documentation images and GIFs
+└── guides/                    # Developer guides
+    └── ADDING_NEW_MCP_SERVER.md # Guide for adding new MCP servers
+
+Deployment Script Hierarchy
+============================
+
+Master Scripts (Root Level):
+├── agent-blueprint/deploy-all.sh     # Deploys everything in sequence
+└── agent-blueprint/destroy-all.sh    # Destroys everything in sequence
+
+Component-Level Scripts:
+├── chatbot-deployment/infrastructure/scripts/deploy.sh  # Main app only
+├── serverless-mcp-farm/deploy-server.sh                # All Lambda MCP servers
+├── serverless-mcp-farm/destroy-all-mcp.sh              # Cleanup Lambda servers
+├── fargate-mcp-farm/deploy-all.sh                      # All ECS MCP servers
+├── fargate-mcp-farm/destroy-all-mcp.sh                 # Cleanup ECS servers
+└── fargate-mcp-farm/shared-infrastructure/deploy.sh    # Shared ECS resources
+
+Individual Server Scripts:
+├── serverless-mcp-farm/*/infrastructure/deploy.sh      # Individual Lambda servers
+├── fargate-mcp-farm/nova-act-mcp/deploy.sh            # Individual ECS server
+├── fargate-mcp-farm/nova-act-mcp/destroy.sh           # Individual ECS cleanup
+├── fargate-mcp-farm/python-mcp/deploy.sh              # Individual ECS server
+└── fargate-mcp-farm/python-mcp/destroy.sh             # Individual ECS cleanup
+
+Deployment Strategy
+==================
+
+1. Full System Deployment:
+   ./agent-blueprint/deploy-all.sh
+
+2. Component-by-Component:
+   # Deploy main app first (creates VPC)
+   ./agent-blueprint/chatbot-deployment/infrastructure/scripts/deploy.sh
+   
+   # Deploy serverless MCP servers (independent)
+   ./agent-blueprint/serverless-mcp-farm/deploy-server.sh
+   
+   # Deploy shared ECS infrastructure (uses VPC)
+   ./agent-blueprint/fargate-mcp-farm/shared-infrastructure/deploy.sh
+   
+   # Deploy stateful MCP servers (uses shared infrastructure)
+   ./agent-blueprint/fargate-mcp-farm/deploy-all.sh
+
+3. Individual Server Deployment:
+   # Deploy specific Lambda MCP server
+   cd agent-blueprint/serverless-mcp-farm/aws-documentation/infrastructure
+   ./deploy.sh
+   
+   # Deploy specific ECS MCP server
+   cd agent-blueprint/fargate-mcp-farm/nova-act-mcp
+   ./deploy.sh
+
+Key Configuration Files
+├── .env files                 # Environment configurations (gitignored)
+├── unified_tools_config.json # Tool management configuration
+├── model_config.json         # AI model settings
+├── deploy-config.json        # Deployment configurations
+└── cdk.json                  # CDK configuration
+
+Dependencies Between Components
+==============================
+1. Main App (chatbot-deployment) → Creates VPC and core infrastructure
+2. Serverless MCP Farm → Independent, can deploy anytime
+3. Shared Infrastructure → Requires VPC from main app
+4. Stateful MCP Farm → Requires shared infrastructure (ALB, security groups)
+
+Local Development
+├── chatbot-app/start.sh       # Start local development environment
+└── chatbot-app/setup.sh       # Setup local environment
