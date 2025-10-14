@@ -121,6 +121,33 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
     cd "$CURRENT_DIR/.."
 fi
 
+# Embedding Configuration
+echo ""
+echo "🌐 Embedding Configuration"
+echo "Configure which domains are allowed to embed the chatbot via iframe."
+echo "This helps prevent unauthorized usage while allowing legitimate integrations."
+echo ""
+echo "Examples:"
+echo "  - Single domain: example.com"
+echo "  - Multiple domains: example.com,subdomain.example.com,another-site.org"
+echo "  - Leave empty to disable embedding"
+echo ""
+
+# Check if embed domains are already set via environment variable
+if [ -z "$EMBED_ALLOWED_DOMAINS" ]; then
+    read -p "Enter allowed embedding domains (comma-separated) [leave empty to disable]: " embed_input
+    
+    if [ -z "$embed_input" ]; then
+        export EMBED_ALLOWED_DOMAINS=""
+        echo "Embedding disabled - no domains configured"
+    else
+        export EMBED_ALLOWED_DOMAINS="$embed_input"
+        echo "Embedding allowed for domains: $EMBED_ALLOWED_DOMAINS"
+    fi
+else
+    echo "Using configured embedding domains: $EMBED_ALLOWED_DOMAINS"
+fi
+
 # Collect IP ranges for CIDR-based access control (if not using Cognito)
 if [ "$ENABLE_COGNITO" != "true" ]; then
     echo ""

@@ -33,17 +33,31 @@ echo "🔧 Starting backend server..."
 cd backend
 source venv/bin/activate
 
-# Load environment variables from .env file if it exists
-if [ -f .env ]; then
+# Check for local development environment file first
+if [ -f .env.local ]; then
+    echo "📋 Loading LOCAL development environment from .env.local"
+    set -a
+    source .env.local
+    set +a
+    echo "✅ Local environment loaded with embedding support"
+    echo "🌐 Embed domains: $EMBED_ALLOWED_DOMAINS"
+elif [ -f .env ]; then
     echo "📋 Loading environment variables from .env"
     set -a
     source .env
     set +a
     echo "✅ Environment variables loaded: OTEL_PYTHON_DISTRO=$OTEL_PYTHON_DISTRO"
+else
+    echo "⚠️  No environment file found, using defaults"
+    echo "🔧 Setting up local embedding support..."
+    export EMBED_ALLOWED_DOMAINS="localhost,127.0.0.1,localhost:3000,localhost:3001,127.0.0.1:3000,127.0.0.1:3001"
+    export CORS_ORIGINS="http://localhost:3000,http://127.0.0.1:3000"
+    echo "✅ Local embedding domains configured: $EMBED_ALLOWED_DOMAINS"
 fi
 
 # Start backend and capture the actual port it's using with environment
 env $(grep -v '^#' .env 2>/dev/null | xargs) opentelemetry-instrument python app.py > ../backend.log 2>&1 &
+#env $(grep -v '^#' .env 2>/dev/null | xargs) python app.py > ../backend.log 2>&1 &
 BACKEND_PID=$!
 cd ..
 
@@ -73,6 +87,14 @@ echo ""
 echo "🌐 Frontend: http://localhost:3000"
 echo "🔧 Backend API: http://localhost:$ACTUAL_PORT"
 echo "📚 API Docs: http://localhost:$ACTUAL_PORT/docs"
+echo ""
+echo "🎯 Embedding Test Pages:"
+echo "   📋 Interactive Examples: http://localhost:3000/embed-example.html"
+echo "   🧪 Local Test Page: file://$(pwd)/test-embedding-local.html"
+echo "   🔐 Auth Testing: http://localhost:3000/iframe-test.html"
+echo ""
+echo "🔗 Embed URL: http://localhost:3000/embed"
+echo "🌐 Allowed Domains: $EMBED_ALLOWED_DOMAINS"
 echo ""
 echo "ℹ️  Frontend is configured to use backend at: http://localhost:$ACTUAL_PORT"
 echo ""

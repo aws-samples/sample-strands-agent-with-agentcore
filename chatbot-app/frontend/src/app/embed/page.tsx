@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useRef, useEffect, useCallback } from "react"
-import AuthWrapper from "@/components/auth-wrapper"
+import EmbedAuthWrapper from "@/components/embed-auth-wrapper"
 import { useChat } from "@/hooks/useChat"
 import { ChatMessage } from "@/components/chat/ChatMessage"
 import { AssistantTurn } from "@/components/chat/AssistantTurn"
@@ -13,6 +13,7 @@ import { SuggestedQuestions } from "@/components/SuggestedQuestions"
 import { AgentPanelWithStream } from "@/components/AgentPanel"
 import { useAgentAnalysis } from "@/hooks/useAgentAnalysis"
 import { AnalysisModalProvider, useAnalysisModal } from "@/hooks/useAnalysisModal"
+import { useIframeAuth, postAuthStatusToParent } from "@/hooks/useIframeAuth"
 import { Modal } from "@/components/ui/Modal"
 import { AnalysisContent } from "@/components/AnalysisContent"
 import { Button } from "@/components/ui/button"
@@ -22,8 +23,8 @@ import { Badge } from "@/components/ui/badge"
 import { SidebarProvider, SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
 import { Upload, Send, FileText, ImageIcon } from "lucide-react"
 
-// Inner component that can use useSidebar hook
-function ChatInterface() {
+// Embeddable Chat Interface - Full featured with optional sidebar
+function EmbeddableChatInterface() {
   const sidebarContext = useSidebar()
   const { setOpen, setOpenMobile, open } = sidebarContext
 
@@ -43,6 +44,8 @@ function ChatInterface() {
     sessionId,
   } = useChat()
 
+  const iframeAuth = useIframeAuth()
+
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [showScratchPad, setShowScratchPad] = useState(false)
   const [userClosedScratchPad, setUserClosedScratchPad] = useState(false)
@@ -51,6 +54,25 @@ function ChatInterface() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isComposingRef = useRef(false)
   const { setAgentAnalysis } = useAgentAnalysis()
+
+  // Post authentication status to parent window when it changes
+  useEffect(() => {
+    if (!iframeAuth.isLoading) {
+      postAuthStatusToParent(iframeAuth.isAuthenticated, iframeAuth.user);
+    }
+  }, [iframeAuth.isAuthenticated, iframeAuth.user, iframeAuth.isLoading]);
+
+  // Development helper - expose auth verification in console
+  useEffect(() => {
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      // Make auth verification available in console for debugging
+      (window as any).runAuthVerification = async () => {
+        const { quickAuthVerification } = await import('@/utils/auth-verification');
+        return quickAuthVerification();
+      };
+      console.log('🔧 Development mode: Run window.runAuthVerification() to test authentication');
+    }
+  }, []);
 
   const regenerateSuggestions = useCallback(() => {
     setSuggestionKey(`suggestion-${Date.now()}`)
@@ -84,6 +106,7 @@ function ChatInterface() {
       setShowScratchPad(true)
     }
   }, [hasActiveProgress, showScratchPad, userClosedScratchPad])
+
   const handleSendMessage = async (e: React.FormEvent, files: File[]) => {
     setUserClosedScratchPad(false)
     setShowScratchPad(false)
@@ -124,7 +147,7 @@ function ChatInterface() {
       e.preventDefault()
       if (!isTyping && (inputMessage.trim() || selectedFiles.length > 0)) {
         const syntheticEvent = {
-          preventDefault: () => { },
+          preventDefault: () => {},
         } as React.FormEvent
         handleSendMessage(syntheticEvent, selectedFiles)
         setSelectedFiles([])
@@ -157,7 +180,7 @@ function ChatInterface() {
 
   return (
     <>
-      {/* Tool Sidebar */}
+      {/* Tool Sidebar - Same as main page */}
       <ToolSidebar
         availableTools={availableTools}
         onToggleTool={handleToggleTool}
@@ -168,8 +191,8 @@ function ChatInterface() {
 
       {/* Main Chat Area */}
       <SidebarInset>
-        {/* Top Controls - Fixed */}
-        <div className="sticky top-0 z-10 flex items-center justify-between p-4 bg-background/70 backdrop-blur-md border-b border-border/30 shadow-sm">
+        {/* Top Controls - Compact for embedding */}
+        <div className="sticky top-0 z-10 flex items-center justify-between p-2 bg-background/70 backdrop-blur-md border-b border-border/30 shadow-sm">
           <div className="flex items-center gap-3">
             <SidebarTrigger />
             {isConnected ? (
@@ -183,13 +206,28 @@ function ChatInterface() {
                 <span className="text-xs font-medium text-muted-foreground">Disconnected</span>
               </div>
             )}
+            
+            {/* Show iframe status if in iframe */}
+            {iframeAuth.isInIframe && (
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                <span className="text-xs font-medium text-muted-foreground">Embedded</span>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">{/* User persona selector removed */}</div>
+          <div className="flex items-center gap-2">
+            {/* Tool count indicator */}
+            {availableTools.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                {availableTools.filter(tool => tool.enabled).length}/{availableTools.length} tools
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Messages Area */}
-        <div className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4 relative">
+        <div className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4 relative min-h-0">
           {groupedMessages.length === 0 && <Greeting />}
 
           {groupedMessages.map((group) => (
@@ -213,21 +251,23 @@ function ChatInterface() {
           <div ref={messagesEndRef} className="h-4" />
         </div>
 
-        {/* Suggested Questions - Disabled */}
-        {false && groupedMessages.length === 0 && availableTools.length > 0 && (
-          <SuggestedQuestions
-            key={suggestionKey}
-            onQuestionSelect={(question) => setInputMessage(question)}
-            onQuestionSubmit={async (question) => {
-              setInputMessage(question)
-              const syntheticEvent = {
-                preventDefault: () => { },
-                target: { elements: { message: { value: question } } },
-              } as any
-              await handleSendMessage(syntheticEvent, [])
-            }}
-            enabledTools={availableTools.filter((tool) => tool.enabled).map((tool) => tool.id)}
-          />
+        {/* Suggested Questions - Positioned outside messages area */}
+        {groupedMessages.length === 0 && availableTools.length > 0 && (
+          <div className="mx-auto w-full max-w-3xl px-4 pb-2">
+            <SuggestedQuestions
+              key={suggestionKey}
+              onQuestionSelect={(question) => setInputMessage(question)}
+              onQuestionSubmit={async (question) => {
+                setInputMessage(question)
+                const syntheticEvent = {
+                  preventDefault: () => {},
+                  target: { elements: { message: { value: question } } },
+                } as any
+                await handleSendMessage(syntheticEvent, [])
+              }}
+              enabledTools={availableTools.filter((tool) => tool.enabled).map((tool) => tool.id)}
+            />
+          </div>
         )}
 
         {/* File Upload Area - Above Input */}
@@ -259,51 +299,51 @@ function ChatInterface() {
             await handleSendMessage(e, selectedFiles)
             setSelectedFiles([])
           }}
-          className="mx-auto px-4 bg-background/50 backdrop-blur-sm pb-4 md:pb-6 w-full md:max-w-3xl"
+          className="mx-auto px-4 bg-background/50 backdrop-blur-sm pb-4 md:pb-6 w-full md:max-w-3xl flex-shrink-0"
         >
-          <div className="flex items-center gap-3">
-            <Input
-              type="file"
-              accept="image/*,application/pdf,.pdf"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-              id="file-upload"
-            />
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => document.getElementById("file-upload")?.click()}
-              className="flex items-center justify-center h-10 w-10 border-border hover:bg-muted hover:border-primary/50 transition-all duration-200 gradient-hover"
-            >
-              <Upload className="w-4 h-4" />
-            </Button>
-            <Textarea
-              ref={textareaRef}
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onCompositionStart={() => {
-                isComposingRef.current = true
-              }}
-              onCompositionEnd={() => {
-                isComposingRef.current = false
-              }}
-              placeholder="Ask me anything..."
-              className="flex-1 min-h-[48px] max-h-32 rounded-xl border-border focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none py-3 px-4 text-base leading-6 overflow-y-auto bg-input transition-all duration-200"
-              disabled={isTyping}
-              rows={1}
-              style={{ minHeight: "48px" }}
-            />
-            <Button
-              type="submit"
-              disabled={isTyping || (!inputMessage.trim() && selectedFiles.length === 0)}
-              className="h-12 px-6 gradient-primary hover:opacity-90 text-primary-foreground rounded-xl shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 gradient-hover"
-            >
-              <Send className="w-4 h-4" />
-            </Button>
-          </div>
+        <div className="flex items-center gap-3">
+          <Input
+            type="file"
+            accept="image/*,application/pdf,.pdf"
+            multiple
+            onChange={handleFileSelect}
+            className="hidden"
+            id="file-upload"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => document.getElementById("file-upload")?.click()}
+            className="flex items-center justify-center h-10 w-10 border-border hover:bg-muted hover:border-primary/50 transition-all duration-200 gradient-hover"
+          >
+            <Upload className="w-4 h-4" />
+          </Button>
+          <Textarea
+            ref={textareaRef}
+            value={inputMessage}
+            onChange={(e) => setInputMessage(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onCompositionStart={() => {
+              isComposingRef.current = true
+            }}
+            onCompositionEnd={() => {
+              isComposingRef.current = false
+            }}
+            placeholder="Ask me anything..."
+            className="flex-1 min-h-[48px] max-h-32 rounded-xl border-border focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none py-3 px-4 text-base leading-6 overflow-y-auto bg-input transition-all duration-200"
+            disabled={isTyping}
+            rows={1}
+            style={{ minHeight: "48px" }}
+          />
+          <Button
+            type="submit"
+            disabled={isTyping || (!inputMessage.trim() && selectedFiles.length === 0)}
+            className="h-12 px-6 gradient-primary hover:opacity-90 text-primary-foreground rounded-xl shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 gradient-hover"
+          >
+            <Send className="w-4 h-4" />
+          </Button>
+        </div>
         </form>
       </SidebarInset>
 
@@ -344,23 +384,23 @@ function AnalysisModalContainer() {
 }
 
 // Wrapper component to ensure proper provider initialization
-function AppContent() {
+function EmbedAppContent() {
   return (
     <AnalysisModalProvider>
-      <ChatInterface />
+      <EmbeddableChatInterface />
       <AnalysisModalContainer />
     </AnalysisModalProvider>
   )
 }
 
-export default function Home() {
+export default function EmbedPage() {
   return (
-    <AuthWrapper>
-      <div className="min-h-screen gradient-subtle text-foreground transition-all duration-300">
+    <EmbedAuthWrapper>
+      <div className="h-screen gradient-subtle text-foreground transition-all duration-300 overflow-hidden">
         <SidebarProvider defaultOpen={false}>
-          <AppContent />
+          <EmbedAppContent />
         </SidebarProvider>
       </div>
-    </AuthWrapper>
-  )
+    </EmbedAuthWrapper>
+)
 }

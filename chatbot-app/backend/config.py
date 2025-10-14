@@ -28,10 +28,23 @@ class Config:
     DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
     RELOAD: bool = os.getenv("RELOAD", "false").lower() == "true"
     
+    # Embedding settings - dynamically loaded to support testing
+    @classmethod
+    def _get_embed_allowed_domains_env(cls) -> List[str]:
+        """Get embed allowed domains from environment variable"""
+        env_value = os.getenv("EMBED_ALLOWED_DOMAINS", "")
+        return env_value.split(",") if env_value else []
+    
     @classmethod
     def get_cors_origins(cls) -> List[str]:
         """Get CORS origins, filtering out empty strings"""
         return [origin.strip() for origin in cls.CORS_ORIGINS if origin.strip()]
+    
+    @classmethod
+    def get_embed_allowed_domains(cls) -> List[str]:
+        """Get allowed domains for embedding, filtering out empty strings"""
+        domains = cls._get_embed_allowed_domains_env()
+        return [domain.strip() for domain in domains if domain.strip()]
     
     @classmethod
     def ensure_directories(cls) -> None:

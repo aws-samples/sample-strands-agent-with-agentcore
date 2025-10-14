@@ -32,16 +32,6 @@ export default function AuthWrapper({
   if (isLocalDev || !hasCognitoConfig) {
     return (
       <div className="min-h-screen">
-        <div className="flex justify-between items-center p-4 bg-white dark:bg-gray-900 border-b">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">Strands Chatbot</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {isLocalDev ? 'Local Development' : 'Guest Mode'}
-            </span>
-          </div>
-        </div>
         {children}
       </div>
     );
@@ -68,22 +58,6 @@ export default function AuthWrapper({
     >
       {({ signOut, user }) => (
         <div className="min-h-screen">
-          <div className="flex justify-between items-center p-4 bg-white dark:bg-gray-900 border-b">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold">Strands Chatbot</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600 dark:text-gray-400">
-                Welcome, {user?.signInDetails?.loginId}
-              </span>
-              <button
-                onClick={signOut}
-                className="px-3 py-1 text-sm bg-red-100 hover:bg-red-200 text-red-700 rounded-md transition-colors"
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
           {children}
         </div>
       )}

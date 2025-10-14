@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chatbot Embedding Examples - Interactive Demo</title>
+    <meta name="description"
+        content="Interactive examples and code samples for embedding the AI chatbot into your website">
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 60 60' fill='none'><circle cx='30' cy='30' r='30' fill='url(%23faviconGradient)' /><path d='M20 25C20 22.7909 21.7909 21 24 21H36C38.2091 21 40 22.7909 40 25V31C40 33.2091 38.2091 35 36 35H32L28 39V35H24C21.7909 35 20 33.2091 20 31V25Z' fill='white' /><circle cx='26' cy='28' r='2' fill='%234F46E5' /><circle cx='34' cy='28' r='2' fill='%234F46E5' /><defs><linearGradient id='faviconGradient' x1='0%25' y1='0%25' x2='100%25' y2='100%25'><stop offset='0%25' style='stop-color:%234F46E5' /><stop offset='100%25' style='stop-color:%237C3AED' /></linearGradient></defs></svg>">
+    <link rel="stylesheet" href="embed-example.css"/>
+</head>
+
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <img src="chatbot-icon.svg" alt="Chatbot Icon"
+                    style="width: 48px; height: 48px; vertical-align: middle; margin-right: 12px;">
+                Chatbot Embedding Demo
+            </h1>
+            <p>Learn how to embed the AI chatbot into your website with responsive design and pop-up chat</p>
+        </div>
+
+        <div class="info-box">
+            <strong>📋 Interactive Demo:</strong> This page shows responsive embedding and integration examples.
+            Click the chatbot icon in the bottom-right corner to try the pop-up chat widget!
+        </div>
+
+        <div class="warning-box">
+            <strong>⚠️ Setup Required:</strong> Replace iframe src URLs with your actual chatbot domain and configure
+            your domain in the deployment settings for production use.
+        </div>
+
+        <div class="examples-grid">
+            <!-- Responsive Embedding Example -->
+            <div class="example-card">
+                <h2 class="example-title">📐 Responsive Embedding</h2>
+                <p class="example-description">
+                    Fully responsive iframe that adapts to container size. Perfect for most websites and applications.
+                </p>
+
+                <div class="status-indicator status-checking" id="status1">
+                    <span class="loading"></span> Checking authentication status...
+                </div>
+
+                <div class="controls">
+                    <button class="btn btn-primary" onclick="reloadIframe('iframe1')">Reload</button>
+                    <button class="btn btn-secondary" onclick="testAuth('iframe1')">Test Auth</button>
+                </div>
+
+                <div class="chatbot-container responsive-size">
+                    <iframe id="iframe1" src="/embed" title="Responsive Embedded Chatbot" loading="lazy">
+                    </iframe>
+                </div>
+
+                <div class="code-example">
+                    <pre>&lt;!-- Responsive Embedding --&gt;
+&lt;div style="position: relative; width: 100%; height: 600px;"&gt;
+  &lt;iframe 
+    src="https://your-domain.com/embed"
+    style="position: absolute; top: 0; left: 0; width: 100%; height: 100%;"
+    frameborder="0"
+    title="AI Chatbot"&gt;
+  &lt;/iframe&gt;
+&lt;/div&gt;</pre>
+                </div>
+            </div>
+
+            <!-- Integration Guide -->
+            <div class="example-card">
+                <h2 class="example-title">📚 Integration Guide</h2>
+                <p class="example-description">
+                    Complete setup guide and code examples for embedding the chatbot into your website.
+                </p>
+
+                <div class="info-box">
+                    <strong>🚀 Quick Setup:</strong>
+                    <ol style="margin: 10px 0; padding-left: 20px;">
+                        <li>Deploy your chatbot with domain configuration</li>
+                        <li>Add your website domain to the allowed domains list</li>
+                        <li>Copy the iframe code and update the src URL</li>
+                        <li>Test authentication and functionality</li>
+                    </ol>
+                </div>
+
+                <div class="warning-box">
+                    <strong>⚠️ Security:</strong> Make sure your domain is configured in the deployment settings,
+                    otherwise embedding will be blocked for security reasons.
+                </div>
+
+                <h3 style="margin: 20px 0 10px 0;">Basic Embedding</h3>
+                <div class="code-example">
+                    <pre>&lt;!-- Simple iframe embedding --&gt;
+&lt;iframe 
+  src="https://your-domain.com/embed"
+  width="400" 
+  height="600"
+  frameborder="0"
+  title="AI Chatbot"&gt;
+&lt;/iframe&gt;</pre>
+                </div>
+
+                <h3 style="margin: 20px 0 10px 0;">Authentication Events</h3>
+                <div class="code-example">
+                    <pre>&lt;!-- Listen for authentication status --&gt;
+&lt;script&gt;
+window.addEventListener('message', function(event) {
+  if (event.data?.type === 'CHATBOT_AUTH_STATUS') {
+    const { isAuthenticated, userId } = event.data.payload;
+    console.log('Auth status:', isAuthenticated);
+  }
+});
+&lt;/script&gt;</pre>
+                </div>
+
+                <h3 style="margin: 20px 0 10px 0;">Pop-up Chat Widget</h3>
+                <div class="code-example">
+                    <pre>&lt;!-- Floating chat widget with title bar (try the icon!) --&gt;
+&lt;link rel="stylesheet" href="embed-widget.css"&gt;
+
+&lt;div class="floating-widget"&gt;
+  &lt;div class="chatbot-icon" onclick="toggleWidget()"&gt;
+    &lt;img src="chatbot-icon.svg" alt="Chatbot" class="chatbot-icon-svg"&gt;
+    &lt;div class="tooltip"&gt;Ask AI Assistant&lt;/div&gt;
+  &lt;/div&gt;
+  &lt;div class="widget-container" id="floatingWidget"&gt;
+    &lt;div class="widget-title-bar"&gt;
+      &lt;div class="widget-title"&gt;
+        &lt;img src="chatbot-icon-white.svg" alt="AI" class="widget-title-icon"&gt;
+        AI Assistant
+      &lt;/div&gt;
+      &lt;button class="widget-close-btn" onclick="toggleWidget()"&gt;✕&lt;/button&gt;
+    &lt;/div&gt;
+    &lt;div class="widget-iframe-container"&gt;
+      &lt;iframe src="https://your-domain.com/embed"&gt;&lt;/iframe&gt;
+    &lt;/div&gt;
+  &lt;/div&gt;
+&lt;/div&gt;
+
+&lt;script src="embed-widget.js"&gt;&lt;/script&gt;</pre>
+                </div>
+
+                <h3 style="margin: 20px 0 10px 0;">React Integration</h3>
+                <div class="code-example">
+                    <pre>&lt;!-- React component --&gt;
+const ChatbotEmbed = () =&gt; (
+  &lt;iframe 
+    src="https://your-domain.com/embed"
+    width="100%" 
+    height="600px"
+    style={{ border: 'none', borderRadius: '8px' }}
+    title="AI Chatbot"
+  /&gt;
+);</pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Floating Widget Example -->
+        <div class="floating-widget">
+            <!-- Floating Chatbot Icon -->
+            <div class="chatbot-icon" id="chatbotIcon" onclick="toggleWidget()">
+                <div class="chatbot-icon-content">
+                    <img src="chatbot-icon.svg" alt="Chatbot Icon" class="chatbot-icon-svg">
+
+                </div>
+                <div class="tooltip">Ask AI Assistant</div>
+            </div>
+            <div class="widget-container" id="floatingWidget">
+                <div class="widget-title-bar">
+                    <div class="widget-title">
+                        <img src="chatbot-icon-white.svg" alt="Chatbot Icon" class="widget-title-icon">
+                        AI Assistant
+                    </div>
+                    <button class="widget-close-btn" onclick="toggleWidget()" title="Close">
+                        ✕
+                    </button>
+                </div>
+                <div class="widget-iframe-container">
+                    <iframe id="iframe4" src="/embed" title="Floating AI Assistant">
+                    </iframe>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="embed-example.js"></script>
+</body>
+
+</html>

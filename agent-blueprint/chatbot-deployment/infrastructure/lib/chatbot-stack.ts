@@ -167,33 +167,41 @@ export class ChatbotStack extends cdk.Stack {
 
 
     // Backend Container
+    const backendEnvironment: { [key: string]: string } = {
+      DEPLOYMENT_ENV: 'production',
+      STORAGE_TYPE: 'local',
+      HOST: '0.0.0.0',
+      PORT: '8000',
+      CORS_ORIGINS: '*',
+      FORCE_UPDATE: new Date().toISOString(),
+      AWS_DEFAULT_REGION: this.region,
+      // AgentCore Observability - OTEL Configuration
+      OTEL_PYTHON_DISTRO: 'aws_distro',
+      OTEL_PYTHON_CONFIGURATOR: 'aws_configurator',
+      OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
+      OTEL_EXPORTER_OTLP_LOGS_PROTOCOL: 'http/protobuf',
+      OTEL_LOGS_EXPORTER: 'otlp',
+      OTEL_TRACES_EXPORTER: 'otlp',
+      OTEL_EXPORTER_OTLP_LOGS_HEADERS: `x-aws-log-group=agents/strands-agent-logs,x-aws-log-stream=${logStreamName},x-aws-metric-namespace=agentsd`,
+      OTEL_RESOURCE_ATTRIBUTES: 'service.name=strands-chatbot',
+      AGENT_OBSERVABILITY_ENABLED: 'true',
+      AWS_REGION: this.region,
+      OTEL_LOG_LEVEL: 'DEBUG',
+      // OTEL batch processing settings for real-time traces
+      OTEL_BSP_SCHEDULE_DELAY: '100',
+      OTEL_BSP_MAX_EXPORT_BATCH_SIZE: '1',
+      OTEL_BSP_EXPORT_TIMEOUT: '5000',
+    };
+
+    // Add embedding configuration if provided
+    const embedAllowedDomains = process.env.EMBED_ALLOWED_DOMAINS;
+    if (embedAllowedDomains !== undefined) {
+      backendEnvironment.EMBED_ALLOWED_DOMAINS = embedAllowedDomains;
+    }
+
     const backendContainer = backendTaskDefinition.addContainer('ChatbotBackendContainer', {
       image: ecs.ContainerImage.fromEcrRepository(backendRepository, 'latest'),
-      environment: {
-        DEPLOYMENT_ENV: 'production',
-        STORAGE_TYPE: 'local',
-        HOST: '0.0.0.0',
-        PORT: '8000',
-        CORS_ORIGINS: '*',
-        FORCE_UPDATE: new Date().toISOString(),
-        AWS_DEFAULT_REGION: this.region,
-        // AgentCore Observability - OTEL Configuration
-        OTEL_PYTHON_DISTRO: 'aws_distro',
-        OTEL_PYTHON_CONFIGURATOR: 'aws_configurator',
-        OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
-        OTEL_EXPORTER_OTLP_LOGS_PROTOCOL: 'http/protobuf',
-        OTEL_LOGS_EXPORTER: 'otlp',
-        OTEL_TRACES_EXPORTER: 'otlp',
-        OTEL_EXPORTER_OTLP_LOGS_HEADERS: `x-aws-log-group=agents/strands-agent-logs,x-aws-log-stream=${logStreamName},x-aws-metric-namespace=agentsd`,
-        OTEL_RESOURCE_ATTRIBUTES: 'service.name=strands-chatbot',
-        AGENT_OBSERVABILITY_ENABLED: 'true',
-        AWS_REGION: this.region,
-        OTEL_LOG_LEVEL: 'DEBUG',
-        // OTEL batch processing settings for real-time traces
-        OTEL_BSP_SCHEDULE_DELAY: '100',
-        OTEL_BSP_MAX_EXPORT_BATCH_SIZE: '1',
-        OTEL_BSP_EXPORT_TIMEOUT: '5000',
-      },
+      environment: backendEnvironment,
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: 'chatbot-backend',
       }),
