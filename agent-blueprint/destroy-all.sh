@@ -135,8 +135,8 @@ main() {
     echo "  - Shared Infrastructure (ALB)"
     echo "  - All Serverless MCP Servers"
     echo "  - Web Application (Chatbot)"
+    echo "  - Cognito User Pools and Authentication"
     echo "  - ECR repositories and Docker images"
-    echo "  - Cognito User Pools"
     echo "  - All associated AWS resources"
     echo ""
 
@@ -207,10 +207,65 @@ main() {
     if [ -f "chatbot-deployment/infrastructure/scripts/destroy.sh" ]; then
         cd chatbot-deployment/infrastructure
         chmod +x scripts/destroy.sh
-        ./scripts/destroy.sh || destroy_stack "ChatbotStack" "." "false"
+        ./scripts/destroy.sh || {
+            print_warning "Dedicated destroy script failed, trying manual CDK destruction..."
+            
+            # Set CDK environment variables for fallback
+            export CDK_DEFAULT_ACCOUNT=$ACCOUNT_ID
+            export CDK_DEFAULT_REGION=$AWS_REGION
+            
+            # Manual CDK destruction from the correct directory
+            print_status "Destroying CognitoAuthStack..."
+            if stack_exists "CognitoAuthStack"; then
+                npx cdk destroy CognitoAuthStack --force --require-approval never || {
+                    print_warning "CDK destroy failed for CognitoAuthStack, trying CloudFormation..."
+                    aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region $AWS_REGION
+                }
+            fi
+            
+            print_status "Destroying ChatbotStack..."
+            if stack_exists "ChatbotStack"; then
+                npx cdk destroy ChatbotStack --force --require-approval never || {
+                    print_warning "CDK destroy failed for ChatbotStack, trying CloudFormation..."
+                    aws cloudformation delete-stack --stack-name "ChatbotStack" --region $AWS_REGION
+                }
+            fi
+        }
         cd - > /dev/null
     else
-        destroy_stack "ChatbotStack" "chatbot-deployment/infrastructure" "false"
+        print_warning "No dedicated destroy script found, using manual CDK destruction..."
+        
+        # Change to the CDK directory for proper context
+        cd chatbot-deployment/infrastructure
+        
+        # Install dependencies if needed
+        if [ ! -d "node_modules" ]; then
+            print_status "Installing CDK dependencies..."
+            npm install
+        fi
+        
+        # Set CDK environment variables
+        export CDK_DEFAULT_ACCOUNT=$ACCOUNT_ID
+        export CDK_DEFAULT_REGION=$AWS_REGION
+        
+        # Destroy both stacks manually with proper CDK context
+        print_status "Destroying CognitoAuthStack..."
+        if stack_exists "CognitoAuthStack"; then
+            npx cdk destroy CognitoAuthStack --force --require-approval never || {
+                print_warning "CDK destroy failed for CognitoAuthStack, trying CloudFormation..."
+                aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region $AWS_REGION
+            }
+        fi
+        
+        print_status "Destroying ChatbotStack..."
+        if stack_exists "ChatbotStack"; then
+            npx cdk destroy ChatbotStack --force --require-approval never || {
+                print_warning "CDK destroy failed for ChatbotStack, trying CloudFormation..."
+                aws cloudformation delete-stack --stack-name "ChatbotStack" --region $AWS_REGION
+            }
+        fi
+        
+        cd - > /dev/null
     fi
 
     # Step 5: Clean up ECR repositories (optional)
@@ -235,7 +290,7 @@ main() {
     # Step 6: Wait for all deletions to complete
     print_status "🗑️  Step 6: Waiting for all stacks to be deleted..."
 
-    stacks_to_check=("python-mcp-fargate" "nova-act-mcp-fargate" "McpFarmAlbStack" "ChatbotStack")
+    stacks_to_check=("python-mcp-fargate" "nova-act-mcp-fargate" "McpFarmAlbStack" "ChatbotStack" "CognitoAuthStack")
 
     for stack in "${stacks_to_check[@]}"; do
         print_status "Waiting for $stack to be deleted..."

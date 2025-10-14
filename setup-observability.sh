@@ -49,7 +49,22 @@ fi
 ENV_FILE="chatbot-app/backend/.env"
 echo "📋 Generating observability configuration..."
 
-cat > "$ENV_FILE" << EOF
+# Create directory if it doesn't exist
+mkdir -p "$(dirname "$ENV_FILE")"
+
+# Remove existing observability entries to avoid duplicates
+if [ -f "$ENV_FILE" ]; then
+    echo "📋 Updating existing .env file (preserving other variables)..."
+    # Create temp file without observability entries
+    grep -v "^OTEL_" "$ENV_FILE" | grep -v "^AGENT_OBSERVABILITY_ENABLED=" | grep -v "^AWS_LOG_GROUP=" | grep -v "^AWS_LOG_STREAM=" > "$ENV_FILE.tmp" 2>/dev/null || touch "$ENV_FILE.tmp"
+    mv "$ENV_FILE.tmp" "$ENV_FILE"
+else
+    echo "📋 Creating new .env file..."
+    touch "$ENV_FILE"
+fi
+
+# Append observability configuration
+cat >> "$ENV_FILE" << EOF
 # AWS Distro for OpenTelemetry (ADOT) Configuration
 OTEL_PYTHON_DISTRO=aws_distro
 OTEL_PYTHON_CONFIGURATOR=aws_configurator

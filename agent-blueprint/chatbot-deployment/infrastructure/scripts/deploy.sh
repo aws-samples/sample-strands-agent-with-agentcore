@@ -108,6 +108,70 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
 
     echo "✅ Cognito configuration validated successfully"
 
+    # Save Cognito configuration to .env files for local development
+    echo "💾 Saving Cognito configuration to .env files..."
+    
+    # Save to agent-blueprint/.env (main project .env)
+    MAIN_ENV_FILE="../../../.env"
+    if [ ! -f "$MAIN_ENV_FILE" ]; then
+        touch "$MAIN_ENV_FILE"
+    fi
+    
+    # Remove existing Cognito entries and add new ones
+    grep -v "^COGNITO_USER_POOL_ID=" "$MAIN_ENV_FILE" > "$MAIN_ENV_FILE.tmp" 2>/dev/null || touch "$MAIN_ENV_FILE.tmp"
+    grep -v "^COGNITO_USER_POOL_CLIENT_ID=" "$MAIN_ENV_FILE.tmp" > "$MAIN_ENV_FILE.tmp2" 2>/dev/null || touch "$MAIN_ENV_FILE.tmp2"
+    grep -v "^NEXT_PUBLIC_COGNITO_USER_POOL_ID=" "$MAIN_ENV_FILE.tmp2" > "$MAIN_ENV_FILE.tmp3" 2>/dev/null || touch "$MAIN_ENV_FILE.tmp3"
+    grep -v "^NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=" "$MAIN_ENV_FILE.tmp3" > "$MAIN_ENV_FILE" 2>/dev/null || touch "$MAIN_ENV_FILE"
+    
+    # Add Cognito configuration
+    echo "COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> "$MAIN_ENV_FILE"
+    echo "COGNITO_USER_POOL_CLIENT_ID=$COGNITO_USER_POOL_CLIENT_ID" >> "$MAIN_ENV_FILE"
+    echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> "$MAIN_ENV_FILE"
+    echo "NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$COGNITO_USER_POOL_CLIENT_ID" >> "$MAIN_ENV_FILE"
+    echo "NEXT_PUBLIC_AWS_REGION=$AWS_REGION" >> "$MAIN_ENV_FILE"
+    
+    # Clean up temp files
+    rm -f "$MAIN_ENV_FILE.tmp" "$MAIN_ENV_FILE.tmp2" "$MAIN_ENV_FILE.tmp3"
+    
+    # Save to chatbot-app backend .env
+    BACKEND_ENV_FILE="../../../chatbot-app/backend/.env"
+    if [ ! -f "$BACKEND_ENV_FILE" ]; then
+        touch "$BACKEND_ENV_FILE"
+    fi
+    
+    # Remove existing Cognito entries and add new ones
+    grep -v "^COGNITO_USER_POOL_ID=" "$BACKEND_ENV_FILE" > "$BACKEND_ENV_FILE.tmp" 2>/dev/null || touch "$BACKEND_ENV_FILE.tmp"
+    grep -v "^COGNITO_USER_POOL_CLIENT_ID=" "$BACKEND_ENV_FILE.tmp" > "$BACKEND_ENV_FILE" 2>/dev/null || touch "$BACKEND_ENV_FILE"
+    
+    echo "COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> "$BACKEND_ENV_FILE"
+    echo "COGNITO_USER_POOL_CLIENT_ID=$COGNITO_USER_POOL_CLIENT_ID" >> "$BACKEND_ENV_FILE"
+    
+    # Clean up temp file
+    rm -f "$BACKEND_ENV_FILE.tmp"
+    
+    # Save to chatbot-app frontend .env.local
+    FRONTEND_ENV_FILE="../../../chatbot-app/frontend/.env.local"
+    if [ ! -f "$FRONTEND_ENV_FILE" ]; then
+        touch "$FRONTEND_ENV_FILE"
+    fi
+    
+    # Remove existing Cognito entries and add new ones
+    grep -v "^NEXT_PUBLIC_COGNITO_USER_POOL_ID=" "$FRONTEND_ENV_FILE" > "$FRONTEND_ENV_FILE.tmp" 2>/dev/null || touch "$FRONTEND_ENV_FILE.tmp"
+    grep -v "^NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=" "$FRONTEND_ENV_FILE.tmp" > "$FRONTEND_ENV_FILE.tmp2" 2>/dev/null || touch "$FRONTEND_ENV_FILE.tmp2"
+    grep -v "^NEXT_PUBLIC_AWS_REGION=" "$FRONTEND_ENV_FILE.tmp2" > "$FRONTEND_ENV_FILE" 2>/dev/null || touch "$FRONTEND_ENV_FILE"
+    
+    echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID" >> "$FRONTEND_ENV_FILE"
+    echo "NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$COGNITO_USER_POOL_CLIENT_ID" >> "$FRONTEND_ENV_FILE"
+    echo "NEXT_PUBLIC_AWS_REGION=$AWS_REGION" >> "$FRONTEND_ENV_FILE"
+    
+    # Clean up temp files
+    rm -f "$FRONTEND_ENV_FILE.tmp" "$FRONTEND_ENV_FILE.tmp2"
+    
+    echo "✅ Cognito configuration saved to .env files:"
+    echo "  - $MAIN_ENV_FILE"
+    echo "  - $BACKEND_ENV_FILE" 
+    echo "  - $FRONTEND_ENV_FILE"
+
     # Build frontend with Cognito configuration
     echo "Building frontend container with Cognito..."
     cd ../../../chatbot-app/frontend
