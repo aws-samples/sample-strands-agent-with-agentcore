@@ -204,9 +204,9 @@ cd ../../serverless-mcp-farm
 ./deploy-server.sh
 ```
 
-## IFrame Embedding Support
+## Iframe Embedding Support
 
-The chatbot supports IFrame embedding for seamless integration into existing websites and applications. 
+The chatbot supports Iframe embedding for seamless integration into existing websites and applications. 
 
 **📋 Quick Start:**
 ```html
