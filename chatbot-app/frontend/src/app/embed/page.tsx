@@ -190,7 +190,7 @@ function EmbeddableChatInterface() {
       />
 
       {/* Main Chat Area */}
-      <SidebarInset>
+      <SidebarInset className="flex flex-col min-h-0">
         {/* Top Controls - Compact for embedding */}
         <div className="sticky top-0 z-10 flex items-center justify-between p-2 bg-background/70 backdrop-blur-md border-b border-border/30 shadow-sm">
           <div className="flex items-center gap-3">
@@ -227,7 +227,7 @@ function EmbeddableChatInterface() {
         </div>
 
         {/* Messages Area */}
-        <div className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4 relative min-h-0">
+        <div className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-auto pt-4 relative min-h-0 max-h-full">
           {groupedMessages.length === 0 && <Greeting />}
 
           {groupedMessages.map((group) => (
@@ -396,7 +396,7 @@ function EmbedAppContent() {
 export default function EmbedPage() {
   return (
     <EmbedAuthWrapper>
-      <div className="h-screen gradient-subtle text-foreground transition-all duration-300 overflow-hidden">
+      <div className="h-screen gradient-subtle text-foreground transition-all duration-300 flex flex-col">
         <SidebarProvider defaultOpen={false}>
           <EmbedAppContent />
         </SidebarProvider>

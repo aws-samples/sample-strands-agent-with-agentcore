@@ -39,6 +39,16 @@ function setupIframeHandlers() {
     });
 }
 
+function hideLoading(loadingId) {
+    const loadingElement = document.getElementById(loadingId);
+    if (loadingElement) {
+        loadingElement.classList.add('hidden');
+        setTimeout(() => {
+            loadingElement.style.display = 'none';
+        }, 300); // Wait for fade transition to complete
+    }
+}
+
 function handleAuthMessage(data) {
     if (!data || !data.type) return;
 
