@@ -1,0 +1,27 @@
+Maria Gonzalez
+Email: maria.gonzalez@example.com
+Phone: (555) 888-9999
+
+EXPERIENCE
+Senior AI Engineer at AIInnovate (2019-2023)
+- Led AI research team of 12 engineers and data scientists
+- Developed large-scale machine learning systems serving 50M+ users
+- Architected MLOps pipelines for model deployment and monitoring
+- Published 8 research papers in top-tier AI conferences
+
+Principal ML Engineer at TechGiant (2016-2019)
+- Built recommendation systems processing 100M+ events daily
+- Implemented deep learning models for computer vision and NLP
+- Led cross-functional initiatives to integrate AI across product lines
+
+SKILLS
+Python, TensorFlow, PyTorch, Kubernetes, MLflow, Apache Spark, AWS, GCP, Deep Learning, NLP, Computer Vision
+
+EDUCATION
+PhD in Machine Learning
+Research University (2009-2013)
+
+ACHIEVEMENTS
+- 15+ patents in machine learning and AI
+- Led $10M AI platform development project
+- Keynote speaker at major AI conferences

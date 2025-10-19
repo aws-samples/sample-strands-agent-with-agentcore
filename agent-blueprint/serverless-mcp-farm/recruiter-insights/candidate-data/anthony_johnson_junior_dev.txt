@@ -1,0 +1,6 @@
+Anthony Johnson - Junior Software Developer
+Email: anthony.johnson@example.com
+Phone: (555) 777-9999
+Experience: 1 year in web development
+Skills: JavaScript, React, Node.js, MongoDB, Git
+Education: BS in Computer Science

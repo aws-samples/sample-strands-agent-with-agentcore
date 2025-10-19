@@ -1,0 +1,26 @@
+Emily Davis
+Email: emily.davis@example.com
+Phone: (555) 222-4444
+
+EXPERIENCE
+Senior DevOps Engineer at CloudScale (2018-2023)
+- Architected and managed Kubernetes clusters for 50+ microservices
+- Implemented Infrastructure as Code using Terraform and CloudFormation
+- Built CI/CD pipelines reducing deployment time by 80%
+- Managed multi-cloud environments across AWS, GCP, and Azure
+
+DevOps Engineer at StartupGrowth (2015-2018)
+- Automated deployment processes using Jenkins and Docker
+- Implemented monitoring and alerting with Prometheus and Grafana
+- Managed Linux servers and network infrastructure
+
+SKILLS
+Kubernetes, Docker, Terraform, AWS, GCP, Jenkins, Prometheus, Grafana, Linux, Python, Bash
+
+EDUCATION
+Bachelor of Science in Information Technology
+Tech Institute (2009-2013)
+
+CERTIFICATIONS
+AWS Solutions Architect Professional (2022)
+Certified Kubernetes Administrator (2021)

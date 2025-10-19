@@ -93,8 +93,9 @@ class MCPClientFactory:
         try:
             import boto3
             from botocore.exceptions import ClientError, NoCredentialsError
-            
-            ssm_client = boto3.client('ssm')
+
+            # Use us-west-2 region for SSM parameters
+            ssm_client = boto3.client('ssm', region_name='us-west-2')
             response = ssm_client.get_parameter(Name=parameter_name)
             resolved_url = response['Parameter']['Value']
             logger.info(f"MCPClientFactory - Resolved parameter {parameter_name} to: {resolved_url}")

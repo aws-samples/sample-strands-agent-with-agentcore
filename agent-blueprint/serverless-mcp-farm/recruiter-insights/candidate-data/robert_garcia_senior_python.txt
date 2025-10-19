@@ -1,0 +1,27 @@
+Robert Garcia
+Email: robert.garcia@example.com
+Phone: (555) 777-8888
+
+EXPERIENCE
+Senior Python Developer at CloudTech (2018-2023)
+- Architected and led development of distributed systems handling 10M+ requests/day
+- Designed microservices architecture using Python, Docker, and Kubernetes
+- Managed team of 8 developers across multiple product lines
+- Established coding standards and best practices for Python development
+
+Lead Software Engineer at DataPlatform (2015-2018)
+- Built high-performance data processing pipelines using Python and Apache Spark
+- Implemented real-time streaming applications with Kafka and Redis
+- Optimized system performance resulting in 70% cost reduction
+
+SKILLS
+Python, Django, FastAPI, PostgreSQL, Redis, Docker, Kubernetes, AWS, Apache Spark, Kafka, Microservices
+
+EDUCATION
+Master of Science in Computer Science
+Elite University (2010-2012)
+
+LEADERSHIP
+- Technical lead for 3 major product launches
+- Mentored 15+ junior and mid-level developers
+- Speaker at PyCon and Django conferences

@@ -1,0 +1,26 @@
+David Thompson
+Email: david.thompson@example.com
+Phone: (555) 555-6666
+
+EXPERIENCE
+Data Scientist at FinanceAnalytics (2019-2023)
+- Developed predictive models for credit risk assessment using Python and R
+- Built real-time fraud detection system processing 1M+ transactions daily
+- Created automated reporting pipelines using Apache Airflow
+- Collaborated with business stakeholders to define KPIs and metrics
+
+Data Analyst at RetailCorp (2017-2019)
+- Performed customer segmentation analysis using clustering algorithms
+- Built recommendation systems to increase sales by 25%
+- Created executive dashboards using Tableau and Power BI
+
+SKILLS
+Python, R, SQL, scikit-learn, TensorFlow, Apache Spark, Airflow, Tableau, AWS, Statistics
+
+EDUCATION
+Master of Science in Statistics
+Statistics University (2015-2017)
+
+CERTIFICATIONS
+AWS Certified Data Analytics Specialty (2022)
+Tableau Desktop Certified Professional (2021)

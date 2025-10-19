@@ -1,0 +1,27 @@
+Amanda Lee
+Email: amanda.lee@example.com
+Phone: (555) 000-1111
+
+EXPERIENCE
+Senior Product Manager at PlatformTech (2018-2023)
+- Led product strategy for enterprise platform serving 500+ clients
+- Managed $15M product budget and roadmap planning
+- Increased platform adoption by 200% through strategic feature development
+- Built and managed cross-functional teams of 25+ members
+
+Product Manager at GrowthStartup (2015-2018)
+- Launched mobile application that reached 2M+ users in first year
+- Developed go-to-market strategy resulting in $10M Series A funding
+- Led product discovery and user research initiatives
+
+SKILLS
+Product Strategy, Agile, Scrum, Analytics, A/B Testing, User Research, SQL, Figma, JIRA, Market Research
+
+EDUCATION
+Master of Business Administration
+Top Business School (2011-2013)
+
+ACHIEVEMENTS
+- Led 5 successful product launches generating $25M+ revenue
+- Grew product user base from 10K to 2M users
+- Featured speaker at ProductCon and industry events

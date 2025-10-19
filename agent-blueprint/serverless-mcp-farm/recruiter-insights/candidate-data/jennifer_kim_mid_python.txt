@@ -1,0 +1,26 @@
+Jennifer Kim
+Email: jennifer.kim@example.com
+Phone: (555) 444-5555
+
+EXPERIENCE
+Python Developer at WebSolutions (2020-2023)
+- Developed and maintained Django web applications serving 100K+ users
+- Implemented RESTful APIs and microservices architecture
+- Optimized database queries and improved application performance by 40%
+- Mentored junior developers and conducted code reviews
+
+Software Engineer at StartupTech (2018-2020)
+- Built backend services using Python, Flask, and PostgreSQL
+- Integrated third-party APIs and payment processing systems
+- Implemented automated testing and CI/CD pipelines
+
+SKILLS
+Python, Django, Flask, FastAPI, PostgreSQL, Redis, Docker, Kubernetes, AWS, Git, REST APIs
+
+EDUCATION
+Bachelor of Science in Software Engineering
+Tech University (2014-2018)
+
+ACHIEVEMENTS
+- Led migration of monolithic application to microservices
+- Reduced API response time by 60% through optimization

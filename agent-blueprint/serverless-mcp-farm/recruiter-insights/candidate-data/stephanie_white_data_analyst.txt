@@ -1,0 +1,6 @@
+Stephanie White - Data Analyst
+Email: stephanie.white@example.com
+Phone: (555) 666-8888
+Experience: 4 years in business intelligence and analytics
+Skills: SQL, Python, Tableau, Power BI, Excel, Statistics
+Education: BS in Statistics

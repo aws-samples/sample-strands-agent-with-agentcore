@@ -1,0 +1,6 @@
+Jessica Miller - Senior Mobile Developer
+Email: jessica.miller@example.com
+Phone: (555) 000-2222
+Experience: 8 years in iOS and Android development
+Skills: Swift, Kotlin, React Native, Flutter, Firebase
+Education: BS in Mobile Development

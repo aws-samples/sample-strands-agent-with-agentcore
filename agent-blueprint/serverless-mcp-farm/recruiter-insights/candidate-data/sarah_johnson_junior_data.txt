@@ -1,0 +1,26 @@
+Sarah Johnson
+Email: sarah.johnson@example.com
+Phone: (555) 222-3333
+
+EXPERIENCE
+Junior Data Scientist at DataStart (2023-Present)
+- Performed exploratory data analysis using Python and pandas
+- Created basic machine learning models with scikit-learn
+- Built data visualizations using matplotlib and seaborn
+- Assisted senior data scientists with model validation
+
+Data Analyst Intern at Analytics Corp (2022-2023)
+- Cleaned and preprocessed datasets using SQL and Python
+- Created reports and dashboards in Tableau
+- Performed statistical analysis for business insights
+
+SKILLS
+Python, pandas, scikit-learn, SQL, Tableau, matplotlib, seaborn, Statistics, Excel
+
+EDUCATION
+Master of Science in Data Science
+Data Institute (2021-2023)
+
+PROJECTS
+- Customer Churn Prediction Model (Capstone Project)
+- Sales Forecasting Dashboard using Tableau

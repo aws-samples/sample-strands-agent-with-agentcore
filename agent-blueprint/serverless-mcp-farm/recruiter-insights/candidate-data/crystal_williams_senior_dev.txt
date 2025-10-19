@@ -1,0 +1,6 @@
+Crystal Williams - Senior Software Engineer
+Email: crystal.williams@example.com
+Phone: (555) 123-4567
+Experience: 7 years in Python development
+Skills: Python, Django, Flask, AWS, Docker, Microservices
+Education: BS in Computer Science

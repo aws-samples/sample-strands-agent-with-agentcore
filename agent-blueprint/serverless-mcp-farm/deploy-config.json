@@ -27,6 +27,11 @@
         "enabled": true,
         "stack_name": "mcp-financial-analysis-server",
         "description": "Financial Market Data and Analysis MCP Server"
+      },
+      "recruiter-insights": {
+        "enabled": true,
+        "stack_name": "mcp-recruiter-insights-server",
+        "description": "Recruiter Insights and Candidate Analysis MCP Server"
       }
     }
   },
@@ -50,6 +55,10 @@
     },
     "financial-market": {
       "LOG_LEVEL": "INFO"
+    },
+    "recruiter-insights": {
+      "LOG_LEVEL": "INFO",
+      "S3_BUCKET_NAME": "recruiter-insights-data"
     }
   },
   "testing": {
@@ -93,7 +102,7 @@
       "financial-market": [
         {
           "name": "Get stock quote",
-          "method": "stock_quote", 
+          "method": "stock_quote",
           "arguments": {
             "symbol": "AAPL"
           }
@@ -101,6 +110,20 @@
         {
           "name": "Get market data",
           "method": "market_data",
+          "arguments": {}
+        }
+      ],
+      "recruiter-insights": [
+        {
+          "name": "List S3 bucket contents",
+          "method": "list_s3_bucket",
+          "arguments": {
+            "prefix": ""
+          }
+        },
+        {
+          "name": "Extract resume data",
+          "method": "extract_resume_data",
           "arguments": {}
         }
       ]

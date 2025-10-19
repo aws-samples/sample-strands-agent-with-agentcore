@@ -307,9 +307,21 @@ configure_mcp_endpoints() {
 
     # Get API Gateway endpoints for serverless MCPs
     local endpoints=""
-    for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market; do
+    
+    # Define stack name mappings (server_name -> actual_stack_name)
+    declare -A stack_names=(
+        ["aws-documentation"]="mcp-aws-documentation"
+        ["aws-pricing"]="mcp-aws-pricing"
+        ["bedrock-kb-retrieval"]="mcp-bedrock-kb-retrieval"
+        ["tavily-web-search"]="mcp-tavily-web-search"
+        ["financial-market"]="mcp-financial-analysis-server"
+        ["recruiter-insights"]="mcp-recruiter-insights-server"
+    )
+    
+    for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market recruiter-insights; do
+        local stack_name="${stack_names[$server]}"
         local endpoint=$(aws cloudformation describe-stacks \
-            --stack-name "mcp-$server" \
+            --stack-name "$stack_name" \
             --region $region \
             --query 'Stacks[0].Outputs[?OutputKey==`McpEndpoint`].OutputValue' \
             --output text 2>/dev/null || echo "")
@@ -513,8 +525,18 @@ main() {
     print_status "🔧 Deployed MCP Servers:"
 
     # Check serverless MCPs
-    for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market; do
-        if aws cloudformation describe-stacks --stack-name "mcp-$server" --region $AWS_REGION &>/dev/null; then
+    declare -A stack_names=(
+        ["aws-documentation"]="mcp-aws-documentation"
+        ["aws-pricing"]="mcp-aws-pricing"
+        ["bedrock-kb-retrieval"]="mcp-bedrock-kb-retrieval"
+        ["tavily-web-search"]="mcp-tavily-web-search"
+        ["financial-market"]="mcp-financial-analysis-server"
+        ["recruiter-insights"]="mcp-recruiter-insights-server"
+    )
+    
+    for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market recruiter-insights; do
+        local stack_name="${stack_names[$server]}"
+        if aws cloudformation describe-stacks --stack-name "$stack_name" --region $AWS_REGION &>/dev/null; then
             echo "  ✅ $server (Serverless)"
         fi
     done

@@ -260,6 +260,20 @@ build_lambda_package() {
         fi
     fi
     
+    # Special handling for recruiter-insights server (uses custom deployment)
+    if [ "$server_name" = "recruiter-insights" ]; then
+        print_status "Using custom deployment script for recruiter-insights server..."
+        cd "$server_dir/infrastructure"
+        if [ -f "./deploy.sh" ]; then
+            # Pass region and stage to custom deploy script
+            AWS_DEFAULT_REGION="$region" DEPLOYMENT_STAGE="$stage" ./deploy.sh
+            return $?
+        else
+            print_error "Custom deploy.sh not found for recruiter-insights"
+            return 1
+        fi
+    fi
+    
     # Standard deployment for other servers
     # Setup virtual environment
     setup_python_environment "$server_dir"

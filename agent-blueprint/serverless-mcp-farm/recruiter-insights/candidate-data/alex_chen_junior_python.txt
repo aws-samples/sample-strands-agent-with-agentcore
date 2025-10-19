@@ -1,0 +1,25 @@
+Alex Chen
+Email: alex.chen@example.com
+Phone: (555) 111-2222
+
+EXPERIENCE
+Junior Python Developer at CodeStart (2022-2023)
+- Developed web applications using Django and Python
+- Wrote unit tests and participated in code reviews
+- Fixed bugs and implemented small features
+- Collaborated with senior developers on larger projects
+
+Intern Software Developer at TechBootcamp (2022)
+- Built simple web scrapers using Python and BeautifulSoup
+- Created basic REST APIs with Flask
+- Learned version control with Git and GitHub
+
+SKILLS
+Python, Django, Flask, HTML, CSS, JavaScript, Git, PostgreSQL, REST APIs
+
+EDUCATION
+Bachelor of Science in Computer Science
+State University (2018-2022)
+
+CERTIFICATIONS
+Python Institute PCAP Certification (2022)

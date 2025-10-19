@@ -1,0 +1,6 @@
+Carlos Martinez - AI Engineer
+Email: carlos.martinez@example.com
+Phone: (555) 333-5555
+Experience: 5 years in computer vision and NLP
+Skills: Python, TensorFlow, PyTorch, OpenCV, Docker, Kubernetes
+Education: MS in Artificial Intelligence

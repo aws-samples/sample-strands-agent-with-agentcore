@@ -1,0 +1,26 @@
+Mike Rodriguez
+Email: mike.rodriguez@example.com
+Phone: (555) 333-4444
+
+EXPERIENCE
+Junior AI Engineer at AITech (2023-Present)
+- Implemented computer vision models using TensorFlow and OpenCV
+- Fine-tuned pre-trained models for image classification tasks
+- Assisted in deploying ML models to cloud platforms
+- Participated in model evaluation and performance optimization
+
+ML Research Assistant at University Lab (2022-2023)
+- Conducted research on natural language processing
+- Implemented transformer models using PyTorch
+- Published research paper on sentiment analysis
+
+SKILLS
+Python, TensorFlow, PyTorch, OpenCV, scikit-learn, NLP, Computer Vision, AWS, Docker
+
+EDUCATION
+Master of Science in Artificial Intelligence
+AI University (2021-2023)
+
+CERTIFICATIONS
+TensorFlow Developer Certificate (2023)
+AWS Machine Learning Specialty (2023)

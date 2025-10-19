@@ -1,0 +1,6 @@
+Hannah Hernandez - Data Scientist
+Email: hannah.hernandez@example.com
+Phone: (555) 297-4605
+Experience: 4 years in machine learning and analytics
+Skills: Python, scikit-learn, Spark, Tableau, Statistics
+Education: MS in Data Science

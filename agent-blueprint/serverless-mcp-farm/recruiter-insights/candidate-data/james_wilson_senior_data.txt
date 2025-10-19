@@ -1,0 +1,7 @@
+James Wilson - Senior Data Scientist
+Email: james.wilson@example.com
+Phone: (555) 999-0000
+Experience: 10 years in data science and analytics
+Skills: Python, R, TensorFlow, Spark, Hadoop, MLOps
+Education: PhD in Statistics
+Leadership: Built 25-person data science team

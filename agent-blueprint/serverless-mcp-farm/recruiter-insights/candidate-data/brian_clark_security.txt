@@ -1,0 +1,7 @@
+Brian Clark - Cybersecurity Engineer
+Email: brian.clark@example.com
+Phone: (555) 999-1111
+Experience: 6 years in cybersecurity and compliance
+Skills: SIEM, Penetration Testing, Firewalls, Incident Response
+Education: BS in Cybersecurity
+Certifications: CISSP, CEH, Security+

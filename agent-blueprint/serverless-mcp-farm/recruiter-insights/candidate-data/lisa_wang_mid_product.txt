@@ -1,0 +1,26 @@
+Lisa Wang
+Email: lisa.wang@example.com
+Phone: (555) 666-7777
+
+EXPERIENCE
+Product Manager at TechPlatform (2020-2023)
+- Managed product roadmap for B2B SaaS platform with $5M ARR
+- Led cross-functional teams of 12 engineers, designers, and analysts
+- Increased user engagement by 45% through feature optimization
+- Conducted user research and A/B testing to validate product decisions
+
+Associate Product Manager at GrowthCorp (2018-2020)
+- Defined product requirements and user stories for mobile application
+- Analyzed user behavior data to identify improvement opportunities
+- Coordinated product launches and go-to-market strategies
+
+SKILLS
+Product Management, Agile, Scrum, JIRA, Analytics, A/B Testing, User Research, SQL, Figma
+
+EDUCATION
+Master of Business Administration
+Business School (2016-2018)
+
+ACHIEVEMENTS
+- Launched 3 major product features resulting in 30% revenue increase
+- Reduced customer churn by 20% through product improvements

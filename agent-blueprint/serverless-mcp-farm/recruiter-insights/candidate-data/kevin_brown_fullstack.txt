@@ -1,0 +1,22 @@
+Kevin Brown
+Email: kevin.brown@example.com
+Phone: (555) 111-3333
+
+EXPERIENCE
+Full Stack Developer at WebTech (2019-2023)
+- Developed end-to-end web applications using React, Node.js, and Python
+- Built responsive frontend interfaces and RESTful backend APIs
+- Implemented authentication and authorization systems
+- Managed database design and optimization for PostgreSQL and MongoDB
+
+Frontend Developer at DigitalAgency (2017-2019)
+- Created interactive web applications using React and TypeScript
+- Collaborated with UX/UI designers to implement pixel-perfect designs
+- Optimized application performance and implemented lazy loading
+
+SKILLS
+JavaScript, TypeScript, React, Node.js, Python, Django, PostgreSQL, MongoDB, AWS, Docker, Git
+
+EDUCATION
+Bachelor of Science in Web Development
+Web University (2013-2017)

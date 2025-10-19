@@ -1,0 +1,6 @@
+Daniel Kim - Principal Software Architect
+Email: daniel.kim@example.com
+Phone: (555) 555-7777
+Experience: 12 years in system architecture and design
+Skills: Microservices, Kafka, Redis, System Design, AWS, Kubernetes
+Education: MS in Computer Science
