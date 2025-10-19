@@ -32,7 +32,7 @@ This demo platform serves as a testing ground for AI agents tailored to specific
 
 The platform supports both local development and cloud deployment with a comprehensive MCP ecosystem:
 
-<img src="docs/images/architecture-overview.png" 
+<img src="docs/images/architecture-overview.svg" 
      alt="Architecture Overview" 
      width="1200">
 
