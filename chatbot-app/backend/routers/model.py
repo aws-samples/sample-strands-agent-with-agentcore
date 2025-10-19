@@ -39,6 +39,12 @@ CONFIG_FILE = "model_config.json"
 # Available models - could be loaded from config or defined here
 AVAILABLE_MODELS = [
     {
+        "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "name": "Claude Sonnet 4.5",
+        "provider": "Anthropic",
+        "description": "Anthropic's latest and most advanced model"
+    },
+    {
         "id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
         "name": "Claude 4 Sonnet",
         "provider": "Anthropic",
@@ -51,10 +57,28 @@ AVAILABLE_MODELS = [
         "description": "Fast, intelligent model for complex tasks"
     },
     {
+        "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "name": "Claude Haiku 4.5",
+        "provider": "Anthropic",
+        "description": "Latest fast and efficient model for simple tasks"
+    },
+    {
         "id": "anthropic.claude-3-5-haiku-20241022-v1:0",
         "name": "Claude 3.5 Haiku",
         "provider": "Anthropic",
         "description": "Fast and affordable model for simple tasks"
+    },
+    {
+        "id": "qwen.qwen3-235b-a22b-2507-v1:0",
+        "name": "Qwen3 235B A22B",
+        "provider": "Alibaba Cloud",
+        "description": "Large-scale Qwen model with 235B parameters"
+    },
+    {
+        "id": "qwen.qwen3-32b-v1:0",
+        "name": "Qwen3 32B",
+        "provider": "Alibaba Cloud",
+        "description": "Efficient Qwen model with 32B parameters"
     },
     {
         "id": "openai.gpt-oss-120b-1:0",

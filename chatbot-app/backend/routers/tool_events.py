@@ -242,10 +242,27 @@ async def tool_events_stream(session_id: Optional[str] = Query(None)):
             }
             yield f"data: {json.dumps(initial_event)}\n\n"
             
-            # Send any existing active sessions
+            # Send any existing active sessions (filtered by session ID)
             active_sessions = tool_events_channel.get_active_sessions()
-            for session_data in active_sessions.values():
-                yield f"data: {json.dumps(session_data)}\n\n"
+            logger.info(f"🔍 New subscriber connecting - session_id: {session_id}, active_sessions: {len(active_sessions)}")
+
+            sent_count = 0
+            for session_key, session_data in active_sessions.items():
+                # Only send events matching this subscriber's session ID
+                event_session_id = session_data.get('sessionId')
+                should_send = (
+                    session_id is None or  # No filter, send all
+                    event_session_id == session_id  # Exact session match
+                )
+
+                if should_send:
+                    logger.info(f"✅ Sending existing event: {session_key} (event_session={event_session_id}) to subscriber (session={session_id})")
+                    yield f"data: {json.dumps(session_data)}\n\n"
+                    sent_count += 1
+                else:
+                    logger.info(f"⏭️  Skipping event: {session_key} (event_session={event_session_id}) for subscriber (session={session_id})")
+
+            logger.info(f"📊 Sent {sent_count}/{len(active_sessions)} existing events to subscriber {session_id}")
             
             # Listen for new tool events
             while True:

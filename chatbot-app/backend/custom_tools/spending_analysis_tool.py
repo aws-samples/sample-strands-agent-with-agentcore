@@ -42,7 +42,7 @@ class SpendingAnalysisAgent:
     def __init__(self):
         self.bedrock_model = BedrockModel(
             region_name="us-west-2",
-            model_id="us.anthropic.claude-sonnet-4-20250514-v1:0"
+            model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
         )
         
         self.analysis_tools = [
@@ -331,14 +331,17 @@ async def spending_analysis_tool(query: str) -> str:
         logger.error(f"Error in spending analysis tool: {e}")
         error_message = f"I encountered an error while analyzing your spending patterns: {str(e)}. Please try again or contact support if the issue persists."
         
-        # Send error progress for general errors
+        # Send error progress for general errors (only if session_id is available)
         if ANALYSIS_CHANNEL_AVAILABLE and tool_events_channel:
             try:
-                await tool_events_channel.error_progress(
-                    'spending_analysis_tool', 
-                    f"spending_{uuid.uuid4().hex[:8]}", 
-                    f'Analysis tool error: {str(e)}'
-                )
+                # Try to get session_id from context
+                session_id = get_current_session_id()
+                if session_id:
+                    await tool_events_channel.error_progress(
+                        'spending_analysis_tool',
+                        session_id,
+                        f'Analysis tool error: {str(e)}'
+                    )
             except:
                 pass  # Don't fail on progress error
         

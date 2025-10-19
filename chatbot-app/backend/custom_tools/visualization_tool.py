@@ -264,12 +264,12 @@ async def create_visualization(chart_data: dict, chart_name: str) -> str:
         # Use async approach with simplified progress tracking
         session_id = get_current_session_id()
         if not session_id:
-            import uuid
-            session_id = f"viz_{uuid.uuid4().hex[:8]}"
-        
-        
+            logger.error("❌ No session ID found in tool context - cannot send progress updates")
+            # Don't generate random session ID - this causes cross-session leakage
+            # Progress updates will be skipped if no session ID is available
+
         # Optional: Send progress if channel is available (non-blocking)
-        if ANALYSIS_CHANNEL_AVAILABLE and tool_events_channel:
+        if ANALYSIS_CHANNEL_AVAILABLE and tool_events_channel and session_id:
             try:
                 await tool_events_channel.send_progress(
                     'visualization_tool',
@@ -292,20 +292,23 @@ async def create_visualization(chart_data: dict, chart_name: str) -> str:
         tool_use_id = get_current_tool_use_id()
         if not tool_use_id:
             tool_use_id = f"tooluse_{chart_name}"
+
+        # Store chart data in memory (only if session_id is available)
+        if session_id:
+            memory_store = get_memory_store()
+
+            memory_store.store_chart(session_id, tool_use_id, chart_id, chart_data)
+
+            # Verify storage immediately
+            stored_chart = memory_store.get_chart(session_id, tool_use_id, chart_id)
+            if not stored_chart:
+                logger.error(f"Failed to store chart '{chart_name}' - verification failed")
+        else:
+            logger.warning("No session ID - chart will not be stored in memory")
         
-        # Store chart data in memory
-        memory_store = get_memory_store()
-        
-        memory_store.store_chart(session_id, tool_use_id, chart_id, chart_data)
-        
-        # Verify storage immediately
-        stored_chart = memory_store.get_chart(session_id, tool_use_id, chart_id)
-        if not stored_chart:
-            logger.error(f"Failed to store chart '{chart_name}' - verification failed")
-        
-        
+
         # Optional: Send completion progress
-        if ANALYSIS_CHANNEL_AVAILABLE and tool_events_channel:
+        if ANALYSIS_CHANNEL_AVAILABLE and tool_events_channel and session_id:
             try:
                 await tool_events_channel.send_progress(
                     'visualization_tool',

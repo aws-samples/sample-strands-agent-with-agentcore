@@ -231,7 +231,8 @@ class ToolEventsStore {
     console.log(`🧹 CLEARING ALL DATA - New tool detected: ${newToolUseId}`);
     // Clear everything EXCEPT the new tool that's starting
     this.analysisStates = this.analysisStates.filter(state => state.toolUseId === newToolUseId);
-    this.progressStates = [];
+    // Clear all inactive progress states (keep only active ones)
+    this.progressStates = this.progressStates.filter(p => p.isActive);
     this.updateSnapshot(); // Immediate update
   };
 
@@ -267,9 +268,18 @@ class ToolEventsStore {
   handleMessage = (event: MessageEvent) => {
     try {
       const data: ToolEvent = JSON.parse(event.data);
-      
+
       if (data.type === 'tools_connected' || data.type === 'keepalive') {
         return;
+      }
+
+      // CRITICAL: Verify session ID matches current session
+      // This is a safety check in case backend filtering fails or events leak
+      if ('sessionId' in data && data.sessionId && this.currentSessionId) {
+        if (data.sessionId !== this.currentSessionId) {
+          console.warn(`⚠️ Received event for different session. Expected: ${this.currentSessionId}, Got: ${data.sessionId}`);
+          return; // Ignore events from other sessions
+        }
       }
 
       this.handleToolEvent(data);
@@ -308,10 +318,36 @@ class ToolEventsStore {
       progress: event.progress,
       timestamp: event.timestamp,
       metadata: event.metadata || {},
-      isActive: event.step !== 'error'  // Keep progress visible even after completion
+      isActive: event.step !== 'completed' && event.step !== 'error'  // Inactive when done
     };
 
-    this.progressStates = [...this.progressStates, progressState];
+    // Remove old progress for the same tool
+    const existingIndex = this.progressStates.findIndex(
+      p => p.context === event.toolName && p.sessionId === event.sessionId
+    );
+
+    if (existingIndex !== -1) {
+      // Update existing progress
+      this.progressStates = [
+        ...this.progressStates.slice(0, existingIndex),
+        progressState,
+        ...this.progressStates.slice(existingIndex + 1)
+      ];
+    } else {
+      // Add new progress
+      this.progressStates = [...this.progressStates, progressState];
+    }
+
+    // Auto-remove completed/error progress after delay
+    if (!progressState.isActive) {
+      setTimeout(() => {
+        this.progressStates = this.progressStates.filter(
+          p => !(p.context === event.toolName && p.sessionId === event.sessionId && !p.isActive)
+        );
+        this.updateSnapshot();
+      }, 3000); // Remove after 3 seconds
+    }
+
     this.updateSnapshot();
   };
 

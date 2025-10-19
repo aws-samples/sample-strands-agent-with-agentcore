@@ -134,7 +134,7 @@ class FinancialNarrativeAgent:
     def __init__(self):
         self.bedrock_model = BedrockModel(
             region_name="us-west-2",
-            model_id="us.anthropic.claude-sonnet-4-20250514-v1:0"
+            model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0"
         )
         
         # Create agent with generate_image and analyze_spending_behavior tools
@@ -356,12 +356,13 @@ async def financial_narrative_tool(query: str) -> str:
         # Get current tool use ID and session ID from context manager
         tool_use_id = get_current_tool_use_id()
         session_id = get_current_session_id()
-        
-        # Use actual session_id, not tool_use_id
+
+        # Session ID is required for this tool (used in file paths and image handling)
         if not session_id:
-            session_id = f"narrative_{uuid.uuid4().hex[:8]}"
-        
-        
+            error_msg = "❌ No session ID found in tool context. Financial narrative requires a valid session."
+            logger.error(error_msg)
+            return error_msg
+
         # Get agent and create narratives with proper session_id and tool_use_id
         agent = get_narrative_agent()
         response = await agent.create_narratives(customer_id, session_id, tool_use_id)

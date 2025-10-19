@@ -50,6 +50,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
   const [showScratchPad, setShowScratchPad] = useState(false)
   const [userClosedScratchPad, setUserClosedScratchPad] = useState(false)
+  const [shouldRenderScratchPad, setShouldRenderScratchPad] = useState(false)
   const [suggestionKey, setSuggestionKey] = useState<string>("initial")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -99,13 +100,36 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     [toggleTool, regenerateSuggestions],
   )
 
-  // Auto-show scratch pad when there's active progress
+  // Auto-show/hide scratch pad with slide animation
   const hasActiveProgress = toolProgress.some((p) => p.isActive)
+
   useEffect(() => {
-    if (hasActiveProgress && !showScratchPad && !userClosedScratchPad) {
+    // Show logic: when there's progress data
+    if (toolProgress.length > 0 && !shouldRenderScratchPad) {
+      setShouldRenderScratchPad(true)
+      // Small delay to ensure DOM is ready for animation
+      setTimeout(() => {
+        if (hasActiveProgress && !userClosedScratchPad) {
+          setShowScratchPad(true)
+        }
+      }, 10)
+    }
+
+    // Hide logic: when progress is cleared
+    if (toolProgress.length === 0 && shouldRenderScratchPad) {
+      // First: slide out animation
+      setShowScratchPad(false)
+      // Then: unmount after animation completes (300ms duration from ScratchPad)
+      setTimeout(() => {
+        setShouldRenderScratchPad(false)
+      }, 300)
+    }
+
+    // Auto-show when active progress appears
+    if (hasActiveProgress && shouldRenderScratchPad && !showScratchPad && !userClosedScratchPad) {
       setShowScratchPad(true)
     }
-  }, [hasActiveProgress, showScratchPad, userClosedScratchPad])
+  }, [toolProgress.length, hasActiveProgress, showScratchPad, userClosedScratchPad, shouldRenderScratchPad])
 
   const handleSendMessage = async (e: React.FormEvent, files: File[]) => {
     setUserClosedScratchPad(false)
@@ -364,16 +388,22 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
         </form>
       </SidebarInset>
 
-      {/* Scratch Pad */}
-      <ScratchPad
-        progressStates={toolProgress}
-        isVisible={showScratchPad}
-        connectionError={null}
-        onClose={() => {
-          setShowScratchPad(false)
-          setUserClosedScratchPad(true)
-        }}
-      />
+      {/* Scratch Pad - Render with slide animation */}
+      {shouldRenderScratchPad && (
+        <ScratchPad
+          progressStates={toolProgress}
+          isVisible={showScratchPad}
+          connectionError={null}
+          onClose={() => {
+            setShowScratchPad(false)
+            setUserClosedScratchPad(true)
+            // Unmount after slide-out animation
+            setTimeout(() => {
+              setShouldRenderScratchPad(false)
+            }, 300)
+          }}
+        />
+      )}
 
       <AgentPanelWithStream sessionId={sessionId || undefined} />
     </>
