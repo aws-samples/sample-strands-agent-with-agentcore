@@ -70,7 +70,7 @@ CURRENT_DIR=$(pwd)
 
 # Build and push Backend
 echo "Building backend container..."
-cd ../../../chatbot-app/backend
+cd ../../../../chatbot-app/backend
 docker build --platform linux/amd64 -t chatbot-backend .
 docker tag chatbot-backend:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-backend:latest
 docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-backend:latest
@@ -103,7 +103,14 @@ fi
 if [ "$ENABLE_COGNITO" = "true" ]; then
     echo "🔐 Deploying Cognito authentication stack first..."
     export ENABLE_COGNITO=true
+
+    # Move to infrastructure directory (one level up)
+    pushd .. > /dev/null
+
     npx cdk deploy CognitoAuthStack --require-approval never
+
+    # Return to scripts directory
+    popd > /dev/null
 
     echo "📋 Getting Cognito configuration from CloudFormation..."
     COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CognitoAuthStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region $AWS_REGION)
@@ -156,7 +163,7 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
 
     # Build frontend with Cognito configuration
     echo "Building frontend container with Cognito..."
-    cd ../../../chatbot-app/frontend
+    cd ../../../../chatbot-app/frontend
     docker build --platform linux/amd64 \
         --build-arg NEXT_PUBLIC_AWS_REGION=$AWS_REGION \
         --build-arg NEXT_PUBLIC_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID \
@@ -268,7 +275,15 @@ echo "Deploying remaining CDK stack..."
 if [ "$ENABLE_COGNITO" = "true" ]; then
     echo "🔐 Deploying ChatbotStack with Cognito authentication..."
     export ENABLE_COGNITO=true
+    
+    # Move to infrastructure directory (one level up)
+    pushd .. > /dev/null
+
     npx cdk deploy ChatbotStack --require-approval never
+
+    # Return to scripts directory
+    popd > /dev/null
+
 else
     echo "🔓 Deploying with CIDR-based access control only..."
     echo "Allowed IP ranges: $ALLOWED_IP_RANGES"
