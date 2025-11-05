@@ -98,14 +98,8 @@ collect_api_keys() {
         echo ""
     fi
 
-    # Update config file with actual values
-    if [ -n "$TAVILY_API_KEY" ]; then
-        jq --arg key "$TAVILY_API_KEY" '.environment_variables."tavily-web-search".TAVILY_API_KEY = $key' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
-    fi
-
-    if [ -n "$BEDROCK_KNOWLEDGE_BASE_ID" ]; then
-        jq --arg kb_id "$BEDROCK_KNOWLEDGE_BASE_ID" '.environment_variables."bedrock-kb-retrieval".KNOWLEDGE_BASE_ID = $kb_id' "$CONFIG_FILE" > "${CONFIG_FILE}.tmp" && mv "${CONFIG_FILE}.tmp" "$CONFIG_FILE"
-    fi
+    # Note: API keys are now passed dynamically via environment variables at deployment time
+    # No need to modify the config file - placeholders remain for reference
 
     print_success "API key collection completed!"
 }
@@ -207,9 +201,13 @@ load_config() {
         print_error "Configuration file $CONFIG_FILE not found!"
         exit 1
     fi
-    
+
     print_status "Loading configuration from $CONFIG_FILE"
-    
+
+    # Set AWS region from environment or default
+    export AWS_REGION=${AWS_REGION:-us-west-2}
+    print_status "Using AWS region: $AWS_REGION"
+
     # Validate JSON
     if ! jq empty "$CONFIG_FILE" 2>/dev/null; then
         print_error "Invalid JSON in configuration file!"
@@ -231,7 +229,8 @@ get_server_config() {
 
 # Function to get deployment region
 get_region() {
-    jq -r '.deployment.region' "$CONFIG_FILE"
+    # Always use environment variable, ignore JSON config
+    echo "${AWS_REGION:-us-west-2}"
 }
 
 # Function to get deployment stage
@@ -404,16 +403,19 @@ deploy_server() {
         print_status "Setting environment variables as CloudFormation parameters..."
         
         # Convert environment variables to CloudFormation parameters based on server type
+        # Use direct environment variables as primary source, fall back to config file
         case "$server_name" in
             "tavily-web-search")
                 local log_level=$(echo "$env_vars" | jq -r '.LOG_LEVEL // "INFO"')
-                local tavily_key=$(echo "$env_vars" | jq -r '.TAVILY_API_KEY // "your-tavily-api-key-here"')
+                # Use environment variable directly, fall back to config file, then default
+                local tavily_key="${TAVILY_API_KEY:-$(echo "$env_vars" | jq -r '.TAVILY_API_KEY // "your-tavily-api-key-here"')}"
                 cf_params="$cf_params LogLevel=$log_level TavilyApiKey=$tavily_key"
                 ;;
             "bedrock-kb-retrieval")
                 local log_level=$(echo "$env_vars" | jq -r '.LOG_LEVEL // "INFO"')
-                local bedrock_region=$(echo "$env_vars" | jq -r '.BEDROCK_REGION // "us-west-2"')
-                local kb_id=$(echo "$env_vars" | jq -r '.KNOWLEDGE_BASE_ID // "your-knowledge-base-id-here"')
+                # Use environment variables directly, fall back to config file, then defaults
+                local bedrock_region="${BEDROCK_REGION:-$(echo "$env_vars" | jq -r '.BEDROCK_REGION // "us-west-2"')}"
+                local kb_id="${BEDROCK_KNOWLEDGE_BASE_ID:-$(echo "$env_vars" | jq -r '.KNOWLEDGE_BASE_ID // "your-knowledge-base-id-here"')}"
                 cf_params="$cf_params LogLevel=$log_level BedrockRegion=$bedrock_region KnowledgeBaseId=$kb_id AllowedKBIds=$kb_id"
                 ;;
             *)

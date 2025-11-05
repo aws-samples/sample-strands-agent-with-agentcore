@@ -18,6 +18,20 @@ echo -e "${BLUE}🔥 Starting Serverless MCP Farm destruction...${NC}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="$SCRIPT_DIR/deploy-config.json"
 
+# Load AWS region from .env file if available (check parent directory first)
+if [ -f "../.env" ]; then
+    set -a
+    source ../.env 2>/dev/null || true
+    set +a
+    echo -e "${BLUE}📋 Loaded environment variables from ../.env${NC}"
+fi
+
+# Set AWS region - use from environment or default
+export AWS_REGION=${AWS_REGION:-${NEXT_PUBLIC_AWS_REGION:-us-west-2}}
+export AWS_DEFAULT_REGION=$AWS_REGION
+
+echo -e "${BLUE}🌍 Using AWS region: $AWS_REGION${NC}"
+
 # Check if config file exists
 if [ ! -f "$CONFIG_FILE" ]; then
     echo -e "${RED}❌ Configuration file not found: $CONFIG_FILE${NC}"
@@ -104,12 +118,12 @@ print(servers.get('$server_name', {}).get('stack_name', '$server_name'))
         echo -e "${GREEN}  Using AWS CLI to delete CloudFormation stack...${NC}"
         
         # Check if stack exists
-        if aws cloudformation describe-stacks --stack-name "$stack_name" --region us-west-2 >/dev/null 2>&1; then
+        if aws cloudformation describe-stacks --stack-name "$stack_name" --region $AWS_REGION >/dev/null 2>&1; then
             echo -e "${GREEN}  Deleting CloudFormation stack: $stack_name${NC}"
-            aws cloudformation delete-stack --stack-name "$stack_name" --region us-west-2
-            
+            aws cloudformation delete-stack --stack-name "$stack_name" --region $AWS_REGION
+
             echo -e "${YELLOW}  Waiting for stack deletion to complete...${NC}"
-            aws cloudformation wait stack-delete-complete --stack-name "$stack_name" --region us-west-2
+            aws cloudformation wait stack-delete-complete --stack-name "$stack_name" --region $AWS_REGION
             echo -e "${GREEN}  ✅ Stack $stack_name deleted successfully${NC}"
         else
             echo -e "${YELLOW}  ⚠️  Stack $stack_name does not exist or already deleted${NC}"
@@ -175,7 +189,7 @@ with open('$CONFIG_FILE', 'r') as f:
 servers = config.get('deployment', {}).get('servers', {})
 print(servers.get('$server', {}).get('stack_name', '$server'))
 ")
-        echo -e "   aws cloudformation delete-stack --stack-name $STACK_NAME --region us-west-2"
+        echo -e "   aws cloudformation delete-stack --stack-name $STACK_NAME --region $AWS_REGION"
     done
     exit 1
 else

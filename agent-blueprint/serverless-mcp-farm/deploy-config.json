@@ -1,6 +1,5 @@
 {
   "deployment": {
-    "region": "us-west-2",
     "stage": "prod",
     "servers": {
       "aws-documentation": {
@@ -14,7 +13,7 @@
         "description": "AWS Pricing Information MCP Server"
       },
       "bedrock-kb-retrieval": {
-        "enabled": true,
+        "enabled": false,
         "stack_name": "mcp-bedrock-kb-retrieval-server",
         "description": "Amazon Bedrock Knowledge Base Retrieval MCP Server"
       },
@@ -29,7 +28,7 @@
         "description": "Financial Market Data and Analysis MCP Server"
       },
       "recruiter-insights": {
-        "enabled": true,
+        "enabled": false,
         "stack_name": "mcp-recruiter-insights-server",
         "description": "Recruiter Insights and Candidate Analysis MCP Server"
       }

@@ -1,10 +1,9 @@
 {
   "deployment": {
-    "region": "us-west-2",
     "stage": "prod",
     "servers": {
       "nova-act-mcp": {
-        "enabled": true,
+        "enabled": false,
         "stack_name": "nova-act-mcp-fargate",
         "description": "Nova Act MCP Server on AWS Fargate with Browser Automation",
         "type": "fargate",

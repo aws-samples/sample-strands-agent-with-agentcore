@@ -207,19 +207,6 @@
       "icon": "trending-up",
       "enabled": false,
       "tool_type": "mcp"
-    },
-    {
-      "id": "recruiter-insights",
-      "name": "Recruiter Insights",
-      "description": "AI-powered recruitment tools for candidate analysis, job matching, and comprehensive recruiter insights with resume processing and analytics",
-      "type": "mcp",
-      "config": {
-        "url": "ssm:///mcp/endpoints/serverless/recruiter-insights"
-      },
-      "category": "hr",
-      "icon": "users",
-      "enabled": false,
-      "tool_type": "mcp"
     }
   ]
 }

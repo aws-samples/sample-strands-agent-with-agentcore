@@ -25,8 +25,8 @@ McpFarmAlbStack(
     allowed_mcp_cidrs=allowed_mcp_cidrs,
     description="MCP Farm Shared Application Load Balancer with CIDR restrictions",
     env=cdk.Environment(
-        account=app.node.try_get_context("account"),
-        region=app.node.try_get_context("region") or "us-west-2"
+        account=os.environ.get("CDK_DEFAULT_ACCOUNT") or app.node.try_get_context("account"),
+        region=os.environ.get("CDK_DEFAULT_REGION") or app.node.try_get_context("region") or "us-west-2"
     )
 )
 
