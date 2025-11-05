@@ -71,7 +71,7 @@ CURRENT_DIR=$(pwd)
 # Build and push Backend
 echo "Building backend container..."
 cd ../../../../chatbot-app/backend
-docker build --platform linux/amd64 -t chatbot-backend .
+docker build --platform linux/amd64 --no-cache -t chatbot-backend .
 docker tag chatbot-backend:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-backend:latest
 docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-backend:latest
 

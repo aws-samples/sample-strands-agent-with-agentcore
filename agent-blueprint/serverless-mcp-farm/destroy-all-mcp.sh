@@ -56,8 +56,8 @@ fi
 echo -e "${BLUE}Found enabled MCP servers: $ENABLED_SERVERS${NC}"
 echo ""
 
-# Confirmation
-echo -e "${YELLOW}This will destroy the following serverless MCP stacks:${NC}"
+# Show what will be destroyed
+echo -e "${YELLOW}Destroying the following serverless MCP stacks:${NC}"
 for server in $ENABLED_SERVERS; do
     # Get stack name from config
     STACK_NAME=$(python3 -c "
@@ -70,13 +70,6 @@ print(servers.get('$server', {}).get('stack_name', '$server'))
     echo -e "  - ${BLUE}$STACK_NAME${NC} (from $server)"
 done
 echo ""
-
-read -p "Are you sure you want to destroy all serverless MCP stacks? (y/N): " -n 1 -r
-echo
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${RED}❌ Destruction cancelled.${NC}"
-    exit 1
-fi
 
 # Function to destroy a single MCP server
 destroy_mcp_server() {

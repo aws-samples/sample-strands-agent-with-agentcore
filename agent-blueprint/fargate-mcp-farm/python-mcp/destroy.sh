@@ -41,16 +41,10 @@ command_exists() {
 # Function to destroy the stack
 destroy_stack() {
     local STACK_NAME="python-mcp-fargate"
-    
-    log_warning "This will permanently delete the stack: ${STACK_NAME}"
+
+    log_warning "Permanently deleting stack: ${STACK_NAME}"
     log_warning "All resources including ECR images, logs, and ECS services will be removed"
-    
-    read -p "Are you sure you want to continue? (yes/no): " -r
-    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-        log_info "Destruction cancelled"
-        exit 0
-    fi
-    
+
     log_info "Destroying stack: ${STACK_NAME}..."
     
     cd "${CDK_DIR}"

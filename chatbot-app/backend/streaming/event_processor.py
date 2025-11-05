@@ -378,7 +378,8 @@ Analysis completed successfully. The detailed insights have been generated based
             yield self.formatter.create_init_event()
             
             stream_iterator = agent.stream_async(multimodal_message)
-            
+
+            # Note: Keepalive is handled at the router level (chat.py) via stream_with_keepalive wrapper
             async for event in stream_iterator:
                 while self.pending_events:
                     pending_event = self.pending_events.pop(0)

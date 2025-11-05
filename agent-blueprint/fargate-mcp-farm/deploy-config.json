@@ -17,7 +17,7 @@
         }
       },
       "python-mcp": {
-        "enabled": true,
+        "enabled": false,
         "stack_name": "python-mcp-fargate",
         "description": "Python MCP Server on AWS Fargate with Pyodide",
         "type": "fargate",

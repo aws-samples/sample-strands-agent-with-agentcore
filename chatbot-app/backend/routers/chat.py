@@ -21,17 +21,17 @@ from session.global_session_registry import global_session_registry
 async def stream_chat(request: dict, x_session_id: Optional[str] = Header(None)):
     """Stream chat responses using Server-Sent Events with session management"""
     user_message = request.get("message", "")
-    
+
     if not user_message.strip():
         return {"error": "Message cannot be empty"}
-    
+
     try:
         # Get session ID from header or request body, or generate new one
         session_id = x_session_id or request.get("session_id")
-        
+
         # Get or create session-specific agent
         session_id, session_manager, agent = global_session_registry.get_or_create_session(session_id)
-        
+
         # Use session-specific agent for streaming
         return StreamingResponse(
             agent.stream_async(user_message, session_id=session_id),

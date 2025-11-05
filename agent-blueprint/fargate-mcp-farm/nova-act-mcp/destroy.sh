@@ -43,7 +43,7 @@ print_status "Stack name: $STACK_NAME"
 # Confirm destruction
 confirm_destruction() {
     echo ""
-    print_warning "This will destroy the following resources:"
+    print_warning "Destroying the following resources:"
     print_warning "  - ECS Fargate cluster and service"
     print_warning "  - Application Load Balancer"
     print_warning "  - ECR repository and all images"
@@ -51,12 +51,6 @@ confirm_destruction() {
     print_warning "  - CloudWatch log groups"
     print_warning "  - IAM roles and policies"
     echo ""
-    
-    read -p "Are you sure you want to proceed? (yes/no): " -r
-    if [[ ! $REPLY =~ ^[Yy][Ee][Ss]$ ]]; then
-        print_status "Destruction cancelled."
-        exit 0
-    fi
 }
 
 # Setup CDK environment

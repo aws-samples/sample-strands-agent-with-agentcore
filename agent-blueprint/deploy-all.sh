@@ -451,27 +451,21 @@ main() {
     print_warning "This deployment will create the following components:"
     echo "  ✅ Web Application (Chatbot) with Cognito Authentication"
     echo "  ✅ Serverless MCP Servers (Lambda-based tools)"
-    echo "  ✅ Shared Infrastructure (Internal ALB for Fargate MCPs)"
-    echo "  ✅ Fargate MCP Servers (Containerized tools)"
-    echo "  ✅ ECR repositories for Docker images"
+    echo "  ⏭️  Shared Infrastructure (DISABLED - Stateful MCP disabled)"
+    echo "  ⏭️  Fargate MCP Servers (DISABLED - Stateful MCP disabled)"
     echo "  ✅ VPC, security groups, and networking"
     echo ""
-
-    read -p "Do you want to proceed with the deployment? (yes/no): " confirm
-    if [[ $confirm != "yes" ]]; then
-        print_warning "Deployment cancelled by user."
-        exit 0
-    fi
 
     print_status "Starting deployment in dependency order..."
 
     # Step 1: Deploy Web Application (creates base VPC)
+    # Always redeploy to ensure Docker images and configurations are up-to-date
     print_status "🚀 Step 1: Deploying Web Application (Chatbot)..."
     if ! deploy_component "Web Application" \
         "chatbot-deployment/infrastructure/scripts/deploy.sh" \
         "chatbot-deployment/infrastructure" \
         "false" \
-        "ChatbotStack"; then
+        ""; then  # Empty stack name to force redeployment
         print_error "Failed to deploy Web Application. Aborting deployment."
         exit 1
     fi
@@ -493,40 +487,45 @@ main() {
     fi
 
     # Step 3: Deploy Shared Infrastructure (uses VPC from Step 1)
-    print_status "🚀 Step 3: Deploying Shared Infrastructure..."
-    if ! deploy_component "Shared Infrastructure" \
-        "fargate-mcp-farm/shared-infrastructure/deploy.sh" \
-        "fargate-mcp-farm/shared-infrastructure/cdk" \
-        "true" \
-        "McpFarmAlbStack"; then
-        print_warning "Shared Infrastructure failed to deploy. Fargate MCP servers will be skipped."
-        SKIP_FARGATE=true
-    fi
+    # DISABLED: Stateful MCP servers (Fargate) are disabled
+    # print_status "🚀 Step 3: Deploying Shared Infrastructure..."
+    # if ! deploy_component "Shared Infrastructure" \
+    #     "fargate-mcp-farm/shared-infrastructure/deploy.sh" \
+    #     "fargate-mcp-farm/shared-infrastructure/cdk" \
+    #     "true" \
+    #     "McpFarmAlbStack"; then
+    #     print_warning "Shared Infrastructure failed to deploy. Fargate MCP servers will be skipped."
+    #     SKIP_FARGATE=true
+    # fi
+    print_status "⏭️  Step 3: Skipping Shared Infrastructure (Stateful MCP disabled)"
+    SKIP_FARGATE=true
 
     # Step 4: Deploy Fargate MCP Servers (depend on shared ALB and VPC)
-    if [ "$SKIP_FARGATE" != "true" ]; then
-        print_status "🚀 Step 4: Deploying Fargate MCP Servers..."
-
-        # Deploy Python MCP Server
-        if ! deploy_component "Python MCP Server" \
-            "fargate-mcp-farm/python-mcp/deploy.sh" \
-            "fargate-mcp-farm/python-mcp/cdk" \
-            "true" \
-            "python-mcp-fargate"; then
-            print_warning "Python MCP Server failed to deploy, continuing..."
-        fi
-
-        # Deploy Nova Act MCP Server
-        if ! deploy_component "Nova Act MCP Server" \
-            "fargate-mcp-farm/nova-act-mcp/deploy.sh" \
-            "fargate-mcp-farm/nova-act-mcp/cdk" \
-            "true" \
-            "nova-act-mcp-fargate"; then
-            print_warning "Nova Act MCP Server failed to deploy, continuing..."
-        fi
-    else
-        print_warning "Skipping Fargate MCP servers due to shared infrastructure failure"
-    fi
+    # DISABLED: Stateful MCP servers (Fargate) are disabled
+    # if [ "$SKIP_FARGATE" != "true" ]; then
+    #     print_status "🚀 Step 4: Deploying Fargate MCP Servers..."
+    #
+    #     # Deploy Python MCP Server
+    #     if ! deploy_component "Python MCP Server" \
+    #         "fargate-mcp-farm/python-mcp/deploy.sh" \
+    #         "fargate-mcp-farm/python-mcp/cdk" \
+    #         "true" \
+    #         "python-mcp-fargate"; then
+    #         print_warning "Python MCP Server failed to deploy, continuing..."
+    #     fi
+    #
+    #     # Deploy Nova Act MCP Server
+    #     if ! deploy_component "Nova Act MCP Server" \
+    #         "fargate-mcp-farm/nova-act-mcp/deploy.sh" \
+    #         "fargate-mcp-farm/nova-act-mcp/cdk" \
+    #         "true" \
+    #         "nova-act-mcp-fargate"; then
+    #         print_warning "Nova Act MCP Server failed to deploy, continuing..."
+    #     fi
+    # else
+    #     print_warning "Skipping Fargate MCP servers due to shared infrastructure failure"
+    # fi
+    print_status "⏭️  Step 4: Skipping Fargate MCP Servers (Stateful MCP disabled)"
 
     # Step 5: Configure MCP endpoints
     configure_mcp_endpoints

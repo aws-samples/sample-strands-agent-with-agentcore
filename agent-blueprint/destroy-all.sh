@@ -140,7 +140,7 @@ main() {
     # Setup shared virtual environment
     setup_shared_venv
 
-    print_warning "This will destroy ALL components including:"
+    print_warning "Destroying ALL components including:"
     echo "  - All Fargate MCP Servers"
     echo "  - Shared Infrastructure (ALB)"
     echo "  - All Serverless MCP Servers"
@@ -149,12 +149,6 @@ main() {
     echo "  - ECR repositories and Docker images"
     echo "  - All associated AWS resources"
     echo ""
-
-    read -p "Are you sure you want to proceed? (yes/no): " confirm
-    if [[ $confirm != "yes" ]]; then
-        print_warning "Destruction cancelled by user."
-        exit 0
-    fi
 
     print_status "Starting destruction in dependency order..."
 
@@ -243,26 +237,44 @@ main() {
         chmod +x scripts/destroy.sh
         ./scripts/destroy.sh || {
             print_warning "Dedicated destroy script failed, trying manual CDK destruction..."
-            
+
             # Set CDK environment variables for fallback
             export CDK_DEFAULT_ACCOUNT=$ACCOUNT_ID
             export CDK_DEFAULT_REGION=$AWS_REGION
-            
+
+            # Function to ensure stack deletion starts
+            ensure_stack_deletion_fallback() {
+                local stack_name=$1
+
+                print_status "Destroying $stack_name..."
+
+                # Try CDK destroy first
+                npx cdk destroy $stack_name --force --require-approval never 2>&1 || true
+
+                # Wait a moment for deletion to start
+                sleep 3
+
+                # Check if deletion actually started
+                if stack_exists "$stack_name"; then
+                    stack_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region ${AWS_REGION:-us-west-2} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+
+                    if [[ "$stack_status" != "DELETE_IN_PROGRESS" && "$stack_status" != "DELETE_COMPLETE" && "$stack_status" != "DELETED" ]]; then
+                        print_warning "CDK destroy did not start deletion (status: $stack_status), using CloudFormation directly..."
+                        aws cloudformation delete-stack --stack-name "$stack_name" --region ${AWS_REGION:-us-west-2}
+                        print_success "CloudFormation delete-stack command executed for $stack_name"
+                    else
+                        print_success "Stack deletion in progress for $stack_name"
+                    fi
+                fi
+            }
+
             # Manual CDK destruction from the correct directory
-            print_status "Destroying CognitoAuthStack..."
             if stack_exists "CognitoAuthStack"; then
-                npx cdk destroy CognitoAuthStack --force --require-approval never || {
-                    print_warning "CDK destroy failed for CognitoAuthStack, trying CloudFormation..."
-                    aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region ${AWS_REGION:-us-west-2}
-                }
+                ensure_stack_deletion_fallback "CognitoAuthStack"
             fi
-            
-            print_status "Destroying ChatbotStack..."
+
             if stack_exists "ChatbotStack"; then
-                npx cdk destroy ChatbotStack --force --require-approval never || {
-                    print_warning "CDK destroy failed for ChatbotStack, trying CloudFormation..."
-                    aws cloudformation delete-stack --stack-name "ChatbotStack" --region ${AWS_REGION:-us-west-2}
-                }
+                ensure_stack_deletion_fallback "ChatbotStack"
             fi
         }
         cd - > /dev/null
@@ -282,55 +294,121 @@ main() {
         export CDK_DEFAULT_ACCOUNT=$ACCOUNT_ID
         export CDK_DEFAULT_REGION=$AWS_REGION
         
+        # Function to ensure stack deletion starts
+        ensure_stack_deletion() {
+            local stack_name=$1
+
+            print_status "Destroying $stack_name..."
+
+            # Try CDK destroy first
+            npx cdk destroy $stack_name --force --require-approval never 2>&1 || true
+
+            # Wait a moment for deletion to start
+            sleep 3
+
+            # Check if deletion actually started
+            if stack_exists "$stack_name"; then
+                stack_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region ${AWS_REGION:-us-west-2} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+
+                if [[ "$stack_status" != "DELETE_IN_PROGRESS" && "$stack_status" != "DELETE_COMPLETE" && "$stack_status" != "DELETED" ]]; then
+                    print_warning "CDK destroy did not start deletion (status: $stack_status), using CloudFormation directly..."
+                    aws cloudformation delete-stack --stack-name "$stack_name" --region ${AWS_REGION:-us-west-2}
+                    print_success "CloudFormation delete-stack command executed for $stack_name"
+                else
+                    print_success "Stack deletion in progress for $stack_name"
+                fi
+            else
+                print_status "$stack_name already deleted or not found"
+            fi
+        }
+
         # Destroy both stacks manually with proper CDK context
-        print_status "Destroying CognitoAuthStack..."
         if stack_exists "CognitoAuthStack"; then
-            npx cdk destroy CognitoAuthStack --force --require-approval never || {
-                print_warning "CDK destroy failed for CognitoAuthStack, trying CloudFormation..."
-                aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region ${AWS_REGION:-us-west-2}
-            }
+            ensure_stack_deletion "CognitoAuthStack"
         fi
-        
-        print_status "Destroying ChatbotStack..."
+
         if stack_exists "ChatbotStack"; then
-            npx cdk destroy ChatbotStack --force --require-approval never || {
-                print_warning "CDK destroy failed for ChatbotStack, trying CloudFormation..."
-                aws cloudformation delete-stack --stack-name "ChatbotStack" --region ${AWS_REGION:-us-west-2}
-            }
+            ensure_stack_deletion "ChatbotStack"
         fi
         
         cd - > /dev/null
     fi
 
-    # Step 5: Clean up ECR repositories (optional)
+    # Step 5: Clean up ECR repositories
     print_status "🗑️  Step 5: Cleaning up ECR repositories..."
+    print_status "Deleting ECR repositories..."
 
-    echo ""
-    read -p "Do you want to delete ECR repositories and all Docker images? (yes/no): " delete_ecr
-    if [[ $delete_ecr == "yes" ]]; then
-        print_status "Deleting ECR repositories..."
+    # List of ECR repositories to delete
+    repos=("chatbot-backend" "chatbot-frontend" "python-mcp-fargate-python-mcp" "nova-act-mcp-fargate-nova-act-mcp")
 
-        # List of ECR repositories to delete
-        repos=("chatbot-backend" "chatbot-frontend" "python-mcp-fargate-python-mcp" "nova-act-mcp-fargate-nova-act-mcp")
+    for repo in "${repos[@]}"; do
+        print_status "Deleting ECR repository: $repo"
+        aws ecr delete-repository --repository-name "$repo" --force --region ${AWS_REGION:-us-west-2} 2>/dev/null || {
+            print_warning "Repository $repo not found or already deleted"
+        }
+    done
 
-        for repo in "${repos[@]}"; do
-            print_status "Deleting ECR repository: $repo"
-            aws ecr delete-repository --repository-name "$repo" --force --region ${AWS_REGION:-us-west-2} 2>/dev/null || {
-                print_warning "Repository $repo not found or already deleted"
+    # Step 6: Clean up SSM Parameters
+    print_status "🗑️  Step 6: Cleaning up SSM Parameter Store..."
+
+    # Delete all MCP endpoint parameters
+    print_status "Deleting MCP endpoint parameters..."
+    mcp_params=$(aws ssm get-parameters-by-path --path "/mcp/endpoints" --recursive --region ${AWS_REGION:-us-west-2} --query 'Parameters[*].Name' --output text 2>/dev/null || echo "")
+
+    if [ -n "$mcp_params" ]; then
+        for param in $mcp_params; do
+            print_status "Deleting parameter: $param"
+            aws ssm delete-parameter --name "$param" --region ${AWS_REGION:-us-west-2} 2>/dev/null || {
+                print_warning "Failed to delete parameter $param"
             }
         done
+        print_success "SSM parameters cleaned up"
+    else
+        print_status "No MCP endpoint parameters found"
     fi
 
-    # Step 6: Wait for all deletions to complete
-    print_status "🗑️  Step 6: Waiting for all stacks to be deleted..."
+    # Function to wait for stack deletion with progress
+    wait_for_stack_deletion() {
+        local stack_name=$1
+        local max_wait=600  # 10 minutes
+        local elapsed=0
+        local interval=10
+
+        print_status "Waiting for $stack_name deletion..."
+
+        while [ $elapsed -lt $max_wait ]; do
+            # Check stack status
+            stack_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region ${AWS_REGION:-us-west-2} --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+
+            if [ "$stack_status" == "DELETED" ] || [ "$stack_status" == "DELETE_COMPLETE" ]; then
+                print_success "$stack_name deleted successfully"
+                return 0
+            elif [ "$stack_status" == "DELETE_FAILED" ]; then
+                print_error "$stack_name deletion failed"
+                return 1
+            else
+                echo "   ⏳ Status: $stack_status (${elapsed}s elapsed)"
+                sleep $interval
+                elapsed=$((elapsed + interval))
+            fi
+        done
+
+        print_warning "Timeout waiting for $stack_name deletion (waited ${max_wait}s)"
+        return 1
+    }
+
+    # Step 7: Wait for all deletions to complete
+    print_status "🗑️  Step 7: Waiting for all stacks to be deleted..."
 
     stacks_to_check=("python-mcp-fargate" "nova-act-mcp-fargate" "McpFarmAlbStack" "ChatbotStack" "CognitoAuthStack")
 
     for stack in "${stacks_to_check[@]}"; do
-        print_status "Waiting for $stack to be deleted..."
-        aws cloudformation wait stack-delete-complete --stack-name "$stack" --region ${AWS_REGION:-us-west-2} 2>/dev/null || {
-            print_warning "$stack may not exist or deletion already completed"
-        }
+        # Check if stack exists before waiting
+        if aws cloudformation describe-stacks --stack-name "$stack" --region ${AWS_REGION:-us-west-2} &>/dev/null; then
+            wait_for_stack_deletion "$stack"
+        else
+            print_status "$stack not found or already deleted"
+        fi
     done
 
     print_success "✅ All components have been successfully destroyed!"

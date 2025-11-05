@@ -403,7 +403,7 @@ export class ChatbotStack extends cdk.Stack {
 
     // Create custom Origin Request Policy to forward session headers
     const customOriginRequestPolicy = new cloudfront.OriginRequestPolicy(this, 'ChatbotOriginRequestPolicy', {
-      originRequestPolicyName: 'ChatbotCustomOriginPolicy',
+      originRequestPolicyName: `ChatbotCustomOriginPolicy-${this.account}-${this.region}`,
       comment: 'Forward all headers including X-Session-ID for session management',
       headerBehavior: cloudfront.OriginRequestHeaderBehavior.all(),
       queryStringBehavior: cloudfront.OriginRequestQueryStringBehavior.all(),
@@ -416,6 +416,8 @@ export class ChatbotStack extends cdk.Stack {
         origin: new origins.LoadBalancerV2Origin(alb, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
           httpPort: 80,
+          readTimeout: cdk.Duration.seconds(60), // Maximum CloudFront origin timeout
+          keepaliveTimeout: cdk.Duration.seconds(60), // Maximum CloudFront keepalive timeout
         }),
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
         allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
