@@ -89,13 +89,13 @@ source venv/bin/activate
 
 # Install Python dependencies
 print_status "Installing Python dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
 print_success "Python dependencies installed"
 
 # Get AWS account and region
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
-REGION=$(aws configure get region || echo "us-west-2")
+REGION=${AWS_REGION:-${AWS_DEFAULT_REGION:-us-west-2}}
 
 print_status "Deploying to AWS Account: $ACCOUNT_ID in region: $REGION"
 

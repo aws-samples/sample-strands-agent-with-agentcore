@@ -3,7 +3,7 @@
 set -e
 
 STACK_NAME="mcp-recruiter-insights-server"
-REGION="us-west-2"
+REGION="${AWS_DEFAULT_REGION:-us-west-2}"
 
 echo "🚀 Deploying Recruiter Insights MCP Server (Simplified)..."
 

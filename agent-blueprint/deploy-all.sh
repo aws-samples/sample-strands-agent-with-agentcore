@@ -308,18 +308,21 @@ configure_mcp_endpoints() {
     # Get API Gateway endpoints for serverless MCPs
     local endpoints=""
     
-    # Define stack name mappings (server_name -> actual_stack_name)
-    declare -A stack_names=(
-        ["aws-documentation"]="mcp-aws-documentation"
-        ["aws-pricing"]="mcp-aws-pricing"
-        ["bedrock-kb-retrieval"]="mcp-bedrock-kb-retrieval"
-        ["tavily-web-search"]="mcp-tavily-web-search"
-        ["financial-market"]="mcp-financial-analysis-server"
-        ["recruiter-insights"]="mcp-recruiter-insights-server"
-    )
-    
+    # Function to get stack name for server (compatible with older bash)
+    get_stack_name() {
+        case "$1" in
+            "aws-documentation") echo "mcp-aws-documentation" ;;
+            "aws-pricing") echo "mcp-aws-pricing" ;;
+            "bedrock-kb-retrieval") echo "mcp-bedrock-kb-retrieval" ;;
+            "tavily-web-search") echo "mcp-tavily-web-search" ;;
+            "financial-market") echo "mcp-financial-analysis-server" ;;
+            "recruiter-insights") echo "mcp-recruiter-insights-server" ;;
+            *) echo "$1" ;;
+        esac
+    }
+
     for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market recruiter-insights; do
-        local stack_name="${stack_names[$server]}"
+        local stack_name=$(get_stack_name "$server")
         local endpoint=$(aws cloudformation describe-stacks \
             --stack-name "$stack_name" \
             --region $region \
@@ -358,12 +361,27 @@ configure_mcp_endpoints() {
         print_status "Storing MCP endpoints in Parameter Store..."
         echo -e "$endpoints" | while IFS='=' read -r name endpoint; do
             if [ -n "$name" ] && [ -n "$endpoint" ]; then
-                aws ssm put-parameter \
-                    --name "/mcp/endpoints/$name" \
-                    --value "$endpoint" \
-                    --type "String" \
-                    --overwrite \
-                    --region $region 2>/dev/null || print_warning "Failed to store endpoint for $name"
+                # Determine if this is a serverless or stateful MCP
+                case "$name" in
+                    "python-mcp"|"nova-act-mcp")
+                        # Stateful MCPs (Fargate-based)
+                        aws ssm put-parameter \
+                            --name "/mcp/endpoints/stateful/$name" \
+                            --value "$endpoint" \
+                            --type "String" \
+                            --overwrite \
+                            --region $region 2>/dev/null || print_warning "Failed to store endpoint for $name"
+                        ;;
+                    *)
+                        # Serverless MCPs (Lambda-based)
+                        aws ssm put-parameter \
+                            --name "/mcp/endpoints/serverless/$name" \
+                            --value "$endpoint" \
+                            --type "String" \
+                            --overwrite \
+                            --region $region 2>/dev/null || print_warning "Failed to store endpoint for $name"
+                        ;;
+                esac
             fi
         done
         print_success "MCP endpoints configured!"
@@ -385,12 +403,25 @@ main() {
     # Check prerequisites
     check_prerequisites
 
-    # Set AWS region
-    export AWS_REGION=${AWS_REGION:-us-west-2}
+    # Load AWS region from .env file if available
+    if [ -f ".env" ]; then
+        set -a
+        source .env 2>/dev/null || true
+        set +a
+        print_status "Loaded environment variables from .env file"
+    fi
+
+    # Set AWS region - use from .env or default
+    export AWS_REGION=${AWS_REGION:-${NEXT_PUBLIC_AWS_REGION:-us-west-2}}
     export AWS_DEFAULT_REGION=$AWS_REGION
 
     # Enable Cognito by default
     export ENABLE_COGNITO=${ENABLE_COGNITO:-true}
+
+    # Export API keys for MCP servers (loaded from .env)
+    export TAVILY_API_KEY=${TAVILY_API_KEY}
+    export BEDROCK_KNOWLEDGE_BASE_ID=${BEDROCK_KNOWLEDGE_BASE_ID}
+    export NOVA_ACT_API_KEY=${NOVA_ACT_API_KEY}
 
     # Check if AgentCore log group already exists
     if aws logs describe-log-groups --log-group-name-prefix "agents/strands-agent-logs" --region $AWS_REGION --query 'logGroups[?logGroupName==`agents/strands-agent-logs`]' --output text 2>/dev/null | grep -q "agents/strands-agent-logs"; then
@@ -525,17 +556,8 @@ main() {
     print_status "🔧 Deployed MCP Servers:"
 
     # Check serverless MCPs
-    declare -A stack_names=(
-        ["aws-documentation"]="mcp-aws-documentation"
-        ["aws-pricing"]="mcp-aws-pricing"
-        ["bedrock-kb-retrieval"]="mcp-bedrock-kb-retrieval"
-        ["tavily-web-search"]="mcp-tavily-web-search"
-        ["financial-market"]="mcp-financial-analysis-server"
-        ["recruiter-insights"]="mcp-recruiter-insights-server"
-    )
-    
     for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market recruiter-insights; do
-        local stack_name="${stack_names[$server]}"
+        local stack_name=$(get_stack_name "$server")
         if aws cloudformation describe-stacks --stack-name "$stack_name" --region $AWS_REGION &>/dev/null; then
             echo "  ✅ $server (Serverless)"
         fi

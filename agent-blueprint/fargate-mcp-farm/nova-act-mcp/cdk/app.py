@@ -11,12 +11,12 @@ from stacks.nova_act_fargate_stack import NovaActFargateStack
 app = App()
 
 # Get configuration from context or environment
-region = app.node.try_get_context("region") or "us-west-2"
+region = os.environ.get("CDK_DEFAULT_REGION") or app.node.try_get_context("region") or "us-west-2"
 stack_name = f"nova-act-mcp-fargate"
 
 # Create the Nova Act Fargate stack
 NovaActFargateStack(
-    app, 
+    app,
     stack_name,
     env=Environment(
         account=os.environ.get('CDK_DEFAULT_ACCOUNT'),

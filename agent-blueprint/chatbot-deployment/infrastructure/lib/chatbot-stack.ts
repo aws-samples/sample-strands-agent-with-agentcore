@@ -231,9 +231,30 @@ export class ChatbotStack extends cdk.Stack {
     });
 
     // Allow inbound HTTP traffic from CloudFront IP ranges only
-    // Using CloudFront managed prefix list ID for automatic IP range management
+    // Lookup CloudFront managed prefix list dynamically
+    const cloudfrontPrefixListLookup = new cr.AwsCustomResource(this, 'CloudFrontPrefixListLookup', {
+      onUpdate: {
+        service: 'EC2',
+        action: 'describeManagedPrefixLists',
+        parameters: {
+          Filters: [
+            {
+              Name: 'prefix-list-name',
+              Values: ['com.amazonaws.global.cloudfront.origin-facing']
+            }
+          ]
+        },
+        physicalResourceId: cr.PhysicalResourceId.of('cloudfront-prefix-list-lookup')
+      },
+      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
+        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE
+      })
+    });
+
+    const cloudfrontPrefixListId = cloudfrontPrefixListLookup.getResponseField('PrefixLists.0.PrefixListId');
+
     albSecurityGroup.addIngressRule(
-      ec2.Peer.prefixList('pl-82a045eb'),
+      ec2.Peer.prefixList(cloudfrontPrefixListId),
       ec2.Port.tcp(80),
       'Allow HTTP traffic from CloudFront'
     );

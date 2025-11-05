@@ -94,8 +94,11 @@ class MCPClientFactory:
             import boto3
             from botocore.exceptions import ClientError, NoCredentialsError
 
-            # Use us-west-2 region for SSM parameters
-            ssm_client = boto3.client('ssm', region_name='us-west-2')
+            # Create boto3 session to auto-discover region from ECS environment
+            session = boto3.Session()
+            region = session.region_name or 'us-west-2'  # Fallback to us-west-2 if region detection fails
+            logger.debug(f"MCPClientFactory - Auto-discovered SSM region: {region}")
+            ssm_client = boto3.client('ssm', region_name=region)
             response = ssm_client.get_parameter(Name=parameter_name)
             resolved_url = response['Parameter']['Value']
             logger.info(f"MCPClientFactory - Resolved parameter {parameter_name} to: {resolved_url}")

@@ -102,9 +102,13 @@ load_config() {
         print_error "Configuration file $CONFIG_FILE not found!"
         exit 1
     fi
-    
+
     print_status "Loading configuration from $CONFIG_FILE"
-    
+
+    # Set AWS region from environment or default
+    export AWS_REGION=${AWS_REGION:-us-west-2}
+    print_status "Using AWS region: $AWS_REGION"
+
     # Validate JSON
     if ! jq empty "$CONFIG_FILE" 2>/dev/null; then
         print_error "Invalid JSON in configuration file!"
@@ -126,7 +130,8 @@ get_server_config() {
 
 # Function to get deployment region
 get_region() {
-    jq -r '.deployment.region' "$CONFIG_FILE"
+    # Always use environment variable, ignore JSON config
+    echo "${AWS_REGION:-us-west-2}"
 }
 
 # Function to get deployment stage

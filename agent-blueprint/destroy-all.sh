@@ -123,9 +123,19 @@ main() {
         exit 1
     fi
 
-    # Set AWS region
-    export AWS_REGION=${AWS_REGION:-us-west-2}
+    # Load AWS region from .env file if available
+    if [ -f ".env" ]; then
+        source .env 2>/dev/null || true
+    fi
+
+    # Set AWS region - use from .env or default
+    export AWS_REGION=${AWS_REGION:-${NEXT_PUBLIC_AWS_REGION:-us-west-2}}
     export AWS_DEFAULT_REGION=$AWS_REGION
+
+    # Get AWS account ID
+    ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+    print_status "🌍 Deployment region: $AWS_REGION"
+    print_status "🏗️  AWS Account: $ACCOUNT_ID"
 
     # Setup shared virtual environment
     setup_shared_venv
@@ -183,21 +193,45 @@ main() {
     if [ -f "serverless-mcp-farm/destroy-all-mcp.sh" ]; then
         cd serverless-mcp-farm
         chmod +x destroy-all-mcp.sh
+
+        # Export environment variables for the subprocess
+        export AWS_REGION
+        export AWS_DEFAULT_REGION
+        export NEXT_PUBLIC_AWS_REGION
+
         ./destroy-all-mcp.sh || {
             print_warning "Bulk destroy failed, trying individual servers..."
 
-            # Individual serverless MCP server deletion
+            # Individual serverless MCP server deletion with correct stack names
+            declare -A server_stacks=(
+                ["aws-documentation"]="mcp-aws-documentation-server"
+                ["aws-pricing"]="mcp-aws-pricing-server"
+                ["bedrock-kb-retrieval"]="mcp-bedrock-kb-retrieval-server"
+                ["tavily-web-search"]="mcp-tavily-web-search-server"
+                ["financial-market"]="mcp-financial-analysis-server"
+            )
+
             for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market; do
-                print_status "Destroying $server MCP server..."
-                aws cloudformation delete-stack --stack-name "mcp-$server" --region $AWS_REGION 2>/dev/null || true
+                stack_name="${server_stacks[$server]}"
+                print_status "Destroying $server MCP server (stack: $stack_name)..."
+                aws cloudformation delete-stack --stack-name "$stack_name" --region $AWS_REGION 2>/dev/null || true
             done
         }
         cd - > /dev/null
     else
-        # Manual serverless stack deletion
+        # Manual serverless stack deletion with correct stack names
+        declare -A server_stacks=(
+            ["aws-documentation"]="mcp-aws-documentation-server"
+            ["aws-pricing"]="mcp-aws-pricing-server"
+            ["bedrock-kb-retrieval"]="mcp-bedrock-kb-retrieval-server"
+            ["tavily-web-search"]="mcp-tavily-web-search-server"
+            ["financial-market"]="mcp-financial-analysis-server"
+        )
+
         for server in aws-documentation aws-pricing bedrock-kb-retrieval tavily-web-search financial-market; do
-            print_status "Destroying $server MCP server..."
-            aws cloudformation delete-stack --stack-name "mcp-$server" --region $AWS_REGION 2>/dev/null || true
+            stack_name="${server_stacks[$server]}"
+            print_status "Destroying $server MCP server (stack: $stack_name)..."
+            aws cloudformation delete-stack --stack-name "$stack_name" --region $AWS_REGION 2>/dev/null || true
         done
     fi
 
@@ -219,7 +253,7 @@ main() {
             if stack_exists "CognitoAuthStack"; then
                 npx cdk destroy CognitoAuthStack --force --require-approval never || {
                     print_warning "CDK destroy failed for CognitoAuthStack, trying CloudFormation..."
-                    aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region $AWS_REGION
+                    aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region ${AWS_REGION:-us-west-2}
                 }
             fi
             
@@ -227,7 +261,7 @@ main() {
             if stack_exists "ChatbotStack"; then
                 npx cdk destroy ChatbotStack --force --require-approval never || {
                     print_warning "CDK destroy failed for ChatbotStack, trying CloudFormation..."
-                    aws cloudformation delete-stack --stack-name "ChatbotStack" --region $AWS_REGION
+                    aws cloudformation delete-stack --stack-name "ChatbotStack" --region ${AWS_REGION:-us-west-2}
                 }
             fi
         }
@@ -253,7 +287,7 @@ main() {
         if stack_exists "CognitoAuthStack"; then
             npx cdk destroy CognitoAuthStack --force --require-approval never || {
                 print_warning "CDK destroy failed for CognitoAuthStack, trying CloudFormation..."
-                aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region $AWS_REGION
+                aws cloudformation delete-stack --stack-name "CognitoAuthStack" --region ${AWS_REGION:-us-west-2}
             }
         fi
         
@@ -261,7 +295,7 @@ main() {
         if stack_exists "ChatbotStack"; then
             npx cdk destroy ChatbotStack --force --require-approval never || {
                 print_warning "CDK destroy failed for ChatbotStack, trying CloudFormation..."
-                aws cloudformation delete-stack --stack-name "ChatbotStack" --region $AWS_REGION
+                aws cloudformation delete-stack --stack-name "ChatbotStack" --region ${AWS_REGION:-us-west-2}
             }
         fi
         
@@ -281,7 +315,7 @@ main() {
 
         for repo in "${repos[@]}"; do
             print_status "Deleting ECR repository: $repo"
-            aws ecr delete-repository --repository-name "$repo" --force --region $AWS_REGION 2>/dev/null || {
+            aws ecr delete-repository --repository-name "$repo" --force --region ${AWS_REGION:-us-west-2} 2>/dev/null || {
                 print_warning "Repository $repo not found or already deleted"
             }
         done
@@ -294,7 +328,7 @@ main() {
 
     for stack in "${stacks_to_check[@]}"; do
         print_status "Waiting for $stack to be deleted..."
-        aws cloudformation wait stack-delete-complete --stack-name "$stack" --region $AWS_REGION 2>/dev/null || {
+        aws cloudformation wait stack-delete-complete --stack-name "$stack" --region ${AWS_REGION:-us-west-2} 2>/dev/null || {
             print_warning "$stack may not exist or deletion already completed"
         }
     done
