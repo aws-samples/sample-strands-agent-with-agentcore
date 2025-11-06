@@ -84,52 +84,54 @@ Resources:
     Properties:
       RestApiId: !Ref ApiGateway
       ResourceId: !Ref ApiGatewayResource
-      HttpMethod: POST
-      AuthorizationType: NONE
+      HttpMethod: ANY
+      AuthorizationType: AWS_IAM
       Integration:
         Type: AWS_PROXY
         IntegrationHttpMethod: POST
         Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MCPLambdaFunction.Arn}/invocations'
-      MethodResponses:
-        - StatusCode: 200
-          ResponseModels:
-            application/json: Empty
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Origin: false
-            method.response.header.Access-Control-Allow-Methods: false
-            method.response.header.Access-Control-Allow-Headers: false
 
-  ApiGatewayOptionsMethod:
+  ApiGatewayProxyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: '{proxy+}'
+
+  ApiGatewayProxyMethod:
     Type: AWS::ApiGateway::Method
     Properties:
       RestApiId: !Ref ApiGateway
-      ResourceId: !Ref ApiGatewayResource
-      HttpMethod: OPTIONS
-      AuthorizationType: NONE
+      ResourceId: !Ref ApiGatewayProxyResource
+      HttpMethod: ANY
+      AuthorizationType: AWS_IAM
+      RequestParameters:
+        method.request.path.proxy: true
       Integration:
-        Type: MOCK
-        IntegrationResponses:
-          - StatusCode: 200
-            ResponseParameters:
-              method.response.header.Access-Control-Allow-Origin: "'*'"
-              method.response.header.Access-Control-Allow-Methods: "'GET,POST,OPTIONS'"
-              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
-            ResponseTemplates:
-              application/json: ''
-        RequestTemplates:
-          application/json: '{"statusCode": 200}'
-      MethodResponses:
-        - StatusCode: 200
-          ResponseParameters:
-            method.response.header.Access-Control-Allow-Origin: false
-            method.response.header.Access-Control-Allow-Methods: false
-            method.response.header.Access-Control-Allow-Headers: false
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MCPLambdaFunction.Arn}/invocations'
+        RequestParameters:
+          integration.request.path.proxy: 'method.request.path.proxy'
+
+  ApiGatewayRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !GetAtt ApiGateway.RootResourceId
+      HttpMethod: ANY
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${MCPLambdaFunction.Arn}/invocations'
 
   ApiGatewayDeployment:
     Type: AWS::ApiGateway::Deployment
     DependsOn:
       - ApiGatewayMethod
-      - ApiGatewayOptionsMethod
+      - ApiGatewayProxyMethod
+      - ApiGatewayRootMethod
     Properties:
       RestApiId: !Ref ApiGateway
       StageName: !Ref DeploymentStage
@@ -140,10 +142,25 @@ Resources:
       FunctionName: !Ref MCPLambdaFunction
       Action: lambda:InvokeFunction
       Principal: apigateway.amazonaws.com
-      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*/*'
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+  ParameterStoreUpdatePolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: ParameterStoreUpdatePolicy
+      Roles:
+        - !Ref LambdaExecutionRole
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ssm:PutParameter
+            Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/mcp/endpoints/serverless/financial-market'
 
   MCPEndpointParameter:
     Type: AWS::SSM::Parameter
+    DependsOn: ApiGatewayDeployment
     Properties:
       Name: '/mcp/endpoints/serverless/financial-market'
       Type: String

@@ -27,6 +27,10 @@ if [[ "$STACK_STATUS" == "ROLLBACK_IN_PROGRESS" || "$STACK_STATUS" == "ROLLBACK_
     aws cloudformation delete-stack --stack-name $STACK_NAME --region $REGION
     echo "Waiting for stack deletion to complete..."
     aws cloudformation wait stack-delete-complete --stack-name $STACK_NAME --region $REGION
+
+    # Clean up any orphaned SSM parameters
+    echo "Cleaning up orphaned SSM parameters..."
+    aws ssm delete-parameter --name "/mcp/endpoints/serverless/financial-market" --region $REGION 2>/dev/null || echo "No orphaned SSM parameter found"
 fi
 
 # Build Layer with all dependencies (lambda-yfinance approach with wheel)
@@ -67,16 +71,35 @@ rm -rf layer-build
 
 # Publish Layer
 echo "Publishing Lambda Layer..."
-LAYER_VERSION=$(aws lambda publish-layer-version \
+LAYER_VERSION=$(timeout 60 aws lambda publish-layer-version \
     --layer-name $LAYER_NAME \
     --zip-file fileb://layer.zip \
     --compatible-runtimes python3.13 \
     --region $REGION \
     --query 'Version' \
-    --output text)
+    --output text 2>&1)
+
+# Check if the command timed out or failed
+if [ $? -ne 0 ] || [ -z "$LAYER_VERSION" ] || [[ "$LAYER_VERSION" == *"Connection was closed"* ]]; then
+    echo "Layer publishing timed out or failed. Checking if layer was created..."
+    sleep 5
+    # Get the latest layer version
+    LAYER_VERSION=$(aws lambda list-layer-versions \
+        --layer-name $LAYER_NAME \
+        --region $REGION \
+        --query 'LayerVersions[0].Version' \
+        --output text)
+
+    if [ -z "$LAYER_VERSION" ] || [ "$LAYER_VERSION" == "None" ]; then
+        echo "Failed to create layer. Please try again."
+        rm layer.zip
+        exit 1
+    fi
+    echo "Found existing layer version: $LAYER_VERSION"
+fi
 
 LAYER_ARN="arn:aws:lambda:${REGION}:$(aws sts get-caller-identity --query Account --output text):layer:${LAYER_NAME}:${LAYER_VERSION}"
-echo "Layer created: $LAYER_ARN"
+echo "Layer ARN: $LAYER_ARN"
 rm layer.zip
 
 # Create lightweight Lambda package (source code only)

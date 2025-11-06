@@ -55,8 +55,32 @@ ensure_stack_deletion() {
 
         if [[ "$stack_status" != "DELETE_IN_PROGRESS" && "$stack_status" != "DELETE_COMPLETE" && "$stack_status" != "DELETED" ]]; then
             echo "⚠️  CDK destroy did not start deletion (status: $stack_status), using CloudFormation directly..."
-            aws cloudformation delete-stack --stack-name "$stack_name" --region $AWS_REGION
-            echo "✅ CloudFormation delete-stack command executed for $stack_name"
+
+            # Execute delete-stack command with error handling
+            if aws cloudformation delete-stack --stack-name "$stack_name" --region $AWS_REGION 2>&1; then
+                echo "✅ CloudFormation delete-stack command executed for $stack_name"
+
+                # Wait for the delete operation to be recognized by AWS
+                echo "   Waiting for deletion to start..."
+                local retries=0
+                local max_retries=10
+                while [ $retries -lt $max_retries ]; do
+                    sleep 2
+                    new_status=$(aws cloudformation describe-stacks --stack-name "$stack_name" --region $AWS_REGION --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo "DELETED")
+
+                    if [[ "$new_status" == "DELETE_IN_PROGRESS" || "$new_status" == "DELETE_COMPLETE" || "$new_status" == "DELETED" ]]; then
+                        echo "✅ Stack deletion started (status: $new_status)"
+                        break
+                    fi
+
+                    retries=$((retries + 1))
+                    if [ $retries -ge $max_retries ]; then
+                        echo "⚠️  Deletion may not have started properly. Current status: $new_status"
+                    fi
+                done
+            else
+                echo "❌ Failed to execute delete-stack command for $stack_name"
+            fi
         else
             echo "✅ Stack deletion in progress for $stack_name"
         fi
