@@ -181,6 +181,19 @@
       "icon": "trending-up",
       "enabled": false,
       "tool_type": "mcp"
+    },
+    {
+      "id": "s3-iceberg-agentcore",
+      "name": "S3 Iceberg Query",
+      "description": "Query Apache Iceberg tables stored in Amazon S3 using natural language SQL. Powered by PyIceberg and Daft on AWS Bedrock AgentCore Runtime for serverless data analytics.",
+      "type": "mcp",
+      "config": {
+        "url": "ssm:///mcp/endpoints/agentcore/s3-iceberg"
+      },
+      "category": "data",
+      "icon": "database",
+      "enabled": false,
+      "tool_type": "mcp"
     }
   ]
 }

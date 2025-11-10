@@ -229,8 +229,26 @@ main() {
         done
     fi
 
-    # Step 4: Destroy Web Application (base VPC - destroy last)
-    print_status "🗑️  Step 4: Destroying Web Application (Chatbot)..."
+    # Step 4: Destroy AgentCore MCP Servers (independent)
+    print_status "🗑️  Step 4: Destroying AgentCore MCP Servers..."
+
+    # S3 Iceberg AgentCore MCP Server
+    if [ -d "agentcore-mcp-farm/s3-iceberg" ]; then
+        if [ -f "agentcore-mcp-farm/s3-iceberg/destroy.sh" ]; then
+            print_status "Destroying S3 Iceberg AgentCore MCP Server..."
+            cd agentcore-mcp-farm/s3-iceberg
+            chmod +x destroy.sh
+            ./destroy.sh || destroy_stack "s3-iceberg-agentcore-prod" "cdk" "true"
+            cd - > /dev/null
+        else
+            destroy_stack "s3-iceberg-agentcore-prod" "agentcore-mcp-farm/s3-iceberg/cdk" "true"
+        fi
+    else
+        print_status "S3 Iceberg AgentCore MCP not found, skipping..."
+    fi
+
+    # Step 5: Destroy Web Application (base VPC - destroy last)
+    print_status "🗑️  Step 5: Destroying Web Application (Chatbot)..."
 
     if [ -f "chatbot-deployment/infrastructure/scripts/destroy.sh" ]; then
         cd chatbot-deployment/infrastructure

@@ -1,0 +1,21 @@
+# S3 Iceberg MCP Server Dependencies
+# For AWS Bedrock AgentCore Runtime
+
+# FastMCP framework for building MCP servers
+fastmcp>=0.2.0
+
+# PyIceberg for Apache Iceberg table access
+pyiceberg>=0.8.2
+
+# Daft for distributed SQL queries
+daft>=0.3.0
+
+# PyArrow for efficient data processing
+pyarrow>=18.1.0
+
+# AWS SDK for Python
+boto3>=1.40.0
+botocore>=1.40.0
+
+# Additional utilities
+requests>=2.31.0
