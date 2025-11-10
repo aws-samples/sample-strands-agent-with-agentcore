@@ -815,13 +815,13 @@ class UnifiedToolManager:
             if server_type in ["streamable_http", "mcp"]:
                 # Test HTTP connection by calling tools/list
                 url = config["url"]
-                
+
                 # Prepare headers
                 request_headers = {
                     "Content-Type": "application/json",
                     "Accept": "application/json, text/event-stream"
                 }
-                
+
                 # Add Authorization header if provided
                 if headers:
                     for key, value in headers.items():
@@ -831,7 +831,7 @@ class UnifiedToolManager:
                         elif key.lower() == 'authorization':
                             request_headers['Authorization'] = value
                             break
-                
+
                 try:
                     logger.info(f"Testing MCP server connection to: {url}")
                     logger.info(f"Request headers: {request_headers}")
@@ -840,48 +840,64 @@ class UnifiedToolManager:
                     def parse_mcp_response(response):
                         """Parse MCP response - handles both JSON and SSE formats"""
                         return self._parse_mcp_response(response)
-                    
-                    # Check if this is an AWS MCP server that requires SigV4 authentication
+
+                    # Check if this is an AgentCore or AWS MCP server that requires authentication
                     from mcp_client_factory import MCPClientFactory
+
+                    # Initialize server payload
+                    init_payload = {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "method": "initialize",
+                        "params": {
+                            "protocolVersion": "2024-11-05",
+                            "capabilities": {
+                                "roots": {
+                                    "listChanged": False
+                                }
+                            },
+                            "clientInfo": {"name": "test-client", "version": "1.0.0"}
+                        }
+                    }
+
                     if MCPClientFactory.is_aws_server(url):
                         logger.info(f"AWS MCP server detected, using SigV4 authentication for testing")
                         try:
                             # Use SigV4 authenticated requests for AWS MCP servers
                             from mcp_sigv4_client import make_sigv4_request
-                            
-                            # Extract region from URL
-                            region = MCPClientFactory.extract_region_from_url(url)
-                            service = "execute-api" if "execute-api" in url else "lambda"
-                            
-                            # Initialize server with proper roots capability support
-                            init_payload = {
-                                "jsonrpc": "2.0",
-                                "id": 1,
-                                "method": "initialize",
-                                "params": {
-                                    "protocolVersion": "2024-11-05",
-                                    "capabilities": {
-                                        "roots": {
-                                            "listChanged": False
-                                        }
-                                    },
-                                    "clientInfo": {"name": "test-client", "version": "1.0.0"}
-                                }
-                            }
-                            
+
+                            # Resolve SSM URL if needed (for AgentCore and other SSM-based endpoints)
+                            resolved_url = MCPClientFactory.resolve_url(url)
+                            if resolved_url != url:
+                                logger.info(f"Resolved SSM URL: {url} -> {resolved_url}")
+
+                            # Determine service type from URL
+                            if "bedrock-agentcore" in resolved_url:
+                                service = "bedrock-agentcore"
+                                timeout = 10  # AgentCore may take longer
+                            elif "execute-api" in resolved_url:
+                                service = "execute-api"
+                                timeout = 3
+                            else:
+                                service = "lambda"
+                                timeout = 3
+
+                            # Extract region from resolved URL
+                            region = MCPClientFactory.extract_region_from_url(resolved_url)
+
                             logger.info(f"Testing AWS MCP server with SigV4: service={service}, region={region}")
-                            
+
                             # Make SigV4 authenticated request
                             init_response = make_sigv4_request(
                                 method="POST",
-                                url=url,
+                                url=resolved_url,
                                 headers=request_headers,
                                 json_data=init_payload,
                                 service=service,
                                 region=region,
-                                timeout=3
+                                timeout=timeout
                             )
-                            
+
                         except ImportError as e:
                             logger.warning(f"SigV4 client not available for testing AWS MCP server: {e}")
                             return {
@@ -891,25 +907,8 @@ class UnifiedToolManager:
                     else:
                         # For non-AWS servers, use regular HTTP requests
                         logger.info(f"Testing with initialization (skipping direct tools/list for compatibility)...")
-                        
-                        # Initialize server with proper roots capability support
-                        init_payload = {
-                            "jsonrpc": "2.0",
-                            "id": 1,
-                            "method": "initialize",
-                            "params": {
-                                "protocolVersion": "2024-11-05",
-                                "capabilities": {
-                                    "roots": {
-                                        "listChanged": False
-                                    }
-                                },
-                                "clientInfo": {"name": "test-client", "version": "1.0.0"}
-                            }
-                        }
-                        
                         logger.info(f"Initialize payload: {init_payload}")
-                        
+
                         # Initialize server first
                         init_response = requests.post(
                             url,

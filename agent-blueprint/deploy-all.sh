@@ -356,6 +356,22 @@ configure_mcp_endpoints() {
         fi
     fi
 
+    # Get AgentCore MCP endpoints
+    print_status "Collecting AgentCore MCP endpoints..."
+    local agentcore_endpoints=$(aws ssm get-parameters-by-path \
+        --path "/mcp/endpoints/agentcore" \
+        --region $region \
+        --query 'Parameters[*].[Name,Value]' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$agentcore_endpoints" ]; then
+        while IFS=$'\t' read -r name value; do
+            local server_name=$(basename "$name")
+            print_status "Found AgentCore MCP: $server_name at $value"
+            # AgentCore endpoints are already stored in SSM by their individual deployment scripts
+        done <<< "$agentcore_endpoints"
+    fi
+
     # Store endpoints in Parameter Store for the chatbot to discover
     if [ -n "$endpoints" ]; then
         print_status "Storing MCP endpoints in Parameter Store..."
@@ -526,6 +542,16 @@ main() {
     #     print_warning "Skipping Fargate MCP servers due to shared infrastructure failure"
     # fi
     print_status "⏭️  Step 4: Skipping Fargate MCP Servers (Stateful MCP disabled)"
+
+    # Step 4.5: Deploy AgentCore MCP Servers
+    print_status "🚀 Step 4.5: Deploying AgentCore MCP Servers..."
+    if ! deploy_component "AgentCore MCP Servers" \
+        "agentcore-mcp-farm/deploy-all.sh" \
+        "" \
+        "" \
+        ""; then
+        print_warning "Some AgentCore MCP servers failed to deploy, continuing..."
+    fi
 
     # Step 5: Configure MCP endpoints
     configure_mcp_endpoints

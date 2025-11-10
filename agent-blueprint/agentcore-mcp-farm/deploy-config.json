@@ -1,0 +1,37 @@
+{
+  "deployment": {
+    "stage": "prod",
+    "servers": {
+      "s3-iceberg": {
+        "enabled": true,
+        "stack_name": "s3-iceberg-agentcore",
+        "description": "S3 Iceberg MCP Server on AWS Bedrock AgentCore Runtime",
+        "type": "agentcore",
+        "config": {
+          "memory": 4096,
+          "timeout": 300,
+          "port": 8000
+        }
+      }
+    }
+  },
+  "environment_variables": {
+    "s3-iceberg": {
+      "PORT": "8000",
+      "LOG_LEVEL": "info",
+      "CATALOG_NAME": "s3tablescatalog",
+      "NAMESPACE": "default",
+      "PYTHONUNBUFFERED": "1",
+      "PYTHONDONTWRITEBYTECODE": "1"
+    }
+  },
+  "monitoring": {
+    "enabled": true,
+    "log_retention_days": 7,
+    "cloudwatch_logs": true
+  },
+  "cost_optimization": {
+    "ecr_lifecycle_rules": true,
+    "log_retention_days": 7
+  }
+}
