@@ -232,19 +232,21 @@ main() {
     # Step 4: Destroy AgentCore MCP Servers (independent)
     print_status "🗑️  Step 4: Destroying AgentCore MCP Servers..."
 
-    # S3 Iceberg AgentCore MCP Server
-    if [ -d "agentcore-mcp-farm/s3-iceberg" ]; then
-        if [ -f "agentcore-mcp-farm/s3-iceberg/destroy.sh" ]; then
-            print_status "Destroying S3 Iceberg AgentCore MCP Server..."
-            cd agentcore-mcp-farm/s3-iceberg
-            chmod +x destroy.sh
-            ./destroy.sh || destroy_stack "s3-iceberg-agentcore-prod" "cdk" "true"
-            cd - > /dev/null
-        else
-            destroy_stack "s3-iceberg-agentcore-prod" "agentcore-mcp-farm/s3-iceberg/cdk" "true"
-        fi
+    if [ -f "agentcore-mcp-farm/destroy-all.sh" ]; then
+        cd agentcore-mcp-farm
+        chmod +x destroy-all.sh
+
+        # Export environment variables for the subprocess
+        export AWS_REGION
+        export AWS_DEFAULT_REGION
+        export NEXT_PUBLIC_AWS_REGION
+
+        ./destroy-all.sh || {
+            print_warning "Bulk destroy failed for AgentCore MCP servers"
+        }
+        cd - > /dev/null
     else
-        print_status "S3 Iceberg AgentCore MCP not found, skipping..."
+        print_status "AgentCore MCP farm not found, skipping..."
     fi
 
     # Step 5: Destroy Web Application (base VPC - destroy last)
