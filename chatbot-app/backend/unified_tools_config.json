@@ -194,6 +194,19 @@
       "icon": "database",
       "enabled": false,
       "tool_type": "mcp"
+    },
+    {
+      "id": "document-writer-agentcore",
+      "name": "Document Writer",
+      "description": "Create structured Word documents with outlines, headings, paragraphs, tables, bullet lists, and citations. Automatically saves working documents to filesystem and exports final documents to S3 with user consent.",
+      "type": "mcp",
+      "config": {
+        "url": "ssm:///mcp/endpoints/agentcore/document-writer"
+      },
+      "category": "productivity",
+      "icon": "file-text",
+      "enabled": false,
+      "tool_type": "mcp"
     }
   ]
 }

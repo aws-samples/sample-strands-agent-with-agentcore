@@ -12,6 +12,17 @@
           "timeout": 300,
           "port": 8000
         }
+      },
+      "document-writer": {
+        "enabled": true,
+        "stack_name": "document-writer-agentcore",
+        "description": "Document Writer MCP Server with Markdown to DOCX conversion on AWS Bedrock AgentCore Runtime",
+        "type": "agentcore",
+        "config": {
+          "memory": 4096,
+          "timeout": 300,
+          "port": 8000
+        }
       }
     }
   },
@@ -21,6 +32,12 @@
       "LOG_LEVEL": "info",
       "CATALOG_NAME": "s3tablescatalog",
       "NAMESPACE": "default",
+      "PYTHONUNBUFFERED": "1",
+      "PYTHONDONTWRITEBYTECODE": "1"
+    },
+    "document-writer": {
+      "PORT": "8000",
+      "LOG_LEVEL": "info",
       "PYTHONUNBUFFERED": "1",
       "PYTHONDONTWRITEBYTECODE": "1"
     }

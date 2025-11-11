@@ -5,7 +5,7 @@ from typing import Dict, Any, List, Tuple
 
 class StreamEventFormatter:
     """Handles formatting of streaming events for SSE"""
-    
+
     @staticmethod
     def format_sse_event(event_data: dict) -> str:
         """Format event data as Server-Sent Event with proper JSON serialization"""
@@ -85,14 +85,29 @@ class StreamEventFormatter:
     @staticmethod
     def create_tool_result_event(tool_result: Dict[str, Any]) -> str:
         """Create tool result event - refactored for clarity"""
+        import json
+
+        # Handle case where entire tool_result might be a JSON string (shouldn't happen but defensive)
+        if isinstance(tool_result, str):
+            try:
+                tool_result = json.loads(tool_result)
+            except json.JSONDecodeError as e:
+                # Wrap it in a basic structure
+                tool_result = {
+                    "toolUseId": "unknown",
+                    "content": [{"text": str(tool_result)}]
+                }
+
         # 1. Extract all content (text and images) and process Base64
         result_text, result_images = StreamEventFormatter._extract_all_content(tool_result)
-        
+
         # 2. Handle storage based on tool type
         StreamEventFormatter._handle_tool_storage(tool_result, result_text)
-        
+
         # 3. Build and return the event
-        return StreamEventFormatter._build_tool_result_event(tool_result, result_text, result_images)
+        event = StreamEventFormatter._build_tool_result_event(tool_result, result_text, result_images)
+
+        return event
     
     @staticmethod
     def _extract_all_content(tool_result: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
@@ -113,33 +128,87 @@ class StreamEventFormatter:
     def _extract_basic_content(tool_result: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
         """Extract basic text and image content from MCP format"""
         import base64
-        
+        import json
+
         result_text = ""
         result_images = []
-        
+
+        # Handle case where content might be a JSON string (MCP tools sometimes return stringified JSON)
+        if "content" in tool_result and isinstance(tool_result["content"], str):
+            try:
+                parsed_content = json.loads(tool_result["content"])
+                tool_result = tool_result.copy()
+                tool_result["content"] = parsed_content
+            except json.JSONDecodeError:
+                pass
+
         if "content" in tool_result:
-            for item in tool_result["content"]:
+            content = tool_result["content"]
+
+            for idx, item in enumerate(content):
                 if isinstance(item, dict):
+
                     if "text" in item:
-                        result_text += item["text"]
-                    elif "image" in item and "source" in item["image"]:
-                        image_source = item["image"]["source"]
-                        image_data = ""
-                        
-                        if "data" in image_source:
-                            image_data = image_source["data"]
-                        elif "bytes" in image_source:
-                            if isinstance(image_source["bytes"], bytes):
-                                image_data = base64.b64encode(image_source["bytes"]).decode('utf-8')
-                            else:
-                                image_data = str(image_source["bytes"])
-                        
-                        if image_data:
-                            result_images.append({
-                                "format": item["image"].get("format", "png"),
-                                "data": image_data
-                            })
-        
+                        text_content = item["text"]
+
+                        # Check if this text is actually a JSON-stringified MCP response
+                        if text_content.strip().startswith('{"status":') and '"content":[' in text_content:
+                            try:
+                                parsed_mcp = json.loads(text_content)
+
+                                # Replace the current tool_result with the parsed MCP response
+                                if "content" in parsed_mcp and isinstance(parsed_mcp["content"], list):
+                                    # Recursively process the unwrapped content
+                                    for unwrapped_item in parsed_mcp["content"]:
+                                        if isinstance(unwrapped_item, dict):
+                                            if "text" in unwrapped_item:
+                                                result_text += unwrapped_item["text"]
+                                            elif "image" in unwrapped_item and "source" in unwrapped_item["image"]:
+                                                image_source = unwrapped_item["image"]["source"]
+                                                image_data = ""
+
+                                                if "data" in image_source:
+                                                    image_data = image_source["data"]
+                                                elif "bytes" in image_source:
+                                                    if isinstance(image_source["bytes"], bytes):
+                                                        image_data = base64.b64encode(image_source["bytes"]).decode('utf-8')
+                                                    else:
+                                                        image_data = str(image_source["bytes"])
+
+                                                if image_data:
+                                                    result_images.append({
+                                                        "format": unwrapped_item["image"].get("format", "png"),
+                                                        "data": image_data
+                                                    })
+
+                                    # Skip the normal text processing since we handled the unwrapped content
+                                    continue
+                            except json.JSONDecodeError:
+                                # Fall through to normal text processing
+                                pass
+
+                        # Normal text processing (if not unwrapped)
+                        result_text += text_content
+
+                    elif "image" in item:
+                        if "source" in item["image"]:
+                            image_source = item["image"]["source"]
+                            image_data = ""
+
+                            if "data" in image_source:
+                                image_data = image_source["data"]
+                            elif "bytes" in image_source:
+                                if isinstance(image_source["bytes"], bytes):
+                                    image_data = base64.b64encode(image_source["bytes"]).decode('utf-8')
+                                else:
+                                    image_data = str(image_source["bytes"])
+
+                            if image_data:
+                                result_images.append({
+                                    "format": item["image"].get("format", "png"),
+                                    "data": image_data
+                                })
+
         return result_text, result_images
     
     @staticmethod
@@ -175,7 +244,7 @@ class StreamEventFormatter:
         session_id = tool_info.get('session_id')
         
         # Only process for Python MCP tools
-        if tool_name == 'run_python_code' and session_id:
+        if tool_name in ['run_python_code', 'finalize_document'] and session_id:
             try:
                 processed_text, file_info = StreamEventFormatter._handle_python_mcp_base64(
                     tool_use_id, result_text, session_id)
@@ -195,9 +264,10 @@ class StreamEventFormatter:
             "toolUseId": tool_result.get("toolUseId"),
             "result": result_text
         }
+
         if result_images:
             tool_result_data["images"] = result_images
-        
+
         return StreamEventFormatter.format_sse_event(tool_result_data)
     
 
@@ -359,21 +429,25 @@ class StreamEventFormatter:
         processed_text = result_text
         
         try:
-            # Pattern to match Base64 data URLs: data:application/zip;base64,{base64_data}
-            base64_pattern = r'<download>data:([^;]+);base64,([A-Za-z0-9+/=]+)</download>'
-            
+            # Pattern to match Base64 data URLs with optional filename attribute
+            # Matches: <download filename="name.ext">data:mime/type;base64,{data}</download>
+            # Use DOTALL flag to match newlines in base64 data, and non-greedy match
+            base64_pattern = r'<download(?:\s+filename="([^"]+)")?>data:([^;]+);base64,([A-Za-z0-9+/=\s]+?)</download>'
+
             # Check if pattern exists
             import re
             matches = re.findall(base64_pattern, result_text)
-            
+
             def process_base64_match(match):
-                mime_type = match.group(1)
-                base64_data = match.group(2)
-                
+                custom_filename = match.group(1)  # May be None if not provided
+                mime_type = match.group(2)
+                base64_data = match.group(3)
+
                 try:
-                    # Decode Base64 data
-                    file_data = base64.b64decode(base64_data)
-                    
+                    # Decode Base64 data (strip whitespace first)
+                    clean_base64 = base64_data.replace('\n', '').replace('\r', '').replace(' ', '')
+                    file_data = base64.b64decode(clean_base64)
+
                     # Determine file extension from MIME type
                     extension_map = {
                         'application/zip': '.zip',
@@ -381,12 +455,16 @@ class StreamEventFormatter:
                         'application/json': '.json',
                         'text/csv': '.csv',
                         'image/png': '.png',
-                        'image/jpeg': '.jpg'
+                        'image/jpeg': '.jpg',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx'
                     }
                     extension = extension_map.get(mime_type, '.bin')
-                    
-                    # Generate filename
-                    filename = f"python_output_{len(file_info) + 1}{extension}"
+
+                    # Use custom filename if provided, otherwise generate one
+                    if custom_filename:
+                        filename = custom_filename
+                    else:
+                        filename = f"python_output_{len(file_info) + 1}{extension}"
                     
                     # Create output directory using provided session_id
                     if session_id:
@@ -404,9 +482,9 @@ class StreamEventFormatter:
                             with open(file_path, 'wb') as f:
                                 f.write(file_data)
                             
-                            # Create download URL (relative to session output)
+                            # Create download URL (relative to output dir, served from /output/)
                             relative_path = os.path.relpath(file_path, Config.get_output_dir())
-                            download_url = f"/files/{relative_path}"
+                            download_url = f"/output/{relative_path}"
                             
                             file_info.append({
                                 'filename': filename,
@@ -417,9 +495,15 @@ class StreamEventFormatter:
                             })
                             
                             print(f"💾 Saved Base64 file: {filename} ({len(file_data)} bytes) -> {file_path}")
-                            
-                            # Replace Base64 data with simple message
-                            return f"📁 Files have been saved as a ZIP archive."
+
+                            # Replace Base64 data with file-specific message
+                            file_size_kb = len(file_data) / 1024
+                            if mime_type == 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+                                return f"✅ Document saved: **{filename}** ({file_size_kb:.1f} KB) - [Download]({download_url})"
+                            elif mime_type == 'application/zip':
+                                return f"📁 Files saved as ZIP archive: **{filename}** ({file_size_kb:.1f} KB) - [Download]({download_url})"
+                            else:
+                                return f"✅ File saved: **{filename}** ({file_size_kb:.1f} KB) - [Download]({download_url})"
                         except Exception as save_error:
                             print(f"❌ Error saving file: {save_error}")
                             return match.group(0)

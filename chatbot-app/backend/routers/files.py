@@ -362,6 +362,8 @@ async def download_tool_file(
             'svg': 'image/svg+xml',
             # Documents
             'pdf': 'application/pdf',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc': 'application/msword',
             'txt': 'text/plain',
             'md': 'text/markdown',
             'html': 'text/html',
@@ -457,6 +459,8 @@ async def download_output_file(path: str):
             'svg': 'image/svg+xml',
             # Documents
             'pdf': 'application/pdf',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'doc': 'application/msword',
             'txt': 'text/plain',
             'md': 'text/markdown',
             'html': 'text/html',

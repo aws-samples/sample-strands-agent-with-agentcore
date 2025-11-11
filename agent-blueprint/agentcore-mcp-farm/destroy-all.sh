@@ -88,46 +88,64 @@ main() {
     echo ""
     print_warning "This action cannot be undone!"
     echo ""
-
-    # Confirm deletion
-    read -p "Are you sure you want to proceed? (yes/no): " confirmation
-    if [ "$confirmation" != "yes" ]; then
-        print_status "Cleanup cancelled"
-        exit 0
-    fi
-
+    print_status "Proceeding with automatic deletion..."
     echo ""
-    print_status "Destroying AgentCore MCP servers..."
+    print_status "Destroying AgentCore MCP servers in parallel..."
 
-    # Destroy servers in reverse order
+    # Destroy all servers in parallel (no need for reverse order since they're independent)
     local servers_array=($enabled_servers)
-    for ((i=${#servers_array[@]}-1; i>=0; i--)); do
-        local server="${servers_array[$i]}"
-        local server_dir="$SCRIPT_DIR/$server"
+    local pids=()
+    local failed_servers=()
 
-        print_status "Destroying $server..."
+    # Start all destructions in background
+    for server in "${servers_array[@]}"; do
+        (
+            local server_dir="$SCRIPT_DIR/$server"
 
-        if [ ! -d "$server_dir" ]; then
-            print_warning "Server directory not found: $server_dir"
-            continue
-        fi
+            if [ ! -d "$server_dir" ]; then
+                print_warning "Server directory not found: $server_dir"
+                exit 1
+            fi
 
-        if [ ! -f "$server_dir/destroy.sh" ]; then
-            print_warning "Destroy script not found: $server_dir/destroy.sh"
-            continue
-        fi
+            if [ ! -f "$server_dir/destroy.sh" ]; then
+                print_warning "Destroy script not found: $server_dir/destroy.sh"
+                exit 1
+            fi
 
-        # Change to server directory and run destroy script
-        cd "$server_dir"
+            # Change to server directory and run destroy script
+            cd "$server_dir"
 
-        if bash destroy.sh; then
+            if bash destroy.sh; then
+                exit 0
+            else
+                exit 1
+            fi
+        ) &
+        pids+=($!)
+        print_status "Started destruction for $server (PID: $!)"
+    done
+
+    # Wait for all destructions to complete and collect failures
+    for i in "${!pids[@]}"; do
+        local pid=${pids[$i]}
+        local server=${servers_array[$i]}
+
+        if wait $pid; then
             print_success "Successfully destroyed $server"
         else
             print_error "Failed to destroy $server"
+            failed_servers+=("$server")
         fi
-
-        cd "$SCRIPT_DIR"
     done
+
+    # Report failures if any
+    if [ ${#failed_servers[@]} -gt 0 ]; then
+        echo ""
+        print_warning "The following servers failed to destroy:"
+        for server in "${failed_servers[@]}"; do
+            echo "  - $server"
+        done
+    fi
 
     echo ""
     print_status "=========================================="

@@ -280,10 +280,34 @@ main() {
     done
     echo ""
 
-    # Deploy each enabled server
+    # Deploy each enabled server in parallel
+    print_status "Deploying servers in parallel..."
+    local pids=()
     local failed_servers=()
+
+    # Start all deployments in background
     for server in $enabled_servers; do
-        if ! deploy_server "$server"; then
+        (
+            if deploy_server "$server"; then
+                exit 0
+            else
+                exit 1
+            fi
+        ) &
+        pids+=($!)
+        print_status "Started deployment for $server (PID: $!)"
+    done
+
+    # Wait for all deployments to complete and collect failures
+    local server_array=($enabled_servers)
+    for i in "${!pids[@]}"; do
+        local pid=${pids[$i]}
+        local server=${server_array[$i]}
+
+        if wait $pid; then
+            print_success "Deployment completed for $server"
+        else
+            print_error "Deployment failed for $server"
             failed_servers+=("$server")
         fi
     done

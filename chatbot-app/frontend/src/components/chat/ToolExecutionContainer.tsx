@@ -8,6 +8,7 @@ import { ChartToolResult } from '@/types/chart'
 import { useAgentAnalysis } from '@/hooks/useAgentAnalysis'
 import { AgentAnalysisToolResult, AgentAnalysisToolCall } from '@/components/AgentAnalysisToolResult'
 import { JsonDisplay } from '@/components/ui/JsonDisplay'
+import { Markdown } from '@/components/ui/Markdown'
 import { getApiUrl } from '@/config/environment'
 
 interface ToolExecutionContainerProps {
@@ -26,6 +27,13 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
   const { setAgentAnalysis } = useAgentAnalysis()
+
+  // Helper to detect if content contains markdown links or formatting
+  const containsMarkdown = (text: string): boolean => {
+    if (typeof text !== 'string') return false
+    // Check for markdown links: [text](url) or **bold** or other markdown syntax
+    return /\[([^\]]+)\]\(([^)]+)\)|\*\*[^*]+\*\*|_{1,2}[^_]+_{1,2}|^#+\s/.test(text)
+  }
   
   // Track agent tool executions by their Tool Use ID
   const agentToolExecutionIds = useMemo(() => {
@@ -110,7 +118,7 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
   const handleFilesDownload = async (toolUseId: string, toolName?: string, toolResult?: string) => {
     try {
       // Handle Python MCP downloads
-      if (toolName === 'run_python_code' && sessionId) {
+      if (toolName === 'run_python_code' || toolName === 'finalize_document' && sessionId) {
         try {
           // Get list of all files in the session directory for this tool execution
           const filesListResponse = await fetch(getApiUrl(`files/list?toolUseId=${toolUseId}&sessionId=${sessionId}`));
@@ -495,7 +503,7 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                       <div className="flex items-center gap-2 mb-3">
                         <CheckCircle className="h-4 w-4 text-green-500" />
                         <h4 className="text-sm font-semibold text-foreground">Tool Result</h4>
-                        {(toolExecution.toolName === 'bedrock_code_interpreter' || toolExecution.toolName === 'run_python_code') && toolExecution.isComplete && (
+                        {(toolExecution.toolName === 'bedrock_code_interpreter' || toolExecution.toolName === 'run_python_code' || toolExecution.toolName === 'finalize_document') && toolExecution.isComplete && (
                           <button
                             onClick={() => handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult)}
                             className="ml-auto p-1.5 hover:bg-muted rounded transition-colors flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
@@ -508,11 +516,15 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
                       </div>
                       <div className="bg-background rounded-lg border-l-4 border-green-500/30 dark:border-green-400/30" style={{ maxWidth: '100%', width: '100%' }}>
                         <div className="p-3" style={{ maxWidth: '100%', overflow: 'hidden' }}>
-                          <JsonDisplay 
-                            data={toolExecution.toolResult}
-                            maxLines={8}
-                            label="Tool Result"
-                          />
+                          {containsMarkdown(toolExecution.toolResult) ? (
+                            <Markdown size="sm" sessionId={sessionId}>{toolExecution.toolResult}</Markdown>
+                          ) : (
+                            <JsonDisplay
+                              data={toolExecution.toolResult}
+                              maxLines={8}
+                              label="Tool Result"
+                            />
+                          )}
                         </div>
                       </div>
                     </div>

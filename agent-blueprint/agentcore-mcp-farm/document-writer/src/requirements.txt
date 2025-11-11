@@ -1,0 +1,6 @@
+fastmcp>=0.2.0
+python-docx>=1.1.0
+boto3>=1.40.0
+botocore>=1.40.0
+requests>=2.31.0
+bedrock_agentcore>=0.1.0
