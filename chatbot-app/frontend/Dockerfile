@@ -1,23 +1,26 @@
 # Multi-stage build for optimized production image
-FROM node:20-alpine AS deps
+# Use AWS Public ECR to avoid Docker Hub rate limits
+FROM public.ecr.aws/docker/library/node:24-alpine AS deps
 RUN apk add --no-cache libc6-compat
 WORKDIR /app
 COPY package.json package-lock.json* ./
 RUN npm ci
 
-FROM node:20-alpine AS builder
+FROM public.ecr.aws/docker/library/node:24-alpine AS builder
 WORKDIR /app
 
 # Build arguments for Next.js environment variables
 ARG NEXT_PUBLIC_AWS_REGION
 ARG NEXT_PUBLIC_COGNITO_USER_POOL_ID
 ARG NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID
+ARG NEXT_PUBLIC_STREAMING_API_URL
 ARG CORS_ORIGINS
 
 # Set environment variables for build
 ENV NEXT_PUBLIC_AWS_REGION=$NEXT_PUBLIC_AWS_REGION
 ENV NEXT_PUBLIC_COGNITO_USER_POOL_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_ID
 ENV NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID
+ENV NEXT_PUBLIC_STREAMING_API_URL=$NEXT_PUBLIC_STREAMING_API_URL
 ENV CORS_ORIGINS=$CORS_ORIGINS
 
 COPY --from=deps /app/node_modules ./node_modules
@@ -28,12 +31,13 @@ RUN echo "🔍 Build-time env vars:"
 RUN echo "NEXT_PUBLIC_AWS_REGION=$NEXT_PUBLIC_AWS_REGION"
 RUN echo "NEXT_PUBLIC_COGNITO_USER_POOL_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_ID"
 RUN echo "NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID"
+RUN echo "NEXT_PUBLIC_STREAMING_API_URL=$NEXT_PUBLIC_STREAMING_API_URL"
 RUN echo "CORS_ORIGINS=$CORS_ORIGINS"
 
 RUN npm run build
 
 # Production stage with Node.js (standalone mode)
-FROM node:20-alpine AS runner
+FROM public.ecr.aws/docker/library/node:24-alpine AS runner
 WORKDIR /app
 
 # Don't run production as root

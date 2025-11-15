@@ -27,15 +27,13 @@ export async function GET(
     // toolUseId is optional for backward compatibility
     // If not provided, the backend will try legacy lookup
     
-    // Fetch chart data from backend API endpoint instead of static files
-    // This ensures proper routing through ALB in cloud environments
-    const backendUrl = process.env.NODE_ENV === 'production' 
-      ? process.env.BACKEND_URL || 'http://localhost:8000'
-      : 'http://localhost:8000';
-    
-    // Use API endpoint instead of static file path, include session_id and tool_use_id
-    const apiPrefix = process.env.NODE_ENV === 'production' ? '/api' : '';
-    const chartUrl = `${backendUrl}${apiPrefix}/charts/${cleanChartId}?session_id=${sessionId}&tool_use_id=${toolUseId}`;
+    // Fetch chart data from AgentCore Runtime
+    // Chart data is now directly sent via SSE, but this endpoint remains for backward compatibility
+    const agentCoreUrl = process.env.NODE_ENV === 'production'
+      ? process.env.AGENTCORE_URL || 'http://localhost:8080'
+      : 'http://localhost:8080';
+
+    const chartUrl = `${agentCoreUrl}/charts/${cleanChartId}?session_id=${sessionId}&tool_use_id=${toolUseId}`;
     
     const response = await fetch(chartUrl, {
       headers: {

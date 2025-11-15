@@ -4,7 +4,6 @@ import { ReasoningState, ChatSessionState, ChatUIState, ToolProgressState } from
 import { detectBackendUrl } from '@/utils/chat'
 import { useStreamEvents } from './useStreamEvents'
 import { useChatAPI } from './useChatAPI'
-import { useToolEvents } from './useToolEvents'
 import { getApiUrl } from '@/config/environment'
 import API_CONFIG from '@/config/api'
 
@@ -129,51 +128,11 @@ export const useChat = (): UseChatReturn => {
     backendUrl,
     setUIState,
     setMessages,
+    availableTools,
     setAvailableTools,
     handleStreamEvent,
     handleLegacyEvent
   })
-
-  // Initialize tool events hook for real-time progress
-  // Remove backendUrl dependency - let useToolEvents handle URL via getApiUrl()
-  const { progressStates, clearProgress, clearAnalysis } = useToolEvents('', sessionId || undefined)
-
-  // Clear progress states and analysis data on page load/refresh
-  useEffect(() => {
-    // Force clear progress and analysis data to prevent stale data after refresh
-    const handlePageLoad = () => {
-      clearProgress()
-      clearAnalysis()
-      // Also clear session state progress
-      setSessionState(prev => ({
-        ...prev,
-        toolProgress: []
-      }))
-    }
-    
-    handlePageLoad()
-    
-    // Only clear analysis on window focus (not progress events)
-    const handleFocus = () => {
-      clearAnalysis()
-    }
-    
-    // Clear stored progress events before page unload
-    const handleBeforeUnload = () => {
-      const currentSessionId = sessionStorage.getItem('chat-session-id')
-      if (currentSessionId) {
-        navigator.sendBeacon(getApiUrl(`stream/tools/clear?session_id=${currentSessionId}`), '')
-      }
-    }
-    
-    window.addEventListener('focus', handleFocus)
-    window.addEventListener('beforeunload', handleBeforeUnload)
-
-    return () => {
-      window.removeEventListener('focus', handleFocus)
-      window.removeEventListener('beforeunload', handleBeforeUnload)
-    }
-  }, [clearProgress, clearAnalysis, setSessionState, backendUrl])
 
   // Function to clear stored progress events
   const clearProgressEvents = useCallback(async () => {
@@ -225,11 +184,8 @@ export const useChat = (): UseChatReturn => {
     if (success) {
       setSessionState({ reasoning: null, streaming: null, toolExecutions: [], toolProgress: [] })
       setUIState(prev => ({ ...prev, isTyping: false }))
-      // Clear progress states and analysis data when clearing chat
-      clearProgress()
-      clearAnalysis()
     }
-  }, [apiClearChat, clearProgress, clearAnalysis])
+  }, [apiClearChat])
 
   const sendMessage = useCallback(async (e: React.FormEvent, files?: File[]) => {
     e.preventDefault()
@@ -256,11 +212,7 @@ export const useChat = (): UseChatReturn => {
     setMessages(prev => [...prev, userMessage])
     setUIState(prev => ({ ...prev, isTyping: false }))
     setSessionState({ reasoning: null, streaming: null, toolExecutions: [], toolProgress: [] })
-    
-    // Clear progress states and analysis data for new conversation turn
-    clearProgress()
-    clearAnalysis()
-    
+
     // Reset ref as well
     currentToolExecutionsRef.current = []
 
@@ -278,7 +230,7 @@ export const useChat = (): UseChatReturn => {
         setSessionState({ reasoning: null, streaming: null, toolExecutions: [], toolProgress: [] })
       }
     )
-  }, [inputMessage, apiSendMessage, clearProgress, clearAnalysis])
+  }, [inputMessage, apiSendMessage])
 
   // Group messages into turns for better UI
   const groupedMessages = useMemo(() => {
@@ -346,7 +298,7 @@ export const useChat = (): UseChatReturn => {
     availableTools,
     currentToolExecutions: sessionState.toolExecutions,
     currentReasoning: sessionState.reasoning,
-    toolProgress: progressStates,
+    toolProgress: sessionState.toolProgress,
     showProgressPanel: uiState.showProgressPanel,
     toggleProgressPanel,
     sendMessage,

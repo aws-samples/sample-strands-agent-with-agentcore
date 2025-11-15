@@ -1,0 +1,29 @@
+# Agent Core Dependencies
+# Using same versions as backend for compatibility
+
+# Core Framework
+fastapi==0.116.1
+uvicorn[standard]==0.35.0
+
+# Strands Agent Framework
+strands-agents==1.5.0
+strands-agents-tools==0.2.3
+
+# AWS & Bedrock
+boto3>=1.40.1
+
+# AgentCore Memory Integration (optional, for cloud deployment only)
+# Uncomment below for cloud deployment:
+# bedrock-agentcore[strands-agents]>=0.1.0
+
+# HTTP
+httpx>=0.24.0
+anyio>=3.6.0
+
+# Web Search
+ddgs>=9.0.0
+
+# OpenTelemetry (for observability)
+aws-opentelemetry-distro>=0.10.1
+
+# Note: MCP, Redis, DynamoDB will be added in Phase 2

@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "I don't have access to external tools or the ability to interact with systems outside of this conversation. Here's what I can actually do:\n\n**Text-based capabilities:**\n- Answer questions and explain concepts\n- Write, edit, and analyze text\n- Code (write, debug, explain in multiple languages)\n- Summarize and research topics\n- Brainstorm ideas\n- Help with math and logic problems\n\n**What I cannot do:**\n- Browse the internet or access real-time information\n- Run code or execute programs\n- Access files, emails, or external systems\n- Make API calls or integrate with other services\n- See images, videos, or documents (unless you share their content with me)\n- Remember previous conversations (each chat starts fresh)\n\n**Limitations:**\n- My knowledge has a cutoff date (April 2024)\n- I can make mistakes\n- I can't learn or update from our conversation\n\nIs there something specific you're trying to accomplish? I might be able to help you think through it or suggest alternatives."
+      }
+    ]
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2025-11-15T07:11:16.953693+00:00",
+  "updated_at": "2025-11-15T07:11:16.953706+00:00"
+}

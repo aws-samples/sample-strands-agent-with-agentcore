@@ -4,65 +4,52 @@ import { Authenticator } from '@aws-amplify/ui-react';
 import '@aws-amplify/ui-react/styles.css';
 import { useEffect, useState } from 'react';
 
+const HAS_COGNITO_CONFIG = !!(
+  process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID &&
+  process.env.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID
+);
+
 export default function AuthWrapper({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const [isClient, setIsClient] = useState(false);
   const [isLocalDev, setIsLocalDev] = useState(false);
-  const [hasCognitoConfig, setHasCognitoConfig] = useState(false);
   const [isConfigured, setIsConfigured] = useState(false);
 
+  // Hydration-safe: Run after mount
   useEffect(() => {
-    // Initialize Amplify config on client side
-    const initializeAmplify = async () => {
-      await import('../lib/amplify-config');
-      
-      // Check if we're in local development
-      const localDev = typeof window !== 'undefined' &&
-        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    setIsClient(true);
 
-      // Check if Cognito config is available
-      const cognitoConfig = !!(process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID &&
-        process.env.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID);
+    // Check if we're in local development
+    const localDev = window.location.hostname === 'localhost' ||
+                     window.location.hostname === '127.0.0.1';
+    setIsLocalDev(localDev);
 
-      setIsLocalDev(localDev);
-      setHasCognitoConfig(cognitoConfig);
+    // Only initialize Amplify if we need authentication (not local dev, has Cognito config)
+    if (!localDev && HAS_COGNITO_CONFIG) {
+      import('../lib/amplify-config').then(() => {
+        setIsConfigured(true);
+      });
+    } else {
       setIsConfigured(true);
-    };
-
-    initializeAmplify();
+    }
   }, []);
 
-  // Show loading until configuration is complete
-  if (!isConfigured) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 mx-auto"></div>
-          <p className="mt-2 text-gray-600">Loading...</p>
-        </div>
-      </div>
-    );
+  // Wait for client-side hydration
+  if (!isClient) {
+    return <>{children}</>;
   }
 
   // In local development or without Cognito config, skip authentication
-  if (isLocalDev || !hasCognitoConfig) {
-    return (
-      <div className="min-h-screen">
-        <div className="flex justify-between items-center p-4 bg-white dark:bg-gray-900 border-b">
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-semibold">Strands Chatbot</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-600 dark:text-gray-400">
-              {isLocalDev ? 'Local Development' : 'Guest Mode'}
-            </span>
-          </div>
-        </div>
-        {children}
-      </div>
-    );
+  if (isLocalDev || !HAS_COGNITO_CONFIG) {
+    return <>{children}</>;
+  }
+
+  // Wait for Amplify config to load
+  if (!isConfigured) {
+    return <>{children}</>; // Show content while loading auth
   }
 
   // In production with Cognito config, use Authenticator
@@ -84,27 +71,7 @@ export default function AuthWrapper({
         },
       }}
     >
-      {({ signOut, user }) => (
-        <div className="min-h-screen">
-          <div className="flex justify-between items-center p-4 bg-white dark:bg-gray-900 border-b">
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-semibold">Strands Chatbot</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600 dark:text-gray-400">
-                Welcome, {user?.signInDetails?.loginId}
-              </span>
-              <button
-                onClick={signOut}
-                className="px-3 py-1 text-sm bg-red-100 hover:bg-red-200 text-red-700 rounded-md transition-colors"
-              >
-                Sign Out
-              </button>
-            </div>
-          </div>
-          {children}
-        </div>
-      )}
+      {children}
     </Authenticator>
   );
 }

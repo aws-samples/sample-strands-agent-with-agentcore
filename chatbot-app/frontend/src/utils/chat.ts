@@ -44,52 +44,25 @@ export const getCategoryColor = (category: string) => {
 
 
 export const detectBackendUrl = async (): Promise<{ url: string; connected: boolean }> => {
-  // Import getApiUrl here to avoid circular dependency
-  const { getApiUrl } = await import('@/config/environment')
-  
-  // In production, use the configured API URL (which will use relative paths via ALB)
-  if (typeof window !== 'undefined' && process.env.NODE_ENV === 'production') {
-    try {
-      const response = await fetch(getApiUrl('health'), {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000)
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        if (data.status === 'healthy') {
-          return { url: '', connected: true } // Empty URL to force relative paths
-        }
+  // New architecture: BFF is integrated into Next.js as API Routes
+  // Always use relative paths to /api endpoints
+
+  try {
+    const response = await fetch('/api/health', {
+      method: 'GET',
+      signal: AbortSignal.timeout(5000)
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      if (data.status === 'healthy') {
+        return { url: '', connected: true } // Empty URL means use relative paths
       }
-    } catch (error) {
-      // In production, still return empty URL to use relative paths
-      return { url: '', connected: false }
     }
-    
+  } catch (error) {
+    console.error('BFF health check failed:', error)
     return { url: '', connected: false }
   }
-  
-  // In development, try to detect local backend
-  const portsToTry = [8000, 8001, 8002, 8003, 8004, 8005, 8006, 8007, 8008, 8009, 8010]
-  
-  for (const port of portsToTry) {
-    try {
-      const testUrl = `http://localhost:${port}`
-      const response = await fetch(`${testUrl}/health`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(2000)
-      })
-      
-      if (response.ok) {
-        const data = await response.json()
-        if (data.status === 'healthy') {
-          return { url: testUrl, connected: true }
-        }
-      }
-    } catch (error) {
-      continue
-    }
-  }
-  
-  return { url: 'http://localhost:8000', connected: false }
+
+  return { url: '', connected: false }
 }

@@ -1,7 +1,6 @@
 import { useCallback } from 'react'
 import { Message, ToolExecution } from '@/types/chat'
 import { StreamEvent, ChatSessionState, ChatUIState, ToolProgressState } from '@/types/events'
-import { useAgentAnalysis } from '@/hooks/useAgentAnalysis'
 
 interface UseStreamEventsProps {
   sessionState: ChatSessionState
@@ -26,9 +25,6 @@ export const useStreamEvents = ({
   currentTurnIdRef,
   availableTools = []
 }: UseStreamEventsProps) => {
-  // Import useAgentAnalysis to trigger agent analysis popup
-  const { setAgentAnalysis } = useAgentAnalysis()
-  
   const handleReasoningEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'reasoning') {
       setSessionState(prev => ({
@@ -158,7 +154,7 @@ export const useStreamEvents = ({
         }])
       }
     }
-  }, [availableTools, setAgentAnalysis, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages])
+  }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages])
 
   const handleToolResultEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_result') {

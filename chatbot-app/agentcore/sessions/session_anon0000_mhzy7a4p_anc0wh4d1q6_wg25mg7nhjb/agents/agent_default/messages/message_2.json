@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "text": "what about now?"
+      }
+    ]
+  },
+  "message_id": 2,
+  "redact_message": null,
+  "created_at": "2025-11-15T07:11:24.927076+00:00",
+  "updated_at": "2025-11-15T07:11:24.927079+00:00"
+}

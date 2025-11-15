@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "Hello! 👋 How can I help you today? I can assist you with:\n\n- **Math & Calculations** - Evaluate expressions, solve equations, derivatives, integrals, and more\n- **Weather Information** - Get current weather for any US location\n- **Web Search** - Search for information, news, and research\n- **Web Content** - Fetch and read articles, job postings, documentation, etc.\n- **Data Visualization** - Create charts and graphs\n\nWhat would you like to do?"
+      }
+    ]
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2025-11-15T09:00:06.452049+00:00",
+  "updated_at": "2025-11-15T09:00:06.452053+00:00"
+}

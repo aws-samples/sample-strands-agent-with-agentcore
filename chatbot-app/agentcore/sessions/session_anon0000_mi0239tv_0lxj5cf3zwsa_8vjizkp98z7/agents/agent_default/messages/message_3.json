@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "I'm here to help! 😊 \n\nLet me know what you'd like assistance with. Here are some examples of what I can do:\n\n1. **Answer questions** - Ask me anything!\n2. **Do math** - \"Calculate 2 + 2\" or \"Solve x² + 5x + 6 = 0\"\n3. **Search the web** - \"Search for information about [topic]\"\n4. **Check weather** - \"What's the weather in New York?\"\n5. **Create charts** - \"Make a bar chart with this data\"\n6. **Read web pages** - \"Get the content from this URL\"\n\nWhat can I help you with?"
+      }
+    ]
+  },
+  "message_id": 3,
+  "redact_message": null,
+  "created_at": "2025-11-15T09:00:11.861316+00:00",
+  "updated_at": "2025-11-15T09:00:11.861320+00:00"
+}

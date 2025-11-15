@@ -49,28 +49,22 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+    // AgentCore Runtime URL (default port 8080)
+    const agentCoreUrl = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080';
 
     return [
       {
-        source: '/api/charts/:path*',
-        destination: `${apiBaseUrl}/charts/:path*`
-      },
-      {
-        source: '/api/files/:path*',
-        destination: `${apiBaseUrl}/files/:path*`
-      },
-      {
+        // Static files served by AgentCore
         source: '/output/:path*',
-        destination: `${apiBaseUrl}/output/:path*`
+        destination: `${agentCoreUrl}/output/:path*`
       },
       {
         source: '/uploads/:path*',
-        destination: `${apiBaseUrl}/uploads/:path*`
+        destination: `${agentCoreUrl}/uploads/:path*`
       },
       {
         source: '/generated_images/:path*',
-        destination: `${apiBaseUrl}/generated_images/:path*`
+        destination: `${agentCoreUrl}/generated_images/:path*`
       }
     ]
   }

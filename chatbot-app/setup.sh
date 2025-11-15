@@ -22,22 +22,29 @@ fi
 
 echo "✅ Prerequisites check passed"
 
-# Install backend dependencies
-echo "📦 Installing backend dependencies..."
-cd backend
+# Install AgentCore dependencies
+echo "📦 Installing AgentCore dependencies..."
+cd agentcore
 if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."
     python3 -m venv venv
 fi
 
+echo "Activating virtual environment..."
 source venv/bin/activate
-python3 -m pip install --upgrade pip
-python3 -m pip install -r requirements.txt
+
+echo "Upgrading pip..."
+./venv/bin/python -m pip install --upgrade pip
+
+echo "Installing requirements..."
+./venv/bin/python -m pip install -r requirements.txt
 
 if [ $? -eq 0 ]; then
-    echo "✅ Backend dependencies installed successfully"
+    echo "✅ AgentCore dependencies installed successfully"
+    deactivate
 else
-    echo "❌ Failed to install backend dependencies"
+    echo "❌ Failed to install AgentCore dependencies"
+    deactivate
     exit 1
 fi
 
@@ -63,5 +70,5 @@ echo "To start the application:"
 echo "  ./start.sh"
 echo ""
 echo "Or start components separately:"
-echo "  Backend:  cd backend && source venv/bin/activate && python app.py"
-echo "  Frontend: cd frontend && npm run dev"
+echo "  AgentCore: cd agentcore && source venv/bin/activate && cd src && python main.py"
+echo "  Frontend:  cd frontend && npm run dev"

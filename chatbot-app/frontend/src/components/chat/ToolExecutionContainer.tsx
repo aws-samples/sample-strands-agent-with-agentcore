@@ -5,8 +5,6 @@ import { ToolExecution } from '@/types/chat'
 import { getToolIconById } from '@/utils/chat'
 import { ChartRenderer } from '@/components/ChartRenderer'
 import { ChartToolResult } from '@/types/chart'
-import { useAgentAnalysis } from '@/hooks/useAgentAnalysis'
-import { AgentAnalysisToolResult, AgentAnalysisToolCall } from '@/components/AgentAnalysisToolResult'
 import { JsonDisplay } from '@/components/ui/JsonDisplay'
 import { Markdown } from '@/components/ui/Markdown'
 import { getApiUrl } from '@/config/environment'
@@ -26,7 +24,6 @@ interface ToolExecutionContainerProps {
 export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ toolExecutions, compact = false, availableTools = [], sessionId }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
-  const { setAgentAnalysis } = useAgentAnalysis()
 
   // Helper to detect if content contains markdown links or formatting
   const containsMarkdown = (text: string): boolean => {
@@ -34,20 +31,6 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
     // Check for markdown links: [text](url) or **bold** or other markdown syntax
     return /\[([^\]]+)\]\(([^)]+)\)|\*\*[^*]+\*\*|_{1,2}[^_]+_{1,2}|^#+\s/.test(text)
   }
-  
-  // Track agent tool executions by their Tool Use ID
-  const agentToolExecutionIds = useMemo(() => {
-    const agentIds = new Set<string>()
-    
-    toolExecutions.forEach(toolExecution => {
-      const matchedTool = availableTools.find(tool => tool.id === toolExecution.toolName)
-      if (matchedTool?.tool_type === 'agent') {
-        agentIds.add(toolExecution.id) // Use Tool Use ID
-      }
-    })
-    
-    return agentIds
-  }, [toolExecutions, availableTools])
 
   const toggleToolExpansion = (toolId: string) => {
     setExpandedTools(prev => {
@@ -72,47 +55,68 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
     return null
   }
 
-  // Helper function to render visualization tool result
-  const renderVisualizationResult = (toolResult: string, toolUseId?: string) => {
-    try {
-      const result: ChartToolResult = JSON.parse(toolResult);
-      
-      if (result.success && result.chart_data) {
-        // Direct rendering with chart data
-        return (
-          <div className="my-4">
-            <ChartRenderer chartData={result.chart_data} />
-            <p className="text-sm text-green-600 mt-2">
-              {result.message}
-            </p>
-          </div>
-        );
-      } else if (result.success && result.chart_id) {
-        // Fallback to API lookup for backward compatibility
-        return (
-          <div className="my-4">
-            <ChartRenderer 
-              chartId={result.chart_id} 
-              sessionId={sessionId} 
-              toolUseId={toolUseId}
-            />
-            <p className="text-sm text-green-600 mt-2">
-              {result.message}
-            </p>
-          </div>
-        );
-      } else {
-        return (
-          <div className="my-4 p-3 bg-red-50 border border-red-200 rounded">
-            <p className="text-red-600">{result.message}</p>
-          </div>
-        );
+  // Memoize parsed chart data to prevent re-renders during streaming
+  const chartDataCache = useMemo(() => {
+    const cache = new Map<string, { parsed: ChartToolResult, resultString: string }>();
+
+    toolExecutions.forEach(toolExecution => {
+      if (toolExecution.toolName === 'create_visualization' &&
+          toolExecution.toolResult &&
+          toolExecution.isComplete) {
+        try {
+          const parsed = JSON.parse(toolExecution.toolResult);
+          cache.set(toolExecution.id, {
+            parsed,
+            resultString: toolExecution.toolResult
+          });
+        } catch (e) {
+          // Invalid JSON, skip
+        }
       }
-    } catch (e) {
-      // JSON parsing failed, treat as plain text
-      return null;
+    });
+
+    return cache;
+  }, [toolExecutions.map(t => t.id + ':' + t.isComplete + ':' + (t.toolResult || '')).join('|')]);
+
+  // Helper function to render visualization tool result
+  const renderVisualizationResult = useCallback((toolUseId: string) => {
+    const cached = chartDataCache.get(toolUseId);
+    if (!cached) return null;
+
+    const result = cached.parsed;
+
+    if (result.success && result.chart_data) {
+      // Direct rendering with chart data
+      return (
+        <div className="my-4">
+          <ChartRenderer chartData={result.chart_data} />
+          <p className="text-sm text-green-600 mt-2">
+            {result.message}
+          </p>
+        </div>
+      );
+    } else if (result.success && result.chart_id) {
+      // Fallback to API lookup for backward compatibility
+      return (
+        <div className="my-4">
+          <ChartRenderer
+            chartId={result.chart_id}
+            sessionId={sessionId}
+            toolUseId={toolUseId}
+          />
+          <p className="text-sm text-green-600 mt-2">
+            {result.message}
+          </p>
+        </div>
+      );
+    } else {
+      return (
+        <div className="my-4 p-3 bg-red-50 border border-red-200 rounded">
+          <p className="text-red-600">{result.message}</p>
+        </div>
+      );
     }
-  };
+  }, [chartDataCache, sessionId]);
 
   // Helper function to handle ZIP download
   const handleFilesDownload = async (toolUseId: string, toolName?: string, toolResult?: string) => {
@@ -360,46 +364,10 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
       {toolExecutions.map((toolExecution) => {
         const IconComponent = getToolIconById(toolExecution.toolName)
         const isExpanded = isToolExpanded(toolExecution.id, toolExecution)
-        
-        // Special handling for agent-type tools - render as clickable button
-        const isAgentTool = agentToolExecutionIds.has(toolExecution.id);
-        const matchedTool = availableTools.find(tool => tool.id === toolExecution.toolName);
-        
-        if (isAgentTool && matchedTool) {
-          if (toolExecution.isComplete) {
-            return (
-              <AgentAnalysisToolResult
-                key={toolExecution.id}
-                type="complete"
-                result={{
-                  title: matchedTool.name || 'Analysis Complete',
-                  summary: 'Click to view detailed analysis with charts and insights',
-                  status: 'idle'
-                }}
-                toolUseId={toolExecution.id}
-                toolName={toolExecution.toolName}
-                sessionId={sessionId}
-                isReadonly={false}
-              />
-            )
-          } else {
-            return (
-              <AgentAnalysisToolCall
-                key={toolExecution.id}
-                type="create"
-                args={{
-                  query: toolExecution.toolInput?.query || `Running ${matchedTool.name}`,
-                  title: matchedTool.name || 'Analysis'
-                }}
-                isReadonly={false}
-              />
-            )
-          }
-        }
-        
+
         // Check if this is a visualization tool and render chart directly
         if (toolExecution.toolName === 'create_visualization' && toolExecution.toolResult && toolExecution.isComplete) {
-          const chartResult = renderVisualizationResult(toolExecution.toolResult, toolExecution.id);
+          const chartResult = renderVisualizationResult(toolExecution.id);
           if (chartResult) {
             return (
               <div key={toolExecution.id} className="my-4">

@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "I have access to the following tools:\n\n1. **Calculator** - A comprehensive mathematical tool powered by SymPy that can:\n   - Evaluate mathematical expressions\n   - Solve equations and systems of equations\n   - Calculate derivatives and integrals\n   - Evaluate limits\n   - Generate series expansions\n   - Perform matrix operations\n\n2. **Get Current Weather** - Retrieves current weather conditions for US locations using latitude and longitude coordinates (temperature, humidity, wind, etc.)\n\n3. **Create Visualization** - Generates interactive charts from data with customizable colors:\n   - Bar charts\n   - Line charts\n   - Pie charts\n\n4. **DuckDuckGo Web Search** - Searches the web for general information, news, and research with up to 10 results per query\n\n5. **Fetch URL Content** - Extracts and retrieves text content from web pages, useful for:\n   - Job postings\n   - Articles\n   - Documentation\n   - Any web content (with optional HTML inclusion)\n\nFeel free to ask me to use any of these tools to help with calculations, weather information, data visualization, web searches, or content retrieval!"
+      }
+    ]
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2025-11-15T07:21:10.973734+00:00",
+  "updated_at": "2025-11-15T07:21:10.973738+00:00"
+}

@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "I don't have any context about what you're referring to. Could you provide more details about:\n\n- What situation you're asking about?\n- What happened before?\n- What you'd like to know?\n\nFeel free to share more information and I'll do my best to help!"
+      }
+    ]
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2025-11-15T07:22:29.368100+00:00",
+  "updated_at": "2025-11-15T07:22:29.368104+00:00"
+}

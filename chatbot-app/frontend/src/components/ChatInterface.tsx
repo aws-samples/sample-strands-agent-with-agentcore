@@ -8,10 +8,7 @@ import { ChatMessage } from "@/components/chat/ChatMessage"
 import { AssistantTurn } from "@/components/chat/AssistantTurn"
 import { Greeting } from "@/components/Greeting"
 import { ToolSidebar } from "@/components/ToolSidebar"
-import { ScratchPad } from "@/components/ScratchPad"
 import { SuggestedQuestions } from "@/components/SuggestedQuestions"
-import { AgentPanelWithStream } from "@/components/AgentPanel"
-import { useAgentAnalysis } from "@/hooks/useAgentAnalysis"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -48,14 +45,10 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   const iframeAuth = isEmbedded ? useIframeAuth() : { isInIframe: false, isAuthenticated: false, user: null, isLoading: false, error: null }
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [showScratchPad, setShowScratchPad] = useState(false)
-  const [userClosedScratchPad, setUserClosedScratchPad] = useState(false)
-  const [shouldRenderScratchPad, setShouldRenderScratchPad] = useState(false)
   const [suggestionKey, setSuggestionKey] = useState<string>("initial")
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isComposingRef = useRef(false)
-  const { setAgentAnalysis } = useAgentAnalysis()
 
   // Post authentication status to parent window (embedded mode only)
   useEffect(() => {
@@ -81,16 +74,8 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
 
   const handleClearChat = useCallback(async () => {
     await clearChat()
-    // Clear agent analysis state as well
-    setAgentAnalysis((prev) => ({
-      ...prev,
-      id: "init",
-      content: "",
-      isVisible: false,
-      status: "idle",
-    }))
     regenerateSuggestions()
-  }, [clearChat, regenerateSuggestions, setAgentAnalysis])
+  }, [clearChat, regenerateSuggestions])
 
   const handleToggleTool = useCallback(
     async (toolId: string) => {
@@ -100,40 +85,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     [toggleTool, regenerateSuggestions],
   )
 
-  // Auto-show/hide scratch pad with slide animation
-  const hasActiveProgress = toolProgress.some((p) => p.isActive)
-
-  useEffect(() => {
-    // Show logic: when there's progress data
-    if (toolProgress.length > 0 && !shouldRenderScratchPad) {
-      setShouldRenderScratchPad(true)
-      // Small delay to ensure DOM is ready for animation
-      setTimeout(() => {
-        if (hasActiveProgress && !userClosedScratchPad) {
-          setShowScratchPad(true)
-        }
-      }, 10)
-    }
-
-    // Hide logic: when progress is cleared
-    if (toolProgress.length === 0 && shouldRenderScratchPad) {
-      // First: slide out animation
-      setShowScratchPad(false)
-      // Then: unmount after animation completes (300ms duration from ScratchPad)
-      setTimeout(() => {
-        setShouldRenderScratchPad(false)
-      }, 300)
-    }
-
-    // Auto-show when active progress appears
-    if (hasActiveProgress && shouldRenderScratchPad && !showScratchPad && !userClosedScratchPad) {
-      setShowScratchPad(true)
-    }
-  }, [toolProgress.length, hasActiveProgress, showScratchPad, userClosedScratchPad, shouldRenderScratchPad])
-
   const handleSendMessage = async (e: React.FormEvent, files: File[]) => {
-    setUserClosedScratchPad(false)
-    setShowScratchPad(false)
     if (open) {
       setOpen(false)
     }
@@ -387,25 +339,6 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           </div>
         </form>
       </SidebarInset>
-
-      {/* Scratch Pad - Render with slide animation */}
-      {shouldRenderScratchPad && (
-        <ScratchPad
-          progressStates={toolProgress}
-          isVisible={showScratchPad}
-          connectionError={null}
-          onClose={() => {
-            setShowScratchPad(false)
-            setUserClosedScratchPad(true)
-            // Unmount after slide-out animation
-            setTimeout(() => {
-              setShouldRenderScratchPad(false)
-            }, 300)
-          }}
-        />
-      )}
-
-      <AgentPanelWithStream sessionId={sessionId || undefined} />
     </>
   )
 }

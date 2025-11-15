@@ -3,11 +3,13 @@ import { Message, Tool } from '@/types/chat'
 import { StreamEvent, ChatUIState } from '@/types/events'
 import { getApiUrl } from '@/config/environment'
 import logger from '@/utils/logger'
+import { fetchAuthSession } from 'aws-amplify/auth'
 
 interface UseChatAPIProps {
   backendUrl: string
   setUIState: React.Dispatch<React.SetStateAction<ChatUIState>>
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>
+  availableTools: Tool[]  // Added: need current tools state
   setAvailableTools: React.Dispatch<React.SetStateAction<Tool[]>>
   handleStreamEvent: (event: StreamEvent) => void
   handleLegacyEvent: (data: any) => void
@@ -27,11 +29,12 @@ export const useChatAPI = ({
   backendUrl,
   setUIState,
   setMessages,
+  availableTools,
   setAvailableTools,
   handleStreamEvent,
   handleLegacyEvent
 }: UseChatAPIProps) => {
-  
+
   const abortControllerRef = useRef<AbortController | null>(null)
   const [sessionId, setSessionId] = useState<string | null>(null)
 
@@ -49,32 +52,52 @@ export const useChatAPI = ({
     }
   }, [sessionId])
 
+  /**
+   * Get Authorization header with Cognito JWT token
+   */
+  const getAuthHeaders = async (): Promise<Record<string, string>> => {
+    try {
+      const session = await fetchAuthSession()
+      const token = session.tokens?.idToken?.toString()
+
+      if (token) {
+        return { 'Authorization': `Bearer ${token}` }
+      }
+    } catch (error) {
+      logger.debug('No auth session available (local dev or not authenticated)')
+    }
+    return {}
+  }
+
   const loadTools = useCallback(async () => {
     try {
-      
+      const authHeaders = await getAuthHeaders()
+
       const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        ...authHeaders
       }
-      
+
       // Include session ID in headers if available
       if (sessionId) {
         headers['X-Session-ID'] = sessionId
       }
-      
+
       const response = await fetch(getApiUrl('tools'), {
         method: 'GET',
         headers,
         signal: AbortSignal.timeout(5000)
       })
-      
+
       if (response.ok) {
         // Extract session ID from response headers
         const responseSessionId = response.headers.get('X-Session-ID')
-        
-        if (responseSessionId && responseSessionId !== sessionId) {
+
+        // Only update session ID if we don't have one yet (initial load)
+        if (responseSessionId && !sessionId) {
           setSessionId(responseSessionId)
         }
-        
+
         const data = await response.json()
         // Combine regular tools and MCP servers from unified API response
         const allTools = [...(data.tools || []), ...(data.mcp_servers || [])]
@@ -87,52 +110,34 @@ export const useChatAPI = ({
     }
   }, [setAvailableTools, sessionId])
 
+  /**
+   * Toggle tool enabled state (frontend-only, no API call)
+   * Tool preferences are committed to DDB only when message is sent
+   */
   const toggleTool = useCallback(async (toolId: string) => {
     try {
-      
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      }
-      
-      // Include session ID in headers if available
-      if (sessionId) {
-        headers['X-Session-ID'] = sessionId
-      }
-      
-      const response = await fetch(getApiUrl(`tools/${toolId}/toggle`), {
-        method: 'POST',
-        headers
-      })
-      
-      if (response.ok) {
-        // Extract session ID from response headers
-        const responseSessionId = response.headers.get('X-Session-ID')
-        
-        if (responseSessionId && responseSessionId !== sessionId) {
-          setSessionId(responseSessionId)
-        }
-        
-        const result = await response.json()
-        
-        if (result.success) {
-          setAvailableTools(prev => prev.map(tool => 
-            tool.id === toolId 
-              ? { ...tool, enabled: result.enabled }
-              : tool
-          ))
-        }
-      }
+      // Update frontend state immediately (optimistic update)
+      setAvailableTools(prev => prev.map(tool =>
+        tool.id === toolId
+          ? { ...tool, enabled: !tool.enabled }
+          : tool
+      ))
+
+      logger.debug(`Tool ${toolId} toggled (frontend state only, will commit on next message)`)
     } catch (error) {
       logger.error('Failed to toggle tool:', error)
     }
-  }, [setAvailableTools, sessionId])
+  }, [setAvailableTools])
 
   const clearChat = useCallback(async () => {
     try {
+      const authHeaders = await getAuthHeaders()
+
       const response = await fetch(getApiUrl('conversation/clear'), {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
+          ...authHeaders,
           ...(sessionId && { 'X-Session-ID': sessionId })
         }
       })
@@ -170,21 +175,33 @@ export const useChatAPI = ({
     try {
       let response: Response;
       
+      const authHeaders = await getAuthHeaders()
+
       if (files && files.length > 0) {
+        // Extract enabled tools from current state
+        const enabledToolIds = availableTools
+          .filter(tool => tool.enabled)
+          .map(tool => tool.id)
+
+        logger.info(`Sending multimodal message with ${enabledToolIds.length} enabled tools:`, enabledToolIds)
+
         // Use multimodal endpoint for file uploads
         const formData = new FormData()
         formData.append('message', messageToSend)
-        
+        formData.append('enabled_tools', JSON.stringify(enabledToolIds))  // Include enabled tools
+
         // Add all files to form data
         files.forEach((file) => {
           formData.append('files', file)
         })
-        
-        const headers: Record<string, string> = {}
+
+        const headers: Record<string, string> = {
+          ...authHeaders
+        }
         if (sessionId) {
           headers['X-Session-ID'] = sessionId
         }
-        
+
         response = await fetch(getApiUrl('stream/multimodal'), {
           method: 'POST',
           headers,
@@ -192,14 +209,25 @@ export const useChatAPI = ({
           signal: abortControllerRef.current.signal
         })
       } else {
+        // Extract enabled tools from current state
+        const enabledToolIds = availableTools
+          .filter(tool => tool.enabled)
+          .map(tool => tool.id)
+
+        logger.info(`Sending message with ${enabledToolIds.length} enabled tools:`, enabledToolIds)
+
         // Use regular text endpoint
         response = await fetch(getApiUrl('stream/chat'), {
           method: 'POST',
-          headers: { 
+          headers: {
             'Content-Type': 'application/json',
+            ...authHeaders,
             ...(sessionId && { 'X-Session-ID': sessionId })
           },
-          body: JSON.stringify({ message: messageToSend }),
+          body: JSON.stringify({
+            message: messageToSend,
+            enabled_tools: enabledToolIds  // Include enabled tools in payload
+          }),
           signal: abortControllerRef.current.signal
         })
       }
@@ -244,8 +272,8 @@ export const useChatAPI = ({
               
               // Handle new simplified events
               if (eventData.type && [
-                'reasoning', 'response', 'tool_use', 'tool_result', 'tool_progress', 'complete', 'init', 'thinking', 'error',
-                'spending_analysis_start', 'spending_analysis_step', 'spending_analysis_result', 
+                'text', 'reasoning', 'response', 'tool_use', 'tool_result', 'tool_progress', 'complete', 'init', 'thinking', 'error',
+                'spending_analysis_start', 'spending_analysis_step', 'spending_analysis_result',
                 'spending_analysis_progress', 'spending_analysis_complete', 'spending_analysis_chart'
               ].includes(eventData.type)) {
                 handleStreamEvent(eventData as StreamEvent)

@@ -52,43 +52,8 @@ npm install
 echo "Bootstrapping CDK..."
 npx cdk bootstrap aws://$ACCOUNT_ID/$AWS_REGION || echo "CDK already bootstrapped"
 
-# Build and push Docker images
-echo "Building and pushing Docker images..."
-
-# Get ECR login token
-aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com
-
-# Create ECR repositories if they don't exist
-aws ecr describe-repositories --repository-names chatbot-backend --region $AWS_REGION > /dev/null 2>&1 || \
-aws ecr create-repository --repository-name chatbot-backend --region $AWS_REGION
-
-aws ecr describe-repositories --repository-names chatbot-frontend --region $AWS_REGION > /dev/null 2>&1 || \
-aws ecr create-repository --repository-name chatbot-frontend --region $AWS_REGION
-
-# Store current directory for returning later
-CURRENT_DIR=$(pwd)
-
-# Build and push Backend
-echo "Building backend container..."
-cd ../../../../chatbot-app/backend
-docker build --platform linux/amd64 --no-cache -t chatbot-backend .
-docker tag chatbot-backend:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-backend:latest
-docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-backend:latest
-
-# Build and push Frontend (only if Cognito is not enabled)
-if [ "$ENABLE_COGNITO" != "true" ]; then
-    echo "🔓 Building frontend container without Cognito..."
-    cd ../frontend
-    docker build --platform linux/amd64 \
-        --build-arg NEXT_PUBLIC_AWS_REGION=$AWS_REGION \
-        --build-arg CORS_ORIGINS="$CORS_ORIGINS" \
-        -t chatbot-frontend .
-    docker tag chatbot-frontend:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-frontend:latest
-    docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-frontend:latest
-fi
-
-# Return to CDK directory (infrastructure directory)
-cd "$CURRENT_DIR"
+# Container images will be built by CodeBuild during CDK deployment
+echo "📦 Container images will be built automatically by CodeBuild during CDK deployment..."
 
 # Check if log group already exists and set environment variable accordingly
 if aws logs describe-log-groups --log-group-name-prefix "agents/strands-agent-logs" --region $AWS_REGION --query 'logGroups[?logGroupName==`agents/strands-agent-logs`]' --output text | grep -q "agents/strands-agent-logs"; then
@@ -99,18 +64,27 @@ else
     export IMPORT_EXISTING_LOG_GROUP=false
 fi
 
+# Check if ECR repository already exists and set environment variable accordingly
+if aws ecr describe-repositories --repository-names chatbot-frontend --region $AWS_REGION > /dev/null 2>&1; then
+    echo "📦 Found existing ECR repository: chatbot-frontend"
+    export USE_EXISTING_ECR=true
+else
+    echo "📦 ECR repository does not exist, will create new one"
+    export USE_EXISTING_ECR=false
+fi
+
 # Deploy Cognito stack first if enabled
 if [ "$ENABLE_COGNITO" = "true" ]; then
     echo "🔐 Deploying Cognito authentication stack first..."
     export ENABLE_COGNITO=true
 
-    # Move to infrastructure directory (one level up)
-    pushd .. > /dev/null
+    # Ensure we're in the infrastructure directory
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    INFRA_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+
+    cd "$INFRA_DIR"
 
     npx cdk deploy CognitoAuthStack --require-approval never
-
-    # Return to scripts directory
-    popd > /dev/null
 
     echo "📋 Getting Cognito configuration from CloudFormation..."
     COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CognitoAuthStack --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' --output text --region $AWS_REGION)
@@ -160,20 +134,7 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
     
     echo "✅ Cognito configuration saved to master .env file: $MAIN_ENV_FILE"
     echo "📋 All applications will use this single source of truth for environment variables"
-
-    # Build frontend with Cognito configuration
-    echo "Building frontend container with Cognito..."
-    cd ../../../../chatbot-app/frontend
-    docker build --platform linux/amd64 \
-        --build-arg NEXT_PUBLIC_AWS_REGION=$AWS_REGION \
-        --build-arg NEXT_PUBLIC_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID \
-        --build-arg NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$COGNITO_USER_POOL_CLIENT_ID \
-        --build-arg CORS_ORIGINS="$CORS_ORIGINS" \
-        -t chatbot-frontend .
-    docker tag chatbot-frontend:latest $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-frontend:latest
-    docker push $ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/chatbot-frontend:latest
-
-    cd "$CURRENT_DIR"
+    echo "📦 Container will be built automatically by CodeBuild with Cognito configuration during CDK deployment..."
 fi
 
 # CORS Origins Configuration (used for both API access and embedding)
@@ -275,19 +236,24 @@ echo "Deploying remaining CDK stack..."
 if [ "$ENABLE_COGNITO" = "true" ]; then
     echo "🔐 Deploying ChatbotStack with Cognito authentication..."
     export ENABLE_COGNITO=true
-    
-    # Move to infrastructure directory (one level up)
-    pushd .. > /dev/null
+
+    # Ensure we're in the infrastructure directory
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    INFRA_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+    cd "$INFRA_DIR"
 
     npx cdk deploy ChatbotStack --require-approval never
-
-    # Return to scripts directory
-    popd > /dev/null
 
 else
     echo "🔓 Deploying with CIDR-based access control only..."
     echo "Allowed IP ranges: $ALLOWED_IP_RANGES"
     export ENABLE_COGNITO=false
+
+    # Ensure we're in the infrastructure directory
+    SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+    INFRA_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+    cd "$INFRA_DIR"
+
     npx cdk deploy ChatbotStack --require-approval never
 fi
 
@@ -295,11 +261,41 @@ echo "Deployment completed successfully!"
 echo ""
 echo "🎉 Your containerized chatbot application is now running!"
 echo ""
+
+# Extract and save Streaming ALB URL for frontend
+echo "📦 Extracting ALB URL for streaming endpoints..."
+STREAMING_ALB_URL=$(aws cloudformation describe-stacks --stack-name ChatbotStack --query 'Stacks[0].Outputs[?OutputKey==`StreamingAlbUrl`].OutputValue' --output text --region $AWS_REGION 2>/dev/null || echo "")
+
+if [ -n "$STREAMING_ALB_URL" ] && [ "$STREAMING_ALB_URL" != "None" ]; then
+    echo "✅ Streaming ALB URL: $STREAMING_ALB_URL"
+
+    # Save to master .env file
+    MAIN_ENV_FILE="../../.env"
+    if [ ! -f "$MAIN_ENV_FILE" ]; then
+        touch "$MAIN_ENV_FILE"
+    fi
+
+    # Remove existing entry and add new one
+    grep -v "^NEXT_PUBLIC_STREAMING_API_URL=" "$MAIN_ENV_FILE" > "$MAIN_ENV_FILE.tmp" 2>/dev/null || touch "$MAIN_ENV_FILE.tmp"
+    mv "$MAIN_ENV_FILE.tmp" "$MAIN_ENV_FILE"
+    echo "NEXT_PUBLIC_STREAMING_API_URL=$STREAMING_ALB_URL" >> "$MAIN_ENV_FILE"
+
+    echo "💾 Streaming ALB URL saved to .env"
+    echo "⚠️  Note: Frontend container needs rebuild to use new streaming URL"
+    echo "   Run: cd ../.. && ./scripts/rebuild-frontend.sh"
+else
+    echo "⚠️  Could not retrieve Streaming ALB URL from stack outputs"
+fi
+
+echo ""
 echo "📋 Access URLs:"
 aws cloudformation describe-stacks --stack-name ChatbotStack --query "Stacks[0].Outputs" --output table --region $AWS_REGION
 
 echo ""
 echo "🔧 Useful commands:"
-echo "  View logs: aws logs tail /aws/ecs/chatbot-backend --follow --region $AWS_REGION"
-echo "  View logs: aws logs tail /aws/ecs/chatbot-frontend --follow --region $AWS_REGION"
-echo "  Scale up:  aws ecs update-service --cluster chatbot-cluster --service ChatbotBackendService --desired-count 2 --region $AWS_REGION"
+echo "  View Frontend+BFF logs: aws logs tail /ecs/chatbot-frontend --follow --region $AWS_REGION"
+echo "  Scale up Frontend:      aws ecs update-service --cluster chatbot-cluster --service ChatbotFrontendService --desired-count 2 --region $AWS_REGION"
+echo ""
+echo "📊 AgentCore Runtime:"
+echo "  View Runtime logs:      aws logs tail /aws/bedrock-agentcore/runtimes/strands_agent_chatbot_runtime --follow --region $AWS_REGION"
+echo "  Check Runtime status:   aws bedrock-agentcore list-agent-runtimes --region $AWS_REGION"

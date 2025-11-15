@@ -4,6 +4,23 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Prevent FOUC - Initial loading screen with smooth transition */
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800;
+  }
+
+  /* Hide content until React hydrates */
+  #__next:empty {
+    @apply min-h-screen flex items-center justify-center;
+  }
+
+  #__next:empty::after {
+    content: "";
+    @apply block h-16 w-16 rounded-full border-4 border-gray-200 dark:border-gray-700 border-t-blue-500 animate-spin;
+  }
+}
+
 /* Hide Next.js development mode indicator */
 #__next-build-watcher {
   display: none !important;
@@ -117,32 +134,32 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
   }
 
   .dark {
-    --background: 220 13% 4%;
+    --background: 222 47% 11%;
     --foreground: 220 14% 96%;
-    --card: 220 13% 4%;
+    --card: 222 47% 11%;
     --card-foreground: 220 14% 96%;
-    --popover: 220 13% 4%;
+    --popover: 222 47% 11%;
     --popover-foreground: 220 14% 96%;
     --primary: 188 91% 35%;
     --primary-foreground: 0 0% 100%;
     --secondary: 214 95% 56%;
     --secondary-foreground: 0 0% 100%;
-    --muted: 220 13% 15%;
+    --muted: 217 33% 17%;
     --muted-foreground: 220 9% 64%;
     --accent: 214 95% 56%;
     --accent-foreground: 0 0% 100%;
     --destructive: 0 63% 31%;
     --destructive-foreground: 0 0% 98%;
-    --border: 220 13% 15%;
-    --input: 220 13% 15%;
+    --border: 217 33% 17%;
+    --input: 217 33% 17%;
     --ring: 188 91% 35%;
-    --sidebar-background: 220 13% 4%;
+    --sidebar-background: 222 47% 11%;
     --sidebar-foreground: 220 14% 96%;
     --sidebar-primary: 214 95% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
-    --sidebar-accent: 220 13% 16%;
+    --sidebar-accent: 217 33% 17%;
     --sidebar-accent-foreground: 220 14% 96%;
-    --sidebar-border: 220 13% 20%;
+    --sidebar-border: 217 33% 17%;
     --sidebar-ring: 214 95% 56%;
     --chart-1: 220 70% 80%;
     --chart-2: 160 60% 75%;
@@ -288,24 +305,6 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 }
 
 /* Content Areas - Clean Tailwind + Prose Integration */
-
-/* Analysis Panel - Use prose for readable content */
-.analysis-panel-content {
-  @apply prose prose-slate max-w-none dark:prose-invert;
-  @apply prose-headings:font-semibold prose-p:text-base prose-li:text-base;
-}
-
-.analysis-panel-content table {
-  @apply w-full border-collapse;
-}
-
-.analysis-panel-content table th {
-  @apply text-base font-semibold px-4 py-3 text-left;
-}
-
-.analysis-panel-content table td {
-  @apply text-base px-4 py-3;
-}
 
 /* Chat Chart Content - Tailwind-first approach */
 .chat-chart-content {

@@ -52,6 +52,8 @@ if (enableCognito) {
 const chatbotStack = new ChatbotStack(app, 'ChatbotStack', {
   env,
   ...cognitoProps,
+  projectName: 'strands-agent-chatbot',
+  environment: 'dev',
 });
 
 // Add explicit dependency if Cognito is enabled

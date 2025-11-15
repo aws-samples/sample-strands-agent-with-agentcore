@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "user",
+    "content": [
+      {
+        "text": "what tools do you have?"
+      }
+    ]
+  },
+  "message_id": 0,
+  "redact_message": null,
+  "created_at": "2025-11-15T07:11:12.895553+00:00",
+  "updated_at": "2025-11-15T07:11:12.895554+00:00"
+}

@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "I have access to the following tools:\n\n1. **Calculator** - Advanced mathematical operations including:\n   - Expression evaluation\n   - Equation solving\n   - Derivatives and integrals\n   - Limits and series expansions\n   - Matrix operations\n\n2. **Weather** - Get current weather conditions for US locations by coordinates\n\n3. **Visualization** - Create interactive charts (bar, line, and pie charts) with custom colors\n\n4. **Web Search** - Search the web using DuckDuckGo for information, news, and research\n\n5. **URL Fetcher** - Fetch and extract text content from web pages (useful for job postings, articles, documentation, etc.)\n\nFeel free to ask me to use any of these tools to help you with calculations, weather information, data visualization, web searches, or fetching content from websites!"
+      }
+    ]
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2025-11-15T07:22:18.706277+00:00",
+  "updated_at": "2025-11-15T07:22:18.706281+00:00"
+}

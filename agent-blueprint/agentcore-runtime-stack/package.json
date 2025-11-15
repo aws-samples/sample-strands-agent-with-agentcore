@@ -1,0 +1,31 @@
+{
+  "name": "agentcore-runtime-stack",
+  "version": "1.0.0",
+  "description": "AWS Bedrock AgentCore Runtime deployment for Strands Agent",
+  "bin": {
+    "agentcore-runtime-stack": "bin/agentcore-runtime-stack.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk"
+  },
+  "keywords": [
+    "aws-cdk",
+    "bedrock",
+    "agentcore",
+    "strands"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "2.224.0",
+    "constructs": "^10.0.0",
+    "@aws-sdk/client-bedrock-agentcore": "^3.0.0"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "message": {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "# My Tools & Capabilities\n\nI don't have access to external tools or the internet, but I can help with:\n\n## Analysis & Writing\n- Summarizing and analyzing text\n- Writing, editing, and brainstorming\n- Explaining complex topics\n- Translating between languages\n\n## Problem-Solving\n- Math and logic problems\n- Coding (writing, debugging, explaining)\n- Research questions (using my training knowledge)\n- Strategic thinking and planning\n\n## Creative Work\n- Storytelling and creative writing\n- Idea generation\n- Worldbuilding\n- Poetry and other creative formats\n\n## Learning\n- Tutoring on various subjects\n- Answering questions\n- Breaking down difficult concepts\n- Socratic questioning\n\n## Limitations\n- ❌ No internet access or real-time information\n- ❌ Can't run code or access external systems\n- ❌ Knowledge cutoff in April 2024\n- ❌ No memory between conversations\n- ❌ Can't see images, files, or links (unless you describe them)\n\nWhat would you like help with?"
+      }
+    ]
+  },
+  "message_id": 1,
+  "redact_message": null,
+  "created_at": "2025-11-15T07:21:25.518322+00:00",
+  "updated_at": "2025-11-15T07:21:25.518332+00:00"
+}

@@ -36,6 +36,18 @@ import { Button } from "@/components/ui/button";
 function BarChartComponent({ data }: { data: ChartData }) {
   const dataKey = Object.keys(data.chartConfig)[0];
 
+  // Process data to include custom colors if provided
+  const processedData = React.useMemo(() => {
+    return data.data.map((item, index) => {
+      // Check if the item has a custom color field
+      const customColor = item.color;
+      return {
+        ...item,
+        fill: customColor || `hsl(var(--chart-${index + 1}))`,
+      };
+    });
+  }, [data.data]);
+
   return (
     <Card>
       <CardHeader>
@@ -44,7 +56,7 @@ function BarChartComponent({ data }: { data: ChartData }) {
       </CardHeader>
       <CardContent>
         <ChartContainer config={data.chartConfig}>
-          <BarChart accessibilityLayer data={data.data}>
+          <BarChart accessibilityLayer data={processedData}>
             <CartesianGrid vertical={false} />
             <XAxis
               dataKey={data.config.xAxisKey}
@@ -234,9 +246,13 @@ function PieChartComponent({ data }: { data: ChartData }) {
   }, [data.data]);
 
   const chartData = data.data.map((item, index) => {
+    // Get custom color from chartConfig if available
+    const segment = item.segment;
+    const customColor = segment && data.chartConfig[segment]?.color;
+
     return {
       ...item,
-      fill: `hsl(var(--chart-${index + 1}))`,
+      fill: customColor || `hsl(var(--chart-${index + 1}))`,
     };
   });
 

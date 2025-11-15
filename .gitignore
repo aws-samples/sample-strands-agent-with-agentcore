@@ -137,6 +137,9 @@ output/
 repl_state/
 conversation_memory.json
 
+# Local development store (tool preferences)
+.local-store/
+
 # AWS CDK
 cdk.out/
 */cdk.out/
@@ -146,3 +149,6 @@ cdk.context.json
 # Deployment files with sensitive info
 deployed-servers.txt
 **/deployed-servers.txt
+
+CLAUDE.md
+.claude

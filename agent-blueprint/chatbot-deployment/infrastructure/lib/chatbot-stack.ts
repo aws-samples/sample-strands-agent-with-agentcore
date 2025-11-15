@@ -10,6 +10,10 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as cr from 'aws-cdk-lib/custom-resources';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as s3deploy from 'aws-cdk-lib/aws-s3-deployment';
+import * as codebuild from 'aws-cdk-lib/aws-codebuild';
+import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import { Construct } from 'constructs';
 
 export interface ChatbotStackProps extends cdk.StackProps {
@@ -17,6 +21,8 @@ export interface ChatbotStackProps extends cdk.StackProps {
   userPoolClientId?: string;
   userPoolDomain?: string;
   enableCognito?: boolean;
+  projectName?: string;
+  environment?: string;
 }
 
 // Region-specific configuration
@@ -32,6 +38,8 @@ export class ChatbotStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props?: ChatbotStackProps) {
     super(scope, id, props);
 
+    const projectName = props?.projectName || 'strands-agent-chatbot';
+    const environment = props?.environment || 'dev';
 
     // Create new VPC for chatbot and MCP farm
     const vpc = new ec2.Vpc(this, 'ChatbotMcpVpc', {
@@ -51,35 +59,467 @@ export class ChatbotStack extends cdk.Stack {
       ]
     });
 
-    // ALB is now CloudFront-only access, no CIDR configuration needed
+    // ============================================================
+    // DynamoDB Tables for User and Session Management
+    // ============================================================
 
-    // ECR Repositories - Import existing repositories
-    const backendRepository = ecr.Repository.fromRepositoryName(this, 'ChatbotBackendRepository', 'chatbot-backend');
-    const frontendRepository = ecr.Repository.fromRepositoryName(this, 'ChatbotFrontendRepository', 'chatbot-frontend');
+    // Users Table - User profiles and preferences
+    const usersTable = new dynamodb.Table(this, 'ChatbotUsersTable', {
+      tableName: `${projectName}-users`,
+      partitionKey: {
+        name: 'userId',
+        type: dynamodb.AttributeType.STRING
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand pricing
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Keep user data on stack deletion
+      pointInTimeRecovery: true, // Enable backup
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      timeToLiveAttribute: 'ttl', // Optional TTL for temporary data
+    });
 
+    // Sessions Table - Conversation sessions metadata
+    const sessionsTable = new dynamodb.Table(this, 'ChatbotSessionsTable', {
+      tableName: `${projectName}-sessions`,
+      partitionKey: {
+        name: 'sessionId',
+        type: dynamodb.AttributeType.STRING
+      },
+      sortKey: {
+        name: 'userId',
+        type: dynamodb.AttributeType.STRING
+      },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Keep session history
+      pointInTimeRecovery: true,
+      encryption: dynamodb.TableEncryption.AWS_MANAGED,
+      timeToLiveAttribute: 'ttl', // Auto-delete old sessions
+    });
 
+    // GSI for querying sessions by userId
+    sessionsTable.addGlobalSecondaryIndex({
+      indexName: 'UserSessionsIndex',
+      partitionKey: {
+        name: 'userId',
+        type: dynamodb.AttributeType.STRING
+      },
+      sortKey: {
+        name: 'lastMessageAt',
+        type: dynamodb.AttributeType.STRING
+      },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // ============================================================
+    // Step 1: ECR Repository for Frontend+BFF
+    // ============================================================
+    const useExistingEcr = process.env.USE_EXISTING_ECR === 'true';
+    const frontendRepository = useExistingEcr
+      ? ecr.Repository.fromRepositoryName(
+          this,
+          'ChatbotFrontendRepository',
+          'chatbot-frontend'
+        )
+      : new ecr.Repository(this, 'ChatbotFrontendRepository', {
+          repositoryName: 'chatbot-frontend',
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          imageScanOnPush: true,
+          lifecycleRules: [
+            {
+              description: 'Keep last 10 images',
+              maxImageCount: 10,
+            },
+          ],
+        });
+
+    // ============================================================
+    // Step 2: S3 Bucket for CodeBuild Source
+    // ============================================================
+    const sourceBucket = new s3.Bucket(this, 'FrontendSourceBucket', {
+      bucketName: `${projectName}-frontend-sources-${this.account}-${this.region}`,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      autoDeleteObjects: true,
+      lifecycleRules: [
+        {
+          expiration: cdk.Duration.days(7),
+          id: 'DeleteOldSources',
+        },
+      ],
+    });
+
+    // ============================================================
+    // Step 3: CodeBuild Project for Frontend+BFF
+    // ============================================================
+    const codeBuildRole = new iam.Role(this, 'FrontendCodeBuildRole', {
+      assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
+      description: 'Build role for Frontend+BFF container image pipeline',
+    });
+
+    // ECR Token Access
+    codeBuildRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['ecr:GetAuthorizationToken'],
+        resources: ['*'],
+      })
+    );
+
+    // ECR Image Operations
+    codeBuildRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'ecr:BatchCheckLayerAvailability',
+          'ecr:BatchGetImage',
+          'ecr:GetDownloadUrlForLayer',
+          'ecr:PutImage',
+          'ecr:InitiateLayerUpload',
+          'ecr:UploadLayerPart',
+          'ecr:CompleteLayerUpload',
+        ],
+        resources: [
+          `arn:aws:ecr:${this.region}:${this.account}:repository/${frontendRepository.repositoryName}`,
+        ],
+      })
+    );
+
+    // CloudWatch Logs
+    codeBuildRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['logs:CreateLogGroup', 'logs:CreateLogStream', 'logs:PutLogEvents'],
+        resources: [
+          `arn:aws:logs:${this.region}:${this.account}:log-group:/aws/codebuild/${projectName}-*`,
+        ],
+      })
+    );
+
+    // S3 Access
+    codeBuildRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['s3:GetObject', 's3:PutObject', 's3:ListBucket'],
+        resources: [sourceBucket.bucketArn, `${sourceBucket.bucketArn}/*`],
+        conditions: {
+          StringEquals: {
+            's3:ResourceAccount': this.account,
+          },
+        },
+      })
+    );
+
+    // CloudFormation Read Access (to get Cognito and ALB config during build)
+    codeBuildRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['cloudformation:DescribeStacks'],
+        resources: [
+          `arn:aws:cloudformation:${this.region}:${this.account}:stack/CognitoAuthStack/*`,
+          `arn:aws:cloudformation:${this.region}:${this.account}:stack/ChatbotStack/*`,
+        ],
+      })
+    );
+
+    const buildProject = new codebuild.Project(this, 'FrontendBuildProject', {
+      projectName: `${projectName}-frontend-builder`,
+      description: 'Builds AMD64 container image for Frontend+BFF',
+      role: codeBuildRole,
+      environment: {
+        buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_5,
+        computeType: codebuild.ComputeType.MEDIUM,
+        privileged: true, // Required for Docker builds
+      },
+      source: codebuild.Source.s3({
+        bucket: sourceBucket,
+        path: 'frontend-source/',
+      }),
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: '0.2',
+        phases: {
+          pre_build: {
+            commands: [
+              'echo Logging in to Amazon ECR...',
+              `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${this.account}.dkr.ecr.${this.region}.amazonaws.com`,
+              'echo Getting Cognito configuration...',
+              `COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks --stack-name CognitoAuthStack --query 'Stacks[0].Outputs[?OutputKey==\`UserPoolId\`].OutputValue' --output text --region ${this.region} || echo "")`,
+              `COGNITO_CLIENT_ID=$(aws cloudformation describe-stacks --stack-name CognitoAuthStack --query 'Stacks[0].Outputs[?OutputKey==\`UserPoolClientId\`].OutputValue' --output text --region ${this.region} || echo "")`,
+              `ALB_DNS=$(aws cloudformation describe-stacks --stack-name ChatbotStack --query 'Stacks[0].Outputs[?OutputKey==\`StreamingAlbUrl\`].OutputValue' --output text --region ${this.region} || echo "")`,
+              'echo "Cognito User Pool ID: $COGNITO_USER_POOL_ID"',
+              'echo "Cognito Client ID: $COGNITO_CLIENT_ID"',
+              'echo "ALB DNS: $ALB_DNS"',
+            ],
+          },
+          build: {
+            commands: [
+              'echo Building Docker image for AMD64 with build args...',
+              'docker build --platform linux/amd64 ' +
+              `--build-arg NEXT_PUBLIC_AWS_REGION=${this.region} ` +
+              '--build-arg NEXT_PUBLIC_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID ' +
+              '--build-arg NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$COGNITO_CLIENT_ID ' +
+              '--build-arg NEXT_PUBLIC_STREAMING_API_URL=$ALB_DNS ' +
+              '-t frontend:latest .',
+              `docker tag frontend:latest ${frontendRepository.repositoryUri}:latest`,
+            ],
+          },
+          post_build: {
+            commands: [
+              'echo Pushing Docker image to ECR...',
+              `docker push ${frontendRepository.repositoryUri}:latest`,
+              'echo Build completed successfully',
+            ],
+          },
+        },
+      }),
+    });
+
+    // ============================================================
+    // Step 4: Upload Frontend Source to S3
+    // ============================================================
+    const frontendSourcePath = '../../../chatbot-app/frontend';
+    const frontendSourceUpload = new s3deploy.BucketDeployment(this, 'FrontendSourceUpload', {
+      sources: [
+        s3deploy.Source.asset(frontendSourcePath, {
+          exclude: [
+            'node_modules',
+            'node_modules/**',
+            '**/node_modules',
+            '**/node_modules/**',
+            '.next',
+            '.next/**',
+            '.git',
+            '.git/**',
+            '.DS_Store',
+            '*.log',
+            'build',
+            'build/**',
+            'dist',
+            'dist/**',
+          ],
+          followSymlinks: cdk.SymlinkFollowMode.NEVER,
+          ignoreMode: cdk.IgnoreMode.GIT,
+        }),
+      ],
+      destinationBucket: sourceBucket,
+      destinationKeyPrefix: 'frontend-source/',
+      prune: false,
+      retainOnDelete: false,
+    });
+
+    // ============================================================
+    // Step 5: Trigger CodeBuild
+    // ============================================================
+    const buildTrigger = new cr.AwsCustomResource(this, 'TriggerFrontendCodeBuild', {
+      onCreate: {
+        service: 'CodeBuild',
+        action: 'startBuild',
+        parameters: {
+          projectName: buildProject.projectName,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`frontend-build-${Date.now()}`),
+      },
+      onUpdate: {
+        service: 'CodeBuild',
+        action: 'startBuild',
+        parameters: {
+          projectName: buildProject.projectName,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of(`frontend-build-${Date.now()}`),
+      },
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          effect: iam.Effect.ALLOW,
+          actions: ['codebuild:StartBuild', 'codebuild:BatchGetBuilds'],
+          resources: [buildProject.projectArn],
+        }),
+      ]),
+      timeout: cdk.Duration.minutes(5),
+    });
+
+    buildTrigger.node.addDependency(frontendSourceUpload);
+
+    // ============================================================
+    // Step 6: Wait for Build to Complete
+    // ============================================================
+    const buildWaiterFunction = new lambda.Function(this, 'FrontendBuildWaiterFunction', {
+      runtime: lambda.Runtime.NODEJS_22_X,
+      handler: 'index.handler',
+      code: lambda.Code.fromInline(`
+const { CodeBuildClient, BatchGetBuildsCommand } = require('@aws-sdk/client-codebuild');
+
+exports.handler = async (event) => {
+  console.log('Event:', JSON.stringify(event));
+
+  if (event.RequestType === 'Delete') {
+    return sendResponse(event, 'SUCCESS', { Status: 'DELETED' });
+  }
+
+  const buildId = event.ResourceProperties.BuildId;
+  const maxWaitMinutes = 14;
+  const pollIntervalSeconds = 30;
+
+  console.log('Waiting for build:', buildId);
+
+  const client = new CodeBuildClient({});
+  const startTime = Date.now();
+  const maxWaitMs = maxWaitMinutes * 60 * 1000;
+
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      const response = await client.send(new BatchGetBuildsCommand({ ids: [buildId] }));
+      const build = response.builds[0];
+      const status = build.buildStatus;
+
+      console.log(\`Build status: \${status}\`);
+
+      if (status === 'SUCCEEDED') {
+        return await sendResponse(event, 'SUCCESS', { Status: 'SUCCEEDED' });
+      } else if (['FAILED', 'FAULT', 'TIMED_OUT', 'STOPPED'].includes(status)) {
+        return await sendResponse(event, 'FAILED', {}, \`Build failed with status: \${status}\`);
+      }
+
+      await new Promise(resolve => setTimeout(resolve, pollIntervalSeconds * 1000));
+
+    } catch (error) {
+      console.error('Error:', error);
+      return await sendResponse(event, 'FAILED', {}, error.message);
+    }
+  }
+
+  return await sendResponse(event, 'FAILED', {}, \`Build timeout after \${maxWaitMinutes} minutes\`);
+};
+
+async function sendResponse(event, status, data, reason) {
+  const responseBody = JSON.stringify({
+    Status: status,
+    Reason: reason || \`See CloudWatch Log Stream: \${event.LogStreamName}\`,
+    PhysicalResourceId: event.PhysicalResourceId || event.RequestId,
+    StackId: event.StackId,
+    RequestId: event.RequestId,
+    LogicalResourceId: event.LogicalResourceId,
+    Data: data
+  });
+
+  console.log('Response:', responseBody);
+
+  const https = require('https');
+  const url = require('url');
+  const parsedUrl = url.parse(event.ResponseURL);
+
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: parsedUrl.hostname,
+      port: 443,
+      path: parsedUrl.path,
+      method: 'PUT',
+      headers: {
+        'Content-Type': '',
+        'Content-Length': responseBody.length
+      }
+    };
+
+    const request = https.request(options, (response) => {
+      console.log(\`Status: \${response.statusCode}\`);
+      resolve(data);
+    });
+
+    request.on('error', (error) => {
+      console.error('Error:', error);
+      reject(error);
+    });
+
+    request.write(responseBody);
+    request.end();
+  });
+}
+      `),
+      timeout: cdk.Duration.minutes(15),
+      memorySize: 256,
+    });
+
+    buildWaiterFunction.addToRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['codebuild:BatchGetBuilds'],
+        resources: [buildProject.projectArn],
+      })
+    );
+
+    const buildWaiter = new cdk.CustomResource(this, 'FrontendBuildWaiter', {
+      serviceToken: buildWaiterFunction.functionArn,
+      properties: {
+        BuildId: buildTrigger.getResponseField('build.id'),
+      },
+    });
+
+    buildWaiter.node.addDependency(buildTrigger);
+
+    // ============================================================
+    // Step 7: ECS Cluster (after build completes)
+    // ============================================================
     // ECS Cluster
     const cluster = new ecs.Cluster(this, 'ChatbotCluster', {
       vpc,
       clusterName: 'chatbot-cluster',
     });
 
-    // Backend Task Definition
-    const backendTaskDefinition = new ecs.FargateTaskDefinition(this, 'ChatbotBackendTaskDef', {
-      memoryLimitMiB: 512,
-      cpu: 256,
+    // Frontend + BFF Task Definition
+    const frontendTaskDefinition = new ecs.FargateTaskDefinition(this, 'ChatbotFrontendTaskDef', {
+      memoryLimitMiB: 1024,  // Increased for BFF functionality
+      cpu: 512,              // Increased for BFF functionality
     });
 
-    // Add Bedrock permissions to backend task role
-    backendTaskDefinition.taskRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonBedrockFullAccess')
-    );
-    backendTaskDefinition.taskRole.addManagedPolicy(
-      iam.ManagedPolicy.fromAwsManagedPolicyName('BedrockAgentCoreFullAccess')
+    // Add AgentCore Runtime invocation permissions
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock-agentcore:InvokeAgentRuntime',
+          'bedrock-agentcore:InvokeAgentRuntimeForUser'
+        ],
+        resources: [
+          `arn:aws:bedrock-agentcore:${this.region}:${this.account}:runtime/*`
+        ]
+      })
     );
 
-    // Add API Gateway invoke permissions for MCP servers
-    backendTaskDefinition.addToTaskRolePolicy(
+    // Add Parameter Store permissions to fetch AgentCore Runtime ARN
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'ssm:GetParameter',
+          'ssm:GetParameters'
+        ],
+        resources: [
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/${projectName}/${environment}/agentcore/*`,
+          `arn:aws:ssm:${this.region}:${this.account}:parameter/mcp/endpoints/*`
+        ]
+      })
+    );
+
+    // Add DynamoDB permissions for user and session management
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:PutItem',
+          'dynamodb:UpdateItem',
+          'dynamodb:DeleteItem',
+          'dynamodb:Query',
+          'dynamodb:Scan',
+          'dynamodb:BatchGetItem',
+          'dynamodb:BatchWriteItem'
+        ],
+        resources: [
+          usersTable.tableArn,
+          sessionsTable.tableArn,
+          `${sessionsTable.tableArn}/index/*` // GSI permissions
+        ]
+      })
+    );
+
+    // Add API Gateway invoke permissions for MCP servers (if BFF needs to call MCP directly)
+    frontendTaskDefinition.addToTaskRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
@@ -92,23 +532,8 @@ export class ChatbotStack extends cdk.Stack {
       })
     );
 
-    // Add Parameter Store permissions for dynamic MCP endpoint configuration
-    backendTaskDefinition.addToTaskRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'ssm:GetParameter',
-          'ssm:GetParameters',
-          'ssm:GetParametersByPath'
-        ],
-        resources: [
-          `arn:aws:ssm:${this.region}:${this.account}:parameter/mcp/endpoints/*`
-        ]
-      })
-    );
-
-    // Add CloudWatch permissions for AgentCore Observability
-    backendTaskDefinition.addToTaskRolePolicy(
+    // Add CloudWatch permissions for logging
+    frontendTaskDefinition.addToTaskRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
@@ -117,111 +542,80 @@ export class ChatbotStack extends cdk.Stack {
           'cloudwatch:PutMetricData'
         ],
         resources: [
-          `arn:aws:logs:${this.region}:${this.account}:log-group:agents/strands-agent-logs`,
-          `arn:aws:logs:${this.region}:${this.account}:log-group:agents/strands-agent-logs:*`
+          `arn:aws:logs:${this.region}:${this.account}:log-group:/ecs/chatbot-frontend`,
+          `arn:aws:logs:${this.region}:${this.account}:log-group:/ecs/chatbot-frontend:*`
         ]
       })
     );
 
-    // Add X-Ray permissions for trace export
-    backendTaskDefinition.addToTaskRolePolicy(
-      new iam.PolicyStatement({
-        effect: iam.Effect.ALLOW,
-        actions: [
-          'xray:PutTraceSegments',
-          'xray:PutTelemetryRecords'
-        ],
-        resources: ['*']
-      })
-    );
-
-    // Handle AgentCore Observability Log Group (create only if it doesn't exist)
-    const logGroupName = 'agents/strands-agent-logs';
-    let agentObservabilityLogGroup: logs.ILogGroup;
-
-    // Check if we should import existing log group (set by deployment script if log group exists)
-    const importExistingLogGroup = process.env.IMPORT_EXISTING_LOG_GROUP === 'true';
-
-    if (importExistingLogGroup) {
-      // Import existing log group
-      agentObservabilityLogGroup = logs.LogGroup.fromLogGroupName(this, 'AgentObservabilityLogGroup', logGroupName);
-    } else {
-      // Create new log group with error handling
-      agentObservabilityLogGroup = new logs.LogGroup(this, 'AgentObservabilityLogGroup', {
-        logGroupName: logGroupName,
-        retention: logs.RetentionDays.ONE_MONTH,
-        removalPolicy: cdk.RemovalPolicy.RETAIN
-      });
-    }
-
-    // Generate unique log stream name
-    const logStreamName = `otel-auto-${Math.random().toString(36).substring(2, 11)}`;
-    
-    // Create OTEL log stream
-    new logs.LogStream(this, 'OtelLogStream', {
-      logGroup: agentObservabilityLogGroup,
-      logStreamName: logStreamName,
-      removalPolicy: cdk.RemovalPolicy.RETAIN
-    });
-
-
-
-    // Backend Container
-    const backendEnvironment: { [key: string]: string } = {
-      DEPLOYMENT_ENV: 'production',
-      STORAGE_TYPE: 'local',
-      HOST: '0.0.0.0',
-      PORT: '8000',
-      CORS_ORIGINS: '*',
+    // Frontend + BFF Container
+    const frontendEnvironment: { [key: string]: string } = {
+      NODE_ENV: 'production',
       FORCE_UPDATE: new Date().toISOString(),
+      NEXT_PUBLIC_AWS_REGION: this.region,
       AWS_DEFAULT_REGION: this.region,
-      // AgentCore Observability - OTEL Configuration
-      OTEL_PYTHON_DISTRO: 'aws_distro',
-      OTEL_PYTHON_CONFIGURATOR: 'aws_configurator',
-      OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
-      OTEL_EXPORTER_OTLP_LOGS_PROTOCOL: 'http/protobuf',
-      OTEL_LOGS_EXPORTER: 'otlp',
-      OTEL_TRACES_EXPORTER: 'otlp',
-      OTEL_EXPORTER_OTLP_LOGS_HEADERS: `x-aws-log-group=agents/strands-agent-logs,x-aws-log-stream=${logStreamName},x-aws-metric-namespace=agentsd`,
-      OTEL_RESOURCE_ATTRIBUTES: 'service.name=strands-chatbot',
-      AGENT_OBSERVABILITY_ENABLED: 'true',
       AWS_REGION: this.region,
-      OTEL_LOG_LEVEL: 'DEBUG',
-      // OTEL batch processing settings for real-time traces
-      OTEL_BSP_SCHEDULE_DELAY: '100',
-      OTEL_BSP_MAX_EXPORT_BATCH_SIZE: '1',
-      OTEL_BSP_EXPORT_TIMEOUT: '5000',
+      // AgentCore Runtime configuration
+      PROJECT_NAME: projectName,
+      ENVIRONMENT: environment,
+      // DynamoDB Tables
+      DYNAMODB_USERS_TABLE: usersTable.tableName,
+      DYNAMODB_SESSIONS_TABLE: sessionsTable.tableName,
     };
 
-    // Add CORS origins configuration (used for both API CORS and embed domain validation)
-    const corsOrigins = process.env.CORS_ORIGINS;
-    if (corsOrigins !== undefined) {
-      backendEnvironment.CORS_ORIGINS = corsOrigins;
+    // Add CORS origins configuration for frontend CSP
+    const frontendCorsOrigins = process.env.CORS_ORIGINS;
+    if (frontendCorsOrigins !== undefined) {
+      frontendEnvironment.CORS_ORIGINS = frontendCorsOrigins;
     }
 
-    const backendContainer = backendTaskDefinition.addContainer('ChatbotBackendContainer', {
-      image: ecs.ContainerImage.fromEcrRepository(backendRepository, 'latest'),
-      environment: backendEnvironment,
+    // Add Cognito environment variables if enabled
+    if (props?.enableCognito && props?.userPoolId && props?.userPoolClientId) {
+      frontendEnvironment.NEXT_PUBLIC_COGNITO_USER_POOL_ID = props.userPoolId;
+      frontendEnvironment.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID = props.userPoolClientId;
+    }
+
+    const frontendContainer = frontendTaskDefinition.addContainer('ChatbotFrontendContainer', {
+      image: ecs.ContainerImage.fromEcrRepository(frontendRepository, 'latest'),
+      environment: frontendEnvironment,
       logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'chatbot-backend',
+        streamPrefix: 'chatbot-frontend',
+        logGroup: new logs.LogGroup(this, 'FrontendLogGroup', {
+          logGroupName: '/ecs/chatbot-frontend',
+          retention: logs.RetentionDays.ONE_WEEK,
+          removalPolicy: cdk.RemovalPolicy.DESTROY
+        })
       }),
     });
 
-    backendContainer.addPortMappings({
-      containerPort: 8000,
+    frontendContainer.addPortMappings({
+      containerPort: 3000,
       protocol: ecs.Protocol.TCP,
     });
 
-    // Backend ECS Service
-    const backendService = new ecs.FargateService(this, 'ChatbotBackendService', {
+    // Frontend ECS Service
+    const frontendService = new ecs.FargateService(this, 'ChatbotFrontendService', {
       cluster,
-      taskDefinition: backendTaskDefinition,
+      taskDefinition: frontendTaskDefinition,
       desiredCount: 1,
       assignPublicIp: true,
       minHealthyPercent: 0,  // Allow stopping all tasks during deployment
       maxHealthyPercent: 200,
     });
 
+    // Ensure service creation waits for build completion
+    frontendService.node.addDependency(buildWaiter);
+
+    // Import Cognito resources if provided
+    let userPool: cognito.IUserPool | undefined;
+    let userPoolClient: cognito.IUserPoolClient | undefined;
+    let userPoolDomain: cognito.IUserPoolDomain | undefined;
+
+    if (props?.enableCognito && props?.userPoolId && props?.userPoolClientId && props?.userPoolDomain) {
+      userPool = cognito.UserPool.fromUserPoolId(this, 'ImportedUserPool', props.userPoolId);
+      userPoolClient = cognito.UserPoolClient.fromUserPoolClientId(this, 'ImportedUserPoolClient', props.userPoolClientId);
+      userPoolDomain = cognito.UserPoolDomain.fromDomainName(this, 'ImportedUserPoolDomain', props.userPoolDomain);
+    }
 
     // Create security group for ALB (CloudFront access only)
     const albSecurityGroup = new ec2.SecurityGroup(this, 'ChatbotAlbSecurityGroup', {
@@ -259,6 +653,23 @@ export class ChatbotStack extends cdk.Stack {
       'Allow HTTP traffic from CloudFront'
     );
 
+    // Allow direct access for streaming endpoints (bypasses CloudFront 60s timeout)
+    // Parse MCP access IP ranges from environment variable
+    const mcpAccessRanges = process.env.MCP_ACCESS_IP_RANGES || '';
+    if (mcpAccessRanges) {
+      mcpAccessRanges.split(',').forEach((cidr, index) => {
+        const trimmedCidr = cidr.trim();
+        if (trimmedCidr) {
+          albSecurityGroup.addIngressRule(
+            ec2.Peer.ipv4(trimmedCidr),
+            ec2.Port.tcp(80),
+            `Allow streaming access from ${trimmedCidr}`
+          );
+        }
+      });
+      console.log(`Added streaming access rules for: ${mcpAccessRanges}`);
+    }
+
     // Application Load Balancer
     const alb = new elbv2.ApplicationLoadBalancer(this, 'ChatbotALB', {
       vpc,
@@ -267,79 +678,14 @@ export class ChatbotStack extends cdk.Stack {
       idleTimeout: cdk.Duration.seconds(3600),
     });
 
-    // Will create listener after target groups are defined
-
-    // Frontend Task Definition (before ALB targets)
-    const frontendTaskDefinition = new ecs.FargateTaskDefinition(this, 'ChatbotFrontendTaskDef', {
-      memoryLimitMiB: 512,
-      cpu: 256,
-    });
-
-
-    // Frontend Container
-    const frontendEnvironment: { [key: string]: string } = {
-      NODE_ENV: 'production',
-      FORCE_UPDATE: new Date().toISOString(),
-      BACKEND_URL: `http://${alb.loadBalancerDnsName}`,
-      // NEXT_PUBLIC_API_URL removed - using auto-detection based on hostname
-      NEXT_PUBLIC_AWS_REGION: this.region,
-      AWS_DEFAULT_REGION: this.region,
-    };
-
-    // Add CORS origins configuration for frontend CSP
-    const frontendCorsOrigins = process.env.CORS_ORIGINS;
-    if (frontendCorsOrigins !== undefined) {
-      frontendEnvironment.CORS_ORIGINS = frontendCorsOrigins;
-    }
-
-    // Add Cognito environment variables if enabled
-    if (props?.enableCognito && props?.userPoolId && props?.userPoolClientId) {
-      frontendEnvironment.NEXT_PUBLIC_COGNITO_USER_POOL_ID = props.userPoolId;
-      frontendEnvironment.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID = props.userPoolClientId;
-    }
-
-    const frontendContainer = frontendTaskDefinition.addContainer('ChatbotFrontendContainer', {
-      image: ecs.ContainerImage.fromEcrRepository(frontendRepository, 'latest'),
-      environment: frontendEnvironment,
-      logging: ecs.LogDrivers.awsLogs({
-        streamPrefix: 'chatbot-frontend',
-      }),
-    });
-
-    frontendContainer.addPortMappings({
-      containerPort: 3000,
-      protocol: ecs.Protocol.TCP,
-    });
-
-    // Frontend ECS Service
-    const frontendService = new ecs.FargateService(this, 'ChatbotFrontendService', {
-      cluster,
-      taskDefinition: frontendTaskDefinition,
-      desiredCount: 1,
-      assignPublicIp: true,
-      minHealthyPercent: 0,  // Allow stopping all tasks during deployment
-      maxHealthyPercent: 200,
-    });
-
-    // Import Cognito resources if provided
-    let userPool: cognito.IUserPool | undefined;
-    let userPoolClient: cognito.IUserPoolClient | undefined;
-    let userPoolDomain: cognito.IUserPoolDomain | undefined;
-
-    if (props?.enableCognito && props?.userPoolId && props?.userPoolClientId && props?.userPoolDomain) {
-      userPool = cognito.UserPool.fromUserPoolId(this, 'ImportedUserPool', props.userPoolId);
-      userPoolClient = cognito.UserPoolClient.fromUserPoolClientId(this, 'ImportedUserPoolClient', props.userPoolClientId);
-      userPoolDomain = cognito.UserPoolDomain.fromDomainName(this, 'ImportedUserPoolDomain', props.userPoolDomain);
-    }
-
-    // Frontend Target Group
+    // Frontend Target Group (handles both UI and API requests via Next.js)
     const frontendTargetGroup = new elbv2.ApplicationTargetGroup(this, 'FrontendTargetGroup', {
       vpc,
       port: 3000,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [frontendService],
       healthCheck: {
-        path: '/health',
+        path: '/api/health',  // Health check via API route
         interval: cdk.Duration.seconds(30),
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 3,
@@ -348,57 +694,14 @@ export class ChatbotStack extends cdk.Stack {
       deregistrationDelay: cdk.Duration.seconds(30),
     });
 
-    // Set default action to forward to frontend (will be updated after target groups are created)
-
     frontendTargetGroup.setAttribute('load_balancing.cross_zone.enabled', 'true');
 
-    // Backend Target Group - Unified routing for all API requests
-    const backendTargetGroup = new elbv2.ApplicationTargetGroup(this, 'BackendTargetGroup', {
-      vpc,
-      port: 8000,
-      protocol: elbv2.ApplicationProtocol.HTTP,
-      targets: [backendService],
-      healthCheck: {
-        path: '/health',
-        interval: cdk.Duration.seconds(60),
-        healthyThresholdCount: 2,
-        unhealthyThresholdCount: 3,
-        timeout: cdk.Duration.seconds(10),
-      },
-      stickinessCookieDuration: cdk.Duration.hours(1),
-      deregistrationDelay: cdk.Duration.seconds(30),
-    });
-
-    backendTargetGroup.setAttribute('load_balancing.cross_zone.enabled', 'true');
-
-    // Create ALB listener with proper default action
+    // Create ALB listener - all traffic goes to Frontend (which includes BFF)
+    // Authentication is handled by the frontend application using AWS Amplify
     const listener = alb.addListener('ChatbotListener', {
       port: 80,
       open: true,
       defaultAction: elbv2.ListenerAction.forward([frontendTargetGroup]),
-    });
-
-    // Health check endpoint without authentication (for ALB health checks)
-    listener.addAction('HealthCheckAction', {
-      priority: 50,
-      conditions: [
-        elbv2.ListenerCondition.pathPatterns(['/health']),
-      ],
-      action: elbv2.ListenerAction.forward([backendTargetGroup]),
-    });
-
-    // API endpoints routing (authentication handled by CloudFront)
-    listener.addAction('BackendApiAction', {
-      priority: 100,
-      conditions: [
-        elbv2.ListenerCondition.pathPatterns([
-          '/api/*',           // All API requests
-          '/docs*',           // Swagger documentation
-          '/uploads/*',       // Direct uploads endpoints
-          '/output/*',        // Direct output endpoints
-        ]),
-      ],
-      action: elbv2.ListenerAction.forward([backendTargetGroup]),
     });
 
     // Create custom Origin Request Policy to forward session headers
@@ -488,23 +791,17 @@ export class ChatbotStack extends cdk.Stack {
 
     new cdk.CfnOutput(this, 'BackendApiUrl', {
       value: `https://${distribution.distributionDomainName}/api`,
-      description: 'Backend API URL via CloudFront (HTTPS)',
+      description: 'Backend API URL via CloudFront (HTTPS) - Served by Next.js API routes',
     });
 
-    new cdk.CfnOutput(this, 'SwaggerDocsUrl', {
-      value: `https://${distribution.distributionDomainName}/docs`,
-      description: 'API Documentation (Swagger)',
-    });
-
-
-    new cdk.CfnOutput(this, 'BackendECRRepositoryUri', {
-      value: backendRepository.repositoryUri,
-      description: 'Backend ECR Repository URI',
+    new cdk.CfnOutput(this, 'StreamingAlbUrl', {
+      value: `http://${alb.loadBalancerDnsName}`,
+      description: 'ALB URL for streaming endpoints (bypasses CloudFront 60s timeout) - Use for /api/stream/* endpoints',
     });
 
     new cdk.CfnOutput(this, 'FrontendECRRepositoryUri', {
       value: frontendRepository.repositoryUri,
-      description: 'Frontend ECR Repository URI',
+      description: 'Frontend ECR Repository URI (includes BFF)',
     });
 
     // Export VPC information for MCP farm to reuse
@@ -532,15 +829,23 @@ export class ChatbotStack extends cdk.Stack {
       exportName: `${this.stackName}-vpc-cidr`
     });
 
-    // AgentCore Observability Outputs
-    new cdk.CfnOutput(this, 'ObservabilityLogGroupName', {
-      value: 'agents/strands-agent-logs',
-      description: 'CloudWatch Log Group for AgentCore Observability'
+    // AgentCore Runtime Integration Note
+    new cdk.CfnOutput(this, 'AgentCoreIntegrationNote', {
+      value: `BFF calls AgentCore Runtime via InvokeAgentRuntimeCommand. Runtime ARN fetched from SSM: /${projectName}/${environment}/agentcore/runtime-arn`,
+      description: 'AgentCore Runtime Integration Information'
     });
 
-    new cdk.CfnOutput(this, 'ObservabilitySetupNote', {
-      value: 'Remember to enable CloudWatch Transaction Search for full observability',
-      description: 'AgentCore Observability Setup Reminder'
+    // DynamoDB Tables
+    new cdk.CfnOutput(this, 'UsersTableName', {
+      value: usersTable.tableName,
+      description: 'DynamoDB Users Table (stores user profiles and preferences)',
+      exportName: `${this.stackName}-users-table`
+    });
+
+    new cdk.CfnOutput(this, 'SessionsTableName', {
+      value: sessionsTable.tableName,
+      description: 'DynamoDB Sessions Table (stores session metadata and history)',
+      exportName: `${this.stackName}-sessions-table`
     });
 
     // Security Information
