@@ -204,15 +204,11 @@ AgentCore Components
 
 2. AgentCore Memory
    - Documentation: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/memory.html
-   - DynamoDB-backed conversation persistence
    - Cross-session memory retention
-   - Automatic token management
 
 3. AgentCore Gateway
    - Documentation: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html
-   - API Gateway with SigV4 authentication
    - Routes to 5 Lambda functions (12 tools total via MCP protocol)
-   - Centralized API key management
 
 Tool Categories
 ===============
@@ -261,4 +257,3 @@ For more details, see:
 - README.md: Architecture overview and features
 - DEPLOYMENT.md: Step-by-step deployment guide
 - AGENTCORE.md: AgentCore integration details
-- docs/guides/: Embedding, troubleshooting, and MCP guides
