@@ -362,174 +362,169 @@ export const ToolExecutionContainer: React.FC<ToolExecutionContainerProps> = ({ 
             );
           }
         }
-        
+
         return (
-          <div key={toolExecution.id} className={`${
-            compact
-              ? "bg-card/80 rounded-md border border-border/60"
-              : "bg-card/80 rounded-md border border-border shadow-sm"
-          } overflow-hidden break-words`} style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-            {/* Tool Header - More Compact */}
-            <button
-              onClick={() => toggleToolExpansion(toolExecution.id)}
-              className={`w-full ${compact ? "px-3 py-2" : "px-3 py-2.5"} flex items-center justify-between hover:bg-muted/50 transition-colors`}
-            >
-              <div className="flex items-center gap-2">
-                <div className="p-1 bg-primary/10 rounded border border-primary/20">
-                  <IconComponent className="h-3 w-3 text-primary" />
+          <React.Fragment key={toolExecution.id}>
+            <div className={`${
+              compact
+                ? "bg-card/80 rounded-md border border-border/60"
+                : "bg-card/80 rounded-md border border-border shadow-sm"
+            } overflow-hidden break-words`} style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+              {/* Tool Header - More Compact */}
+              <button
+                onClick={() => toggleToolExpansion(toolExecution.id)}
+                className={`w-full ${compact ? "px-3 py-2" : "px-3 py-2.5"} flex items-center justify-between hover:bg-muted/50 transition-colors`}
+              >
+                <div className="flex items-center gap-2">
+                  <div className="p-1 bg-primary/10 rounded border border-primary/20">
+                    <IconComponent className="h-3 w-3 text-primary" />
+                  </div>
+                  <div className="text-left">
+                    <div className="flex items-center gap-1.5">
+                      <p className="font-medium text-xs text-foreground">{toolExecution.toolName}</p>
+                      {toolExecution.isComplete ? (
+                        <CheckCircle className="h-3 w-3 text-green-500" />
+                      ) : (
+                        <Clock className="h-3 w-3 text-primary animate-pulse" />
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="text-left">
-                  <div className="flex items-center gap-1.5">
-                    <p className="font-medium text-xs text-foreground">{toolExecution.toolName}</p>
-                    {toolExecution.isComplete ? (
-                      <CheckCircle className="h-3 w-3 text-green-500" />
-                    ) : (
-                      <Clock className="h-3 w-3 text-primary animate-pulse" />
+                <div className="flex items-center gap-1.5">
+                  <Badge variant="outline" className="text-xs px-1.5 py-0.5 bg-background/70 text-primary border-primary/30">
+                    {toolExecution.isComplete ? 'Completed' : 'Running'}
+                  </Badge>
+                  <ChevronRight
+                    className="h-3 w-3 text-muted-foreground transition-transform"
+                    style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                  />
+                </div>
+              </button>
+
+              {/* Tool Content */}
+              {isExpanded && (
+                <div className={`border-t ${compact ? "border-border/60 bg-background/50" : "border-primary/20 bg-background/70"} backdrop-blur-sm`}>
+                  <div className={`${compact ? "p-3" : "p-4"} min-w-0 max-w-full overflow-x-auto break-words`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                    {/* Tool Input */}
+                    {toolExecution.toolInput !== undefined && (
+                      <div className={compact ? "mb-4" : "mb-6"}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Zap className="h-4 w-4 text-primary" />
+                          <h4 className="text-sm font-semibold text-foreground">Input Parameters</h4>
+                        </div>
+                        {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 ? (
+                          <div className="bg-background rounded-lg border border-border overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
+                            <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                              <JsonDisplay
+                                data={toolExecution.toolInput}
+                                maxLines={6}
+                                label="Parameters"
+                              />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="bg-background rounded-lg border border-border p-3 break-words" style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
+                            <div className="text-sm text-muted-foreground italic">
+                              No input parameters (this tool takes no arguments)
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Reasoning Process */}
+                    {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
+                      <div className={compact ? "mb-4" : "mb-6"}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Brain className="h-4 w-4 text-secondary" />
+                          <h4 className="text-sm font-semibold text-foreground">AI Reasoning Process</h4>
+                        </div>
+                        <div className="bg-background rounded-lg border-l-4 border-secondary overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
+                          <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                            <JsonDisplay
+                              data={toolExecution.reasoningText}
+                              maxLines={5}
+                              label="Reasoning"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+
+                    {/* Tool Result */}
+                    {toolExecution.toolResult && (
+                      <div className={compact ? "mb-4" : "mb-6"}>
+                        <div className="flex items-center gap-2 mb-3">
+                          <CheckCircle className="h-4 w-4 text-green-500" />
+                          <h4 className="text-sm font-semibold text-foreground">Tool Result</h4>
+                          {(toolExecution.toolName === 'bedrock_code_interpreter' || toolExecution.toolName === 'run_python_code' || toolExecution.toolName === 'finalize_document') && toolExecution.isComplete && (
+                            <button
+                              onClick={() => handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult)}
+                              className="ml-auto p-1.5 hover:bg-muted rounded transition-colors flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                              title="Download all files as ZIP"
+                            >
+                              <Download className="h-3 w-3" />
+                              <span>Download Files</span>
+                            </button>
+                          )}
+                        </div>
+                        <div className="bg-background rounded-lg border-l-4 border-green-500/30 dark:border-green-400/30 overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
+                          <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                            {containsMarkdown(toolExecution.toolResult) ? (
+                              <Markdown size="sm" sessionId={sessionId}>{toolExecution.toolResult}</Markdown>
+                            ) : (
+                              <JsonDisplay
+                                data={toolExecution.toolResult}
+                                maxLines={8}
+                                label="Tool Result"
+                              />
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     )}
                   </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Badge variant="outline" className="text-xs px-1.5 py-0.5 bg-background/70 text-primary border-primary/30">
-                  {toolExecution.isComplete ? 'Completed' : 'Running'}
-                </Badge>
-                <ChevronRight 
-                  className="h-3 w-3 text-muted-foreground transition-transform" 
-                  style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
-                />
-              </div>
-            </button>
+              )}
+            </div>
 
-            {/* Tool Content */}
-            {isExpanded && (
-              <div className={`border-t ${compact ? "border-border/60 bg-background/50" : "border-primary/20 bg-background/70"} backdrop-blur-sm`}>
-                <div className={`${compact ? "p-3" : "p-4"} min-w-0 max-w-full overflow-x-auto break-words`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                  {/* Tool Input */}
-                  {toolExecution.toolInput !== undefined && (
-                    <div className={compact ? "mb-4" : "mb-6"}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <Zap className="h-4 w-4 text-primary" />
-                        <h4 className="text-sm font-semibold text-foreground">Input Parameters</h4>
+            {/* Tool Images - Rendered outside tool execution field */}
+            {toolExecution.images && toolExecution.images.length > 0 && (
+              <div className="mt-4">
+                {toolExecution.images.map((image, idx) => {
+                  const imageSrc = `data:image/${image.format};base64,${typeof image.data === 'string' ? image.data : btoa(String.fromCharCode(...new Uint8Array(image.data)))}`;
+                  return (
+                    <div key={idx} className="relative group mb-3">
+                      <img
+                        src={imageSrc}
+                        alt={`Tool generated image ${idx + 1}`}
+                        className="w-full h-auto rounded-lg border border-border shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
+                        onClick={() => setSelectedImage({ src: imageSrc, alt: `Tool generated image ${idx + 1}` })}
+                      />
+                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Badge variant="secondary" className="text-xs bg-black/70 text-white border-0">
+                          {image.format.toUpperCase()}
+                        </Badge>
                       </div>
-                      {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 ? (
-                        <div className="bg-background rounded-lg border border-border overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
-                          <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                            <JsonDisplay
-                              data={toolExecution.toolInput}
-                              maxLines={6}
-                              label="Parameters"
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-background rounded-lg border border-border p-3 break-words" style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
-                          <div className="text-sm text-muted-foreground italic">
-                            No input parameters (this tool takes no arguments)
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {/* Reasoning Process */}
-                  {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
-                    <div className={compact ? "mb-4" : "mb-6"}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <Brain className="h-4 w-4 text-secondary" />
-                        <h4 className="text-sm font-semibold text-foreground">AI Reasoning Process</h4>
-                      </div>
-                      <div className="bg-background rounded-lg border-l-4 border-secondary overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
-                        <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                          <JsonDisplay
-                            data={toolExecution.reasoningText}
-                            maxLines={5}
-                            label="Reasoning"
-                          />
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-lg pointer-events-none">
+                        <div className="bg-background/90 px-2 py-1 rounded text-xs font-medium text-foreground">
+                          Click to enlarge
                         </div>
                       </div>
                     </div>
-                  )}
-
-
-                  {/* Tool Result */}
-                  {toolExecution.toolResult && (
-                    <div className={compact ? "mb-4" : "mb-6"}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                        <h4 className="text-sm font-semibold text-foreground">Tool Result</h4>
-                        {(toolExecution.toolName === 'bedrock_code_interpreter' || toolExecution.toolName === 'run_python_code' || toolExecution.toolName === 'finalize_document') && toolExecution.isComplete && (
-                          <button
-                            onClick={() => handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult)}
-                            className="ml-auto p-1.5 hover:bg-muted rounded transition-colors flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                            title="Download all files as ZIP"
-                          >
-                            <Download className="h-3 w-3" />
-                            <span>Download Files</span>
-                          </button>
-                        )}
-                      </div>
-                      <div className="bg-background rounded-lg border-l-4 border-green-500/30 dark:border-green-400/30 overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
-                        <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                          {containsMarkdown(toolExecution.toolResult) ? (
-                            <Markdown size="sm" sessionId={sessionId}>{toolExecution.toolResult}</Markdown>
-                          ) : (
-                            <JsonDisplay
-                              data={toolExecution.toolResult}
-                              maxLines={8}
-                              label="Tool Result"
-                            />
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Tool Images */}
-                  {toolExecution.images && toolExecution.images.length > 0 && (
-                    <div>
-                      <div className="flex items-center gap-2 mb-3">
-                        <CheckCircle className="h-4 w-4 text-green-500" />
-                        <h4 className="text-sm font-semibold text-foreground">Generated Images</h4>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {toolExecution.images.map((image, idx) => {
-                          const imageSrc = `data:image/${image.format};base64,${typeof image.data === 'string' ? image.data : btoa(String.fromCharCode(...new Uint8Array(image.data)))}`;
-                          return (
-                            <div key={idx} className="relative group">
-                              <img
-                                src={imageSrc}
-                                alt={`Tool generated image ${idx + 1}`}
-                                className="w-full h-auto rounded-lg border border-border shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
-                                style={{ maxHeight: '325px', objectFit: 'contain' }}
-                                onClick={() => setSelectedImage({ src: imageSrc, alt: `Tool generated image ${idx + 1}` })}
-                              />
-                              <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Badge variant="secondary" className="text-xs bg-black/70 text-white border-0">
-                                  {image.format.toUpperCase()}
-                                </Badge>
-                              </div>
-                              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-lg pointer-events-none">
-                                <div className="bg-background/90 px-2 py-1 rounded text-xs font-medium text-foreground">
-                                  Click to enlarge
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  );
+                })}
               </div>
             )}
-          </div>
+          </React.Fragment>
         )
       })}
       </div>
 
       {/* Image Modal */}
       {selectedImage && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4"
           onClick={() => setSelectedImage(null)}
         >

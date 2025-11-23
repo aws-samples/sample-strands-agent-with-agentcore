@@ -133,43 +133,106 @@ export async function GET(request: NextRequest) {
       // Events are returned newest-first, reverse to get chronological order
       const reversedEvents = [...events].reverse()
 
-      messages = reversedEvents
-        .filter((event: any) => {
-          // Only include conversational events
-          return event.payload && event.payload[0]?.conversational
-        })
-        .map((event: any, index: number) => {
-          const conv = event.payload[0].conversational
+      // First pass: collect all blob events indexed by their position
+      // Blobs appear AFTER the conversational event that contains the toolUse
+      const blobsByIndex = new Map<number, any>()
+      reversedEvents.forEach((event: any, index: number) => {
+        if (event.payload && event.payload[0]?.blob) {
+          // Associate this blob with the previous conversational event (index - 1)
+          blobsByIndex.set(index - 1, event.payload[0].blob)
+        }
+      })
 
-          // Parse content - AgentCore Memory stores messages as JSON string {"message": {...}}
-          const content = conv.content?.text || '';
+      if (blobsByIndex.size > 0) {
+        console.log(`[API] Found ${blobsByIndex.size} blob event(s)`)
+      }
 
-          if (!content) {
-            throw new Error(`Event ${event.eventId} has no content`);
+      // Second pass: process conversational events and merge with blob toolResults
+      const conversationalEvents = reversedEvents
+        .map((event: any, index: number) => ({ event, index }))
+        .filter(({ event }) => event.payload && event.payload[0]?.conversational)
+
+      messages = conversationalEvents.map(({ event, index }, msgIndex) => {
+        const conv = event.payload[0].conversational
+
+        // Parse content - AgentCore Memory stores messages as JSON string {"message": {...}}
+        const content = conv.content?.text || '';
+
+        if (!content) {
+          throw new Error(`Event ${event.eventId} has no content`);
+        }
+
+        const parsed = JSON.parse(content);
+
+        // Must be in {"message": {...}} format
+        if (!parsed.message) {
+          throw new Error(`Event ${event.eventId} missing "message" key. Got: ${JSON.stringify(parsed)}`);
+        }
+
+        const message = {
+          ...parsed.message, // Contains role and content array
+          id: event.eventId || `msg-${sessionId}-${msgIndex}`,
+          timestamp: event.eventTime || new Date().toISOString()
+        }
+
+        // Check if there's a blob associated with this conversational event
+        // Blob events contain ALL toolResults for this assistant turn
+        if (blobsByIndex.has(index) && message.role === 'assistant') {
+          const blobData = blobsByIndex.get(index)
+
+          if (blobData && typeof blobData === 'string') {
+            try {
+              // Blob from Strands SDK: JSON array ["message_json", "role"]
+              const parsed = JSON.parse(blobData)
+
+              if (Array.isArray(parsed) && parsed.length >= 1) {
+                // Parse the message JSON (first element of array)
+                const messageData = JSON.parse(parsed[0])
+
+                // Extract ALL toolResults from blob and merge into message content
+                if (messageData?.message?.content && Array.isArray(messageData.message.content)) {
+                  const blobToolResults = messageData.message.content.filter((item: any) => item.toolResult)
+
+                  // Process each toolResult
+                  blobToolResults.forEach((toolResultItem: any) => {
+                    const toolResult = toolResultItem.toolResult
+                    const toolUseId = toolResult.toolUseId
+
+                    // Add toolResult to message.content array (after corresponding toolUse)
+                    // Find the index of the toolUse with matching toolUseId
+                    const toolUseIndex = message.content.findIndex(
+                      (item: any) => item.toolUse && item.toolUse.toolUseId === toolUseId
+                    )
+
+                    if (toolUseIndex !== -1) {
+                      // Insert toolResult after toolUse
+                      message.content.splice(toolUseIndex + 1, 0, { toolResult })
+                    } else {
+                      // ToolUse not found - append to end
+                      message.content.push({ toolResult })
+                    }
+
+                    // No need to store in _blobImages - images are already in toolResult.content
+                  })
+
+                  if (blobToolResults.length > 0) {
+                    console.log(`[API] Merged ${blobToolResults.length} toolResult(s) from blob into message ${message.id}`)
+                  }
+                }
+              }
+            } catch (e) {
+              console.error(`[API] Failed to process blob:`, e)
+            }
           }
+        }
 
-          const parsed = JSON.parse(content);
+        return message
+      })
 
-          // Must be in {"message": {...}} format
-          if (!parsed.message) {
-            throw new Error(`Event ${event.eventId} missing "message" key. Got: ${JSON.stringify(parsed)}`);
-          }
-
-          // Return in same format as local storage (with id and timestamp)
-          return {
-            ...parsed.message, // Contains role and content array
-            id: event.eventId || `msg-${sessionId}-${index}`,
-            timestamp: event.eventTime || new Date().toISOString()
-          }
-        })
-
-      console.log(`[API] Converted to ${messages.length} chat messages`)
-      console.log('[API] Sample messages:', messages.slice(0, 3))
+      console.log(`[API] Loaded ${messages.length} messages for session ${sessionId}`)
     }
 
-    // AgentCore Memory already stores messages in the correct format
-    // No need to merge toolUse/toolResult - they're already processed by Strands Agent
-    // Just return messages as-is
+    // Return messages with merged toolResults from blobs
     return NextResponse.json({
       success: true,
       sessionId,

@@ -5,6 +5,7 @@ import { getApiUrl } from '@/config/environment'
 import logger from '@/utils/logger'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { apiGet, apiPost } from '@/lib/api-client'
+import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
 
 interface UseChatAPIProps {
   backendUrl: string
@@ -350,69 +351,42 @@ export const useChatAPI = ({
         throw new Error(data.error || 'Failed to load conversation history')
       }
 
-      // Process messages - content is now an array format from AgentCore
-      // First pass: collect all toolUse and toolResult across all messages
-      const toolUseMap = new Map<string, any>() // toolUseId -> toolUse
-      const toolResultMap = new Map<string, any>() // toolUseId -> toolResult
+      // Build tool maps for toolUse/toolResult matching
+      const { toolUseMap, toolResultMap } = buildToolMaps(data.messages)
 
-      data.messages.forEach((msg: any) => {
-        if (Array.isArray(msg.content)) {
-          msg.content.forEach((item: any) => {
-            if (item.toolUse) {
-              toolUseMap.set(item.toolUse.toolUseId, item.toolUse)
-            } else if (item.toolResult) {
-              toolResultMap.set(item.toolResult.toolUseId, item.toolResult)
-            }
-          })
-        }
-      })
-
+      // Process messages - keep all messages and parse tool executions
       const loadedMessages: Message[] = data.messages
-        .filter((msg: any) => {
-          // Filter out messages that only contain toolResult (they'll be merged with toolUse)
-          if (Array.isArray(msg.content)) {
-            const hasOnlyToolResult = msg.content.every((item: any) => item.toolResult)
-            return !hasOnlyToolResult
-          }
-          return true
-        })
         .map((msg: any, index: number) => {
-          // Extract text and tool executions from content array
           let text = ''
-          const toolExecutions: any[] = []
+          const toolExecutions: ToolExecution[] = []
+          const processedToolUseIds = new Set<string>()
 
           if (Array.isArray(msg.content)) {
             msg.content.forEach((item: any) => {
+              // Extract text content
               if (item.text) {
                 text += item.text
-              } else if (item.toolUse) {
-                // Find corresponding toolResult from the map
-                const toolResult = toolResultMap.get(item.toolUse.toolUseId)
-
-                // Convert toolResult.content array to string format
-                let toolResultString = ''
-                if (toolResult?.content && Array.isArray(toolResult.content)) {
-                  toolResultString = toolResult.content
-                    .map((c: any) => c.text || JSON.stringify(c))
-                    .join('\n')
-                }
-
-                const execution: ToolExecution = {
-                  id: item.toolUse.toolUseId,
-                  toolName: item.toolUse.name,
-                  toolInput: item.toolUse.input,
-                  reasoning: [],
-                  toolResult: toolResultString,
-                  isComplete: true,
-                  isExpanded: false
-                }
-
-                toolExecutions.push(execution)
               }
+
+              // Handle toolUse - toolResult is always paired with toolUse in the map
+              else if (item.toolUse) {
+                const toolUseId = item.toolUse.toolUseId
+
+                // Skip duplicates
+                if (processedToolUseIds.has(toolUseId)) {
+                  return
+                }
+                processedToolUseIds.add(toolUseId)
+
+                // Find matching toolResult (from blob or same message)
+                const toolResult = toolResultMap.get(toolUseId)
+                toolExecutions.push(createToolExecution(item.toolUse, toolResult, msg))
+              }
+              // Note: toolResult items are ignored here - they're accessed via toolResultMap
             })
           }
 
-          const messageObj = {
+          return {
             id: msg.id || `${newSessionId}-${index}`,
             text: text,
             sender: msg.role === 'user' ? 'user' : 'bot',
@@ -422,8 +396,15 @@ export const useChatAPI = ({
               isToolMessage: true
             })
           }
-
-          return messageObj
+        })
+        // Filter out user messages that only contain toolResults (no actual text content)
+        // These are intermediate messages in Claude API format that shouldn't be displayed
+        .filter((msg: Message) => {
+          // Skip user messages with no text
+          if (msg.sender === 'user' && !msg.text) {
+            return false
+          }
+          return true
         })
 
       // Update messages and session ID
