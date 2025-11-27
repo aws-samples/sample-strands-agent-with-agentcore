@@ -33,6 +33,18 @@ export interface Message {
     type: string
     size: number
   }>
+  latencyMetrics?: {
+    timeToFirstToken?: number  // ms from request to first response
+    endToEndLatency?: number   // ms from request to completion
+  }
+  tokenUsage?: {
+    inputTokens: number
+    outputTokens: number
+    totalTokens: number
+    cacheReadInputTokens?: number
+    cacheWriteInputTokens?: number
+  }
+  feedback?: 'up' | 'down' | null
 }
 
 export interface Tool {

@@ -6,6 +6,7 @@ import { useStreamEvents } from './useStreamEvents'
 import { useChatAPI } from './useChatAPI'
 import { getApiUrl } from '@/config/environment'
 import API_CONFIG from '@/config/api'
+import { fetchAuthSession } from 'aws-amplify/auth'
 
 
 interface UseChatProps {
@@ -23,6 +24,7 @@ interface UseChatReturn {
   setInputMessage: (message: string) => void
   isConnected: boolean
   isTyping: boolean
+  agentStatus: 'idle' | 'thinking' | 'responding'
   availableTools: Tool[]
   currentToolExecutions: ToolExecution[]
   currentReasoning: ReasoningState | null
@@ -58,7 +60,13 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [uiState, setUIState] = useState<ChatUIState>({
     isConnected: true,
     isTyping: false,
-    showProgressPanel: false
+    showProgressPanel: false,
+    agentStatus: 'idle',
+    latencyMetrics: {
+      requestStartTime: null,
+      timeToFirstToken: null,
+      endToEndLatency: null
+    }
   })
   
   const currentToolExecutionsRef = useRef<ToolExecution[]>([])
@@ -128,6 +136,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setSessionState,
     setMessages,
     setUIState,
+    uiState,
     currentToolExecutionsRef,
     currentTurnIdRef,
     availableTools
@@ -226,7 +235,26 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         }
 
         // Load from DynamoDB
-        const response = await fetch(`/api/session/${sessionId}`)
+        // Get auth headers
+        const authHeaders: Record<string, string> = {}
+        try {
+          const session = await fetchAuthSession()
+          const token = session.tokens?.idToken?.toString()
+          if (token) {
+            authHeaders['Authorization'] = `Bearer ${token}`
+          } else {
+            // No token available - skip this request
+            console.log('[useChat] No auth token available, skipping browser session restore')
+            return
+          }
+        } catch (error) {
+          console.log('[useChat] No auth session available, skipping browser session restore')
+          return
+        }
+
+        const response = await fetch(`/api/session/${sessionId}`, {
+          headers: authHeaders
+        })
 
         // 404 is expected for new sessions not yet saved to DynamoDB
         if (response.status === 404) {
@@ -318,9 +346,20 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Generate new turn ID for this conversation turn
     const newTurnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     currentTurnIdRef.current = newTurnId
-    
+
+    // Record request start time for latency metrics
+    const requestStartTime = Date.now()
+
     setMessages(prev => [...prev, userMessage])
-    setUIState(prev => ({ ...prev, isTyping: false }))
+    setUIState(prev => ({
+      ...prev,
+      isTyping: false,
+      latencyMetrics: {
+        requestStartTime,
+        timeToFirstToken: null,
+        endToEndLatency: null
+      }
+    }))
     // Keep browserSession from previous state - don't reset it
     setSessionState(prev => ({
       ...prev,
@@ -407,9 +446,30 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
   // Stop generation function
   const stopGeneration = useCallback(() => {
+    // Calculate End-to-End Latency (when manually stopped)
+    const requestStartTime = uiState.latencyMetrics.requestStartTime
+    if (requestStartTime) {
+      const e2eLatency = Date.now() - requestStartTime
+      const ttft = uiState.latencyMetrics.timeToFirstToken || 0
+      console.log(`[Latency] End-to-End Latency (Stopped): ${e2eLatency}ms (TTFT: ${ttft}ms)`)
+    }
+
     cleanup()
-    setUIState(prev => ({ ...prev, isTyping: false }))
-  }, [cleanup])
+    setUIState(prev => {
+      const requestStartTime = prev.latencyMetrics.requestStartTime
+      const e2eLatency = requestStartTime ? Date.now() - requestStartTime : null
+
+      return {
+        ...prev,
+        isTyping: false,
+        agentStatus: 'idle',
+        latencyMetrics: {
+          ...prev.latencyMetrics,
+          endToEndLatency: e2eLatency
+        }
+      }
+    })
+  }, [cleanup, uiState])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -423,6 +483,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setInputMessage,
     isConnected: uiState.isConnected,
     isTyping: uiState.isTyping,
+    agentStatus: uiState.agentStatus,
     availableTools,
     currentToolExecutions: sessionState.toolExecutions,
     currentReasoning: sessionState.reasoning,

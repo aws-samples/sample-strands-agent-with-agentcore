@@ -168,3 +168,4 @@ tsconfig.tsbuildinfo
 # Temporary test scripts
 verify-build.sh
 **/verify-*.sh
+sdk-python

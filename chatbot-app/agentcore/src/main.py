@@ -19,6 +19,7 @@ if str(src_path) not in sys.path:
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from contextlib import asynccontextmanager
 import logging
 import os
 
@@ -29,11 +30,36 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Create FastAPI app
+# Lifespan event handler (replaces on_event)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("=== Agent Core Service Starting ===")
+    logger.info("Agent execution engine initialized")
+
+    # Create output directories if they don't exist
+    base_dir = Path(__file__).parent.parent
+    output_dir = os.path.join(base_dir, "output")
+    uploads_dir = os.path.join(base_dir, "uploads")
+    generated_images_dir = os.path.join(base_dir, "generated_images")
+
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(uploads_dir, exist_ok=True)
+    os.makedirs(generated_images_dir, exist_ok=True)
+    logger.info("Output directories ready")
+
+    yield  # Application is running
+
+    # Shutdown
+    logger.info("=== Agent Core Service Shutting Down ===")
+    # TODO: Cleanup agent pool, MCP clients, etc.
+
+# Create FastAPI app with lifespan
 app = FastAPI(
     title="Strands Agent Chatbot - Agent Core",
     version="2.0.0",
-    description="Agent execution and tool orchestration service"
+    description="Agent execution and tool orchestration service",
+    lifespan=lifespan
 )
 
 # Add CORS middleware for local development
@@ -81,22 +107,6 @@ if os.path.exists(uploads_dir):
 if os.path.exists(generated_images_dir):
     app.mount("/generated_images", StaticFiles(directory=generated_images_dir), name="generated_images")
     logger.info(f"Mounted static files: /generated_images -> {generated_images_dir}")
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("=== Agent Core Service Starting ===")
-    logger.info("Agent execution engine initialized")
-
-    # Create output directories if they don't exist
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(uploads_dir, exist_ok=True)
-    os.makedirs(generated_images_dir, exist_ok=True)
-    logger.info("Output directories ready")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    logger.info("=== Agent Core Service Shutting Down ===")
-    # TODO: Cleanup agent pool, MCP clients, etc.
 
 if __name__ == "__main__":
     import uvicorn

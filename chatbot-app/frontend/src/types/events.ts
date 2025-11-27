@@ -48,6 +48,7 @@ export interface CompleteEvent {
     format: string;
     data: string;
   }>;
+  usage?: TokenUsage;
 }
 
 export interface ErrorEvent {
@@ -152,10 +153,28 @@ export interface ChatSessionState {
   } | null;
 }
 
+export type AgentStatus = 'idle' | 'thinking' | 'responding';
+
+export interface LatencyMetrics {
+  requestStartTime: number | null;
+  timeToFirstToken: number | null;  // ms from request to first response
+  endToEndLatency: number | null;   // ms from request to completion
+}
+
+export interface TokenUsage {
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cacheReadInputTokens?: number;
+  cacheWriteInputTokens?: number;
+}
+
 export interface ChatUIState {
   isConnected: boolean;
   isTyping: boolean;
   showProgressPanel: boolean;
+  agentStatus: AgentStatus;
+  latencyMetrics: LatencyMetrics;
 }
 
 // Re-export for convenience

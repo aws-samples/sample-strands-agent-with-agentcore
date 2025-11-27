@@ -1,12 +1,15 @@
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { Message, ToolExecution } from '@/types/chat'
 import { StreamEvent, ChatSessionState, ChatUIState, ToolProgressState } from '@/types/events'
+import { useLatencyTracking } from './useLatencyTracking'
+import { fetchAuthSession } from 'aws-amplify/auth'
 
 interface UseStreamEventsProps {
   sessionState: ChatSessionState
   setSessionState: React.Dispatch<React.SetStateAction<ChatSessionState>>
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>
   setUIState: React.Dispatch<React.SetStateAction<ChatUIState>>
+  uiState: ChatUIState
   currentToolExecutionsRef: React.MutableRefObject<ToolExecution[]>
   currentTurnIdRef: React.MutableRefObject<string | null>
   availableTools?: Array<{
@@ -21,10 +24,19 @@ export const useStreamEvents = ({
   setSessionState,
   setMessages,
   setUIState,
+  uiState,
   currentToolExecutionsRef,
   currentTurnIdRef,
   availableTools = []
 }: UseStreamEventsProps) => {
+  // Refs to track streaming state synchronously (avoid React batching issues)
+  const streamingStartedRef = useRef(false)
+  const streamingIdRef = useRef<number | null>(null)
+  const completeProcessedRef = useRef(false)
+
+  // Latency tracking hook (encapsulates all latency-related refs and logic)
+  const latencyTracking = useLatencyTracking()
+
   const handleReasoningEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'reasoning') {
       setSessionState(prev => ({
@@ -44,16 +56,14 @@ export const useStreamEvents = ({
         }))
       }
 
-      // Update streaming text
-      if (!sessionState.streaming) {
+      // Check if this is the first response chunk
+      if (!streamingStartedRef.current) {
+        // Create new streaming message
+        streamingStartedRef.current = true
         const newId = Date.now() + Math.random()
-        setSessionState(prev => ({
-          ...prev,
-          streaming: { text: data.text, id: newId }
-        }))
-        
-        // Add new streaming message
-        setMessages(prev => [...prev, {
+        streamingIdRef.current = newId
+
+        setMessages(prevMsgs => [...prevMsgs, {
           id: newId,
           text: data.text,
           sender: 'bot',
@@ -61,33 +71,77 @@ export const useStreamEvents = ({
           isStreaming: true,
           images: []
         }])
-      } else {
-        // Update existing streaming message
+
         setSessionState(prev => ({
           ...prev,
-          streaming: prev.streaming ? { ...prev.streaming, text: prev.streaming.text + data.text } : null
+          streaming: { text: data.text, id: newId }
         }))
-        
-        setMessages(prev => prev.map(msg => 
-          msg.id === sessionState.streaming?.id 
-            ? { ...msg, text: msg.text + data.text }
-            : msg
-        ))
+
+        // Record TTFT and transition to 'responding' (only on thinking -> responding)
+        setUIState(prevUI => {
+          if (prevUI.agentStatus === 'thinking') {
+            const ttft = latencyTracking.recordTTFT()
+            return {
+              ...prevUI,
+              agentStatus: 'responding',
+              latencyMetrics: {
+                ...prevUI.latencyMetrics,
+                timeToFirstToken: ttft ?? null
+              }
+            }
+          } else {
+            // Already 'responding' (post-tool response) - stay in 'responding'
+            return { ...prevUI, agentStatus: 'responding' }
+          }
+        })
+      } else {
+        // Subsequent chunks - append to existing message
+        const streamingId = streamingIdRef.current
+        if (streamingId) {
+          setMessages(prevMsgs => prevMsgs.map(msg =>
+            msg.id === streamingId
+              ? { ...msg, text: msg.text + data.text }
+              : msg
+          ))
+
+          setSessionState(prev => ({
+            ...prev,
+            streaming: prev.streaming ? { ...prev.streaming, text: prev.streaming.text + data.text } : null
+          }))
+        }
       }
     }
-  }, [sessionState, setSessionState, setMessages])
+  }, [sessionState, setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, latencyTracking])
 
   const handleToolUseEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_use') {
-      // Fix empty string input - convert to empty object for UI consistency
-      // Also handle undefined for tools with no input parameters (e.g., browser_get_page_info)
+      // Finalize current streaming message before adding tool
+      // This separates pre-tool response from post-tool response
+      if (streamingStartedRef.current && streamingIdRef.current) {
+        // Save TTFT to the first message before finalizing
+        const ttft = uiState.latencyMetrics.timeToFirstToken
+        setMessages(prevMsgs => prevMsgs.map(msg => {
+          if (msg.id === streamingIdRef.current) {
+            return {
+              ...msg,
+              isStreaming: false,
+              ...(ttft && !msg.latencyMetrics && { latencyMetrics: { timeToFirstToken: ttft } })
+            }
+          }
+          return msg
+        }))
+
+        // Reset streaming refs so next response creates a new message
+        streamingStartedRef.current = false
+        streamingIdRef.current = null
+      }
+
+      // Normalize empty input to empty object for UI consistency
       const normalizedInput = (data.input as any) === "" || data.input === null || data.input === undefined ? {} : data.input
-      
-      // Agent-type tool auto-popup removed - users can manually open Analysis Panel if needed
-      
-      // Check if tool execution already exists using ref for synchronous access
+
+      // Check if tool execution already exists
       const existingToolIndex = currentToolExecutionsRef.current.findIndex(tool => tool.id === data.toolUseId)
-      
+
       if (existingToolIndex >= 0) {
         // Update existing tool execution
         const updatedExecutions = [...currentToolExecutionsRef.current]
@@ -95,18 +149,13 @@ export const useStreamEvents = ({
           ...updatedExecutions[existingToolIndex],
           toolInput: normalizedInput
         }
-        
-        
-        // Update ref
+
         currentToolExecutionsRef.current = updatedExecutions
-        
-        // Update state
         setSessionState(prev => ({
           ...prev,
           toolExecutions: updatedExecutions
         }))
-        
-        // Update existing tool message
+
         setMessages(prevMessages => prevMessages.map(msg => {
           if (msg.isToolMessage && msg.toolExecutions) {
             const updatedToolExecutions = msg.toolExecutions.map(tool =>
@@ -128,22 +177,17 @@ export const useStreamEvents = ({
           isComplete: false,
           isExpanded: true
         }
-        
 
         const updatedExecutions = [...currentToolExecutionsRef.current, newToolExecution]
-        
-        // Update ref
         currentToolExecutionsRef.current = updatedExecutions
-        
-        // Update state
+
         setSessionState(prev => ({
           ...prev,
           toolExecutions: updatedExecutions
         }))
 
-        // Always create a new tool message for each tool execution
-        // This ensures each tool appears in the correct chronological position
-        const toolMessageId = Date.now() + Math.random() // Add random to avoid ID conflicts
+        // Create new tool message
+        const toolMessageId = Date.now() + Math.random()
         setMessages(prevMessages => [...prevMessages, {
           id: toolMessageId,
           text: '',
@@ -155,18 +199,17 @@ export const useStreamEvents = ({
         }])
       }
     }
-  }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages])
+  }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages, uiState])
 
   const handleToolResultEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_result') {
-
-      // Update ref first for synchronous access
+      // Update tool execution with result
       const updatedExecutions = currentToolExecutionsRef.current.map(tool =>
         tool.id === data.toolUseId
           ? { ...tool, toolResult: data.result, images: data.images, isComplete: true }
           : tool
       )
-      
+
       currentToolExecutionsRef.current = updatedExecutions
 
       // Extract browser session info from metadata (for Live View)
@@ -194,18 +237,32 @@ export const useStreamEvents = ({
           sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
 
           // Save to DynamoDB (async, don't block UI)
-          fetch('/api/session/update-browser-session', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId: currentSessionId,
-              browserSession
-            })
-          }).catch(err => {
-            console.warn('[Live View] Failed to save browserSession to DynamoDB:', err)
-          })
+          // Use IIFE to handle async auth within sync callback
+          ;(async () => {
+            const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+            try {
+              const session = await fetchAuthSession()
+              const token = session.tokens?.idToken?.toString()
+              if (token) {
+                authHeaders['Authorization'] = `Bearer ${token}`
+              }
+            } catch (error) {
+              console.log('[useStreamEvents] No auth session available')
+            }
 
-          console.log('[Live View] Saved browserSession for session:', currentSessionId)
+            fetch('/api/session/update-browser-session', {
+              method: 'POST',
+              headers: authHeaders,
+              body: JSON.stringify({
+                sessionId: currentSessionId,
+                browserSession
+              })
+            }).catch(err => {
+              console.warn('[Live View] Failed to save browserSession to DynamoDB:', err)
+            })
+
+            console.log('[Live View] Saved browserSession for session:', currentSessionId)
+          })()
         }
       } else {
         console.log('[Live View] No browser session in metadata:', data.metadata)
@@ -241,16 +298,68 @@ export const useStreamEvents = ({
 
   const handleCompleteEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'complete') {
-      // Finalize streaming message
-      if (sessionState.streaming) {
-        setMessages(prev => prev.map(msg =>
-          msg.id === sessionState.streaming?.id
-            ? { ...msg, isStreaming: false, images: data.images || [] }
+      // Prevent duplicate processing
+      if (completeProcessedRef.current) {
+        return
+      }
+      completeProcessedRef.current = true
+
+      const messageId = streamingIdRef.current
+
+      if (messageId) {
+        // Record E2E latency and save metadata
+        const currentSessionId = sessionStorage.getItem('chat-session-id')
+        const metrics = currentSessionId
+          ? latencyTracking.recordE2E({ sessionId: currentSessionId, messageId, tokenUsage: data.usage })
+          : latencyTracking.getMetrics()
+
+        // Extract values (recordE2E and getMetrics have different return formats)
+        const ttftValue = 'ttft' in metrics ? metrics.ttft : metrics.timeToFirstToken
+        const e2eValue = 'e2e' in metrics ? metrics.e2e : metrics.endToEndLatency
+
+        setUIState(prev => ({
+          ...prev,
+          isTyping: false,
+          showProgressPanel: false,
+          agentStatus: 'idle',
+          latencyMetrics: {
+            ...prev.latencyMetrics,
+            endToEndLatency: e2eValue ?? null
+          }
+        }))
+
+        setMessages(prevMsgs => prevMsgs.map(msg =>
+          msg.id === messageId
+            ? {
+                ...msg,
+                isStreaming: false,
+                images: data.images || [],
+                latencyMetrics: {
+                  timeToFirstToken: ttftValue,
+                  endToEndLatency: e2eValue
+                },
+                ...(data.usage && { tokenUsage: data.usage })
+              }
             : msg
         ))
+      } else {
+        // No streaming message, just update UI state
+        setUIState(prev => {
+          const requestStartTime = prev.latencyMetrics.requestStartTime
+          const e2eLatency = requestStartTime ? Date.now() - requestStartTime : null
+
+          return {
+            ...prev,
+            isTyping: false,
+            showProgressPanel: false,
+            agentStatus: 'idle',
+            latencyMetrics: {
+              ...prev.latencyMetrics,
+              endToEndLatency: e2eLatency
+            }
+          }
+        })
       }
-
-
 
       // Reset session state (keep browserSession to maintain Live View button)
       setSessionState(prev => ({
@@ -261,13 +370,28 @@ export const useStreamEvents = ({
         browserSession: prev.browserSession  // Preserve browser session
       }))
 
-      setUIState(prev => ({ ...prev, isTyping: false, showProgressPanel: false }))
+      // Reset refs for next message
+      streamingStartedRef.current = false
+      streamingIdRef.current = null
+      completeProcessedRef.current = false
+      latencyTracking.reset()
     }
-  }, [sessionState, setSessionState, setMessages, setUIState])
+  }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, latencyTracking])
 
   const handleInitEvent = useCallback(() => {
-    setUIState(prev => ({ ...prev, isTyping: true }))
-  }, [setUIState])
+    setUIState(prev => {
+      // Only transition to 'thinking' if starting a new turn (idle -> thinking)
+      // Once 'responding' starts, stay in 'responding' until complete
+      if (prev.agentStatus === 'idle') {
+        if (prev.latencyMetrics.requestStartTime) {
+          latencyTracking.startTracking(prev.latencyMetrics.requestStartTime)
+        }
+        return { ...prev, isTyping: true, agentStatus: 'thinking' }
+      }
+      // Already active - keep current status
+      return prev
+    })
+  }, [setUIState, latencyTracking])
 
 
   const handleProgressEvent = useCallback((data: StreamEvent) => {
@@ -331,11 +455,38 @@ export const useStreamEvents = ({
         sender: 'bot',
         timestamp: new Date().toLocaleTimeString()
       }])
-      
-      setUIState(prev => ({ ...prev, isTyping: false }))
+
+      // Calculate End-to-End Latency (even on error)
+      const requestStartTime = uiState.latencyMetrics.requestStartTime
+      if (requestStartTime) {
+        const e2eLatency = Date.now() - requestStartTime
+        const ttft = uiState.latencyMetrics.timeToFirstToken || 0
+        console.log(`[Latency] End-to-End Latency (Error): ${e2eLatency}ms (TTFT: ${ttft}ms)`)
+      }
+
+      setUIState(prev => {
+        const requestStartTime = prev.latencyMetrics.requestStartTime
+        const e2eLatency = requestStartTime ? Date.now() - requestStartTime : null
+
+        return {
+          ...prev,
+          isTyping: false,
+          agentStatus: 'idle',
+          latencyMetrics: {
+            ...prev.latencyMetrics,
+            endToEndLatency: e2eLatency
+          }
+        }
+      })
       setSessionState({ reasoning: null, streaming: null, toolExecutions: [], toolProgress: [], browserSession: null })
+
+      // Reset refs on error
+      streamingStartedRef.current = false
+      streamingIdRef.current = null
+      completeProcessedRef.current = false
+      latencyTracking.reset()
     }
-  }, [setMessages, setUIState, setSessionState])
+  }, [uiState, setMessages, setUIState, setSessionState, streamingStartedRef, streamingIdRef, completeProcessedRef, latencyTracking])
 
   const handleStreamEvent = useCallback((event: StreamEvent) => {
     switch (event.type) {

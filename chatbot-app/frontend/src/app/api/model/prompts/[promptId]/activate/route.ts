@@ -4,16 +4,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractUserFromRequest } from '@/lib/auth-utils'
 import { getUserProfile, upsertUserProfile } from '@/lib/dynamodb-client'
+import { isValidPromptId } from '@/lib/system-prompts'
 
 export const runtime = 'nodejs'
-
-// Default system prompts
-const DEFAULT_PROMPTS: Record<string, string> = {
-  general: 'You are a helpful AI assistant.',
-  code: 'You are an expert software engineer. Provide clear, concise code examples and explanations.',
-  research: 'You are a research assistant. Provide detailed, well-researched answers with citations when possible.',
-  rag: 'You are a RAG (Retrieval-Augmented Generation) agent. Use provided context to answer questions accurately.'
-}
 
 export async function POST(
   request: NextRequest,
@@ -33,25 +26,21 @@ export async function POST(
 
     const { promptId } = await params
 
+    // Validate promptId
+    if (!isValidPromptId(promptId)) {
+      return NextResponse.json({
+        success: false,
+        error: 'Invalid prompt ID'
+      }, { status: 400 })
+    }
+
     // Load existing profile
     const profile = await getUserProfile(userId)
 
-    // Get prompt text
-    let promptText = DEFAULT_PROMPTS[promptId]
-
-    if (!promptText) {
-      // If custom prompt, keep existing
-      if (promptId === 'custom' && profile?.preferences?.systemPrompt) {
-        promptText = profile.preferences.systemPrompt
-      } else {
-        promptText = DEFAULT_PROMPTS.general // Fallback
-      }
-    }
-
-    // Activate prompt
+    // Save promptId (not the full text)
     await upsertUserProfile(userId, user.email || '', user.username, {
       ...(profile?.preferences || {}),
-      systemPrompt: promptText
+      selectedPromptId: promptId
     })
 
     console.log(`[API] Activated prompt ${promptId} for user ${userId}`)

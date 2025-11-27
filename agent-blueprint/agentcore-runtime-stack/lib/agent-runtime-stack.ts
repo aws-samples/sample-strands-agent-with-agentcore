@@ -634,6 +634,7 @@ async function sendResponse(event, status, data, reason) {
         resources: [
           `arn:aws:bedrock-agentcore:*:aws:code-interpreter/*`,
           `arn:aws:bedrock-agentcore:${this.region}:${this.account}:code-interpreter/*`,
+          `arn:aws:bedrock-agentcore:${this.region}:${this.account}:code-interpreter-custom/*`,
         ],
       })
     )

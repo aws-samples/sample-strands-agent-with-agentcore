@@ -15,8 +15,10 @@ const USER_MODEL_CONFIG_FILE = path.join(STORE_DIR, 'user-model-config.json')
 interface ModelConfig {
   model_id?: string
   temperature?: number
-  system_prompt?: string
+  system_prompt?: string // Deprecated: kept for backwards compatibility
   caching_enabled?: boolean
+  selectedPromptId?: string // New: prompt ID (general, code, research, rag, custom)
+  customPromptText?: string // New: custom prompt text for 'custom' promptId
 }
 
 // Ensure store directory exists

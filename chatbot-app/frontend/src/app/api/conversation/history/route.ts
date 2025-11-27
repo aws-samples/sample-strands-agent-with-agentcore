@@ -232,7 +232,39 @@ export async function GET(request: NextRequest) {
       console.log(`[API] Loaded ${messages.length} messages for session ${sessionId}`)
     }
 
-    // Return messages with merged toolResults from blobs
+    // Load session metadata and merge with messages
+    let sessionMetadata: any = null
+    if (IS_LOCAL) {
+      const { getSession } = await import('@/lib/local-session-store')
+      const session = getSession(userId, sessionId)
+      sessionMetadata = session?.metadata
+    } else {
+      const { getSession } = await import('@/lib/dynamodb-client')
+      const session = await getSession(userId, sessionId)
+      sessionMetadata = session?.metadata
+    }
+
+    // Merge message metadata (latency, tokenUsage, feedback, etc.) with messages
+    if (sessionMetadata?.messages) {
+      messages = messages.map(msg => {
+        const messageMetadata = sessionMetadata.messages[msg.id]
+        if (messageMetadata) {
+          return {
+            ...msg,
+            // Merge latency metadata if available
+            ...(messageMetadata.latency && { latencyMetrics: messageMetadata.latency }),
+            // Merge token usage if available
+            ...(messageMetadata.tokenUsage && { tokenUsage: messageMetadata.tokenUsage }),
+            // Merge feedback if available
+            ...(messageMetadata.feedback && { feedback: messageMetadata.feedback }),
+          }
+        }
+        return msg
+      })
+      console.log(`[API] Merged metadata for ${Object.keys(sessionMetadata.messages).length} message(s)`)
+    }
+
+    // Return messages with merged toolResults from blobs and metadata
     return NextResponse.json({
       success: true,
       sessionId,

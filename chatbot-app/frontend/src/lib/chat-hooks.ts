@@ -99,7 +99,9 @@ export const toolConfigurationHook: ChatHook = {
   name: 'tool-configuration',
   async execute(context: ChatHookContext): Promise<HookResult> {
     try {
-      if (!context.enabledTools || context.enabledTools.length === 0) {
+      // Skip if enabledTools is not provided (undefined/null)
+      // But allow empty array [] to be saved (user disabled all tools)
+      if (context.enabledTools === undefined || context.enabledTools === null) {
         return { success: true }
       }
 

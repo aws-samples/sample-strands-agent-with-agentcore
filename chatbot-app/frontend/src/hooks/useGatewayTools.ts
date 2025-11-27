@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import toolsConfig from '@/config/tools-config.json';
 import { ENV_CONFIG } from '@/config/environment';
+import { fetchAuthSession } from 'aws-amplify/auth';
 
 export interface GatewayTool {
   id: string;
@@ -38,12 +39,22 @@ export const useGatewayTools = (): UseGatewayToolsReturn => {
       const targets = toolsConfig.gateway_targets as GatewayTarget[];
 
       try {
+        // Get auth token
+        const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+        try {
+          const session = await fetchAuthSession()
+          const token = session.tokens?.idToken?.toString()
+          if (token) {
+            authHeaders['Authorization'] = `Bearer ${token}`
+          }
+        } catch (error) {
+          console.log('[useGatewayTools] No auth session available')
+        }
+
         // Get saved enabled tools from BFF (matches with backend saved state)
         const response = await fetch('/api/tools', {
           method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: authHeaders,
         });
 
         if (response.ok) {
@@ -92,6 +103,7 @@ export const useGatewayTools = (): UseGatewayToolsReturn => {
     try {
       // Use BFF endpoint which proxies to AgentCore Runtime
       // This works both locally and in cloud deployment
+      // No Authorization header needed - BFF uses IAM SigV4 internally
       const url = '/api/gateway-tools/list';
 
       console.log('[useGatewayTools] Checking Gateway status via BFF:', url);

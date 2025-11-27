@@ -238,6 +238,20 @@ export async function upsertSession(
     // This ensures each new session gets a unique row
     const sessionSK = (existingSK || generateSessionSK(sessionId, now)) as `SESSION#${string}`
 
+    // Deep merge metadata, especially metadata.messages
+    const mergedMetadata: any = {
+      ...(existingSession?.metadata || {}),
+      ...(data.metadata || {}),
+    }
+
+    // Deep merge messages object if either exists
+    if (existingSession?.metadata?.messages || data.metadata?.messages) {
+      mergedMetadata.messages = {
+        ...(existingSession?.metadata?.messages || {}),
+        ...(data.metadata?.messages || {}),
+      }
+    }
+
     const record: SessionRecord = {
       userId,
       sk: sessionSK,
@@ -249,10 +263,7 @@ export async function upsertSession(
       messageCount: data.messageCount ?? existingSession?.messageCount ?? 0,
       starred: data.starred ?? existingSession?.starred ?? false,
       tags: data.tags || existingSession?.tags || [],
-      metadata: {
-        ...(existingSession?.metadata || {}),
-        ...(data.metadata || {}),
-      },
+      metadata: mergedMetadata,
     }
 
     const command = new PutItemCommand({
@@ -383,10 +394,27 @@ export async function updateSession(
       throw new Error(`Session not found: ${sessionId}`)
     }
 
+    // Deep merge metadata.messages to preserve existing message metadata
+    const mergedMetadata = {
+      ...(existingSession.metadata || {}),
+      ...(updates.metadata || {}),
+    }
+
+    // Deep merge messages object if both exist
+    if (existingSession.metadata?.messages || updates.metadata?.messages) {
+      mergedMetadata.messages = {
+        ...(existingSession.metadata?.messages || {}),
+        ...(updates.metadata?.messages || {}),
+      }
+    }
+
+    console.log(`[DynamoDB] updateSession - existing metadata: ${JSON.stringify(existingSession.metadata)}, update metadata: ${JSON.stringify(updates.metadata)}, merged: ${JSON.stringify(mergedMetadata)}`)
+
     // Upsert with updated values
     await upsertSession(userId, sessionId, {
       ...existingSession,
       ...updates,
+      metadata: mergedMetadata,
     })
 
     console.log(`[DynamoDB] Session updated: ${sessionId}`)

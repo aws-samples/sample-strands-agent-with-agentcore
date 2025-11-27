@@ -188,7 +188,7 @@ Current page state is shown in the screenshot below."""
 
 
 @tool(context=True)
-def browser_extract(description: str, schema: dict, tool_context: ToolContext) -> Dict[str, Any]:
+def browser_extract(description: str, extraction_schema: dict, tool_context: ToolContext) -> Dict[str, Any]:
     """
     Extract structured data from the current page using natural language + JSON schema.
 
@@ -196,7 +196,7 @@ def browser_extract(description: str, schema: dict, tool_context: ToolContext) -
         description: ENGLISH description of what to extract from the page.
                     Example: "Extract product information including name, price, and rating"
 
-        schema: JSON schema defining the exact structure of data to extract.
+        extraction_schema: JSON schema defining the exact structure of data to extract.
                 Must include 'type', 'properties', and optionally 'required' fields.
 
     Schema Guidelines:
@@ -207,7 +207,7 @@ def browser_extract(description: str, schema: dict, tool_context: ToolContext) -
 
     Example - Single product:
         description: "Extract the main product details"
-        schema: {
+        extraction_schema: {
             "type": "object",
             "properties": {
                 "name": {"type": "string", "description": "Product name"},
@@ -219,7 +219,7 @@ def browser_extract(description: str, schema: dict, tool_context: ToolContext) -
 
     Example - Multiple products:
         description: "Extract all products shown on the page"
-        schema: {
+        extraction_schema: {
             "type": "array",
             "items": {
                 "type": "object",
@@ -247,12 +247,12 @@ def browser_extract(description: str, schema: dict, tool_context: ToolContext) -
         controller = get_or_create_controller(session_id)
 
         # Extract data using description and JSON schema
-        result = controller.extract(description, schema=schema)
+        result = controller.extract(description, schema=extraction_schema)
 
         if result["status"] == "success":
             import json
             extracted_data_str = json.dumps(result.get("data", {}), indent=2, ensure_ascii=False)
-            schema_str = json.dumps(schema, indent=2, ensure_ascii=False)
+            schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
 
             content = [{
                 "text": f"""✅ **Data extracted successfully**
@@ -288,7 +288,7 @@ def browser_extract(description: str, schema: dict, tool_context: ToolContext) -
             }
         else:
             import json
-            schema_str = json.dumps(schema, indent=2, ensure_ascii=False)
+            schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
             return {
                 "content": [{
                     "text": f"❌ **Extraction failed**\n\n{result.get('message', 'Unknown error')}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"
@@ -299,7 +299,7 @@ def browser_extract(description: str, schema: dict, tool_context: ToolContext) -
     except Exception as e:
         import json
         logger.error(f"browser_extract failed: {e}")
-        schema_str = json.dumps(schema, indent=2, ensure_ascii=False)
+        schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
         return {
             "content": [{
                 "text": f"❌ **Extraction error**: {str(e)}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"

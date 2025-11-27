@@ -431,6 +431,15 @@ export const useChatAPI = ({
             ...(toolExecutions.length > 0 && {
               toolExecutions: toolExecutions,
               isToolMessage: true
+            }),
+            ...(msg.latencyMetrics && {
+              latencyMetrics: msg.latencyMetrics
+            }),
+            ...(msg.tokenUsage && {
+              tokenUsage: msg.tokenUsage
+            }),
+            ...(msg.feedback && {
+              feedback: msg.feedback
             })
           }
         })

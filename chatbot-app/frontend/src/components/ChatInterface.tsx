@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
-import { Upload, Send, FileText, ImageIcon, Square } from "lucide-react"
+import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain } from "lucide-react"
 
 interface ChatInterfaceProps {
   mode: 'standalone' | 'embedded'
@@ -32,6 +32,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     setInputMessage,
     isConnected,
     isTyping,
+    agentStatus,
     availableTools,
     currentReasoning,
     toolProgress,
@@ -140,7 +141,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
       }
 
       e.preventDefault()
-      if (!isTyping && (inputMessage.trim() || selectedFiles.length > 0)) {
+      if (agentStatus === 'idle' && (inputMessage.trim() || selectedFiles.length > 0)) {
         const syntheticEvent = {
           preventDefault: () => {},
         } as React.FormEvent
@@ -250,6 +251,24 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
             </div>
           ))}
 
+          {/* Thinking Animation - Show only when agent is thinking */}
+          {agentStatus === 'thinking' && (
+            <div className="mx-auto w-full max-w-3xl px-4 animate-fade-in">
+              <div className="flex gap-4 items-start">
+                <div className="flex items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 h-10 w-10 flex-shrink-0 shadow-md">
+                  <Bot className="h-5 w-5 text-white" />
+                </div>
+                <div className="flex-1 pt-2">
+                  <div className="flex gap-1.5">
+                    <span className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '0ms', animationDuration: '1s' }}></span>
+                    <span className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '200ms', animationDuration: '1s' }}></span>
+                    <span className="w-2 h-2 bg-purple-500 rounded-full animate-bounce" style={{ animationDelay: '400ms', animationDuration: '1s' }}></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Scroll target */}
           <div ref={messagesEndRef} className="h-4" />
         </div>
@@ -302,9 +321,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
             await handleSendMessage(e, selectedFiles)
             setSelectedFiles([])
           }}
-          className={`mx-auto px-4 bg-background/50 backdrop-blur-sm pb-4 md:pb-6 w-full md:max-w-3xl ${isEmbedded ? 'flex-shrink-0' : ''}`}
+          className={`mx-auto px-4 pb-4 md:pb-6 w-full md:max-w-3xl ${isEmbedded ? 'flex-shrink-0' : ''}`}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 bg-muted/30 rounded-2xl p-2 shadow-sm">
             <Input
               type="file"
               accept="image/*,application/pdf,.pdf"
@@ -315,12 +334,12 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
             />
             <Button
               type="button"
-              variant="outline"
+              variant="ghost"
               size="sm"
               onClick={() => document.getElementById("file-upload")?.click()}
-              className="flex items-center justify-center h-10 w-10 border-border hover:bg-muted hover:border-primary/50 transition-all duration-200 gradient-hover"
+              className="flex items-center justify-center h-10 w-10 hover:bg-muted-foreground/10 transition-all duration-200"
             >
-              <Upload className="w-4 h-4" />
+              <Upload className="w-5 h-5" />
             </Button>
             <Textarea
               ref={textareaRef}
@@ -334,26 +353,27 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 isComposingRef.current = false
               }}
               placeholder="Ask me anything..."
-              className="flex-1 min-h-[48px] max-h-32 rounded-xl border-border focus:border-primary focus:ring-2 focus:ring-primary/20 resize-none py-3 px-4 text-base leading-6 overflow-y-auto bg-input transition-all duration-200"
-              disabled={isTyping}
+              className="flex-1 min-h-[48px] max-h-32 rounded-lg border-0 focus:ring-0 resize-none py-3 px-4 text-base leading-6 overflow-y-auto bg-transparent transition-all duration-200"
+              disabled={agentStatus !== 'idle'}
               rows={1}
               style={{ minHeight: "48px" }}
             />
-            {isTyping ? (
+            {agentStatus !== 'idle' ? (
               <Button
                 type="button"
                 onClick={stopGeneration}
-                className="h-12 px-6 bg-muted hover:bg-muted/80 text-foreground rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border border-border"
+                variant="ghost"
+                className="h-10 w-10 hover:bg-muted-foreground/10 transition-all duration-200"
               >
-                <Square className="w-4 h-4" />
+                <Square className="w-5 h-5" />
               </Button>
             ) : (
               <Button
                 type="submit"
                 disabled={!inputMessage.trim() && selectedFiles.length === 0}
-                className="h-12 px-6 gradient-primary hover:opacity-90 text-primary-foreground rounded-xl shadow-sm hover:shadow-md transition-all duration-200 disabled:opacity-50 gradient-hover"
+                className="h-10 w-10 gradient-primary hover:opacity-90 text-primary-foreground rounded-lg transition-all duration-200 disabled:opacity-50"
               >
-                <Send className="w-4 h-4" />
+                <Send className="w-5 h-5" />
               </Button>
             )}
           </div>

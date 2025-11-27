@@ -160,13 +160,24 @@ export function updateSession(
     throw new Error(`Session not found: ${sessionId}`)
   }
 
+  // Deep merge metadata.messages to preserve existing message metadata
+  const mergedMetadata = {
+    ...(existingSession.metadata || {}),
+    ...(updates.metadata || {}),
+  }
+
+  // Deep merge messages object if both exist
+  if (existingSession.metadata?.messages || updates.metadata?.messages) {
+    mergedMetadata.messages = {
+      ...(existingSession.metadata?.messages || {}),
+      ...(updates.metadata?.messages || {}),
+    }
+  }
+
   upsertSession(userId, sessionId, {
     ...existingSession,
     ...updates,
-    metadata: {
-      ...(existingSession.metadata || {}),
-      ...(updates.metadata || {}),
-    },
+    metadata: mergedMetadata,
   })
 
   console.log(`[LocalSessionStore] Session updated for user ${userId}: ${sessionId}`)

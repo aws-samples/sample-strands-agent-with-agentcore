@@ -4,35 +4,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { extractUserFromRequest } from '@/lib/auth-utils'
 import { getUserProfile, upsertUserProfile } from '@/lib/dynamodb-client'
+import { SYSTEM_PROMPTS, getAvailablePromptIds } from '@/lib/system-prompts'
 
 export const runtime = 'nodejs'
 
-// Default system prompts
-const DEFAULT_PROMPTS = [
-  {
-    id: 'general',
-    name: 'General',
-    prompt: 'You are a helpful AI assistant.',
-    active: true
-  },
-  {
-    id: 'code',
-    name: 'Code',
-    prompt: 'You are an expert software engineer. Provide clear, concise code examples and explanations.',
-    active: false
-  },
-  {
-    id: 'research',
-    name: 'Research',
-    prompt: 'You are a research assistant. Provide detailed, well-researched answers with citations when possible.',
-    active: false
-  },
-  {
-    id: 'rag',
-    name: 'RAG Agent',
-    prompt: 'You are a RAG (Retrieval-Augmented Generation) agent. Use provided context to answer questions accurately.',
-    active: false
-  }
+// Prompt metadata (without full prompt text)
+const PROMPT_METADATA = [
+  { id: 'general', name: 'General' },
+  { id: 'code', name: 'Code Assistant' },
+  { id: 'research', name: 'Research Assistant' },
+  { id: 'rag', name: 'RAG Agent' }
 ]
 
 export async function GET(request: NextRequest) {
@@ -41,24 +22,38 @@ export async function GET(request: NextRequest) {
     const user = extractUserFromRequest(request)
     const userId = user.userId
 
-    let prompts = [...DEFAULT_PROMPTS]
+    let selectedPromptId = 'general' // Default
+    let customPromptText: string | undefined
 
     if (userId !== 'anonymous') {
-      // Load user profile to check for custom prompt
+      // Load user profile to check for selected prompt
       const profile = await getUserProfile(userId)
 
-      if (profile?.preferences?.systemPrompt) {
-        // Mark all default prompts as inactive
-        prompts = prompts.map(p => ({ ...p, active: false }))
-
-        // Add custom prompt as active
-        prompts.push({
-          id: 'custom',
-          name: 'Custom',
-          prompt: profile.preferences.systemPrompt,
-          active: true
-        })
+      if (profile?.preferences?.selectedPromptId) {
+        selectedPromptId = profile.preferences.selectedPromptId
       }
+
+      if (profile?.preferences?.customPromptText) {
+        customPromptText = profile.preferences.customPromptText
+      }
+    }
+
+    // Build prompts list with active state
+    const prompts = PROMPT_METADATA.map(meta => ({
+      id: meta.id,
+      name: meta.name,
+      prompt: SYSTEM_PROMPTS[meta.id as keyof typeof SYSTEM_PROMPTS],
+      active: meta.id === selectedPromptId
+    }))
+
+    // Add custom prompt if exists
+    if (customPromptText) {
+      prompts.push({
+        id: 'custom',
+        name: 'Custom',
+        prompt: customPromptText,
+        active: selectedPromptId === 'custom'
+      })
     }
 
     return NextResponse.json({
@@ -67,8 +62,13 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('[API] Error loading system prompts:', error)
 
+    // Return default prompts on error
     return NextResponse.json({
-      prompts: DEFAULT_PROMPTS
+      prompts: PROMPT_METADATA.map((meta, index) => ({
+        ...meta,
+        prompt: SYSTEM_PROMPTS[meta.id as keyof typeof SYSTEM_PROMPTS],
+        active: index === 0
+      }))
     })
   }
 }
@@ -92,11 +92,12 @@ export async function POST(request: NextRequest) {
     // Load existing profile
     const profile = await getUserProfile(userId)
 
-    // Save custom prompt
+    // Save custom prompt and activate it
     await upsertUserProfile(userId, user.email || '', user.username, {
       ...(profile?.preferences || {}),
-      systemPrompt: prompt,
-      customPromptName: name
+      customPromptText: prompt,
+      customPromptName: name,
+      selectedPromptId: 'custom' // Auto-activate custom prompt
     })
 
     console.log(`[API] Created custom prompt for user ${userId}: ${name}`)

@@ -104,9 +104,10 @@ class ConversationCachingHook(HookProvider):
     """Hook to add cache points to conversation history before model calls
 
     Strategy:
-    - Add cache points to last 2 messages only (previous + current)
-    - Remove cache points from older messages to prevent accumulation
-    - Maximum 4 cache points: system (1-2) + conversation (2)
+    - Add cache points every 4 user/assistant messages
+    - Maximum 3 cache points in conversation (stop adding after 3)
+    - Combined with system prompt cache = 4 total cache breakpoints (Claude limit)
+    - NEVER remove cache points (to maintain consistent cache prefix)
     """
 
     def __init__(self, enabled: bool = True):
@@ -116,65 +117,108 @@ class ConversationCachingHook(HookProvider):
         registry.add_callback(BeforeModelCallEvent, self.add_conversation_cache_point)
 
     def add_conversation_cache_point(self, event: BeforeModelCallEvent) -> None:
-        """Add cache points to last 2 messages in conversation history"""
+        """Add cache points to conversation history including tool loops (max 3, never remove)"""
         if not self.enabled:
+            logger.info("❌ Caching disabled")
             return
 
         messages = event.agent.messages
-        if not messages or len(messages) <= 1:  # Need at least 2 messages
+        if not messages:
+            logger.info("❌ No messages in history")
             return
 
-        # Step 1: Find last 4 user or assistant messages (current 2 + previous 2)
-        # We need to remove cache points from previous 2 and add to current 2
-        message_indices = []
-        for i in range(len(messages) - 1, -1, -1):
-            msg = messages[i]
-            msg_role = msg.get("role", "")
-            if msg_role in ("user", "assistant"):
-                message_indices.append(i)
-                if len(message_indices) == 4:  # Get 4 messages (current 2 + previous 2)
-                    break
+        logger.info(f"🔍 Processing caching for {len(messages)} messages")
 
-        if not message_indices:
-            return
+        # Count existing cache points across all content blocks
+        existing_cache_count = 0
+        cache_point_positions = []
 
-        # Reverse to get chronological order [oldest, ..., newest]
-        message_indices.reverse()
-
-        # Step 2: Remove cache points from previous 2 messages (if they exist)
-        previous_indices = message_indices[:-2] if len(message_indices) > 2 else []
-        for idx in previous_indices:
-            msg = messages[idx]
+        for msg_idx, msg in enumerate(messages):
             content = msg.get("content", [])
             if isinstance(content, list):
-                # Remove cache points
-                msg["content"] = [
-                    item for item in content
-                    if not (isinstance(item, dict) and "cachePoint" in item)
-                ]
+                for block_idx, block in enumerate(content):
+                    if isinstance(block, dict) and "cachePoint" in block:
+                        existing_cache_count += 1
+                        cache_point_positions.append((msg_idx, block_idx))
 
-        # Step 3: Add cache points to last 2 messages
-        current_indices = message_indices[-2:] if len(message_indices) >= 2 else message_indices
-        for idx in current_indices:
-            target_message = messages[idx]
-            content = target_message.get("content", [])
+        # If we already have 3 cache points, don't add more
+        if existing_cache_count >= 3:
+            logger.info(f"📊 Cache limit reached: {existing_cache_count}/3 cache points")
+            return
 
-            if isinstance(content, list):
-                # Add cache point if not already exists
-                has_cache_point = any(
-                    isinstance(item, dict) and "cachePoint" in item
-                    for item in content
-                )
-                if not has_cache_point:
-                    target_message["content"] = content + [{"cachePoint": {"type": "default"}}]
-            elif isinstance(content, str):
-                # Convert string to list with cache point
-                target_message["content"] = [
-                    {"text": content},
-                    {"cachePoint": {"type": "default"}}
-                ]
+        # Strategy: Prioritize assistant messages, then tool_result blocks
+        # This ensures every assistant turn gets cached, with or without tools
 
-        logger.debug(f"✅ Cache points: removed from {previous_indices}, added to {current_indices}")
+        assistant_candidates = []
+        tool_result_candidates = []
+
+        for msg_idx, msg in enumerate(messages):
+            msg_role = msg.get("role", "")
+            content = msg.get("content", [])
+
+            if isinstance(content, list) and len(content) > 0:
+                # For assistant messages: cache after reasoning/response (priority)
+                if msg_role == "assistant":
+                    last_block = content[-1]
+                    has_cache = isinstance(last_block, dict) and "cachePoint" in last_block
+                    if not has_cache:
+                        assistant_candidates.append((msg_idx, len(content) - 1, "assistant"))
+
+                # For user messages: cache after tool_result blocks (secondary)
+                elif msg_role == "user":
+                    for block_idx, block in enumerate(content):
+                        if isinstance(block, dict) and "toolResult" in block:
+                            has_cache = "cachePoint" in block
+                            if not has_cache:
+                                tool_result_candidates.append((msg_idx, block_idx, "tool_result"))
+
+        remaining_slots = 3 - existing_cache_count
+        logger.info(f"📊 Cache status: {existing_cache_count}/3 existing, {len(assistant_candidates)} assistant + {len(tool_result_candidates)} tool_result candidates, {remaining_slots} slots available")
+
+        # Prioritize assistant messages: take most recent assistants first, then tool_results
+        candidates_to_cache = []
+        if remaining_slots > 0:
+            # Take recent assistant messages first
+            num_assistants = min(len(assistant_candidates), remaining_slots)
+            if num_assistants > 0:
+                candidates_to_cache.extend(assistant_candidates[-num_assistants:])
+                remaining_slots -= num_assistants
+
+            # Fill remaining slots with tool_results
+            if remaining_slots > 0 and tool_result_candidates:
+                num_tool_results = min(len(tool_result_candidates), remaining_slots)
+                candidates_to_cache.extend(tool_result_candidates[-num_tool_results:])
+
+        if candidates_to_cache:
+
+            for msg_idx, block_idx, block_type in candidates_to_cache:
+                msg = messages[msg_idx]
+                content = msg.get("content", [])
+
+                if isinstance(content, list) and block_idx < len(content):
+                    # Add cache_control to this block
+                    block = content[block_idx]
+
+                    # For tool_result blocks, add cachePoint alongside the result
+                    if isinstance(block, dict):
+                        # Don't modify the block directly, insert a cache_control block after it
+                        # Insert cache point as next block
+                        cache_block = {"cachePoint": {"type": "default"}}
+                        content.insert(block_idx + 1, cache_block)
+                        msg["content"] = content
+                        existing_cache_count += 1
+                        logger.info(f"✅ Added cache point after {block_type} at message {msg_idx} block {block_idx} (total: {existing_cache_count}/3)")
+                    elif isinstance(block, str):
+                        # Convert string to structured format with cache
+                        msg["content"] = [
+                            {"text": block},
+                            {"cachePoint": {"type": "default"}}
+                        ]
+                        existing_cache_count += 1
+                        logger.info(f"✅ Added cache point after text at message {msg_idx} (total: {existing_cache_count}/3)")
+
+                if existing_cache_count >= 3:
+                    break
 
 # Global stream processor instance
 _global_stream_processor = None
@@ -243,8 +287,16 @@ class ChatbotAgent:
         self.model_id = model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
         self.temperature = temperature if temperature is not None else 0.7
 
-        # Build system prompt with current date
-        base_system_prompt = system_prompt or """You are an intelligent AI agent with dynamic tool capabilities. You can perform various tasks based on the combination of tools available to you.
+        # Use provided system prompt or default prompt
+        # Note: Date is already added by BFF (chatbot-app/frontend/src/app/api/stream/chat/route.ts)
+        # If no system_prompt provided, use default with date
+        if system_prompt:
+            # BFF already added date, use as-is
+            self.system_prompt = system_prompt
+            logger.info("Using system prompt from BFF (with date already included)")
+        else:
+            # Fallback: Add date here (for direct AgentCore usage without BFF)
+            base_system_prompt = """You are an intelligent AI agent with dynamic tool capabilities. You can perform various tasks based on the combination of tools available to you.
 
 Key guidelines:
 - You can ONLY use tools that are explicitly provided to you in each conversation
@@ -265,10 +317,9 @@ Browser Automation Best Practices:
 - Only use browser_act for interactions when direct URL navigation is not possible
 
 Your goal is to be helpful, accurate, and efficient in completing user requests using the available tools."""
-
-        # Add current date in US Pacific time
-        current_date = get_current_date_pacific()
-        self.system_prompt = f"{base_system_prompt}\n\nCurrent date: {current_date}"
+            current_date = get_current_date_pacific()
+            self.system_prompt = f"{base_system_prompt}\n\nCurrent date: {current_date}"
+            logger.info(f"Using default system prompt with current date: {current_date}")
 
         self.caching_enabled = caching_enabled if caching_enabled is not None else True
 
@@ -382,37 +433,18 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         try:
             config = self.get_model_config()
 
-            # Prepare system prompt with cache point if caching enabled
-            system_prompts = config.get("system_prompts", [])
-            if self.caching_enabled and system_prompts:
-                # Convert string to SystemContentBlock format with cache point
-                if isinstance(system_prompts, str):
-                    system_content = [
-                        {"text": system_prompts},
-                        {"cachePoint": {"type": "default"}}
-                    ]
-                elif isinstance(system_prompts, list):
-                    # Check if already has cache point
-                    has_cache_point = any(
-                        isinstance(item, dict) and "cachePoint" in item
-                        for item in system_prompts
-                    )
-                    if not has_cache_point:
-                        system_content = system_prompts + [{"cachePoint": {"type": "default"}}]
-                    else:
-                        system_content = system_prompts
-                else:
-                    system_content = system_prompts
-                logger.info("✅ Added cache point to system prompt")
-            else:
-                system_content = system_prompts
+            # Create model with cache_prompt option for automatic caching
+            model_config = {
+                "model_id": config["model_id"],
+                "temperature": config.get("temperature", 0.7)
+            }
 
-            # Create model
-            model = BedrockModel(
-                model_id=config["model_id"],
-                temperature=config.get("temperature", 0.7),
-                system=system_content
-            )
+            # Add cache_prompt if caching is enabled
+            if self.caching_enabled:
+                model_config["cache_prompt"] = "default"
+                logger.info("✅ Prompt caching enabled (cache_prompt=default)")
+
+            model = BedrockModel(**model_config)
 
             # Get filtered tools based on user preferences
             tools = self.get_filtered_tools()
@@ -431,11 +463,12 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 hooks.append(conversation_hook)
                 logger.info("✅ Conversation caching hook enabled")
 
-            # Create agent with session manager and hooks
+            # Create agent with session manager, hooks, and system prompt
             # Use SequentialToolExecutor to prevent concurrent browser operations
             # This prevents "Failed to start and initialize Playwright" errors with NovaAct
             self.agent = Agent(
                 model=model,
+                system_prompt=self.system_prompt,
                 tools=tools,
                 tool_executor=SequentialToolExecutor(),
                 session_manager=self.session_manager,

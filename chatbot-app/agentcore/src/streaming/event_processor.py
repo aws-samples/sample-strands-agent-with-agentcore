@@ -117,155 +117,6 @@ class StreamEventProcessor:
         cleaned_text = cleaned_text.strip()
         
         return cleaned_text
-    
-    async def _start_agent_analysis_stream(self, tool_use_id: str, tool_input: dict):
-        """Start analysis stream for agent-type tools and execute in background"""
-        try:
-            # Import the tool events channel
-            from routers.tool_events import tool_events_channel
-            
-            # Always use current session_id - don't fallback to tool_use_id
-            if not self.current_session_id:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"No session_id available for tool {tool_use_id} - skipping analysis stream")
-                return
-            
-            # Start the analysis stream with correct session_id
-            await tool_events_channel.send_analysis_start(
-                self.current_session_id, 
-                "Starting comprehensive spending analysis..."
-            )
-            
-            # Schedule background execution of the full analysis
-            asyncio.create_task(self._execute_agent_analysis(tool_use_id, tool_input))
-            
-        except ImportError:
-            # If tool_events_channel is not available, just log it
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Could not start analysis stream for {tool_use_id} - tool_events_channel not available")
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error starting analysis stream for {tool_use_id}: {e}")
-    
-    async def _execute_agent_analysis(self, tool_use_id: str, tool_input: dict):
-        """Execute the actual analysis in background and stream results"""
-        try:
-            from routers.tool_events import tool_events_channel
-            
-            # Always use current session_id - don't fallback to tool_use_id
-            if not self.current_session_id:
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"No session_id available for tool {tool_use_id} - skipping analysis execution")
-                return
-            
-            # Get the query from tool input
-            query = tool_input.get('query', 'comprehensive spending analysis')
-            
-            # Stream initial progress with correct session_id
-            await tool_events_channel.send_analysis_stream(
-                self.current_session_id, 
-                query,
-                'initializing'
-            )
-            
-            await asyncio.sleep(0.5)
-            
-            # Try to execute the actual spending analysis tool
-            try:
-                # Import and execute the spending analysis tool
-                from custom_tools.spending_analysis_tool import spending_analysis_agent_func
-                
-                # Execute the actual analysis
-                result = await spending_analysis_agent_func(query)
-                
-                # Stream the final result with correct session_id
-                await tool_events_channel.send_analysis_complete(
-                    self.current_session_id,
-                    result
-                )
-                
-                # Also send tool_result event for UI consistency
-                if hasattr(self, 'pending_events'):
-                    tool_result_data = {
-                        "toolUseId": tool_use_id,
-                        "result": "Analysis completed successfully. Check the Agent Analysis panel for detailed insights."
-                    }
-                    tool_result_event = self.formatter.create_tool_result_event(tool_result_data)
-                    self.pending_events.append(tool_result_event)
-                
-            except ImportError:
-                # If spending analysis tool is not available, send a placeholder result
-                placeholder_result = f"""# Analysis Results
-
-## Overview
-Your comprehensive spending analysis for: {query}
-
-## Summary
-Analysis completed successfully. The detailed insights have been generated based on your spending patterns.
-
-## Key Insights
-- Spending pattern analysis completed
-- Category breakdown processed
-- Behavioral insights generated
-
-*Note: This is a simplified analysis result. The full analysis tool is not currently available.*
-"""
-                await tool_events_channel.send_analysis_complete(
-                    self.current_session_id,
-                    placeholder_result
-                )
-                
-                # Also send tool_result event for UI consistency
-                if hasattr(self, 'pending_events'):
-                    tool_result_data = {
-                        "toolUseId": tool_use_id,
-                        "result": "Analysis completed successfully. Check the Agent Analysis panel for detailed insights."
-                    }
-                    tool_result_event = self.formatter.create_tool_result_event(tool_result_data)
-                    self.pending_events.append(tool_result_event)
-                
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Error executing agent analysis for {tool_use_id}: {e}")
-            
-            # Send error to analysis stream with correct session_id
-            try:
-                from routers.tool_events import tool_events_channel
-                if self.current_session_id:
-                    await tool_events_channel.send_analysis_error(
-                        self.current_session_id,
-                        f"Analysis failed: {str(e)}"
-                    )
-            except:
-                pass
-    
-    def _is_agent_type_tool(self, tool_name: str) -> bool:
-        """Check if a tool is of type 'agent' by looking up unified_tools_config.json"""
-        try:
-            import json
-            import os
-            
-            # Load unified_tools_config.json
-            config_path = os.path.join(os.path.dirname(__file__), '..', 'unified_tools_config.json')
-            with open(config_path, 'r') as f:
-                tools_config = json.load(f)
-            
-            # Find tool by name and check tool_type
-            for tool in tools_config.get('tools', []):
-                if tool.get('id') == tool_name or tool.get('function_name') == tool_name:
-                    return tool.get('tool_type') == 'agent'
-            
-            return False
-        except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.warning(f"Could not load tools config: {e}")
-            return False
 
     async def process_stream(self, agent, message: str, file_paths: list = None, session_id: str = None) -> AsyncGenerator[str, None]:
         """Process streaming events from agent with proper error handling and event separation"""
@@ -325,7 +176,37 @@ Analysis completed successfully. The detailed insights have been generated based
                 if "result" in event:
                     final_result = event["result"]
                     images, result_text = self.formatter.extract_final_result_data(final_result)
-                    yield self.formatter.create_complete_event(result_text, images)
+
+                    # Extract token usage from Strands SDK metrics
+                    usage = None
+                    try:
+                        import logging
+                        logger = logging.getLogger(__name__)
+
+                        if hasattr(final_result, 'metrics') and hasattr(final_result.metrics, 'accumulated_usage'):
+                            accumulated_usage = final_result.metrics.accumulated_usage
+
+                            # accumulated_usage is a dict with camelCase keys
+                            if isinstance(accumulated_usage, dict):
+                                usage = {
+                                    "inputTokens": accumulated_usage.get("inputTokens", 0),
+                                    "outputTokens": accumulated_usage.get("outputTokens", 0),
+                                    "totalTokens": accumulated_usage.get("totalTokens", 0)
+                                }
+                                # Add optional cache token fields if present and non-zero
+                                if accumulated_usage.get("cacheReadInputTokens", 0) > 0:
+                                    usage["cacheReadInputTokens"] = accumulated_usage["cacheReadInputTokens"]
+                                if accumulated_usage.get("cacheWriteInputTokens", 0) > 0:
+                                    usage["cacheWriteInputTokens"] = accumulated_usage["cacheWriteInputTokens"]
+
+                                logger.info(f"[Token Usage] ✅ Extracted usage: {usage}")
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"[Token Usage] Error extracting token usage: {e}")
+                        # Continue without usage data
+
+                    yield self.formatter.create_complete_event(result_text, images, usage)
                     return
                 
                 
@@ -361,10 +242,7 @@ Analysis completed successfully. The detailed insights have been generated based
                                 
                                 # Emit tool_use event
                                 yield self.formatter.create_tool_use_event(tool_call)
-                                
-                                # Agent-type tools now handle their own analysis streams internally
-                                # No need for event processor to intercept
-                                
+
                                 await asyncio.sleep(0.1)
                         
                         # Remove the XML from the text and send the remaining as regular response
@@ -452,10 +330,6 @@ Analysis completed successfully. The detailed insights have been generated based
                                 'session_id': self.current_session_id,
                                 'input': processed_input
                             }
-                        
-                        # Agent-type tools now handle their own analysis streams internally
-                        # No need for event processor to intercept
-                        
                         yield self.formatter.create_tool_use_event(tool_use_copy)
                         await asyncio.sleep(0.1)
                 
