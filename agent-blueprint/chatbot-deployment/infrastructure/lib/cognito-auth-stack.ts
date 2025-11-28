@@ -44,6 +44,8 @@ export class CognitoAuthStack extends cdk.Stack {
       authFlows: {
         userPassword: true,
         userSrp: true,
+        custom: false,
+        adminUserPassword: false,
       },
       oAuth: {
         flows: {

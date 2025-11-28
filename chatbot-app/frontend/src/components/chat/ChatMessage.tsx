@@ -41,7 +41,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
               </div>
             )}
             <div className="bg-blue-600 text-white rounded-2xl rounded-tr-md px-5 py-3.5 shadow-sm">
-              <p className="text-[13px] leading-[1.5] font-[450] tracking-[-0.005em]">{message.text}</p>
+              <p className="text-[13px] leading-relaxed font-[450] tracking-[-0.005em]">{message.text}</p>
             </div>
           </div>
           <Avatar className="h-9 w-9 flex-shrink-0 mt-1">
@@ -58,13 +58,13 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
   if (message.isToolMessage && message.toolExecutions && message.toolExecutions.length > 0) {
     return (
       <div className="flex justify-start mb-4">
-        <div className="flex items-start space-x-3 max-w-4xl w-full">
+        <div className="flex items-start space-x-3 max-w-4xl w-full min-w-0">
           <Avatar className="h-8 w-8 flex-shrink-0 mt-1">
             <AvatarFallback className="bg-gradient-to-br from-blue-600 to-purple-600 text-white">
               <Bot className="h-4 w-4" />
             </AvatarFallback>
           </Avatar>
-          <div className="flex-1">
+          <div className="flex-1 min-w-0">
             <ToolExecutionContainer toolExecutions={message.toolExecutions} sessionId={sessionId} />
           </div>
         </div>
@@ -75,13 +75,13 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
   // Regular bot message - No background box
   return (
     <div className="flex justify-start mb-4">
-      <div className="flex items-start space-x-3 max-w-4xl w-full">
+      <div className="flex items-start space-x-3 max-w-4xl w-full min-w-0">
         <Avatar className="h-8 w-8 flex-shrink-0 mt-1">
           <AvatarFallback className="bg-gradient-to-br from-blue-600 to-purple-600 text-white">
             <Bot className="h-4 w-4" />
           </AvatarFallback>
         </Avatar>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           {/* Tool Executions Section - Only show if not a separate tool message */}
           {message.toolExecutions && message.toolExecutions.length > 0 && !message.isToolMessage && (
             <div className="mb-4">
@@ -93,7 +93,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
             </div>
           )}
           
-          <div className="max-w-none">
+          <div className="w-full overflow-hidden">
             <Markdown size="base" sessionId={sessionId}>{message.text}</Markdown>
             
             {/* Generated Images */}

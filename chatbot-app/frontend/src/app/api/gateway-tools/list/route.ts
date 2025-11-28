@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 // AWS configuration
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2';
 const PROJECT_NAME = process.env.PROJECT_NAME || 'strands-agent-chatbot';

@@ -86,10 +86,11 @@ sleep 3
 
 echo "AgentCore Runtime is running on port: 8080"
 
-# Update environment variable for frontend
+# Update environment variables for frontend
 export NEXT_PUBLIC_AGENTCORE_URL="http://localhost:8080"
+export NEXT_PUBLIC_AGENTCORE_LOCAL="true"
 
-echo "Starting frontend server..."
+echo "Starting frontend server (local mode)..."
 cd "$CHATBOT_APP_ROOT/frontend"
 # Unset PORT to let Next.js use default port 3000
 unset PORT

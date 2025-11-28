@@ -17,7 +17,11 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['Inter', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['Lato', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+      },
+      lineHeight: {
+        'relaxed-plus': '1.75',
+        'loose-plus': '2.125',
       },
       colors: {
         border: "hsl(var(--border))",

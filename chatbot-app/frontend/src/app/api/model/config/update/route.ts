@@ -5,10 +5,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { extractUserFromRequest } from '@/lib/auth-utils'
 import { getUserProfile, upsertUserProfile } from '@/lib/dynamodb-client'
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 // Check if running in local development mode
 const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
-
-export const runtime = 'nodejs'
 
 export async function POST(request: NextRequest) {
   try {

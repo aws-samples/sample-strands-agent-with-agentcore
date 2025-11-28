@@ -2,6 +2,7 @@ import React, { memo, useMemo } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
+import rehypeRaw from 'rehype-raw';
 import { CodeBlock } from './CodeBlock';
 import { ChartRenderer } from '../ChartRenderer';
 import { ImageRenderer } from '../ImageRenderer';
@@ -11,7 +12,7 @@ const components: Partial<Components> = {
     // Check if this is a code block by looking for language class
     // Code blocks typically have className like "language-javascript"
     const isCodeBlock = className && className.startsWith('language-');
-    
+
     if (isCodeBlock) {
       // This is a code block
       return (
@@ -38,6 +39,23 @@ const components: Partial<Components> = {
     }
   },
   pre: ({ children }) => <>{children}</>,
+  table: ({ children }) => (
+    <div className="overflow-x-auto my-4" style={{ width: '100%', maxWidth: '100%', display: 'block' }}>
+      <table className="border-collapse" style={{ width: 'auto', minWidth: 'max-content' }}>
+        {children}
+      </table>
+    </div>
+  ),
+  th: ({ children }) => (
+    <th className="border border-gray-300 dark:border-gray-600 px-4 py-2 bg-gray-100 dark:bg-gray-800 whitespace-pre-wrap">
+      {children}
+    </th>
+  ),
+  td: ({ children }) => (
+    <td className="border border-gray-300 dark:border-gray-600 px-4 py-2 whitespace-pre-wrap">
+      {children}
+    </td>
+  ),
 };
 
 const getRemarkPlugins = (preserveLineBreaks?: boolean) => {
@@ -156,10 +174,10 @@ const NonMemoizedMarkdown = ({
   const parts = useMemo(() => parseContentWithCharts(children), [children]);
   const remarkPlugins = useMemo(() => getRemarkPlugins(preserveLineBreaks), [preserveLineBreaks]);
 
-  const proseClass = `prose prose-${size} max-w-none dark:prose-invert prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-1.5 prose-p:leading-snug prose-p:text-base prose-li:py-0.5 prose-li:text-base prose-ul:my-2 prose-ol:my-2 prose-li:my-0 prose-ul:text-base prose-ol:text-base break-words`;
+  const proseClass = `prose prose-${size} max-w-none dark:prose-invert prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-1.5 prose-p:leading-relaxed prose-p:text-base prose-li:py-0.5 prose-li:text-base prose-ul:my-2 prose-ol:my-2 prose-li:my-0 prose-ul:text-base prose-ol:text-base break-words min-w-0`;
 
   return (
-    <div className={proseClass} style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+    <div className={proseClass} style={{ width: '100%', maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
       {parts.map((part, index) => {
         if (part.type === 'chart' && part.chartData) {
           return (
@@ -183,6 +201,7 @@ const NonMemoizedMarkdown = ({
             <ReactMarkdown
               key={index}
               remarkPlugins={remarkPlugins}
+              rehypePlugins={[rehypeRaw]}
               components={components}
             >
               {part.content}

@@ -6,6 +6,7 @@ import { extractUserFromRequest } from '@/lib/auth-utils'
 import { getUserProfile, upsertUserProfile } from '@/lib/dynamodb-client'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 export async function PUT(
   request: NextRequest,

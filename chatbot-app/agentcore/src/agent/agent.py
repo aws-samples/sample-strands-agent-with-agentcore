@@ -104,10 +104,11 @@ class ConversationCachingHook(HookProvider):
     """Hook to add cache points to conversation history before model calls
 
     Strategy:
-    - Add cache points every 4 user/assistant messages
-    - Maximum 3 cache points in conversation (stop adding after 3)
-    - Combined with system prompt cache = 4 total cache breakpoints (Claude limit)
-    - NEVER remove cache points (to maintain consistent cache prefix)
+    - Maintain 3 cache points in conversation (sliding window)
+    - Prioritize recent assistant messages and tool results
+    - When limit reached, remove oldest cache point and add new one
+    - Combined with system prompt cache = 4 total cache breakpoints (Claude/Bedrock limit)
+    - Sliding cache points keep the most recent turns cached for optimal efficiency
     """
 
     def __init__(self, enabled: bool = True):
@@ -117,7 +118,7 @@ class ConversationCachingHook(HookProvider):
         registry.add_callback(BeforeModelCallEvent, self.add_conversation_cache_point)
 
     def add_conversation_cache_point(self, event: BeforeModelCallEvent) -> None:
-        """Add cache points to conversation history including tool loops (max 3, never remove)"""
+        """Add cache points to conversation history with sliding window (max 3, remove oldest when full)"""
         if not self.enabled:
             logger.info("❌ Caching disabled")
             return
@@ -141,10 +142,22 @@ class ConversationCachingHook(HookProvider):
                         existing_cache_count += 1
                         cache_point_positions.append((msg_idx, block_idx))
 
-        # If we already have 3 cache points, don't add more
+        # If we already have 3 cache points, remove the oldest one (sliding window)
         if existing_cache_count >= 3:
             logger.info(f"📊 Cache limit reached: {existing_cache_count}/3 cache points")
-            return
+            # Remove the oldest cache point to make room for new one
+            if cache_point_positions:
+                oldest_msg_idx, oldest_block_idx = cache_point_positions[0]
+                oldest_msg = messages[oldest_msg_idx]
+                oldest_content = oldest_msg.get("content", [])
+                if isinstance(oldest_content, list) and oldest_block_idx < len(oldest_content):
+                    # Remove the cache point block
+                    del oldest_content[oldest_block_idx]
+                    oldest_msg["content"] = oldest_content
+                    existing_cache_count -= 1
+                    logger.info(f"♻️  Removed oldest cache point at message {oldest_msg_idx} block {oldest_block_idx}")
+                    # Update positions for remaining cache points
+                    cache_point_positions.pop(0)
 
         # Strategy: Prioritize assistant messages, then tool_result blocks
         # This ensures every assistant turn gets cached, with or without tools
@@ -195,27 +208,42 @@ class ConversationCachingHook(HookProvider):
                 msg = messages[msg_idx]
                 content = msg.get("content", [])
 
-                if isinstance(content, list) and block_idx < len(content):
-                    # Add cache_control to this block
-                    block = content[block_idx]
+                # Safety check: content must be a list and not empty
+                if not isinstance(content, list):
+                    logger.warning(f"⚠️  Skipping cache point: content is not a list at message {msg_idx}")
+                    continue
 
-                    # For tool_result blocks, add cachePoint alongside the result
-                    if isinstance(block, dict):
-                        # Don't modify the block directly, insert a cache_control block after it
-                        # Insert cache point as next block
-                        cache_block = {"cachePoint": {"type": "default"}}
-                        content.insert(block_idx + 1, cache_block)
-                        msg["content"] = content
-                        existing_cache_count += 1
-                        logger.info(f"✅ Added cache point after {block_type} at message {msg_idx} block {block_idx} (total: {existing_cache_count}/3)")
-                    elif isinstance(block, str):
-                        # Convert string to structured format with cache
-                        msg["content"] = [
-                            {"text": block},
-                            {"cachePoint": {"type": "default"}}
-                        ]
-                        existing_cache_count += 1
-                        logger.info(f"✅ Added cache point after text at message {msg_idx} (total: {existing_cache_count}/3)")
+                if len(content) == 0:
+                    logger.warning(f"⚠️  Skipping cache point: content is empty at message {msg_idx}")
+                    continue
+
+                if block_idx >= len(content):
+                    logger.warning(f"⚠️  Skipping cache point: block_idx {block_idx} out of range at message {msg_idx}")
+                    continue
+
+                block = content[block_idx]
+
+                # For dict blocks (toolResult, text, etc.), add cachePoint as separate block after it
+                if isinstance(block, dict):
+                    # Safety: Don't insert cachePoint at the beginning of next message
+                    # Only insert within the same message's content array
+                    cache_block = {"cachePoint": {"type": "default"}}
+                    insert_position = block_idx + 1
+
+                    # Insert cache point after the current block
+                    content.insert(insert_position, cache_block)
+                    msg["content"] = content
+                    existing_cache_count += 1
+                    logger.info(f"✅ Added cache point after {block_type} at message {msg_idx} block {block_idx} (total: {existing_cache_count}/3)")
+
+                elif isinstance(block, str):
+                    # Convert string to structured format with cache
+                    msg["content"] = [
+                        {"text": block},
+                        {"cachePoint": {"type": "default"}}
+                    ]
+                    existing_cache_count += 1
+                    logger.info(f"✅ Added cache point after text at message {msg_idx} (total: {existing_cache_count}/3)")
 
                 if existing_cache_count >= 3:
                     break
@@ -385,6 +413,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             "caching_enabled": self.caching_enabled
         }
 
+
     def get_filtered_tools(self) -> List:
         """
         Get tools filtered by enabled_tools list.
@@ -433,16 +462,16 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         try:
             config = self.get_model_config()
 
-            # Create model with cache_prompt option for automatic caching
+            # Create model configuration
             model_config = {
                 "model_id": config["model_id"],
                 "temperature": config.get("temperature", 0.7)
             }
 
-            # Add cache_prompt if caching is enabled
+            # Add cache_prompt if caching is enabled (BedrockModel handles SystemContentBlock formatting)
             if self.caching_enabled:
                 model_config["cache_prompt"] = "default"
-                logger.info("✅ Prompt caching enabled (cache_prompt=default)")
+                logger.info("✅ System prompt caching enabled (cache_prompt=default)")
 
             model = BedrockModel(**model_config)
 
@@ -468,7 +497,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             # This prevents "Failed to start and initialize Playwright" errors with NovaAct
             self.agent = Agent(
                 model=model,
-                system_prompt=self.system_prompt,
+                system_prompt=self.system_prompt,  # Always string - BedrockModel handles caching internally
                 tools=tools,
                 tool_executor=SequentialToolExecutor(),
                 session_manager=self.session_manager,

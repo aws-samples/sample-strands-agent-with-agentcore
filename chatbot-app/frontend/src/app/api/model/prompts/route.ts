@@ -7,6 +7,7 @@ import { getUserProfile, upsertUserProfile } from '@/lib/dynamodb-client'
 import { SYSTEM_PROMPTS, getAvailablePromptIds } from '@/lib/system-prompts'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 // Prompt metadata (without full prompt text)
 const PROMPT_METADATA = [

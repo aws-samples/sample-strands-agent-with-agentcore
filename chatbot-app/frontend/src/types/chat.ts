@@ -55,6 +55,6 @@ export interface Tool {
   enabled: boolean
   import_path: string
   category: string
-  tool_type?: "built-in" | "custom" | "mcp" | "agent"
+  tool_type?: "local" | "builtin" | "gateway" | "runtime-a2a"
   connection_status?: "connected" | "disconnected" | "invalid" | "unknown"
 }

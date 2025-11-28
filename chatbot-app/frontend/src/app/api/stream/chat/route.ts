@@ -118,11 +118,13 @@ export async function POST(request: NextRequest) {
 
     if (enabled_tools && Array.isArray(enabled_tools)) {
       enabledToolsList = enabled_tools
-    } else if (userId !== 'anonymous') {
+    } else {
+      // Load enabled tools for all users (including anonymous)
       if (IS_LOCAL) {
         const { getUserEnabledTools } = await import('@/lib/local-tool-store')
         enabledToolsList = getUserEnabledTools(userId)
-      } else {
+      } else if (userId !== 'anonymous') {
+        // DynamoDB only for authenticated users
         const { getUserEnabledTools } = await import('@/lib/dynamodb-client')
         enabledToolsList = await getUserEnabledTools(userId)
       }
@@ -165,58 +167,63 @@ export async function POST(request: NextRequest) {
       model_id: defaultModelId,
       temperature: 0.7,
       system_prompt: getSystemPrompt('general'),
-      caching_enabled: defaultModelId.toLowerCase().includes('claude') || defaultModelId.toLowerCase().includes('nova')
+      caching_enabled: defaultModelId.toLowerCase().includes('claude')
     }
 
-    if (userId !== 'anonymous') {
-      if (IS_LOCAL) {
-        try {
-          const { getUserModelConfig } = await import('@/lib/local-tool-store')
-          const config = getUserModelConfig(userId)
-          if (config) {
-            // Update model and temperature
-            if (config.model_id) {
-              modelConfig.model_id = config.model_id
-              modelConfig.caching_enabled = config.model_id.toLowerCase().includes('claude') || config.model_id.toLowerCase().includes('nova')
-            }
-            if (config.temperature !== undefined) {
-              modelConfig.temperature = config.temperature
-            }
-            // Load selectedPromptId
-            if (config.selectedPromptId) {
-              selectedPromptId = config.selectedPromptId as PromptId
-            }
-            if (config.customPromptText) {
-              customPromptText = config.customPromptText
-            }
+    // Load model configuration for all users (including anonymous in local mode)
+    if (IS_LOCAL) {
+      try {
+        const { getUserModelConfig } = await import('@/lib/local-tool-store')
+        const config = getUserModelConfig(userId)
+        console.log(`[BFF] Loaded model config for ${userId}:`, config)
+        if (config) {
+          // Update model and temperature
+          if (config.model_id) {
+            modelConfig.model_id = config.model_id
+            modelConfig.caching_enabled = config.model_id.toLowerCase().includes('claude')
+            console.log(`[BFF] Applied model_id: ${config.model_id}, caching: ${modelConfig.caching_enabled}`)
           }
-        } catch (error) {
-          // Use defaults
-        }
-      } else {
-        try {
-          const { getUserProfile } = await import('@/lib/dynamodb-client')
-          const profile = await getUserProfile(userId)
-          if (profile?.preferences) {
-            if (profile.preferences.defaultModel) {
-              modelConfig.model_id = profile.preferences.defaultModel
-              modelConfig.caching_enabled = profile.preferences.defaultModel.toLowerCase().includes('claude') || profile.preferences.defaultModel.toLowerCase().includes('nova')
-            }
-            if (profile.preferences.defaultTemperature !== undefined) {
-              modelConfig.temperature = profile.preferences.defaultTemperature
-            }
-            // Load selectedPromptId (new way)
-            if (profile.preferences.selectedPromptId) {
-              selectedPromptId = profile.preferences.selectedPromptId as PromptId
-            }
-            // Load customPromptText for custom prompts
-            if (profile.preferences.customPromptText) {
-              customPromptText = profile.preferences.customPromptText
-            }
+          if (config.temperature !== undefined) {
+            modelConfig.temperature = config.temperature
           }
-        } catch (error) {
-          // Use defaults
+          // Load selectedPromptId
+          if (config.selectedPromptId) {
+            selectedPromptId = config.selectedPromptId as PromptId
+          }
+          if (config.customPromptText) {
+            customPromptText = config.customPromptText
+          }
+        } else {
+          console.log(`[BFF] No saved config found for ${userId}, using defaults`)
         }
+      } catch (error) {
+        console.error(`[BFF] Error loading config for ${userId}:`, error)
+        // Use defaults
+      }
+    } else if (userId !== 'anonymous') {
+      // DynamoDB only for authenticated users
+      try {
+        const { getUserProfile } = await import('@/lib/dynamodb-client')
+        const profile = await getUserProfile(userId)
+        if (profile?.preferences) {
+          if (profile.preferences.defaultModel) {
+            modelConfig.model_id = profile.preferences.defaultModel
+            modelConfig.caching_enabled = profile.preferences.defaultModel.toLowerCase().includes('claude')
+          }
+          if (profile.preferences.defaultTemperature !== undefined) {
+            modelConfig.temperature = profile.preferences.defaultTemperature
+          }
+          // Load selectedPromptId (new way)
+          if (profile.preferences.selectedPromptId) {
+            selectedPromptId = profile.preferences.selectedPromptId as PromptId
+          }
+          // Load customPromptText for custom prompts
+          if (profile.preferences.customPromptText) {
+            customPromptText = profile.preferences.customPromptText
+          }
+        }
+      } catch (error) {
+        // Use defaults
       }
     }
 

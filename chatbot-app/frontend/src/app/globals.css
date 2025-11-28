@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -308,7 +308,7 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 
 /* Chat Chart Content - Tailwind-first approach */
 .chat-chart-content {
-  @apply text-base leading-relaxed;
+  @apply text-base leading-relaxed-plus;
 }
 
 .chat-chart-content table {

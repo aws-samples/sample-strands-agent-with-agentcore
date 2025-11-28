@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { BedrockAgentCoreClient, GetBrowserSessionCommand } from '@aws-sdk/client-bedrock-agentcore';
 
+export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
+
 // Environment-configurable constants with fallback defaults
 // Following Python SDK pattern for consistency
 const region = process.env.AWS_REGION || 'us-west-2';

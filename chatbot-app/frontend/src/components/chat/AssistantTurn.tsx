@@ -186,7 +186,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
   return (
     <div className="flex justify-start mb-8 group">
-      <div className="flex items-start space-x-4 max-w-4xl w-full">
+      <div className="flex items-start space-x-4 max-w-4xl w-full min-w-0">
         {/* Single Avatar for the entire turn */}
         <Avatar className="h-9 w-9 flex-shrink-0 mt-2">
           <AvatarFallback className="bg-gradient-to-br from-blue-600 to-purple-600 text-white">
@@ -195,7 +195,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
         </Avatar>
 
         {/* Turn Content */}
-        <div className="flex-1 space-y-4 pt-1">
+        <div className="flex-1 space-y-4 pt-1 min-w-0">
           {/* Reasoning Step - Show when AI has reasoning text to display */}
           {currentReasoning && currentReasoning.text && (
             <div className="animate-fade-in">
@@ -239,7 +239,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                   sessionId={sessionId}
                 />
               ) : (
-                <div className="chat-chart-content">
+                <div className="chat-chart-content w-full overflow-hidden">
                   <Markdown sessionId={sessionId} toolUseId={item.toolUseId}>{item.content as string}</Markdown>
 
                   {/* Generated Images for this text group */}

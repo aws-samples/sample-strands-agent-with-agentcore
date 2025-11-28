@@ -1,10 +1,9 @@
 'use client';
 
 import React from 'react';
-import { Settings, Wrench, Server, Brain, Moon, Sun, Plus, Globe } from 'lucide-react';
+import { Settings, Wrench, Server, Brain, Plus, Globe } from 'lucide-react';
 import { Tool } from '@/types/chat';
 import { Button } from '@/components/ui/button';
-import { useTheme } from 'next-themes';
 import {
   Sidebar,
   SidebarContent,
@@ -13,7 +12,6 @@ import {
   SidebarMenu,
   useSidebar,
 } from '@/components/ui/sidebar';
-import { ModelConfigDialog } from './ModelConfigDialog';
 import { ChatSessionList } from './sidebar/ChatSessionList';
 import { ToolSection } from './sidebar/ToolSection';
 import { useChatSessions } from '@/hooks/useChatSessions';
@@ -41,7 +39,6 @@ export function ToolSidebar({
   onGatewayToolsChange,
 }: ToolSidebarProps) {
   const { setOpenMobile } = useSidebar();
-  const { theme, setTheme } = useTheme();
 
   // Use custom hooks
   const { chatSessions, isLoadingSessions, deleteSession } = useChatSessions({
@@ -68,17 +65,6 @@ export function ToolSidebar({
               <span className="text-lg font-semibold text-sidebar-foreground">Chatbot</span>
             </div>
             <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="h-8 w-8 p-0 relative"
-              >
-                <Sun className="h-4 w-4 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" />
-                <Moon className="absolute h-4 w-4 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100" />
-                <span className="sr-only">Toggle theme</span>
-              </Button>
-              <ModelConfigDialog sessionId={sessionId} />
               <Button
                 variant="ghost"
                 size="sm"

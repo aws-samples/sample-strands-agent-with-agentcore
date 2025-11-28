@@ -87,7 +87,9 @@ export class ChatbotStack extends cdk.Stack {
           },
           billingMode: dynamodb.BillingMode.PAY_PER_REQUEST, // On-demand pricing
           removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete table on stack deletion
-          pointInTimeRecovery: true, // Enable backup
+          pointInTimeRecoverySpecification: {
+            pointInTimeRecoveryEnabled: true // Enable backup
+          },
           encryption: dynamodb.TableEncryption.AWS_MANAGED,
           timeToLiveAttribute: 'ttl', // Optional TTL for temporary data
         });
@@ -111,7 +113,9 @@ export class ChatbotStack extends cdk.Stack {
           },
           billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
           removalPolicy: cdk.RemovalPolicy.DESTROY, // Delete table on stack deletion
-          pointInTimeRecovery: true,
+          pointInTimeRecoverySpecification: {
+            pointInTimeRecoveryEnabled: true
+          },
           encryption: dynamodb.TableEncryption.AWS_MANAGED,
           timeToLiveAttribute: 'ttl', // Auto-delete old sessions
         });

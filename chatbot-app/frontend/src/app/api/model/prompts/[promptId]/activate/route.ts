@@ -7,6 +7,7 @@ import { getUserProfile, upsertUserProfile } from '@/lib/dynamodb-client'
 import { isValidPromptId } from '@/lib/system-prompts'
 
 export const runtime = 'nodejs'
+export const dynamic = 'force-dynamic'
 
 export async function POST(
   request: NextRequest,

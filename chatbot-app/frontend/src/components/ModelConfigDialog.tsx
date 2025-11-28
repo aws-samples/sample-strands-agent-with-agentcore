@@ -52,12 +52,28 @@ interface AvailableModel {
 
 interface ModelConfigDialogProps {
   sessionId: string | null;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  trigger?: React.ReactNode;
 }
 
-export function ModelConfigDialog({ sessionId }: ModelConfigDialogProps) {
-  const [open, setOpen] = useState(false);
+export function ModelConfigDialog({ sessionId, open: externalOpen, onOpenChange: externalOnOpenChange, trigger }: ModelConfigDialogProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Use external control if provided, otherwise use internal state
+  const open = externalOpen !== undefined ? externalOpen : internalOpen;
+  const setOpen = (newOpen: boolean) => {
+    // Always update internal state if not externally controlled
+    if (externalOpen === undefined) {
+      setInternalOpen(newOpen);
+    }
+    // Call external callback if provided
+    if (externalOnOpenChange) {
+      externalOnOpenChange(newOpen);
+    }
+  };
   
   // Current state from backend
   const [currentConfig, setCurrentConfig] = useState<ModelConfig | null>(null);
@@ -252,16 +268,22 @@ export function ModelConfigDialog({ sessionId }: ModelConfigDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button
-          variant="ghost"
-          size="sm"
-          className="h-8 w-8 p-0"
-          title="Model Settings"
-        >
-          <Brain className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+      {trigger ? (
+        <DialogTrigger asChild>
+          {trigger}
+        </DialogTrigger>
+      ) : (
+        <DialogTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-8 w-8 p-0"
+            title="Model Settings"
+          >
+            <Brain className="h-4 w-4" />
+          </Button>
+        </DialogTrigger>
+      )}
 
       <DialogContent className="sm:max-w-lg animate-in fade-in-0 duration-200">
         <DialogHeader>

@@ -199,7 +199,16 @@ class StreamEventProcessor:
                                 if accumulated_usage.get("cacheWriteInputTokens", 0) > 0:
                                     usage["cacheWriteInputTokens"] = accumulated_usage["cacheWriteInputTokens"]
 
-                                logger.info(f"[Token Usage] ✅ Extracted usage: {usage}")
+                                # Log detailed cache information
+                                cache_read = accumulated_usage.get("cacheReadInputTokens", 0)
+                                cache_write = accumulated_usage.get("cacheWriteInputTokens", 0)
+                                if cache_read > 0 or cache_write > 0:
+                                    logger.info(f"[Cache Usage] 🎯 Cache READ: {cache_read} tokens | Cache WRITE: {cache_write} tokens")
+                                    if cache_read > 0:
+                                        cache_savings = cache_read * 0.9  # 90% savings from cache
+                                        logger.info(f"[Cache Savings] 💰 Saved ~{cache_savings:.0f} tokens from cache hit!")
+
+                                logger.info(f"[Token Usage] ✅ Total - Input: {usage['inputTokens']}, Output: {usage['outputTokens']}, Total: {usage['totalTokens']}")
                     except Exception as e:
                         import logging
                         logger = logging.getLogger(__name__)
