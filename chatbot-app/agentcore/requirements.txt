@@ -6,7 +6,6 @@ fastapi==0.116.1
 uvicorn[standard]==0.35.0
 
 # Strands Agent Framework
-# Using 1.14.0 for compatibility with nova-act 2.3.18.0
 strands-agents[a2a]==1.14.0
 strands-agents-tools[a2a_client]==0.2.3
 
@@ -35,4 +34,5 @@ bedrock-agentcore
 
 # Nova Act SDK (for natural language browser automation via AgentCore Browser)
 # Nova Act includes playwright as a dependency, so no need to install it separately
-nova-act==2.3.18.0
+# v3.0+ supports model_id parameter for model selection (nova-act-latest, nova-act-preview, nova-act-v1.0)
+nova-act>=3.0.0

@@ -29,6 +29,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        {/* Error filter for third-party SDK noise - must load first */}
+        <script src="/error-filter.js" />
+      </head>
       <body className={inter.className}>
         <ThemeProvider
           attribute="class"

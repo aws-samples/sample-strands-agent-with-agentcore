@@ -1,4 +1,5 @@
 {
+  "_comment": "⚠️  IMPORTANT: After modifying this file, you MUST sync to DynamoDB! POST http://localhost:3000/api/tools/sync-registry (or production URL). Without syncing, changes will NOT take effect. See chatbot-app/agentcore/src/builtin_tools/__init__.py for full instructions.",
   "local_tools": [
     {
       "id": "calculator",
@@ -60,8 +61,8 @@
   "browser_automation": [
     {
       "id": "browser_automation",
-      "name": "Browser Automation",
-      "description": "Web browser automation powered by Nova Act AI (4 tools)",
+      "name": "Browser Automation - Nova Act",
+      "description": "Web browser automation powered by Nova Act AI (5 tools)",
       "category": "browser",
       "icon": "🌐",
       "enabled": true,
@@ -80,12 +81,17 @@
         {
           "id": "browser_extract",
           "name": "Extract Data",
-          "description": "Extract structured data from current page"
+          "description": "Extract structured data (auto-scrolls entire page, collects all data in single call)"
         },
         {
           "id": "browser_get_page_info",
           "name": "Get Page Info",
-          "description": "Get structured page information (fast, no AI)"
+          "description": "Get page structure and all open tabs (fast, no AI)"
+        },
+        {
+          "id": "browser_manage_tabs",
+          "name": "Manage Tabs",
+          "description": "Switch, close, or create browser tabs (use get_page_info to view tabs)"
         }
       ]
     }

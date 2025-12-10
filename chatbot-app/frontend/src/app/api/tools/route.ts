@@ -18,6 +18,54 @@ const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
 
 export const runtime = 'nodejs'
 
+/**
+ * Check if tool registry needs sync by comparing tool counts
+ * Returns true if any category has different tool counts
+ */
+function checkIfRegistryNeedsSync(fallback: any, registry: any): boolean {
+  try {
+    // Helper to count tools in nested structures
+    const countNestedTools = (items: any[] = []) => {
+      return items.reduce((sum, item) => {
+        if (item.tools && Array.isArray(item.tools)) {
+          return sum + item.tools.length
+        }
+        return sum + 1 // Count the item itself if no nested tools
+      }, 0)
+    }
+
+    // Compare each category
+    const checks = [
+      // Local tools
+      (fallback.local_tools?.length || 0) !== (registry.local_tools?.length || 0),
+      // Builtin tools
+      (fallback.builtin_tools?.length || 0) !== (registry.builtin_tools?.length || 0),
+      // Browser automation (nested tools)
+      countNestedTools(fallback.browser_automation) !== countNestedTools(registry.browser_automation),
+      // Gateway targets (nested tools)
+      countNestedTools(fallback.gateway_targets) !== countNestedTools(registry.gateway_targets),
+      // AgentCore Runtime A2A
+      (fallback.agentcore_runtime_a2a?.length || 0) !== (registry.agentcore_runtime_a2a?.length || 0),
+    ]
+
+    const needsSync = checks.some(check => check === true)
+
+    if (needsSync) {
+      console.log('[API] Tool count comparison:')
+      console.log(`  local_tools: ${fallback.local_tools?.length || 0} vs ${registry.local_tools?.length || 0}`)
+      console.log(`  builtin_tools: ${fallback.builtin_tools?.length || 0} vs ${registry.builtin_tools?.length || 0}`)
+      console.log(`  browser_automation (nested): ${countNestedTools(fallback.browser_automation)} vs ${countNestedTools(registry.browser_automation)}`)
+      console.log(`  gateway_targets (nested): ${countNestedTools(fallback.gateway_targets)} vs ${countNestedTools(registry.gateway_targets)}`)
+      console.log(`  agentcore_runtime_a2a: ${fallback.agentcore_runtime_a2a?.length || 0} vs ${registry.agentcore_runtime_a2a?.length || 0}`)
+    }
+
+    return needsSync
+  } catch (error) {
+    console.error('[API] Error checking registry sync status:', error)
+    return false // On error, don't sync to avoid loops
+  }
+}
+
 export async function GET(request: NextRequest) {
   try {
     // Extract user from Cognito JWT token
@@ -30,8 +78,19 @@ export async function GET(request: NextRequest) {
       // Cloud: Load from DynamoDB TOOL_REGISTRY (auto-initializes if not exists)
       const registryFromDDB = await getToolRegistry(toolsConfigFallback)
       if (registryFromDDB) {
-        toolsConfig = registryFromDDB as typeof toolsConfigFallback
-        console.log('[API] Tool registry loaded from DynamoDB')
+        // Auto-sync detection: Compare tool counts to detect changes
+        const needsSync = checkIfRegistryNeedsSync(toolsConfigFallback, registryFromDDB)
+
+        if (needsSync) {
+          console.log('[API] Tool registry mismatch detected - auto-syncing from tools-config.json...')
+          const { initializeToolRegistry } = await import('@/lib/dynamodb-client')
+          await initializeToolRegistry(toolsConfigFallback)
+          toolsConfig = toolsConfigFallback
+          console.log('[API] Tool registry auto-synced successfully')
+        } else {
+          toolsConfig = registryFromDDB as typeof toolsConfigFallback
+          console.log('[API] Tool registry loaded from DynamoDB (no changes detected)')
+        }
       } else {
         console.log('[API] Tool registry not found in DynamoDB, using fallback JSON')
       }

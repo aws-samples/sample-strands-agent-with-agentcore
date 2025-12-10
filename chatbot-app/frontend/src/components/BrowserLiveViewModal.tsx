@@ -5,6 +5,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Button } from '@/components/ui/button';
 import { Loader2, Monitor } from 'lucide-react';
 
+// Note: Error filtering for DCV SDK is handled globally in /public/error-filter.js
+
 interface BrowserLiveViewModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -42,36 +44,6 @@ export function BrowserLiveViewModal({
       return;
     }
 
-    // Intercept console.error and console.warn to filter out DCV SDK noise
-    const originalConsoleError = console.error;
-    const originalConsoleWarn = console.warn;
-
-    const ignoredPatterns = [
-      'networkMonitor',
-      'No transition available',
-      'Close received after close',
-      'Timeout reached while waiting for data',
-      'WebSocket connection'
-    ];
-
-    console.error = (...args: any[]) => {
-      const message = args.join(' ');
-      const shouldIgnore = ignoredPatterns.some(pattern => message.includes(pattern));
-
-      if (!shouldIgnore) {
-        originalConsoleError.apply(console, args);
-      }
-    };
-
-    console.warn = (...args: any[]) => {
-      const message = args.join(' ');
-      const shouldIgnore = ignoredPatterns.some(pattern => message.includes(pattern));
-
-      if (!shouldIgnore) {
-        originalConsoleWarn.apply(console, args);
-      }
-    };
-
     // Load DCV SDK from local public folder
     const script = document.createElement('script');
     script.src = '/dcv-sdk/dcvjs-umd/dcv.js';  // Local hosted DCV SDK
@@ -95,10 +67,6 @@ export function BrowserLiveViewModal({
     document.body.appendChild(script);
 
     return () => {
-      // Restore original console methods
-      console.error = originalConsoleError;
-      console.warn = originalConsoleWarn;
-
       if (script.parentNode) {
         script.parentNode.removeChild(script);
       }

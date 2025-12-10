@@ -169,3 +169,5 @@ tsconfig.tsbuildinfo
 verify-build.sh
 **/verify-*.sh
 sdk-python
+nova-act
+browser-use

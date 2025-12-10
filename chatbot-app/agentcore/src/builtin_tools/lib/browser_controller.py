@@ -36,11 +36,14 @@ class BrowserController:
         self.browser_id = self._get_browser_id()
         self.browser_name = os.getenv('BROWSER_NAME')
 
-        # Try to load Nova Act API key from environment variable first
+        # Nova Act authentication - supports both API Key and AWS IAM methods
+        # Priority: 1) API Key (env/secrets), 2) AWS IAM (workflow definition)
         self.nova_api_key = os.getenv('NOVA_ACT_API_KEY')
+        self.nova_workflow_definition_name = os.getenv('NOVA_ACT_WORKFLOW_DEFINITION_NAME')
+        self.nova_model_id = os.getenv('NOVA_ACT_MODEL_ID', 'nova-act-latest')
 
-        # If not in environment, try to load from Secrets Manager
-        if not self.nova_api_key:
+        # If API key not in environment, try Secrets Manager
+        if not self.nova_api_key and not self.nova_workflow_definition_name:
             try:
                 import boto3
 
@@ -53,19 +56,57 @@ class BrowserController:
 
                 self.nova_api_key = response['SecretString']
                 logger.info("Nova Act API key loaded successfully from Secrets Manager")
-            except secrets_client.exceptions.ResourceNotFoundException:
-                raise ValueError(
-                    "❌ Nova Act API key not configured. "
-                    "Browser automation tools are disabled. "
-                    "To enable, run deployment and enter your Nova Act API key."
-                )
             except Exception as e:
-                raise ValueError(f"Failed to load Nova Act API key: {e}")
+                # API key not found, check if workflow definition is available
+                logger.warning(f"Nova Act API key not found: {e}")
+                logger.info("Will attempt AWS IAM authentication if workflow definition is configured")
+
+        # Validate at least one auth method is available
+        if not self.nova_api_key and not self.nova_workflow_definition_name:
+            raise ValueError(
+                "❌ Nova Act authentication not configured. "
+                "Set either NOVA_ACT_API_KEY or NOVA_ACT_WORKFLOW_DEFINITION_NAME. "
+                "For AWS IAM auth, create a workflow: aws nova-act create-workflow-definition --name 'my-workflow'"
+            )
+
+        # Log auth method
+        if self.nova_api_key:
+            logger.info("Nova Act: Using API Key authentication")
+        else:
+            logger.info(f"Nova Act: Using AWS IAM authentication (workflow: {self.nova_workflow_definition_name}, model: {self.nova_model_id})")
 
         self.browser_session_client = None
         self.page = None  # Will be set from NovaAct.page
         self.nova_client = None
+        self.workflow = None  # Will be set in connect()
         self._connected = False
+        self._current_tab_index: int = 0  # Track current active tab index
+
+    def get_tab_list(self) -> list:
+        """Get list of all open tabs with basic info"""
+        if not self._connected or not self.nova_client:
+            return []
+
+        tabs = []
+        for index, page in enumerate(self.nova_client.pages):
+            tabs.append({
+                "index": index,
+                "url": page.url,
+                "title": page.title(),
+                "is_current": index == self._current_tab_index
+            })
+        return tabs
+
+    def _get_current_page(self):
+        """Get the current tab's page object"""
+        if not self.nova_client:
+            return None
+        try:
+            return self.nova_client.get_page(self._current_tab_index)
+        except Exception:
+            # Fallback to last page if current index is invalid
+            self._current_tab_index = len(self.nova_client.pages) - 1
+            return self.nova_client.get_page(self._current_tab_index)
 
     def _get_browser_id(self) -> Optional[str]:
         """Get Custom Browser ID from environment or Parameter Store"""
@@ -126,13 +167,39 @@ class BrowserController:
             ws_url, headers = self.browser_session_client.generate_ws_headers()
 
             # Initialize Nova Act client with AgentCore Browser CDP connection
+            # Supports both API Key and AWS IAM authentication
             from nova_act import NovaAct
-            self.nova_client = NovaAct(
-                cdp_endpoint_url=ws_url,
-                cdp_headers=headers,
-                nova_act_api_key=self.nova_api_key,
-                starting_page="about:blank"  # Will navigate later
-            )
+
+            nova_kwargs = {
+                'cdp_endpoint_url': ws_url,
+                'cdp_headers': headers,
+                'cdp_use_existing_page': True,  # Re-use existing page from AgentCore Browser
+                'go_to_url_timeout': 5  # Max wait time for go_to_url() in seconds
+            }
+
+            # Both API Key and IAM authentication use Workflow for model selection
+            from nova_act import Workflow
+
+            if self.nova_api_key:
+                # API Key authentication with model selection
+                self.workflow = Workflow(
+                    model_id=self.nova_model_id,
+                    nova_act_api_key=self.nova_api_key
+                )
+                logger.info(f"Nova Act: API Key auth, model={self.nova_model_id}")
+            else:
+                # AWS IAM authentication
+                self.workflow = Workflow(
+                    model_id=self.nova_model_id,
+                    workflow_definition_name=self.nova_workflow_definition_name
+                )
+                logger.info(f"Nova Act: IAM auth, workflow={self.nova_workflow_definition_name}, model={self.nova_model_id}")
+
+            # Enter Workflow context manager first
+            self.workflow.__enter__()
+            nova_kwargs['workflow'] = self.workflow
+
+            self.nova_client = NovaAct(**nova_kwargs)
             # Start NovaAct (enters context manager)
             self.nova_client.__enter__()
 
@@ -150,17 +217,29 @@ class BrowserController:
     def navigate(self, url: str) -> Dict[str, Any]:
         """Navigate to URL and return result with screenshot"""
         try:
+            # First navigation: connect then navigate
+            # cdp_use_existing_page=True ensures only 1 tab exists (reuses AgentCore Browser's tab)
             if not self._connected:
-                self.connect()
+                logger.info(f"First navigation: connecting to browser")
+                self.connect()  # Connect without starting_page (reuse existing tab)
 
+            # Always use go_to_url() for navigation (both first and subsequent)
             logger.info(f"Navigating to {url}")
+            try:
+                logger.info("Calling go_to_url()...")
+                self.nova_client.go_to_url(url)
+                logger.info("go_to_url() completed")
+            except Exception as timeout_error:
+                # Timeout or other errors: continue anyway as page may be partially loaded
+                logger.warning(f"go_to_url() timeout/error, continuing: {timeout_error}")
 
-            # Use NovaAct's go_to_url() instead of act() for more reliable navigation
-            # go_to_url() handles timeout better and waits for page to fully load
-            self.nova_client.go_to_url(url)
+            # Use current tab's page
+            logger.info("Getting current page...")
+            page = self._get_current_page()
+            current_url = page.url
+            page_title = page.title()
 
-            current_url = self.page.url
-            page_title = self.page.title()
+            logger.info("Taking screenshot...")
             screenshot_data = self._take_screenshot()
 
             logger.info(f"✅ Successfully navigated to: {current_url}")
@@ -171,6 +250,8 @@ class BrowserController:
                 "message": f"Navigated to {current_url}",
                 "current_url": current_url,
                 "page_title": page_title,
+                "current_tab": self._current_tab_index,
+                "tabs": self.get_tab_list(),
                 "screenshot": screenshot_data
             }
         except Exception as e:
@@ -178,6 +259,7 @@ class BrowserController:
             return {
                 "status": "error",
                 "message": f"Navigation failed: {str(e)}",
+                "tabs": self.get_tab_list(),
                 "screenshot": None
             }
 
@@ -205,8 +287,17 @@ class BrowserController:
                 observation_delay_ms=1500  # 1.5 second delay for page loads
             )
 
-            current_url = self.page.url
-            page_title = self.page.title()
+            # Check if new tabs were opened during action
+            num_tabs_after = len(self.nova_client.pages)
+            if num_tabs_after > self._current_tab_index + 1:
+                # New tab(s) opened - switch to the newest one
+                self._current_tab_index = num_tabs_after - 1
+                logger.info(f"New tab opened, switched to tab {self._current_tab_index}")
+
+            # Use current tab's page
+            page = self._get_current_page()
+            current_url = page.url
+            page_title = page.title()
             screenshot_data = self._take_screenshot()
 
             # Parse Nova Act result
@@ -244,6 +335,8 @@ class BrowserController:
                 "instruction": instruction,
                 "current_url": current_url,
                 "page_title": page_title,
+                "current_tab": self._current_tab_index,
+                "tabs": self.get_tab_list(),
                 "screenshot": screenshot_data
             }
 
@@ -305,20 +398,20 @@ class BrowserController:
     def _get_error_screenshot(self) -> Optional[bytes]:
         """Helper to safely capture screenshot on error"""
         try:
-            if self._connected and self.page:
+            if self._connected and self.nova_client:
                 return self._take_screenshot()
         except:
             pass
         return None
 
-    def extract(self, description: str, schema: Optional[Dict] = None, max_steps: int = 3, timeout: int = 90) -> Dict[str, Any]:
+    def extract(self, description: str, schema: Optional[Dict] = None, max_steps: int = 15, timeout: int = 240) -> Dict[str, Any]:
         """Extract structured data using Nova Act
 
         Args:
             description: Natural language description of what data to extract
             schema: Optional JSON schema for validation (None = no schema validation)
-            max_steps: Maximum number of steps for extraction
-            timeout: Timeout in seconds for extraction
+            max_steps: Maximum number of steps for extraction (default: 15 for scrolling/pagination)
+            timeout: Timeout in seconds for extraction (default: 240s = 4 minutes)
         """
         try:
             if not self._connected:
@@ -340,8 +433,10 @@ class BrowserController:
                 observation_delay_ms=1500  # 1.5 second delay for page loads
             )
 
-            current_url = self.page.url
-            page_title = self.page.title()
+            # Use current tab's page
+            page = self._get_current_page()
+            current_url = page.url
+            page_title = page.title()
             screenshot_data = self._take_screenshot()
 
             # Parse extracted data
@@ -377,6 +472,8 @@ class BrowserController:
                 "description": description,
                 "current_url": current_url,
                 "page_title": page_title,
+                "current_tab": self._current_tab_index,
+                "tabs": self.get_tab_list(),
                 "screenshot": screenshot_data
             }
 
@@ -447,15 +544,18 @@ class BrowserController:
 
             logger.info("Getting page info")
 
+            # Use current tab's page
+            page = self._get_current_page()
+
             # Page context
             page_info = {
-                "url": self.page.url,
-                "title": self.page.title(),
-                "load_state": "complete" if self.page.url != "about:blank" else "initial"
+                "url": page.url,
+                "title": page.title(),
+                "load_state": "complete" if page.url != "about:blank" else "initial"
             }
 
             # Scroll position
-            scroll_info = self.page.evaluate("""() => {
+            scroll_info = page.evaluate("""() => {
                 return {
                     current: window.scrollY,
                     max: Math.max(
@@ -474,7 +574,7 @@ class BrowserController:
             }
 
             # Interactive elements (visible only, top 10 each)
-            buttons = self.page.evaluate("""() => {
+            buttons = page.evaluate("""() => {
                 const buttons = Array.from(document.querySelectorAll('button, input[type="button"], input[type="submit"], [role="button"]'));
                 return buttons
                     .filter(btn => {
@@ -491,7 +591,7 @@ class BrowserController:
                     .filter(btn => btn.text.length > 0);
             }""")
 
-            links = self.page.evaluate("""() => {
+            links = page.evaluate("""() => {
                 const links = Array.from(document.querySelectorAll('a[href]'));
                 return links
                     .filter(link => {
@@ -507,7 +607,7 @@ class BrowserController:
                     .filter(link => link.text.length > 0);
             }""")
 
-            inputs = self.page.evaluate("""() => {
+            inputs = page.evaluate("""() => {
                 const inputs = Array.from(document.querySelectorAll('input:not([type="hidden"]), textarea, select'));
                 return inputs
                     .filter(input => {
@@ -538,7 +638,7 @@ class BrowserController:
             }
 
             # Content structure
-            headings = self.page.evaluate("""() => {
+            headings = page.evaluate("""() => {
                 const headings = Array.from(document.querySelectorAll('h1, h2, h3'));
                 return headings
                     .slice(0, 10)
@@ -546,7 +646,7 @@ class BrowserController:
                     .filter(text => text.length > 0);
             }""")
 
-            content_info = self.page.evaluate("""() => {
+            content_info = page.evaluate("""() => {
                 return {
                     image_count: document.querySelectorAll('img').length,
                     has_form: document.querySelectorAll('form').length > 0,
@@ -562,7 +662,7 @@ class BrowserController:
             }
 
             # State indicators
-            state_info = self.page.evaluate("""() => {
+            state_info = page.evaluate("""() => {
                 const alerts = Array.from(document.querySelectorAll('[role="alert"], .alert, .error, .warning'));
                 const modals = Array.from(document.querySelectorAll('[role="dialog"], .modal, [aria-modal="true"]'));
                 const loading = Array.from(document.querySelectorAll('.loading, .spinner, [aria-busy="true"]'));
@@ -589,7 +689,7 @@ class BrowserController:
             }
 
             # Navigation
-            breadcrumbs = self.page.evaluate("""() => {
+            breadcrumbs = page.evaluate("""() => {
                 const crumbs = document.querySelectorAll('[aria-label*="breadcrumb"] a, .breadcrumb a, .breadcrumbs a');
                 return Array.from(crumbs)
                     .map(a => a.textContent.trim())
@@ -597,7 +697,7 @@ class BrowserController:
             }""")
 
             navigation = {
-                "can_go_back": self.page.evaluate("() => window.history.length > 1"),
+                "can_go_back": page.evaluate("() => window.history.length > 1"),
                 "can_go_forward": False,  # Not easily detectable
                 "breadcrumbs": breadcrumbs
             }
@@ -610,7 +710,9 @@ class BrowserController:
                 "interactive": interactive,
                 "content": content,
                 "state": state,
-                "navigation": navigation
+                "navigation": navigation,
+                "current_tab": self._current_tab_index,
+                "tabs": self.get_tab_list()
             }
 
         except Exception as e:
@@ -620,19 +722,215 @@ class BrowserController:
                 "message": f"Failed to get page info: {str(e)}"
             }
 
-    def _take_screenshot(self) -> Optional[bytes]:
-        """Take screenshot and return as raw bytes"""
+    def _take_screenshot(self, tab_index: Optional[int] = None, timeout: int = 5000) -> Optional[bytes]:
+        """Take screenshot of a specific tab (default: current tab)
+
+        Args:
+            tab_index: Tab index to screenshot. None means current tab.
+            timeout: Timeout in milliseconds (default: 5000ms = 5 seconds)
+        """
+        import time
+        start_time = time.time()
+
         try:
-            if not self.page:
+            if not self.nova_client:
                 return None
 
-            # Take screenshot as PNG bytes
-            screenshot_bytes = self.page.screenshot(type='png', full_page=False)
+            # Use specified tab or current tab
+            index = tab_index if tab_index is not None else self._current_tab_index
+            page = self.nova_client.get_page(index)
 
-            return screenshot_bytes
+            # Use CDP directly to capture screenshot without waiting for fonts
+            # This bypasses Playwright's font loading wait which can timeout on some pages
+            cdp = page.context.new_cdp_session(page)
+            try:
+                result = cdp.send('Page.captureScreenshot', {
+                    'format': 'jpeg',
+                    'quality': 85,
+                    'fromSurface': True,  # Capture from compositor surface (faster)
+                    'captureBeyondViewport': False  # Only viewport
+                })
+                screenshot_bytes = base64.b64decode(result['data'])
+
+                duration = time.time() - start_time
+                size_kb = len(screenshot_bytes) / 1024
+                logger.info(f"📸 Screenshot: {duration:.2f}s, {size_kb:.1f}KB")
+
+                return screenshot_bytes
+            finally:
+                cdp.detach()
+
         except Exception as e:
-            logger.error(f"Screenshot failed: {e}")
+            duration = time.time() - start_time
+            logger.error(f"Screenshot failed after {duration:.2f}s: {e}")
             return None
+
+    def switch_tab(self, tab_index: int) -> Dict[str, Any]:
+        """Switch to a specific tab by index
+
+        Args:
+            tab_index: Tab index (0-based). Use -1 for last tab.
+        """
+        try:
+            if not self._connected:
+                self.connect()
+
+            num_tabs = len(self.nova_client.pages)
+
+            # Handle negative indexing
+            if tab_index < 0:
+                tab_index = num_tabs + tab_index
+
+            # Validate index
+            if tab_index < 0 or tab_index >= num_tabs:
+                return {
+                    "status": "error",
+                    "message": f"Invalid tab index {tab_index}. Available tabs: 0 to {num_tabs - 1}",
+                    "tabs": self.get_tab_list()
+                }
+
+            # Switch to the tab
+            self._current_tab_index = tab_index
+            page = self._get_current_page()
+
+            logger.info(f"Switched to tab {tab_index}: {page.url}")
+
+            return {
+                "status": "success",
+                "message": f"Switched to tab {tab_index}",
+                "current_tab": tab_index,
+                "current_url": page.url,
+                "page_title": page.title(),
+                "tabs": self.get_tab_list(),
+                "screenshot": self._take_screenshot()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to switch tab: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to switch tab: {str(e)}",
+                "tabs": self.get_tab_list()
+            }
+
+    def close_tab(self, tab_index: int) -> Dict[str, Any]:
+        """Close a specific tab by index
+
+        Args:
+            tab_index: Tab index (0-based). Use -1 for last tab.
+        """
+        try:
+            if not self._connected:
+                self.connect()
+
+            num_tabs = len(self.nova_client.pages)
+
+            # Must keep at least one tab
+            if num_tabs <= 1:
+                return {
+                    "status": "error",
+                    "message": "Cannot close the last remaining tab. At least one tab must stay open.",
+                    "tabs": self.get_tab_list()
+                }
+
+            # Handle negative indexing
+            original_index = tab_index
+            if tab_index < 0:
+                tab_index = num_tabs + tab_index
+
+            # Validate index
+            if tab_index < 0 or tab_index >= num_tabs:
+                return {
+                    "status": "error",
+                    "message": f"Invalid tab index {original_index}. Available tabs: 0 to {num_tabs - 1}",
+                    "tabs": self.get_tab_list()
+                }
+
+            # Get the page to close
+            page_to_close = self.nova_client.get_page(tab_index)
+            closed_url = page_to_close.url
+
+            # Close the tab
+            page_to_close.close()
+
+            # Adjust current tab index if needed
+            if tab_index == self._current_tab_index:
+                # Closed current tab - switch to previous or first
+                self._current_tab_index = max(0, tab_index - 1)
+            elif tab_index < self._current_tab_index:
+                # Closed a tab before current - adjust index
+                self._current_tab_index -= 1
+
+            logger.info(f"Closed tab {tab_index}: {closed_url}")
+
+            page = self._get_current_page()
+
+            return {
+                "status": "success",
+                "message": f"Closed tab {tab_index} ({closed_url})",
+                "current_tab": self._current_tab_index,
+                "current_url": page.url,
+                "page_title": page.title(),
+                "tabs": self.get_tab_list(),
+                "screenshot": self._take_screenshot()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to close tab: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to close tab: {str(e)}",
+                "tabs": self.get_tab_list()
+            }
+
+    def create_tab(self, url: str = "about:blank") -> Dict[str, Any]:
+        """Create a new tab and navigate to URL
+
+        Args:
+            url: URL to open in the new tab (default: about:blank)
+        """
+        try:
+            if not self._connected:
+                self.connect()
+
+            logger.info(f"Creating new tab with URL: {url}")
+
+            # Create new page in the browser context
+            new_page = self.nova_client.page.context.new_page()
+
+            # Switch to the new tab (it's the last one)
+            self._current_tab_index = len(self.nova_client.pages) - 1
+            logger.info(f"Created new tab {self._current_tab_index}")
+
+            # Navigate to URL if not about:blank using go_to_url (consistent with navigate())
+            if url != "about:blank":
+                try:
+                    logger.info(f"Navigating new tab to {url}")
+                    self.nova_client.go_to_url(url)
+                    logger.info("Navigation completed")
+                except Exception as nav_error:
+                    logger.warning(f"go_to_url timeout in new tab, continuing: {nav_error}")
+
+            page = self._get_current_page()
+            logger.info(f"New tab ready: {page.url}")
+
+            return {
+                "status": "success",
+                "message": f"Created new tab {self._current_tab_index}",
+                "current_tab": self._current_tab_index,
+                "current_url": page.url,
+                "page_title": page.title(),
+                "tabs": self.get_tab_list(),
+                "screenshot": self._take_screenshot()
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to create tab: {e}")
+            return {
+                "status": "error",
+                "message": f"Failed to create tab: {str(e)}",
+                "tabs": self.get_tab_list()
+            }
 
     def close(self):
         """Close browser session and cleanup"""
@@ -643,6 +941,13 @@ class BrowserController:
                     self.nova_client.__exit__(None, None, None)
                 except Exception as e:
                     logger.warning(f"Error closing NovaAct client: {e}")
+
+            # Close Workflow context manager
+            if hasattr(self, 'workflow') and self.workflow:
+                try:
+                    self.workflow.__exit__(None, None, None)
+                except Exception as e:
+                    logger.warning(f"Error closing Workflow: {e}")
 
             # Close browser session
             if self.browser_session_client:
