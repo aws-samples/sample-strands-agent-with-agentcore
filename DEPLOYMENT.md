@@ -22,8 +22,8 @@ User → CloudFront → ALB → Frontend+BFF (Fargate)
             ┌─────────────────┼─────────────────┐
             │                 │                 │
             ↓ SigV4           ↓ A2A             ↓ AWS SDK
-     AgentCore Gateway   Report Writer 🚧   Built-in Tools
-     (MCP endpoints)     Runtime           (Code Interpreter,
+     AgentCore Gateway   Research Agent    Built-in Tools
+     (MCP endpoints)     Runtime ✅        (Code Interpreter,
             ↓                               Browser + Nova Act)
      Lambda Functions (5x)
      └─ Wikipedia, ArXiv,
@@ -52,7 +52,7 @@ This deploys:
 - Frontend + BFF (Fargate)
 - AgentCore Runtime with Memory
 - AgentCore Gateway + Lambda tools
-- Report Writer Runtime (optional, A2A)
+- Research Agent Runtime (A2A)
 
 **Estimated Time**: 30-40 minutes
 
@@ -102,12 +102,12 @@ cd agent-blueprint
 - **Documentation**: https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html
 - **Location**: `agent-blueprint/agentcore-gateway-stack/`
 
-### 6. Report Writer Runtime (Optional, In Progress)
+### 6. Research Agent Runtime (A2A)
 - **Protocol**: A2A (Agent-to-Agent) with main Runtime
-- **Features**: Multi-section research reports with charts
-- **Storage**: S3 bucket for generated DOCX files
-- **Status**: 🚧 In Development
-- **Location**: `agent-blueprint/agentcore-runtime-a2a-stack/report-writer/`
+- **Features**: Comprehensive web research with markdown reports and citations
+- **Storage**: S3 bucket for generated charts
+- **Status**: ✅ Production Ready
+- **Location**: `agent-blueprint/agentcore-runtime-a2a-stack/research-agent/`
 
 ## Step-by-Step Deployment
 
@@ -147,7 +147,7 @@ cd agent-blueprint
 # ./deploy.sh --frontend     # Frontend + BFF only
 # ./deploy.sh --runtime      # AgentCore Runtime only
 # ./deploy.sh --gateway      # Gateway + Lambda tools only
-# ./deploy.sh --report-writer # Report Writer Runtime only
+# ./deploy.sh --research-agent # Research Agent Runtime only
 ```
 
 ### Step 3: Configure API Keys (if not in .env)
@@ -338,7 +338,7 @@ cd agent-blueprint
 ```
 
 This deletes (in order):
-1. Report Writer Runtime (if deployed)
+1. Research Agent Runtime (if deployed)
 2. AgentCore Gateway and Lambda functions
 3. AgentCore Runtime
 4. Frontend + BFF
@@ -350,7 +350,7 @@ This deletes (in order):
 cd agent-blueprint
 
 # Remove specific components
-./destroy.sh --report-writer  # Report Writer only
+./destroy.sh --research-agent # Research Agent only
 ./destroy.sh --gateway        # Gateway only
 ./destroy.sh --runtime        # Runtime only
 ./destroy.sh --frontend       # Frontend only

@@ -54,7 +54,7 @@ Combines Strands Agent orchestration with AWS Bedrock AgentCore services:
    - **Local Tools**: Weather, visualization, web search, URL fetcher (embedded in Runtime)
    - **Built-in Tools**: AgentCore Code Interpreter for diagrams/charts, AgentCore Browser for automation (AWS SDK + WebSocket)
    - **Gateway Tools**: Research, search, and finance data (via AgentCore Gateway + MCP)
-   - **Runtime Tools** (Work in Progress): Report Writer with A2A protocol
+   - **A2A Tools**: Research Agent for comprehensive web research with markdown reports (via A2A protocol)
 
 ## Key Features
 
@@ -104,7 +104,7 @@ Tools communicate via different protocols based on their characteristics:
 |-----------|----------|-------|----------|----------------|
 | **Local Tools** | Direct function calls | 5 | Weather, Web Search, Visualization | N/A |
 | **Built-in Tools** | AWS SDK + WebSocket | 4 | AgentCore Code Interpreter, Browser (Nova Act) | IAM |
-| **Gateway Tools** | MCP + SigV4 | 12 | Wikipedia, ArXiv, Finance (Lambda) | AWS SigV4 |
+| **Gateway Tools** | MCP | 12 | Wikipedia, ArXiv, Finance (Lambda) | AWS SigV4 |
 | **A2A Tools** | A2A protocol | 1 | Research Agent | AWS SigV4 |
 
 Status: 22 tools ✅. See [Implementation Details](#multi-protocol-tool-architecture) for complete tool list.
@@ -172,11 +172,11 @@ See [docs/TOOLS.md](docs/TOOLS.md) for detailed tool specifications.
 | Diagram Generator | AWS SDK | No | ✅ | Charts/diagrams via AgentCore Code Interpreter |
 | Browser Automation (3 tools) | AWS SDK + WebSocket | Yes | ✅ | Navigate, action, extract via AgentCore Browser (Nova Act) |
 | **Gateway Tools** | | | | |
-| Wikipedia (2 tools) | MCP + SigV4 | No | ✅ | Article search and retrieval |
-| ArXiv (2 tools) | MCP + SigV4 | No | ✅ | Scientific paper search |
-| Google Search (2 tools) | MCP + SigV4 | Yes | ✅ | Web and image search |
-| Tavily AI (2 tools) | MCP + SigV4 | Yes | ✅ | AI-powered search and extraction |
-| Financial Market (4 tools) | MCP + SigV4 | No | ✅ | Stock quotes, history, news, analysis (Yahoo Finance) |
+| Wikipedia (2 tools) | MCP | No | ✅ | Article search and retrieval |
+| ArXiv (2 tools) | MCP | No | ✅ | Scientific paper search |
+| Google Search (2 tools) | MCP | Yes | ✅ | Web and image search |
+| Tavily AI (2 tools) | MCP | Yes | ✅ | AI-powered search and extraction |
+| Financial Market (4 tools) | MCP | No | ✅ | Stock quotes, history, news, analysis (Yahoo Finance) |
 | **A2A Tools** | | | | |
 | Research Agent | A2A protocol | No | ✅ | Comprehensive web research with markdown reports and citations |
 
@@ -184,7 +184,7 @@ See [docs/TOOLS.md](docs/TOOLS.md) for detailed tool specifications.
 - **Direct call**: Python function with `@tool` decorator, executed in runtime container
 - **AWS SDK**: Bedrock client API calls (AgentCore Code Interpreter, AgentCore Browser)
 - **WebSocket**: Real-time bidirectional communication for browser automation
-- **MCP + SigV4**: Model Context Protocol with AWS SigV4 authentication
+- **MCP**: Model Context Protocol (via AgentCore Gateway with SigV4 authentication)
 - **A2A protocol**: Agent-to-Agent communication with AWS SigV4 authentication for runtime-to-runtime collaboration
 
 **Total: 22 tools** (22 ✅)
@@ -395,10 +395,10 @@ cd agent-blueprint
    - Wikipedia, ArXiv, Google Search, Tavily, Finance
    - Deploy: `cd agentcore-gateway-stack && ./scripts/deploy.sh`
 
-3. **Report Writer Runtime** (Optional, `agentcore-runtime-a2a-stack/`)
+3. **Research Agent Runtime** (`agentcore-runtime-a2a-stack/research-agent/`)
    - A2A protocol-based agent collaboration
-   - Multi-section research report generation
-   - Deploy: `cd agentcore-runtime-a2a-stack/report-writer && ./deploy.sh`
+   - Comprehensive web research with markdown report generation
+   - Deploy: `cd agentcore-runtime-a2a-stack/research-agent && ./deploy.sh`
 
 ## Deployment Architecture
 
@@ -489,7 +489,7 @@ sample-strands-agent-chatbot/
     ├── chatbot-deployment/    # Main app stack (Frontend+Runtime)
     ├── agentcore-gateway-stack/   # Gateway + 5 Lambda functions
     ├── agentcore-runtime-stack/   # Runtime deployment (shared)
-    └── agentcore-runtime-a2a-stack/   # Report Writer (optional)
+    └── agentcore-runtime-a2a-stack/   # Research Agent (A2A)
 ```
 
 ## Documentation
