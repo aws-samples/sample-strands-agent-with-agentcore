@@ -401,6 +401,7 @@ export const useStreamEvents = ({
         streaming: null,
         toolExecutions: [],
         browserSession: prev.browserSession,  // Preserve browser session
+        browserProgress: undefined,  // Clear browser progress
         interrupt: null
       }))
 
@@ -489,6 +490,24 @@ export const useStreamEvents = ({
     }
   }, [setSessionState, setUIState])
 
+  const handleBrowserProgressEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'browser_progress') {
+      console.log('[Browser Progress] Received step:', event.stepNumber)
+
+      // Append browser step to sessionState
+      setSessionState(prev => ({
+        ...prev,
+        browserProgress: [
+          ...(prev.browserProgress || []),
+          {
+            stepNumber: event.stepNumber,
+            content: event.content
+          }
+        ]
+      }))
+    }
+  }, [setSessionState])
+
   const handleStreamEvent = useCallback((event: StreamEvent) => {
     switch (event.type) {
       case 'reasoning':
@@ -519,6 +538,9 @@ export const useStreamEvents = ({
         break
       case 'interrupt':
         handleInterruptEvent(event)
+        break
+      case 'browser_progress':
+        handleBrowserProgressEvent(event)
         break
       case 'metadata':
         // Handle metadata updates (e.g., browser session during tool execution)
@@ -559,6 +581,7 @@ export const useStreamEvents = ({
     handleInitEvent,
     handleErrorEvent,
     handleInterruptEvent,
+    handleBrowserProgressEvent,
     setSessionState
   ])
 

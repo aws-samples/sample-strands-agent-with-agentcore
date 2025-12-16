@@ -9,16 +9,17 @@ import {
   SidebarGroupContent,
   SidebarMenu,
 } from '@/components/ui/sidebar';
+import { Switch } from '@/components/ui/switch';
 import { ToolItem } from './ToolItem';
 
 interface ToolSectionProps {
   title: string;
   icon: LucideIcon;
   tools: Tool[];
-  category: 'local' | 'builtin' | 'gateway' | 'runtime-a2a';
+  category: 'local' | 'builtin' | 'browser_automation' | 'gateway' | 'runtime-a2a';
   showToggleAll?: boolean;
   onToggleTool: (toolId: string) => void;
-  onToggleCategory?: (category: 'local' | 'builtin' | 'gateway' | 'runtime-a2a') => void;
+  onToggleCategory?: (category: 'local' | 'builtin' | 'browser_automation' | 'gateway' | 'runtime-a2a') => void;
   areAllEnabled?: boolean;
 }
 
@@ -37,27 +38,26 @@ export function ToolSection({
   }
 
   return (
-    <SidebarGroup>
+    <SidebarGroup className="mb-3">
       <SidebarGroupLabel className="flex items-center justify-between">
         <div className="flex items-center">
           <Icon className="h-4 w-4 mr-2" />
           {title}
         </div>
         {showToggleAll && onToggleCategory && (
-          <button
-            onClick={() => onToggleCategory(category)}
-            className="text-xs px-2 py-0.5 rounded hover:bg-sidebar-accent transition-colors"
-          >
-            {areAllEnabled ? 'Disable All' : 'Enable All'}
-          </button>
+          <Switch
+            checked={areAllEnabled}
+            onCheckedChange={() => onToggleCategory(category)}
+            className="scale-75 data-[state=checked]:bg-blue-600"
+          />
         )}
       </SidebarGroupLabel>
       <SidebarGroupContent>
-        <SidebarMenu>
+        <div className="grid grid-cols-2 gap-1.5 px-2 pb-2">
           {tools.map((tool) => (
             <ToolItem key={tool.id} tool={tool} onToggleTool={onToggleTool} />
           ))}
-        </SidebarMenu>
+        </div>
       </SidebarGroupContent>
     </SidebarGroup>
   );

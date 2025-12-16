@@ -40,6 +40,7 @@ interface UseChatReturn {
   loadSession: (sessionId: string) => Promise<void>
   onGatewayToolsChange: (enabledToolIds: string[]) => void
   browserSession: { sessionId: string | null; browserId: string | null } | null
+  browserProgress?: Array<{ stepNumber: number; content: string }>
   respondToInterrupt: (interruptId: string, response: string) => Promise<void>
   currentInterrupt: InterruptState | null
 }
@@ -73,6 +74,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   
   const currentToolExecutionsRef = useRef<ToolExecution[]>([])
   const currentTurnIdRef = useRef<string | null>(null)
+  const currentSessionIdRef = useRef<string | null>(null)
+  const staleSessionLoadRef = useRef<string | null>(null) // Track stale session loads to ignore in useEffect
 
   useEffect(() => {
     currentToolExecutionsRef.current = sessionState.toolExecutions
@@ -153,6 +156,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     onSessionCreated: handleSessionCreated
   })
 
+  // Track current active session in ref for polling checks
+  useEffect(() => {
+    currentSessionIdRef.current = sessionId
+  }, [sessionId])
+
   // Default preferences when session has no saved preferences
   const DEFAULT_PREFERENCES: SessionPreferences = {
     lastModel: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
@@ -184,8 +192,36 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           return
         }
 
+        // CRITICAL: Check if the target session is still the current active session
+        // This prevents Session A's polling from interfering with Session B
+        if (currentSessionIdRef.current !== targetSessionId) {
+          console.log(`[useChat] Target session ${targetSessionId} is no longer active (current: ${currentSessionIdRef.current}), stopping poll`)
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+          isPollingActiveRef.current = false
+          pollingSessionIdRef.current = null
+          return
+        }
+
         console.log(`[useChat] Polling: reloading session ${targetSessionId}...`)
         await apiLoadSession(targetSessionId)
+
+        // Double-check after async operation: session might have changed during the load
+        if (currentSessionIdRef.current !== targetSessionId) {
+          console.log(`[useChat] Session changed during polling load (${targetSessionId} → ${currentSessionIdRef.current}), marking as stale`)
+          // Mark this session load as stale so useEffect will ignore its messages
+          staleSessionLoadRef.current = targetSessionId
+          // Stop polling since we loaded stale data for wrong session
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current)
+            pollingIntervalRef.current = null
+          }
+          isPollingActiveRef.current = false
+          pollingSessionIdRef.current = null
+          return
+        }
       } catch (error) {
         console.error('[useChat] Polling error:', error)
       }
@@ -202,6 +238,22 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   useEffect(() => {
     // Only process if we have a valid sessionId
     if (!sessionId) {
+      return
+    }
+
+    // CRITICAL 1: Ignore messages from stale session loads marked by polling
+    // This prevents Session A's ongoing browser automation from affecting Session B's UI
+    // when polling loads Session A's data after user switched to Session B
+    if (staleSessionLoadRef.current === sessionId) {
+      console.log(`[useChat] Ignoring stale session data for ${sessionId}`)
+      staleSessionLoadRef.current = null // Clear the flag
+      return
+    }
+
+    // CRITICAL 2: Only process if this sessionId matches the current active session
+    // This prevents Session B's data from affecting Session C's UI during rapid session switches
+    if (currentSessionIdRef.current !== sessionId) {
+      console.log(`[useChat] Ignoring messages from inactive session ${sessionId} (current: ${currentSessionIdRef.current})`)
       return
     }
 
@@ -312,6 +364,13 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
   // Wrapper for loadSession that restores session preferences (model, tools)
   const loadSessionWithPreferences = useCallback(async (newSessionId: string) => {
+    // CRITICAL: Immediately update the current session ref to prevent race conditions
+    // This ensures any in-flight polling operations will detect the session change
+    currentSessionIdRef.current = newSessionId
+
+    // Clear any stale session flags from previous loads
+    staleSessionLoadRef.current = null
+
     // Stop any existing polling from previous session
     stopPolling()
 
@@ -332,6 +391,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     })
 
     const preferences = await apiLoadSession(newSessionId)
+
+    // Verify the session hasn't changed during the async load operation
+    if (currentSessionIdRef.current !== newSessionId) {
+      console.log(`[useChat] Session changed during load (${newSessionId} → ${currentSessionIdRef.current}), aborting setup`)
+      return
+    }
 
     // Check if there are ongoing tool executions after loading
     setTimeout(() => {
@@ -543,10 +608,21 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Save current sessionId to clean up its browser session
     const oldSessionId = sessionId
 
+    // CRITICAL: Immediately invalidate current session to prevent old session's polling
+    // from affecting the new session during the async newChat operation
+    const tempSessionId = `temp_${Date.now()}`
+    currentSessionIdRef.current = tempSessionId
+
+    // Stop any existing polling from old session
+    stopPolling()
+
+    // Clear stale session flags
+    staleSessionLoadRef.current = null
+
     const success = await apiNewChat()
     if (success) {
       setSessionState({ reasoning: null, streaming: null, toolExecutions: [], browserSession: null, interrupt: null })
-      setUIState(prev => ({ ...prev, isTyping: false }))
+      setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
       // Clear messages to start fresh
       setMessages([])
       // Clear browser session for old chat session
@@ -554,7 +630,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         sessionStorage.removeItem(`browser-session-${oldSessionId}`)
       }
     }
-  }, [apiNewChat, setMessages, sessionId])
+  }, [apiNewChat, setMessages, sessionId, stopPolling])
 
   const respondToInterrupt = useCallback(async (interruptId: string, response: string) => {
     if (!sessionState.interrupt) return
@@ -778,6 +854,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     loadSession: loadSessionWithPreferences,
     onGatewayToolsChange: handleGatewayToolsChange,
     browserSession: sessionState.browserSession,
+    browserProgress: sessionState.browserProgress,
     respondToInterrupt,
     currentInterrupt: sessionState.interrupt
   }

@@ -28,18 +28,10 @@ echo "   Region: $AWS_REGION"
 echo ""
 
 # ============================================================================
-# Step 1: Build Lambda Functions
+# Step 1: Install CDK Dependencies
 # ============================================================================
 
-echo "🔨 Step 1: Building Lambda functions..."
-bash "$SCRIPT_DIR/build-lambdas.sh"
-echo ""
-
-# ============================================================================
-# Step 2: Install CDK Dependencies
-# ============================================================================
-
-echo "📦 Step 2: Installing CDK dependencies..."
+echo "📦 Step 1: Installing CDK dependencies..."
 cd "$INFRA_DIR"
 
 if [ ! -d "node_modules" ]; then
@@ -51,26 +43,26 @@ fi
 echo ""
 
 # ============================================================================
-# Step 3: Build TypeScript
+# Step 2: Build TypeScript
 # ============================================================================
 
-echo "🔧 Step 3: Building TypeScript..."
+echo "🔧 Step 2: Building TypeScript..."
 npm run build
 echo ""
 
 # ============================================================================
-# Step 4: Synthesize CDK Stacks
+# Step 3: Synthesize CDK Stacks
 # ============================================================================
 
-echo "🏗️  Step 4: Synthesizing CDK stacks..."
+echo "🏗️  Step 3: Synthesizing CDK stacks..."
 npm run synth
 echo ""
 
 # ============================================================================
-# Step 5: Check and Configure API Keys
+# Step 4: Check and Configure API Keys
 # ============================================================================
 
-echo "🔑 Step 5: Checking API key configuration..."
+echo "🔑 Step 4: Checking API key configuration..."
 echo ""
 
 # Check if Tavily API key exists
@@ -153,19 +145,22 @@ fi
 echo ""
 
 # ============================================================================
-# Step 6: Deploy to AWS
+# Step 5: Deploy to AWS (CodeBuild will build Lambda packages automatically)
 # ============================================================================
 
-echo "☁️  Step 6: Deploying to AWS..."
+echo "☁️  Step 5: Deploying to AWS..."
+echo ""
+echo "ℹ️  Lambda functions will be built automatically by CodeBuild during deployment"
+echo "   This may take 5-10 minutes for the first deployment."
 echo ""
 npm run deploy
 echo ""
 
 # ============================================================================
-# Step 7: Retrieve Gateway Information
+# Step 6: Retrieve Gateway Information
 # ============================================================================
 
-echo "📡 Step 7: Retrieving Gateway information..."
+echo "📡 Step 6: Retrieving Gateway information..."
 echo ""
 
 # Get Gateway URL from Parameter Store
@@ -193,7 +188,7 @@ echo "Region:       $AWS_REGION"
 echo ""
 
 # ============================================================================
-# Step 8: Verify API Key Configuration
+# Step 7: Verify API Key Configuration
 # ============================================================================
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

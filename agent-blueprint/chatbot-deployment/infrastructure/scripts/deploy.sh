@@ -15,12 +15,15 @@ if [ -f "$ENV_FILE" ]; then
     echo "✅ Environment variables loaded successfully"
     echo "📋 Key configuration:"
     echo "  - AWS_REGION: ${AWS_REGION:-us-west-2}"
-    echo "  - ENABLE_COGNITO: ${ENABLE_COGNITO:-false}"
+    echo "  - ENABLE_COGNITO: ${ENABLE_COGNITO:-true}"
     echo "  - CORS_ORIGINS: ${CORS_ORIGINS:-not set}"
     echo "  - ALLOWED_IP_RANGES: ${ALLOWED_IP_RANGES:-not set}"
 else
     echo "No .env file found at $ENV_FILE, using environment defaults"
 fi
+
+# Set ENABLE_COGNITO default to true if not explicitly set
+export ENABLE_COGNITO=${ENABLE_COGNITO:-true}
 
 # Note: Docker is NOT required for deployment
 # Container images are built automatically by AWS CodeBuild during CDK deployment
@@ -122,6 +125,51 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
 
     echo "✅ Cognito configuration validated successfully"
 
+    # Create test user
+    echo ""
+    echo "👤 Creating test user..."
+    TEST_USER_EMAIL="test@example.com"
+    TEST_USER_PASSWORD="TestUser123!"
+
+    # Check if test user already exists
+    USER_EXISTS=$(aws cognito-idp list-users \
+        --user-pool-id "$COGNITO_USER_POOL_ID" \
+        --region "$AWS_REGION" \
+        --filter "email=\"$TEST_USER_EMAIL\"" \
+        --query 'Users[0].Username' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$USER_EXISTS" ] && [ "$USER_EXISTS" != "None" ]; then
+        echo "✅ Test user already exists: $TEST_USER_EMAIL"
+    else
+        # Create test user
+        aws cognito-idp admin-create-user \
+            --user-pool-id "$COGNITO_USER_POOL_ID" \
+            --username "$TEST_USER_EMAIL" \
+            --user-attributes Name=email,Value="$TEST_USER_EMAIL" Name=email_verified,Value=true \
+            --temporary-password "$TEST_USER_PASSWORD" \
+            --message-action SUPPRESS \
+            --region "$AWS_REGION" > /dev/null 2>&1
+
+        # Set permanent password
+        aws cognito-idp admin-set-user-password \
+            --user-pool-id "$COGNITO_USER_POOL_ID" \
+            --username "$TEST_USER_EMAIL" \
+            --password "$TEST_USER_PASSWORD" \
+            --permanent \
+            --region "$AWS_REGION" > /dev/null 2>&1
+
+        echo "✅ Test user created successfully!"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🔑 Test User Credentials"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Email:    $TEST_USER_EMAIL"
+        echo "Password: $TEST_USER_PASSWORD"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    fi
+    echo ""
+
     # Save Cognito configuration to master .env file only
     echo "💾 Saving Cognito configuration to master .env file..."
     
@@ -153,99 +201,27 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
 fi
 
 # CORS Origins Configuration (used for both API access and embedding)
-echo ""
-echo "🌐 CORS Origins Configuration"
-echo "Configure which domains are allowed to:"
-echo "  1. Make API calls to the backend (CORS)"
-echo "  2. Embed the chatbot via iframe (CSP frame-ancestors)"
-echo "This unified configuration simplifies security management."
-echo ""
-echo "Examples:"
-echo "  - Single domain: https://example.com"
-echo "  - Multiple domains: https://example.com,https://blog.example.com,https://partner-site.org"
-echo "  - With ports: https://example.com:8080,https://localhost:3000"
-echo "  - Leave empty for development mode (allows all origins)"
-echo ""
+# Default to empty (development mode - allows all origins)
+export CORS_ORIGINS=${CORS_ORIGINS:-""}
 
-# Check if CORS origins are already set via environment variable
-# Use ${CORS_ORIGINS+x} to check if variable is defined (even if empty)
-if [ -z "${CORS_ORIGINS+x}" ]; then
-    read -p "Enter allowed CORS origins (comma-separated, include protocol) [leave empty for dev mode]: " cors_input
-
-    if [ -z "$cors_input" ]; then
-        export CORS_ORIGINS=""
-        echo "Development mode - all origins allowed (not recommended for production)"
-    else
-        export CORS_ORIGINS="$cors_input"
-        echo "CORS origins configured: $CORS_ORIGINS"
-        echo "These domains will be allowed for both API access and iframe embedding"
-    fi
+if [ -z "$CORS_ORIGINS" ]; then
+    echo "🌐 CORS: Development mode (all origins allowed)"
 else
-    if [ -z "$CORS_ORIGINS" ]; then
-        echo "Using configured CORS origins: (empty - development mode)"
-    else
-        echo "Using configured CORS origins: $CORS_ORIGINS"
-    fi
+    echo "🌐 CORS Origins: $CORS_ORIGINS"
 fi
 
 # Collect IP ranges for CIDR-based access control (if not using Cognito)
 if [ "$ENABLE_COGNITO" != "true" ]; then
-    echo ""
-    echo "🔒 Security Configuration - IP Access Control"
-    echo "When Cognito authentication is disabled, the application uses IP-based access control."
-    echo "Please specify the IP ranges that should have access to the application."
-    echo ""
-    echo "Examples:"
-    echo "  - Single IP: 203.0.113.45/32"
-    echo "  - Office network: 203.0.113.0/24"
-    echo "  - Home network: 192.168.1.0/24"
-    echo "  - Multiple ranges: separate with commas"
-    echo ""
+    # Set default IP ranges if not configured
+    export ALLOWED_IP_RANGES=${ALLOWED_IP_RANGES:-"0.0.0.0/0"}
 
-    # Check if IP ranges are already set via environment variable
-    if [ -z "$ALLOWED_IP_RANGES" ]; then
-        read -p "Enter allowed IP ranges (CIDR notation, comma-separated) [0.0.0.0/0 for all IPs]: " ip_input
+    # Get current IP for MCP access
+    current_ip=$(curl -s ifconfig.me 2>/dev/null || echo '0.0.0.0')
+    export ALLOWED_MCP_CIDRS=${ALLOWED_MCP_CIDRS:-"${current_ip}/32"}
 
-        # Use default if empty
-        if [ -z "$ip_input" ]; then
-            export ALLOWED_IP_RANGES="0.0.0.0/0"
-            echo "⚠️  WARNING: Using 0.0.0.0/0 allows access from any IP address!"
-        else
-            export ALLOWED_IP_RANGES="$ip_input"
-        fi
-    fi
-
-    echo "Using IP ranges: $ALLOWED_IP_RANGES"
-
-    # MCP Server Access Configuration
-    echo ""
-    echo "🔒 MCP Server Access Configuration"
-    echo "For local development access to MCP servers, please specify IP ranges."
-    echo "This allows developers to directly test MCP servers while maintaining security."
-    echo ""
-    echo "Your current IP: $(curl -s ifconfig.me 2>/dev/null || echo 'Unable to detect')/32"
-    echo ""
-    echo "Examples:"
-    echo "  - Your current IP: $(curl -s ifconfig.me 2>/dev/null || echo '203.0.113.45')/32"
-    echo "  - Office network: 203.0.113.0/24"
-    echo "  - Home + Office: $(curl -s ifconfig.me 2>/dev/null || echo '203.0.113.45')/32,192.168.1.0/24"
-    echo ""
-
-    # Check if MCP CIDR ranges are already set
-    if [ -z "$ALLOWED_MCP_CIDRS" ]; then
-        read -p "Enter MCP access IP ranges (CIDR notation, comma-separated) [your current IP]: " mcp_input
-
-        # Use current IP if empty
-        if [ -z "$mcp_input" ]; then
-            current_ip=$(curl -s ifconfig.me 2>/dev/null || echo '0.0.0.0')
-            export ALLOWED_MCP_CIDRS="${current_ip}/32"
-            echo "Using your current IP: ${current_ip}/32"
-        else
-            export ALLOWED_MCP_CIDRS="$mcp_input"
-        fi
-    fi
-
-    echo "Using MCP access ranges: $ALLOWED_MCP_CIDRS"
+    echo "🔒 IP Access Control:"
+    echo "  - Application IP ranges: $ALLOWED_IP_RANGES"
+    echo "  - MCP access ranges: $ALLOWED_MCP_CIDRS"
     echo ""
 fi
 

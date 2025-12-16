@@ -15,6 +15,7 @@ interface BrowserResultModalProps {
   isLoading: boolean
   result: string
   status: 'idle' | 'running' | 'complete' | 'error'
+  browserProgress?: Array<{ stepNumber: number; content: string }>
 }
 
 export function BrowserResultModal({
@@ -23,7 +24,8 @@ export function BrowserResultModal({
   query,
   isLoading,
   result,
-  status
+  status,
+  browserProgress
 }: BrowserResultModalProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -82,12 +84,21 @@ export function BrowserResultModal({
     return extractMarkdownContent(result)
   }, [result])
 
-  // Auto scroll to bottom when result updates
+  // Combine browser progress steps for display during loading
+  const progressContent = useMemo(() => {
+    if (!browserProgress || browserProgress.length === 0) return ''
+    return browserProgress
+      .sort((a, b) => a.stepNumber - b.stepNumber)
+      .map(step => step.content)
+      .join('\n')
+  }, [browserProgress])
+
+  // Auto scroll to bottom when result or progress updates
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [result])
+  }, [result, progressContent])
 
   const getStatusText = () => {
     switch (status) {
@@ -143,7 +154,17 @@ export function BrowserResultModal({
           ref={scrollRef}
           className="flex-1 overflow-y-auto px-6 py-4"
         >
-          {markdownContent ? (
+          {/* Show progress content during loading */}
+          {isLoading && progressContent ? (
+            <div className="prose prose-sm dark:prose-invert max-w-none">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+              >
+                {progressContent}
+              </ReactMarkdown>
+            </div>
+          ) : markdownContent ? (
             <div className="prose prose-sm dark:prose-invert max-w-none">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}

@@ -85,6 +85,12 @@ export interface MetadataEvent {
   };
 }
 
+export interface BrowserProgressEvent {
+  type: 'browser_progress';
+  content: string;
+  stepNumber: number;
+}
+
 export type StreamEvent =
   | ReasoningEvent
   | ResponseEvent
@@ -96,7 +102,8 @@ export type StreamEvent =
   | ErrorEvent
   | InterruptEvent
   | ProgressEvent
-  | MetadataEvent;
+  | MetadataEvent
+  | BrowserProgressEvent;
 
 // Chat state interfaces
 export interface ReasoningState {
@@ -129,6 +136,10 @@ export interface ChatSessionState {
     sessionId: string | null;
     browserId: string | null;
   } | null;
+  browserProgress?: Array<{
+    stepNumber: number;
+    content: string;
+  }>;
   interrupt: InterruptState | null;
 }
 

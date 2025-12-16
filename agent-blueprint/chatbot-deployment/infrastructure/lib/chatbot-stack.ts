@@ -935,28 +935,28 @@ async function sendResponse(event, status, data, reason) {
       description: 'Frontend ECR Repository URI (includes BFF)',
     });
 
-    // Export VPC information for MCP farm to reuse
+    // Export VPC information for potential cross-stack reference
     new cdk.CfnOutput(this, 'VpcId', {
       value: vpc.vpcId,
-      description: 'VPC ID for MCP farm reuse',
+      description: 'VPC ID used by ChatbotStack (Frontend, BFF)',
       exportName: `${this.stackName}-vpc-id`
     });
 
     new cdk.CfnOutput(this, 'PrivateSubnetIds', {
       value: vpc.privateSubnets.map(subnet => subnet.subnetId).join(','),
-      description: 'Private Subnet IDs for MCP farm reuse',
+      description: 'Private Subnet IDs used by ChatbotStack',
       exportName: `${this.stackName}-private-subnets`
     });
 
     new cdk.CfnOutput(this, 'PublicSubnetIds', {
       value: vpc.publicSubnets.map(subnet => subnet.subnetId).join(','),
-      description: 'Public Subnet IDs for MCP farm reuse',
+      description: 'Public Subnet IDs used by ChatbotStack',
       exportName: `${this.stackName}-public-subnets`
     });
 
     new cdk.CfnOutput(this, 'VpcCidrBlock', {
       value: vpc.vpcCidrBlock,
-      description: 'VPC CIDR Block for MCP farm reuse',
+      description: 'VPC CIDR Block used by ChatbotStack',
       exportName: `${this.stackName}-vpc-cidr`
     });
 

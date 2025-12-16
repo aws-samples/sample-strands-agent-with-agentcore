@@ -96,6 +96,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     loadSession,
     onGatewayToolsChange,
     browserSession,
+    browserProgress,
     respondToInterrupt,
     currentInterrupt
   } = useChat()
@@ -651,6 +652,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                   variant="ghost"
                   className="h-10 w-10 hover:bg-muted-foreground/10 transition-all duration-200"
                   title="Stop generation"
+                  disabled={agentStatus === 'researching' || agentStatus === 'browser_automation'}
                 >
                   <Square className="w-5 h-5" />
                 </Button>
@@ -795,6 +797,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           })()}
           result={browserData.get(activeBrowserId)!.result}
           status={browserData.get(activeBrowserId)!.status}
+          browserProgress={browserProgress}
         />
       )}
 

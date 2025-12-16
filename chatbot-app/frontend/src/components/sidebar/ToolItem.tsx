@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { Tool } from '@/types/chat';
-import { Switch } from '@/components/ui/switch';
 import { SidebarMenuItem } from '@/components/ui/sidebar';
 import {
   Tooltip,
@@ -10,6 +9,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+import { Check } from 'lucide-react';
 
 interface ToolItemProps {
   tool: Tool;
@@ -27,77 +28,77 @@ export function ToolItem({ tool, onToggleTool }: ToolItemProps) {
     const allToolsEnabled = nestedTools.every((nestedTool: any) => nestedTool.enabled);
 
     return (
-      <SidebarMenuItem key={tool.id}>
-        <div className="flex items-center justify-between p-3 md:p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors duration-150">
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm text-sidebar-foreground truncate">
-              {tool.name}
-            </div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="text-xs text-sidebar-foreground/70 truncate cursor-help">
-                    {tool.description}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="max-w-xs">
-                  <p>{tool.description}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-            <div className="text-xs mt-1">
-              <span className="text-blue-600">● {nestedTools.length} tools</span>
-            </div>
-          </div>
-          <Switch
-            checked={anyToolEnabled}
-            onCheckedChange={async () => {
-              // If all tools are enabled, disable all
-              // If some or none are enabled, enable all
-              const shouldEnable = !allToolsEnabled;
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={async () => {
+                // If all tools are enabled, disable all
+                // If some or none are enabled, enable all
+                const shouldEnable = !allToolsEnabled;
 
-              // Toggle each nested tool sequentially to avoid race conditions
-              for (const nestedTool of nestedTools) {
-                // Only toggle if the tool's current state doesn't match the target state
-                if (nestedTool.enabled !== shouldEnable) {
-                  await onToggleTool(nestedTool.id);
+                // Toggle each nested tool sequentially to avoid race conditions
+                for (const nestedTool of nestedTools) {
+                  // Only toggle if the tool's current state doesn't match the target state
+                  if (nestedTool.enabled !== shouldEnable) {
+                    await onToggleTool(nestedTool.id);
+                  }
                 }
-              }
-            }}
-            className="ml-3 md:ml-2 flex-shrink-0"
-          />
-        </div>
-      </SidebarMenuItem>
+              }}
+              className={cn(
+                "w-full flex items-center justify-center py-1.5 px-2 rounded-md transition-all duration-200 cursor-pointer border min-h-[36px] relative",
+                anyToolEnabled
+                  ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-sm hover:shadow-md hover:scale-[1.02]"
+                  : "bg-sidebar-accent/40 text-sidebar-foreground border-sidebar-border hover:border-sidebar-border/80 hover:bg-sidebar-accent/60 hover:scale-[1.02] opacity-80 hover:opacity-100"
+              )}
+            >
+              {anyToolEnabled && (
+                <div className="absolute top-1 right-1">
+                  <Check className="h-3 w-3" />
+                </div>
+              )}
+              <div className="font-medium text-[11px] text-center leading-snug line-clamp-2 w-full">
+                {tool.name}
+              </div>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="max-w-xs">
+            <p className="text-sm mb-1">{tool.description}</p>
+            <p className="text-xs opacity-70">{nestedTools.length} tools included</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   } else {
     // Render as individual tool
     return (
-      <SidebarMenuItem key={tool.id}>
-        <div className="flex items-center justify-between p-3 md:p-2 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors duration-150">
-          <div className="flex-1 min-w-0">
-            <div className="font-medium text-sm text-sidebar-foreground truncate">
-              {tool.name}
-            </div>
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="text-xs text-sidebar-foreground/70 truncate cursor-help">
-                    {tool.description}
-                  </div>
-                </TooltipTrigger>
-                <TooltipContent side="right" className="max-w-xs">
-                  <p>{tool.description}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </div>
-          <Switch
-            checked={tool.enabled}
-            onCheckedChange={() => onToggleTool(tool.id)}
-            className="ml-3 md:ml-2 flex-shrink-0"
-          />
-        </div>
-      </SidebarMenuItem>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => onToggleTool(tool.id)}
+              className={cn(
+                "w-full flex items-center justify-center py-1.5 px-2 rounded-md transition-all duration-200 cursor-pointer border min-h-[36px] relative",
+                tool.enabled
+                  ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-sm hover:shadow-md hover:scale-[1.02]"
+                  : "bg-sidebar-accent/40 text-sidebar-foreground border-sidebar-border hover:border-sidebar-border/80 hover:bg-sidebar-accent/60 hover:scale-[1.02] opacity-80 hover:opacity-100"
+              )}
+            >
+              {tool.enabled && (
+                <div className="absolute top-1 right-1">
+                  <Check className="h-3 w-3" />
+                </div>
+              )}
+              <div className="font-medium text-[11px] text-center leading-snug line-clamp-2 w-full">
+                {tool.name}
+              </div>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="right" className="max-w-xs">
+            <p>{tool.description}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     );
   }
 }

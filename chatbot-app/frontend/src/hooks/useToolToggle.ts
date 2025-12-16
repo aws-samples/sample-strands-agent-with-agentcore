@@ -12,6 +12,7 @@ export function useToolToggle({ availableTools, onToggleTool }: UseToolTogglePro
     const groups = {
       'local': [] as Tool[],
       'builtin': [] as Tool[],
+      'browser_automation': [] as Tool[],
       'gateway': [] as Tool[],
       'runtime-a2a': [] as Tool[]
     };
@@ -27,7 +28,7 @@ export function useToolToggle({ availableTools, onToggleTool }: UseToolTogglePro
   }, [availableTools]);
 
   // Toggle all tools in a category (including nested tools in dynamic groups)
-  const toggleCategory = (category: 'local' | 'builtin' | 'gateway' | 'runtime-a2a') => {
+  const toggleCategory = (category: 'local' | 'builtin' | 'browser_automation' | 'gateway' | 'runtime-a2a') => {
     // Collect all tool IDs with their enabled status
     const allToolsWithStatus: Array<{ id: string; enabled: boolean }> = [];
 
@@ -64,7 +65,7 @@ export function useToolToggle({ availableTools, onToggleTool }: UseToolTogglePro
   };
 
   // Check if all tools in a category are enabled
-  const areAllEnabled = (category: 'local' | 'builtin' | 'gateway' | 'runtime-a2a'): boolean => {
+  const areAllEnabled = (category: 'local' | 'builtin' | 'browser_automation' | 'gateway' | 'runtime-a2a'): boolean => {
     let allEnabled = true;
 
     groupedTools[category].forEach(tool => {

@@ -176,6 +176,57 @@ def get_or_create_browser_session(session_id: str) -> Optional[tuple[str, str, d
         return None
 
 
+def _format_single_step(step, step_num: int) -> str:
+    """
+    Format a single step for real-time streaming (concise version).
+
+    Args:
+        step: AgentHistory object
+        step_num: Step number (1-indexed)
+
+    Returns:
+        Markdown formatted step summary
+    """
+    lines = [f"### 📍 Step {step_num}\n\n"]
+
+    # Memory/thinking
+    if hasattr(step, 'model_output') and step.model_output:
+        if hasattr(step.model_output, 'current_state') and step.model_output.current_state:
+            if hasattr(step.model_output.current_state, 'memory'):
+                memory = step.model_output.current_state.memory
+                if memory:
+                    truncated = memory[:150] + "..." if len(memory) > 150 else memory
+                    lines.append(f"**🧠 Thinking**: {truncated}\n\n")
+
+        if hasattr(step.model_output, 'next_goal') and step.model_output.next_goal:
+            goal = step.model_output.next_goal
+            truncated = goal[:150] + "..." if len(goal) > 150 else goal
+            lines.append(f"**🎯 Goal**: {truncated}\n\n")
+
+    # Action
+    if hasattr(step, 'action') and step.action:
+        action_dict = {}
+        if hasattr(step.action, 'model_dump'):
+            action_dict = step.action.model_dump()
+
+        if action_dict:
+            action_name = action_dict.get('name', 'Unknown')
+            lines.append(f"**▶️ Action**: {action_name}\n\n")
+
+    # Result
+    if hasattr(step, 'result') and step.result:
+        if hasattr(step.result, 'evaluation_previous_goal'):
+            eval_text = step.result.evaluation_previous_goal
+            if eval_text:
+                truncated = eval_text[:100] + "..." if len(eval_text) > 100 else eval_text
+                emoji = "✅" if "success" in eval_text.lower() else "⚠️"
+                lines.append(f"{emoji} {truncated}\n\n")
+
+    lines.append("---\n\n")
+
+    return "".join(lines)
+
+
 def _format_execution_history(history) -> str:
     """
     Format browser-use execution history with detailed step-by-step information.
@@ -369,7 +420,7 @@ class BrowserUseAgentExecutor(AgentExecutor):
             model_id = metadata.get('model_id', DEFAULT_MODEL_ID) if metadata else DEFAULT_MODEL_ID
             session_id = metadata.get('session_id', 'unknown') if metadata else 'unknown'
             user_id = metadata.get('user_id', 'unknown') if metadata else 'unknown'
-            max_steps = metadata.get('max_steps', 20) if metadata else 20  # Default 20 steps for browser automation
+            max_steps = metadata.get('max_steps', 30) if metadata else 30  # Default 30 steps for browser automation
 
             logger.info(f"Metadata - model_id: {model_id}, session_id: {session_id}, user_id: {user_id}, max_steps: {max_steps}")
 
@@ -410,7 +461,11 @@ class BrowserUseAgentExecutor(AgentExecutor):
             # Create browser profile with headers for authentication
             browser_profile = BrowserProfile(
                 headers=headers,
-                timeout=1500000  # 1500 seconds (25 minutes) timeout for long-running tasks
+                timeout=1500000,  # 1500 seconds (25 minutes) timeout for long-running tasks
+                cross_origin_iframes=False,  # Disable cross-origin iframes (blocks most ads)
+                max_iframes=5,  # Aggressive limit: only process first 5 same-origin iframes
+                max_iframe_depth=3,  # Reduce nested iframe depth (default: 5)
+                keep_alive=True,  # Keep browser alive after agent.run() completes (for Live View)
             )
 
             # Create browser session with CDP URL
@@ -429,109 +484,78 @@ class BrowserUseAgentExecutor(AgentExecutor):
             agent = BrowserUseAgent(
                 task=task_text,
                 llm=llm,
-                browser_session=browser_session  # Use browser_session parameter
+                browser_session=browser_session,  # Use browser_session parameter
+                max_actions_per_step=1,  # Observe after each action to prevent WebSocket timeout
+                llm_screenshot_size=(1536, 1296),  # Match viewport to avoid scaling overhead
+                use_judge=False,  # Disable Judge - rely on agent's own completion signal
             )
 
-            # Execute autonomously (LLM reasoning happens here)
-            history = await agent.run(max_steps=max_steps)
+            # Execute autonomously with REAL-TIME step streaming
+            # Run agent in background while monitoring history
+            async def run_agent():
+                return await agent.run(max_steps=max_steps)
+
+            agent_task = asyncio.create_task(run_agent())
+
+            # Track sent steps to avoid duplicates
+            sent_step_numbers = set()
+
+            # Monitor history and stream steps in real-time
+            while not agent_task.done():
+                await asyncio.sleep(2)  # Check every 2 seconds
+
+                # Check if agent has history
+                if hasattr(agent, 'history') and agent.history and hasattr(agent.history, 'history'):
+                    current_steps = agent.history.history
+
+                    # Send new steps
+                    for i, step in enumerate(current_steps, 1):
+                        if i not in sent_step_numbers:
+                            step_text = _format_single_step(step, i)
+
+                            # Send each step as separate artifact (streaming via A2A TaskArtifactUpdateEvent)
+                            await updater.add_artifact(
+                                parts=[Part(root=TextPart(text=step_text))],
+                                name=f"browser_step_{i}"
+                            )
+                            sent_step_numbers.add(i)
+                            logger.info(f"✅ Streamed browser_step_{i} to frontend")
+
+            # Get final result
+            history = await agent_task
+
+            # Send any remaining steps that were added after last loop iteration
+            if hasattr(agent, 'history') and agent.history and hasattr(agent.history, 'history'):
+                current_steps = agent.history.history
+                for i, step in enumerate(current_steps, 1):
+                    if i not in sent_step_numbers:
+                        step_text = _format_single_step(step, i)
+                        await updater.add_artifact(
+                            parts=[Part(root=TextPart(text=step_text))],
+                            name=f"browser_step_{i}"
+                        )
+                        sent_step_numbers.add(i)
+                        logger.info(f"✅ Streamed final browser_step_{i} to frontend")
 
             # Note: Do NOT explicitly stop browser session - let it timeout naturally
             # This allows user to view the browser state via Live View after task completion
             logger.info("Browser session kept alive for post-execution viewing (will timeout automatically)")
 
-            # Check if execution actually succeeded
-            # browser-use returns history even on failure - need to check last step
-            execution_failed = False
-            failure_reason = None
-
-            if history and hasattr(history, 'history') and history.history:
-                last_step = history.history[-1]
-
-                # Check the last action for completion
-                if hasattr(last_step, 'action') and last_step.action:
-                    action = last_step.action
-                    # Check if action is 'done' - this indicates successful completion
-                    action_name = getattr(action, 'action_name', None) or getattr(action, 'name', None)
-
-                    if action_name == 'done':
-                        # Task completed successfully
-                        logger.info("✅ Task completed with 'done' action")
-                        execution_failed = False
-                    else:
-                        # Check result object for status
-                        if hasattr(last_step, 'result') and last_step.result:
-                            result_obj = last_step.result
-                            is_done = getattr(result_obj, 'is_done', False)
-                            success = getattr(result_obj, 'success', False)
-
-                            if not is_done or not success:
-                                # Task did not complete successfully
-                                execution_failed = True
-
-                                # Try to extract specific error message
-                                if hasattr(result_obj, 'error') and result_obj.error:
-                                    failure_reason = str(result_obj.error)
-                                # Also check for empty DOM state which indicates connection issues
-                                elif hasattr(last_step, 'model_output') and last_step.model_output:
-                                    model_output = last_step.model_output
-                                    if hasattr(model_output, 'current_state') and model_output.current_state:
-                                        memory = getattr(model_output.current_state, 'memory', '')
-                                        # Detect WebSocket/connection failure patterns
-                                        if 'DOM is empty' in memory or 'DOM remains empty' in memory or 'page appears empty' in memory.lower():
-                                            failure_reason = "Browser connection lost - WebSocket disconnected during page navigation"
-
-                                # If no specific reason found, use generic message
-                                if not failure_reason:
-                                    failure_reason = f"Task did not complete successfully (done={is_done}, success={success})"
-                elif hasattr(last_step, 'result') and last_step.result:
-                    # No action, check result directly
-                    result_obj = last_step.result
-                    is_done = getattr(result_obj, 'is_done', False)
-                    success = getattr(result_obj, 'success', False)
-
-                    if not is_done or not success:
-                        execution_failed = True
-                        failure_reason = f"Task did not complete successfully (done={is_done}, success={success})"
-            else:
-                execution_failed = True
-                failure_reason = "No execution history returned"
-
             # Format result
             result_text = _format_execution_history(history)
 
-            # If execution failed, report error to UI
-            if execution_failed:
-                logger.error(f"Browser automation failed: {failure_reason}")
-
-                # Add error artifact so UI can display it
-                error_summary = f"⚠️ Browser automation encountered an error: {failure_reason}"
-                await updater.add_artifact(
-                    parts=[Part(root=TextPart(text=error_summary))],
-                    name="agent_response"
-                )
-
-                # Still include partial results if any
-                if result_text:
-                    browser_output = f"<research>\n## ⚠️ Partial Results (Task Failed)\n\n**Error:** {failure_reason}\n\n{result_text}\n</research>"
-                    await updater.add_artifact(
-                        parts=[Part(root=TextPart(text=browser_output))],
-                        name="research_markdown"
-                    )
-
-                # Fail the task with error message
-                await updater.failed(error_message=failure_reason or "Browser automation failed")
-                return
-
-            logger.info(f"Task completed successfully in {len(history.history) if hasattr(history, 'history') else len(history)} steps")
+            # Browser Agent always completes successfully
+            # Declined/cancelled cases are handled by supervisor agent's interrupt mechanism
+            logger.info(f"Task completed in {len(history.history) if hasattr(history, 'history') else len(history)} steps")
 
             # Add agent response summary
-            summary = f"Browser automation completed successfully in {len(history.history) if hasattr(history, 'history') else len(history)} steps."
+            summary = f"Browser automation completed in {len(history.history) if hasattr(history, 'history') else len(history)} steps."
             await updater.add_artifact(
                 parts=[Part(root=TextPart(text=summary))],
                 name="agent_response"
             )
 
-            # Add main execution result (plain markdown, no tags)
+            # Add main execution result (plain markdown, no XML tags)
             await updater.add_artifact(
                 parts=[Part(root=TextPart(text=result_text))],
                 name="browser_result"
@@ -569,7 +593,12 @@ class BrowserUseAgentExecutor(AgentExecutor):
 
             # Send error via TaskUpdater (proper A2A protocol)
             try:
-                await updater.failed(error_message=error_message)
+                # Add error as artifact
+                await updater.add_artifact(
+                    parts=[Part(root=TextPart(text=f"⚠️ Error: {error_message}"))],
+                    name="agent_response"
+                )
+                await updater.failed()
             except Exception as fail_error:
                 logger.error(f"Failed to send error via updater: {fail_error}")
                 # Fallback: raise ServerError

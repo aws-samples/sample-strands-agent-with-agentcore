@@ -231,6 +231,7 @@ async def send_a2a_message(
         browser_session_arn = None  # For browser-use agent live view
         browser_id_from_stream = None  # Browser ID from artifact
         browser_session_event_sent = False  # Track if we've sent the event
+        sent_browser_steps = set()  # Track sent browser steps to avoid duplicates
         async with asyncio.timeout(AGENT_TIMEOUT):
             async for event in client.send_message(msg):
                 logger.debug(f"Received A2A event type: {type(event).__name__}")
@@ -255,7 +256,8 @@ async def send_a2a_message(
                     task_status = task.status if hasattr(task, 'status') else task
                     state = task_status.state if hasattr(task_status, 'state') else 'unknown'
 
-                    # Accumulate text chunks
+                    # Accumulate text chunks from task_status.message
+                    # Note: browser_step content is sent via artifacts, NOT task_status.message
                     if hasattr(task_status, 'message') and task_status.message:
                         message_obj = task_status.message
                         if hasattr(message_obj, 'parts') and message_obj.parts:
@@ -267,51 +269,87 @@ async def send_a2a_message(
 
                     # Check for artifacts IMMEDIATELY (for Live View - browser_session_arn and browser_id)
                     # This allows frontend to show Live View button while agent is still working
-                    # Keep checking until we have BOTH browser_session_arn AND browser_id
-                    if hasattr(task, 'artifacts') and task.artifacts and (not browser_session_arn or not browser_id_from_stream):
-                        browser_id_extracted = None
-                        logger.info(f"🔴 [Live View] Checking {len(task.artifacts)} artifacts")
+                    if hasattr(task, 'artifacts') and task.artifacts:
+                        # Extract browser_session_arn and browser_id (if not yet extracted)
+                        if not browser_session_arn or not browser_id_from_stream:
+                            browser_id_extracted = None
+                            logger.info(f"🔴 [Live View] Checking {len(task.artifacts)} artifacts")
+                            for artifact in task.artifacts:
+                                artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
+                                logger.info(f"🔴 [Live View] Found artifact: {artifact_name}")
+
+                                # Extract browser_session_arn
+                                if artifact_name == 'browser_session_arn':
+                                    if hasattr(artifact, 'parts') and artifact.parts:
+                                        for part in artifact.parts:
+                                            if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                                browser_session_arn = part.root.text
+                                            elif hasattr(part, 'text'):
+                                                browser_session_arn = part.text
+                                            if browser_session_arn:
+                                                logger.info(f"🔴 [Live View] Extracted browser_session_arn IMMEDIATELY: {browser_session_arn}")
+                                                break
+
+                                # Extract browser_id (required for validation)
+                                elif artifact_name == 'browser_id':
+                                    if hasattr(artifact, 'parts') and artifact.parts:
+                                        for part in artifact.parts:
+                                            if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                                browser_id_extracted = part.root.text
+                                            elif hasattr(part, 'text'):
+                                                browser_id_extracted = part.text
+                                            if browser_id_extracted:
+                                                logger.info(f"🔴 [Live View] Extracted browser_id IMMEDIATELY: {browser_id_extracted}")
+                                                browser_id_from_stream = browser_id_extracted  # Store for condition check
+                                                break
+
+                            # If we have browser_session_arn AND browser_id, send event once
+                            if browser_session_arn and (browser_id_from_stream or browser_id_extracted) and not browser_session_event_sent:
+                                # ✅ SEND BROWSER SESSION EVENT ONCE (when we have both session and ID)
+                                event_data = {
+                                    "type": "browser_session_detected",
+                                    "browserSessionId": browser_session_arn,
+                                    "browserId": browser_id_from_stream or browser_id_extracted,
+                                    "message": "Browser session started - Live View available"
+                                }
+                                logger.info(f"🔴 [Live View] Sending browser session event with both session and ID")
+                                yield event_data
+                                browser_session_event_sent = True
+
+                        # Check for browser_step_N artifacts (real-time step streaming)
+                        # This runs EVERY iteration, not just when extracting browser_session_arn
                         for artifact in task.artifacts:
                             artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
-                            logger.info(f"🔴 [Live View] Found artifact: {artifact_name}")
 
-                            # Extract browser_session_arn
-                            if artifact_name == 'browser_session_arn':
-                                if hasattr(artifact, 'parts') and artifact.parts:
-                                    for part in artifact.parts:
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            browser_session_arn = part.root.text
-                                        elif hasattr(part, 'text'):
-                                            browser_session_arn = part.text
-                                        if browser_session_arn:
-                                            logger.info(f"🔴 [Live View] Extracted browser_session_arn IMMEDIATELY: {browser_session_arn}")
-                                            break
+                            if artifact_name.startswith('browser_step_'):
+                                try:
+                                    step_number = int(artifact_name.split('_')[-1])
 
-                            # Extract browser_id (required for validation)
-                            elif artifact_name == 'browser_id':
-                                if hasattr(artifact, 'parts') and artifact.parts:
-                                    for part in artifact.parts:
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            browser_id_extracted = part.root.text
-                                        elif hasattr(part, 'text'):
-                                            browser_id_extracted = part.text
-                                        if browser_id_extracted:
-                                            logger.info(f"🔴 [Live View] Extracted browser_id IMMEDIATELY: {browser_id_extracted}")
-                                            browser_id_from_stream = browser_id_extracted  # Store for condition check
-                                            break
+                                    # Only send new steps (avoid duplicates)
+                                    if step_number not in sent_browser_steps:
+                                        # Extract step text
+                                        step_text = ""
+                                        if hasattr(artifact, 'parts') and artifact.parts:
+                                            for part in artifact.parts:
+                                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                                    step_text = part.root.text
+                                                elif hasattr(part, 'text'):
+                                                    step_text = part.text
+                                                if step_text:
+                                                    break
 
-                        # If we have browser_session_arn AND browser_id, send event once
-                        if browser_session_arn and (browser_id_from_stream or browser_id_extracted) and not browser_session_event_sent:
-                            # ✅ SEND BROWSER SESSION EVENT ONCE (when we have both session and ID)
-                            event_data = {
-                                "type": "browser_session_detected",
-                                "browserSessionId": browser_session_arn,
-                                "browserId": browser_id_from_stream or browser_id_extracted,
-                                "message": "Browser session started - Live View available"
-                            }
-                            logger.info(f"🔴 [Live View] Sending browser session event with both session and ID")
-                            yield event_data
-                            browser_session_event_sent = True
+                                        if step_text:
+                                            # Yield browser step event for real-time streaming
+                                            yield {
+                                                "type": "browser_step",
+                                                "stepNumber": step_number,
+                                                "content": step_text
+                                            }
+                                            sent_browser_steps.add(step_number)
+                                            logger.info(f"🔴 [Browser Step] Yielded browser_step_{step_number}")
+                                except (ValueError, IndexError):
+                                    # Invalid step number format, skip
+                                    pass
 
                     # Check if task failed
                     if str(state) == 'TaskState.failed' or state == 'failed':
@@ -374,11 +412,18 @@ async def send_a2a_message(
                                             artifact_text = part.text
 
                                         if artifact_text:
-                                            # Special handling for browser_session_arn
+                                            # Special handling for browser_session_arn and browser_id
                                             if artifact_name == 'browser_session_arn':
                                                 browser_session_arn = artifact_text
                                                 logger.info(f"Extracted browser_session_arn: {browser_session_arn}")
+                                            elif artifact_name == 'browser_id':
+                                                # Skip browser_id (already handled in metadata)
+                                                pass
+                                            elif artifact_name.startswith('browser_step_'):
+                                                # Skip browser_step_N (UI-only, not for LLM context)
+                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
                                             else:
+                                                # Include other artifacts (agent_response, browser_result, etc.) in LLM context
                                                 response_text += artifact_text
 
                         logger.info(f"✅ Total response with artifacts: {len(response_text)} chars")
@@ -537,7 +582,11 @@ def create_a2a_tool(agent_id: str):
                             tool_context.invocation_state['browser_session_arn'] = browser_session_id
                             logger.info(f"🔴 [Live View] Stored browser_session_arn in invocation_state: {browser_session_id}")
 
-                # Yield event immediately
+                # Yield ALL events (including browser_step)
+                # Strands SDK wraps yielded events in ToolStreamEvent → event_processor processes them
+                # event_processor converts browser_step to browser_progress SSE (Browser Modal)
+                # event_processor converts browser_session_detected to metadata SSE (Live View)
+                # Final result {"status": "success", "content": [...]} becomes tool result (NOT streaming text)
                 yield event
 
         # Set correct function name and docstring BEFORE decorating
