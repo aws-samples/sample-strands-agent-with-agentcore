@@ -90,8 +90,30 @@ export function useToolToggle({ availableTools, onToggleTool }: UseToolTogglePro
     return allEnabled;
   };
 
-  const enabledCount = availableTools.filter(tool => tool.enabled).length;
-  const totalCount = availableTools.length;
+  // Calculate enabled count considering nested tools in dynamic groups
+  const { enabledCount, totalCount } = useMemo(() => {
+    let enabled = 0;
+    let total = 0;
+
+    availableTools.forEach(tool => {
+      const isDynamic = (tool as any).isDynamic === true;
+      const nestedTools = (tool as any).tools || [];
+
+      if (isDynamic && nestedTools.length > 0) {
+        // For dynamic tools, count nested tools
+        total += nestedTools.length;
+        enabled += nestedTools.filter((nt: any) => nt.enabled).length;
+      } else {
+        // For regular tools, count the tool itself
+        total += 1;
+        if (tool.enabled) {
+          enabled += 1;
+        }
+      }
+    });
+
+    return { enabledCount: enabled, totalCount: total };
+  }, [availableTools]);
 
   return {
     groupedTools,

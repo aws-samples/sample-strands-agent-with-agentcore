@@ -227,9 +227,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       }
     }
 
-    // Initial check
-    poll()
-
+    // Don't poll immediately - wait for first interval
+    // This prevents overwriting messages during active streaming
     // Poll every 5 seconds
     pollingIntervalRef.current = setInterval(poll, 5000)
   }, [apiLoadSession])
@@ -294,7 +293,34 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       }
     }
 
-    // Always update UI if there's ongoing A2A agent work (even if polling not started yet)
+    // === POLLING MANAGEMENT ===
+    // Start polling if there are any ongoing tools AND not currently typing/streaming
+    // Don't start polling during active streaming to avoid overwriting messages
+    if (hasOngoingTools && !isPollingActiveRef.current && !uiState.isTyping) {
+      console.log('[useChat] Detected ongoing tools (not streaming), starting polling')
+      startPollingForOngoingTools(sessionId)
+    }
+    // Stop polling if all tools complete AND agent has responded
+    else if (isPollingActiveRef.current && !hasOngoingTools && !hasCompletedToolAwaitingResponse) {
+      console.log('[useChat] All tool executions complete and agent responded, stopping polling')
+
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current)
+        pollingIntervalRef.current = null
+      }
+
+      isPollingActiveRef.current = false
+
+      // Reset UI state when complete
+      setUIState(prev => ({
+        ...prev,
+        isTyping: false,
+        agentStatus: 'idle'
+      }))
+    }
+
+    // === UI STATE MANAGEMENT (independent of polling) ===
+    // Update UI status based on agent type
     if (hasOngoingResearch) {
       setUIState(prev => {
         if (prev.agentStatus !== 'researching') {
@@ -320,30 +346,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         return prev
       })
     }
-    // If polling is active and all tools complete AND agent has responded, stop polling
-    else if (isPollingActiveRef.current && !hasOngoingTools && !hasCompletedToolAwaitingResponse) {
-      console.log('[useChat] All tool executions complete and agent responded, stopping polling')
-
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-        pollingIntervalRef.current = null
-      }
-
-      isPollingActiveRef.current = false
-
-      // Reset UI state when complete
-      setUIState(prev => ({
-        ...prev,
-        isTyping: false,
-        agentStatus: 'idle'
-      }))
-    }
-    // If there's a completed tool waiting for response, keep polling
-    else if (hasCompletedToolAwaitingResponse && !isPollingActiveRef.current) {
-      console.log('[useChat] Completed tool awaiting response, continuing to poll')
-      // Don't stop polling, keep waiting for final response
-    }
-  }, [messages, sessionId, setUIState, startPollingForOngoingTools])
+  }, [messages, sessionId, uiState.isTyping, setUIState, startPollingForOngoingTools])
 
   const stopPolling = useCallback(() => {
     if (pollingIntervalRef.current) {
@@ -710,7 +713,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setMessages(prev => [...prev, userMessage])
     setUIState(prev => ({
       ...prev,
-      isTyping: false,
+      isTyping: true,  // Set to true when sending message to prevent premature polling
+      agentStatus: 'thinking',
       latencyMetrics: {
         requestStartTime,
         timeToFirstToken: null,
@@ -738,8 +742,15 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         // Success callback - already handled in API hook
       },
       (error) => {
-        // Error callback
-        setSessionState({ reasoning: null, streaming: null, toolExecutions: [], browserSession: null, interrupt: null })
+        // Error callback - preserve browserSession to keep Live View button available
+        setSessionState(prev => ({
+          reasoning: null,
+          streaming: null,
+          toolExecutions: [],
+          browserSession: prev.browserSession,  // Preserve browser session on error
+          browserProgress: undefined,  // Clear browser progress on error
+          interrupt: null
+        }))
       }
     )
   }, [inputMessage, apiSendMessage])

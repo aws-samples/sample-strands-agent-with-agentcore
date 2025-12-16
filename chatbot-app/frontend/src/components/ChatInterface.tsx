@@ -101,6 +101,31 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     currentInterrupt
   } = useChat()
 
+  // Calculate tool counts considering nested tools in dynamic groups
+  const { enabledCount, totalCount } = useMemo(() => {
+    let enabled = 0
+    let total = 0
+
+    availableTools.forEach(tool => {
+      const isDynamic = (tool as any).isDynamic === true
+      const nestedTools = (tool as any).tools || []
+
+      if (isDynamic && nestedTools.length > 0) {
+        // For dynamic tools, count nested tools
+        total += nestedTools.length
+        enabled += nestedTools.filter((nt: any) => nt.enabled).length
+      } else {
+        // For regular tools, count the tool itself
+        total += 1
+        if (tool.enabled) {
+          enabled += 1
+        }
+      }
+    })
+
+    return { enabledCount: enabled, totalCount: total }
+  }, [availableTools])
+
   // Stable sessionId reference to prevent unnecessary re-renders
   const stableSessionId = useMemo(() => sessionId || undefined, [sessionId])
 
@@ -502,9 +527,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
 
             <div className="flex items-center gap-2">
               {/* Tool count indicator (embedded mode only) */}
-              {isEmbedded && availableTools.length > 0 && (
+              {isEmbedded && totalCount > 0 && (
                 <div className="text-xs text-muted-foreground">
-                  {availableTools.filter(tool => tool.enabled).length}/{availableTools.length} tools
+                  {enabledCount}/{totalCount} tools
                 </div>
               )}
 
