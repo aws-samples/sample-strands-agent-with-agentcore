@@ -460,7 +460,15 @@ export const useStreamEvents = ({
           }
         }
       })
-      setSessionState({ reasoning: null, streaming: null, toolExecutions: [], browserSession: null, interrupt: null })
+      // Preserve browserSession even on error - Live View should remain available
+      setSessionState(prev => ({
+        reasoning: null,
+        streaming: null,
+        toolExecutions: [],
+        browserSession: prev.browserSession,  // Preserve browser session on error
+        browserProgress: undefined,  // Clear browser progress on error
+        interrupt: null
+      }))
 
       // Reset refs on error
       streamingStartedRef.current = false
