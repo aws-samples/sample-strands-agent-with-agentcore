@@ -13,6 +13,8 @@ interface UseStreamEventsProps {
   uiState: ChatUIState
   currentToolExecutionsRef: React.MutableRefObject<ToolExecution[]>
   currentTurnIdRef: React.MutableRefObject<string | null>
+  startPollingRef: React.MutableRefObject<((sessionId: string) => void) | null>
+  sessionId: string | null
   availableTools?: Array<{
     id: string
     name: string
@@ -28,6 +30,8 @@ export const useStreamEvents = ({
   uiState,
   currentToolExecutionsRef,
   currentTurnIdRef,
+  startPollingRef,
+  sessionId,
   availableTools = []
 }: UseStreamEventsProps) => {
   // Refs to track streaming state synchronously (avoid React batching issues)
@@ -132,6 +136,13 @@ export const useStreamEvents = ({
         isTyping: true,
         agentStatus
       }))
+
+      // Start polling for tool execution progress updates
+      // Tool progress is saved to backend and needs polling to be reflected in UI
+      if (sessionId && startPollingRef.current) {
+        console.log(`[useChat] Tool execution started, starting polling for progress updates`)
+        startPollingRef.current(sessionId)
+      }
 
       // Finalize current streaming message before adding tool
       // This separates pre-tool response from post-tool response

@@ -18,6 +18,8 @@ interface UseChatAPIProps {
   handleLegacyEvent: (data: any) => void
   onSessionCreated?: () => void  // Callback when new session is created
   gatewayToolIds?: string[]  // Gateway tool IDs from frontend
+  sessionId: string | null
+  setSessionId: React.Dispatch<React.SetStateAction<string | null>>
 }
 
 // Session preferences returned when loading a session
@@ -35,7 +37,6 @@ interface UseChatAPIReturn {
   newChat: () => Promise<boolean>
   sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void) => Promise<void>
   cleanup: () => void
-  sessionId: string | null
   isLoadingTools: boolean
   loadSession: (sessionId: string) => Promise<SessionPreferences | null>
 }
@@ -49,11 +50,12 @@ export const useChatAPI = ({
   handleStreamEvent,
   handleLegacyEvent,
   onSessionCreated,
-  gatewayToolIds = []
+  gatewayToolIds = [],
+  sessionId,
+  setSessionId
 }: UseChatAPIProps) => {
 
   const abortControllerRef = useRef<AbortController | null>(null)
-  const [sessionId, setSessionId] = useState<string | null>(null)
   const sessionIdRef = useRef<string | null>(null)
 
   // Restore last session on page load (with timeout check)
@@ -589,7 +591,6 @@ export const useChatAPI = ({
     newChat,
     sendMessage,
     cleanup,
-    sessionId,
     isLoadingTools: false,
     loadSession
   }

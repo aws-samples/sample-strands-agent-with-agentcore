@@ -51,6 +51,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000')
   const [availableTools, setAvailableTools] = useState<Tool[]>([])
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])  // Gateway tool IDs from frontend
+  const [sessionId, setSessionId] = useState<string | null>(null)
 
   const [sessionState, setSessionState] = useState<ChatSessionState>({
     reasoning: null,
@@ -76,6 +77,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const currentTurnIdRef = useRef<string | null>(null)
   const currentSessionIdRef = useRef<string | null>(null)
   const staleSessionLoadRef = useRef<string | null>(null) // Track stale session loads to ignore in useEffect
+  const startPollingRef = useRef<((sessionId: string) => void) | null>(null)
 
   useEffect(() => {
     currentToolExecutionsRef.current = sessionState.toolExecutions
@@ -130,6 +132,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     uiState,
     currentToolExecutionsRef,
     currentTurnIdRef,
+    startPollingRef,
+    sessionId,
     availableTools
   })
 
@@ -144,7 +148,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [props]);
 
   // Initialize chat API hook
-  const { loadTools, toggleTool: apiToggleTool, newChat: apiNewChat, sendMessage: apiSendMessage, cleanup, sessionId, loadSession: apiLoadSession } = useChatAPI({
+  const { loadTools, toggleTool: apiToggleTool, newChat: apiNewChat, sendMessage: apiSendMessage, cleanup, loadSession: apiLoadSession } = useChatAPI({
     backendUrl,
     setUIState,
     setMessages,
@@ -153,6 +157,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     handleStreamEvent,
     handleLegacyEvent,
     gatewayToolIds,
+    sessionId,
+    setSessionId,
     onSessionCreated: handleSessionCreated
   })
 
@@ -222,6 +228,50 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           pollingSessionIdRef.current = null
           return
         }
+
+        // CRITICAL: Check if polling should stop after loading messages
+        // This check must be done INSIDE poll() because React state updates may not trigger useEffect
+        setMessages(currentMessages => {
+          const hasOngoingTools = currentMessages.some(msg =>
+            msg.toolExecutions &&
+            msg.toolExecutions.some(te => !te.isComplete)
+          )
+
+          // Check if there's a completed tool but missing final assistant response
+          let hasCompletedToolAwaitingResponse = false
+          for (let i = currentMessages.length - 1; i >= 0; i--) {
+            const msg = currentMessages[i]
+            if (msg.toolExecutions && msg.toolExecutions.some(te => te.isComplete)) {
+              const hasFollowupResponse = currentMessages.slice(i + 1).some(
+                laterMsg => laterMsg.sender === 'bot' && laterMsg.text && laterMsg.text.trim()
+              )
+              if (!hasFollowupResponse) {
+                hasCompletedToolAwaitingResponse = true
+              }
+              break
+            }
+          }
+
+          // Stop polling if no ongoing tools and agent has responded
+          if (!hasOngoingTools && !hasCompletedToolAwaitingResponse) {
+            console.log('[useChat] Polling: No ongoing tools detected, stopping polling')
+            if (pollingIntervalRef.current) {
+              clearInterval(pollingIntervalRef.current)
+              pollingIntervalRef.current = null
+            }
+            isPollingActiveRef.current = false
+            pollingSessionIdRef.current = null
+
+            // Reset UI state
+            setUIState(prev => ({
+              ...prev,
+              isTyping: false,
+              agentStatus: 'idle'
+            }))
+          }
+
+          return currentMessages  // No change to messages
+        })
       } catch (error) {
         console.error('[useChat] Polling error:', error)
       }
@@ -232,6 +282,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Poll every 5 seconds
     pollingIntervalRef.current = setInterval(poll, 5000)
   }, [apiLoadSession])
+
+  // Update ref with the actual function
+  startPollingRef.current = startPollingForOngoingTools
 
   // Monitor messages for ongoing tools (separate effect)
   useEffect(() => {
@@ -294,14 +347,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
 
     // === POLLING MANAGEMENT ===
-    // Start polling if there are any ongoing tools AND not currently typing/streaming
-    // Don't start polling during active streaming to avoid overwriting messages
-    if (hasOngoingTools && !isPollingActiveRef.current && !uiState.isTyping) {
-      console.log('[useChat] Detected ongoing tools (not streaming), starting polling')
-      startPollingForOngoingTools(sessionId)
-    }
     // Stop polling if all tools complete AND agent has responded
-    else if (isPollingActiveRef.current && !hasOngoingTools && !hasCompletedToolAwaitingResponse) {
+    if (isPollingActiveRef.current && !hasOngoingTools && !hasCompletedToolAwaitingResponse) {
       console.log('[useChat] All tool executions complete and agent responded, stopping polling')
 
       if (pollingIntervalRef.current) {
@@ -319,7 +366,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       }))
     }
 
-    // === UI STATE MANAGEMENT (independent of polling) ===
+    // === UI STATE MANAGEMENT ===
     // Update UI status based on agent type
     if (hasOngoingResearch) {
       setUIState(prev => {
@@ -346,7 +393,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         return prev
       })
     }
-  }, [messages, sessionId, uiState.isTyping, setUIState, startPollingForOngoingTools])
+  }, [messages, sessionId, setUIState])
 
   const stopPolling = useCallback(() => {
     if (pollingIntervalRef.current) {
@@ -739,7 +786,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       messageToSend,
       files,
       () => {
-        // Success callback - already handled in API hook
+        // Success callback - handled by streaming events
       },
       (error) => {
         // Error callback - preserve browserSession to keep Live View button available
