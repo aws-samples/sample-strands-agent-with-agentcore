@@ -103,9 +103,9 @@ display_menu() {
     echo "  1) AgentCore Runtime      (Agent container on Bedrock AgentCore)"
     echo "  2) Frontend + BFF         (Next.js + CloudFront + ALB)"
     echo "  3) MCP Tools              (AgentCore Gateway + Lambda functions)"
-    echo "  4) AgentCore Runtime A2A  (Report Writer Agent, etc.)"
+    echo "  4) AgentCore Runtime A2A  (Research Agent, Browser Use Agent)"
     echo "  5) Runtime + Frontend     (1 + 2 combined)"
-    echo "  6) Full Stack             (All components)"
+    echo "  6) Full Stack             (All components: Runtime + Frontend + Gateway + A2A)"
     echo ""
     echo "  0) Exit"
     echo ""
@@ -372,22 +372,12 @@ deploy_agentcore_runtime_a2a() {
         echo "  2) browser-use-agent   (Autonomous browser automation via A2A)"
     fi
 
-    if [ -d "archives/agentcore-mcp-farm/document-writer" ]; then
-        AVAILABLE_SERVERS+=("document-writer")
-        echo "  3) document-writer     (Markdown document creation)"
-    fi
-
-    if [ -d "archives/agentcore-mcp-farm/s3-iceberg" ]; then
-        AVAILABLE_SERVERS+=("s3-iceberg")
-        echo "  4) s3-iceberg          (S3 data lake queries)"
-    fi
-
     echo ""
     echo "  a) Deploy all available servers"
     echo "  0) Back to main menu"
     echo ""
 
-    read -p "Select server to deploy (0/1/2/3/4/a): " MCP_OPTION
+    read -p "Select server to deploy (0/1/2/a): " MCP_OPTION
     echo ""
 
     case $MCP_OPTION in
@@ -407,22 +397,6 @@ deploy_agentcore_runtime_a2a() {
                 exit 1
             fi
             ;;
-        3)
-            if [[ " ${AVAILABLE_SERVERS[@]} " =~ " document-writer " ]]; then
-                deploy_document_writer
-            else
-                log_error "document-writer not found"
-                exit 1
-            fi
-            ;;
-        4)
-            if [[ " ${AVAILABLE_SERVERS[@]} " =~ " s3-iceberg " ]]; then
-                deploy_s3_iceberg
-            else
-                log_error "s3-iceberg not found"
-                exit 1
-            fi
-            ;;
         a)
             log_info "Deploying all available AgentCore Runtime A2A agents..."
             echo ""
@@ -433,12 +407,6 @@ deploy_agentcore_runtime_a2a() {
                         ;;
                     "browser-use-agent")
                         deploy_browser_use_agent
-                        ;;
-                    "document-writer")
-                        deploy_document_writer
-                        ;;
-                    "s3-iceberg")
-                        deploy_s3_iceberg
                         ;;
                 esac
                 echo ""
@@ -548,58 +516,163 @@ deploy_browser_use_agent() {
     log_info "Browser Use Agent A2A agent deployment complete!"
 }
 
-# Deploy Document Writer
-deploy_document_writer() {
-    log_step "Deploying Document Writer MCP..."
+# Deploy all available A2A agents automatically (for Full Stack deployment)
+deploy_all_a2a_agents() {
+    log_step "Deploying all available A2A agents..."
     echo ""
 
-    cd archives/agentcore-mcp-farm/document-writer
+    # Check which A2A agents are available
+    AVAILABLE_SERVERS=()
 
-    # Check if deploy script exists
-    if [ ! -f "deploy.sh" ]; then
-        log_error "deploy.sh not found in document-writer"
-        exit 1
+    if [ -d "agentcore-runtime-a2a-stack/research-agent" ]; then
+        AVAILABLE_SERVERS+=("research-agent")
     fi
 
-    # Make script executable
-    chmod +x deploy.sh
+    if [ -d "agentcore-runtime-a2a-stack/browser-use-agent" ]; then
+        AVAILABLE_SERVERS+=("browser-use-agent")
+    fi
 
-    # Export AWS region
-    export AWS_REGION
+    if [ ${#AVAILABLE_SERVERS[@]} -eq 0 ]; then
+        log_warn "No A2A agents found to deploy"
+        return
+    fi
 
-    # Run deployment
-    ./deploy.sh
+    log_info "Found ${#AVAILABLE_SERVERS[@]} A2A agent(s) to deploy"
+    echo ""
 
-    cd ../../..
+    # Deploy all available agents
+    for server in "${AVAILABLE_SERVERS[@]}"; do
+        case $server in
+            "research-agent")
+                deploy_research_agent
+                ;;
+            "browser-use-agent")
+                deploy_browser_use_agent
+                ;;
+        esac
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+    done
 
-    log_info "Document Writer deployment complete!"
+    log_info "All A2A agents deployed successfully!"
 }
 
-# Deploy S3 Iceberg
-deploy_s3_iceberg() {
-    log_step "Deploying S3 Iceberg MCP..."
+# Display deployment summary with all important URLs
+display_deployment_summary() {
+    echo ""
+    echo "========================================"
+    echo "  🎉 DEPLOYMENT SUMMARY"
+    echo "========================================"
     echo ""
 
-    cd archives/agentcore-mcp-farm/s3-iceberg
+    # Get CloudFront URL
+    CLOUDFRONT_URL=$(aws cloudformation describe-stacks \
+        --stack-name ChatbotStack \
+        --region $AWS_REGION \
+        --query 'Stacks[0].Outputs[?OutputKey==`ApplicationUrl`].OutputValue' \
+        --output text 2>/dev/null || echo "Not available")
 
-    # Check if deploy script exists
-    if [ ! -f "deploy.sh" ]; then
-        log_error "deploy.sh not found in s3-iceberg"
-        exit 1
+    # Get Streaming ALB URL
+    STREAMING_ALB_URL=$(aws cloudformation describe-stacks \
+        --stack-name ChatbotStack \
+        --region $AWS_REGION \
+        --query 'Stacks[0].Outputs[?OutputKey==`StreamingAlbUrl`].OutputValue' \
+        --output text 2>/dev/null || echo "Not available")
+
+    # Get AgentCore Runtime ARN
+    RUNTIME_ARN=$(aws cloudformation describe-stacks \
+        --stack-name AgentRuntimeStack \
+        --region $AWS_REGION \
+        --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' \
+        --output text 2>/dev/null || echo "Not available")
+
+    # Get Gateway URL
+    GATEWAY_URL=$(aws ssm get-parameter \
+        --name "/strands-agent-chatbot/dev/mcp/gateway-url" \
+        --query 'Parameter.Value' \
+        --output text \
+        --region $AWS_REGION 2>/dev/null || echo "Not available")
+
+    # Get A2A Runtime ARNs
+    RESEARCH_AGENT_ARN=$(aws ssm get-parameter \
+        --name "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn" \
+        --query 'Parameter.Value' \
+        --output text \
+        --region $AWS_REGION 2>/dev/null || echo "Not deployed")
+
+    BROWSER_AGENT_ARN=$(aws ssm get-parameter \
+        --name "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn" \
+        --query 'Parameter.Value' \
+        --output text \
+        --region $AWS_REGION 2>/dev/null || echo "Not deployed")
+
+    log_info "Deployment Region: $AWS_REGION"
+    echo ""
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🌐 FRONTEND"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "CloudFront URL:      $CLOUDFRONT_URL"
+    echo "Streaming ALB URL:   $STREAMING_ALB_URL"
+    echo ""
+
+    # Check if Cognito is enabled
+    COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks \
+        --stack-name CognitoAuthStack \
+        --region $AWS_REGION \
+        --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -n "$COGNITO_USER_POOL_ID" ] && [ "$COGNITO_USER_POOL_ID" != "None" ]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🔐 COGNITO AUTHENTICATION"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "User Pool ID:        $COGNITO_USER_POOL_ID"
+        echo ""
+        echo "Test User Credentials:"
+        echo "  Email:             test@example.com"
+        echo "  Password:          TestUser123!"
+        echo ""
     fi
 
-    # Make script executable
-    chmod +x deploy.sh
 
-    # Export AWS region
-    export AWS_REGION
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🤖 AGENTCORE RUNTIME"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Runtime ARN:         $RUNTIME_ARN"
+    echo ""
 
-    # Run deployment
-    ./deploy.sh
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🔧 MCP GATEWAY"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Gateway URL:         $GATEWAY_URL"
+    echo ""
 
-    cd ../../..
+    if [ "$RESEARCH_AGENT_ARN" != "Not deployed" ] || [ "$BROWSER_AGENT_ARN" != "Not deployed" ]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🚀 A2A AGENTS"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        if [ "$RESEARCH_AGENT_ARN" != "Not deployed" ]; then
+            echo "Research Agent:      $RESEARCH_AGENT_ARN"
+        fi
+        if [ "$BROWSER_AGENT_ARN" != "Not deployed" ]; then
+            echo "Browser Use Agent:   $BROWSER_AGENT_ARN"
+        fi
+        echo ""
+    fi
 
-    log_info "S3 Iceberg deployment complete!"
+    echo "========================================"
+    echo "✅ All components deployed successfully!"
+    echo "========================================"
+    echo ""
+    echo "🚀 Access your chatbot at: $CLOUDFRONT_URL"
+    echo ""
 }
 
 # Main function
@@ -638,7 +711,7 @@ main() {
         4)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Option 4: AgentCore Runtime A2A"
-            echo "  (Report Writer Agent, etc.)"
+            echo "  (Research Agent, Browser Use Agent)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             deploy_agentcore_runtime_a2a
@@ -658,18 +731,28 @@ main() {
         6)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Option 6: Full Stack"
-            echo "  (Runtime + Frontend + Gateway)"
+            echo "  (Runtime + Frontend + Gateway + A2A)"
+            echo "  Cognito authentication will be enabled"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             deploy_agentcore_runtime
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
+            # Enable Cognito for Full Stack deployment
+            export ENABLE_COGNITO=true
             deploy_frontend
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             deploy_mcp_servers
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            deploy_all_a2a_agents
+            echo ""
+            display_deployment_summary
+            return
             ;;
         0)
             log_info "Exiting..."

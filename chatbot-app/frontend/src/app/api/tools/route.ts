@@ -165,7 +165,7 @@ export async function GET(request: NextRequest) {
       enabled: enabledToolIds.includes(tool.id)
     }))
 
-    // Browser automation tools (grouped within builtin tools)
+    // Browser automation tools (separate category)
     const browserAutomation = (toolsConfig.browser_automation || []).map((group: any) => {
       // Check if any tool in the group is enabled (only if group has tools)
       const anyToolEnabled = group.tools && Array.isArray(group.tools)
@@ -178,8 +178,8 @@ export async function GET(request: NextRequest) {
         description: group.description,
         category: group.category,
         icon: group.icon,
-        type: 'builtin_tools',
-        tool_type: 'builtin',
+        type: 'browser_automation',
+        tool_type: 'browser_automation',
         enabled: anyToolEnabled,
         isDynamic: group.isDynamic ?? true,
         tools: group.tools && Array.isArray(group.tools)
@@ -279,8 +279,8 @@ export async function GET(request: NextRequest) {
       description: group.description,
       category: group.category,
       icon: group.icon,
-      type: 'builtin_tools',
-      tool_type: 'builtin',
+      type: 'browser_automation',
+      tool_type: 'browser_automation',
       enabled: group.enabled ?? true,
       isDynamic: group.isDynamic ?? true,
       tools: group.tools || undefined

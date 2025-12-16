@@ -166,6 +166,48 @@ export const useChatAPI = ({
    */
   const toggleTool = useCallback(async (toolId: string) => {
     try {
+      // Mutually exclusive browser tools (parent IDs)
+      const browserAutomationId = 'browser_automation'
+      const browserUseAgentId = 'agentcore_browser-use-agent'
+
+      // Find which parent group this tool belongs to (if it's a nested tool)
+      let parentGroupId: string | null = null
+      let isEnabling = false
+
+      // Check if toolId is a top-level tool
+      const topLevelTool = availableTools.find(t => t.id === toolId)
+      if (topLevelTool) {
+        // Direct tool (non-nested)
+        isEnabling = !topLevelTool.enabled
+        parentGroupId = toolId
+      } else {
+        // Check if it's a nested tool in any group
+        for (const tool of availableTools) {
+          if ((tool as any).isDynamic && (tool as any).tools) {
+            const nestedTool = (tool as any).tools.find((t: any) => t.id === toolId)
+            if (nestedTool) {
+              isEnabling = !nestedTool.enabled
+              parentGroupId = tool.id
+              break
+            }
+          }
+        }
+      }
+
+      // Determine if we should disable the other browser tool
+      let shouldDisableOther = false
+      let otherToolId: string | null = null
+
+      if (isEnabling && parentGroupId) {
+        if (parentGroupId === browserAutomationId) {
+          shouldDisableOther = true
+          otherToolId = browserUseAgentId
+        } else if (parentGroupId === browserUseAgentId) {
+          shouldDisableOther = true
+          otherToolId = browserAutomationId
+        }
+      }
+
       // Update frontend state
       setAvailableTools(prev => prev.map(tool => {
         // Check if this is a grouped tool with nested tools FIRST
@@ -187,11 +229,31 @@ export const useChatAPI = ({
               tools: updatedNestedTools
             }
           }
+
+          // Disable all nested tools in the other browser group (mutually exclusive)
+          if (shouldDisableOther && tool.id === otherToolId) {
+            logger.info(`Auto-disabling all tools in ${otherToolId} group (mutually exclusive with ${parentGroupId})`)
+            const disabledNestedTools = nestedTools.map((t: any) => ({
+              ...t,
+              enabled: false
+            }))
+            return {
+              ...tool,
+              enabled: false,
+              tools: disabledNestedTools
+            }
+          }
         }
 
         // Direct tool toggle (for non-grouped tools)
         if (tool.id === toolId) {
           return { ...tool, enabled: !tool.enabled }
+        }
+
+        // Disable the other browser tool if needed (mutually exclusive)
+        if (shouldDisableOther && tool.id === otherToolId && tool.enabled) {
+          logger.info(`Auto-disabling ${otherToolId} (mutually exclusive with ${parentGroupId})`)
+          return { ...tool, enabled: false }
         }
 
         return tool
@@ -201,7 +263,7 @@ export const useChatAPI = ({
     } catch (error) {
       logger.error('Failed to toggle tool:', error)
     }
-  }, [setAvailableTools])
+  }, [setAvailableTools, availableTools])
 
   const newChat = useCallback(async () => {
     try {
@@ -354,7 +416,7 @@ export const useChatAPI = ({
 
               // Handle new simplified events
               if (eventData.type && [
-                'text', 'reasoning', 'response', 'tool_use', 'tool_result', 'tool_progress', 'complete', 'init', 'thinking', 'error', 'interrupt', 'metadata'
+                'text', 'reasoning', 'response', 'tool_use', 'tool_result', 'tool_progress', 'complete', 'init', 'thinking', 'error', 'interrupt', 'metadata', 'browser_progress'
               ].includes(eventData.type)) {
                 handleStreamEvent(eventData as StreamEvent)
               } else {

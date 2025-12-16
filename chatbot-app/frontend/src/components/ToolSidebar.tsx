@@ -120,15 +120,26 @@ export function ToolSidebar({
                   areAllEnabled={areAllEnabled('local')}
                 />
 
-                {/* Built-In Tools */}
+                {/* Code Execution Tools */}
                 <ToolSection
-                  title="Built-In Tools"
+                  title="Code Execution Tools"
                   icon={Brain}
                   tools={groupedTools['builtin']}
                   category="builtin"
                   onToggleTool={onToggleTool}
                   onToggleCategory={toggleCategory}
                   areAllEnabled={areAllEnabled('builtin')}
+                />
+
+                {/* Browser Automation Agents */}
+                <ToolSection
+                  title="Browser Automation Agents"
+                  icon={Globe}
+                  tools={groupedTools['browser_automation']}
+                  category="browser_automation"
+                  onToggleTool={onToggleTool}
+                  onToggleCategory={toggleCategory}
+                  areAllEnabled={areAllEnabled('browser_automation')}
                 />
 
                 {/* AgentCore Gateway MCP Servers */}

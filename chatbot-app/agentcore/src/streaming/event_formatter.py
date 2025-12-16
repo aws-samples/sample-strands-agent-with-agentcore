@@ -329,6 +329,15 @@ class StreamEventFormatter:
             "metadata": metadata
         })
 
+    @staticmethod
+    def create_browser_progress_event(content: str, step_number: int) -> str:
+        """Create browser progress event for real-time step updates in Browser Modal"""
+        return StreamEventFormatter.format_sse_event({
+            "type": "browser_progress",
+            "content": content,
+            "stepNumber": step_number
+        })
+
 
     @staticmethod
     def _extract_images_from_json_response(response_data):

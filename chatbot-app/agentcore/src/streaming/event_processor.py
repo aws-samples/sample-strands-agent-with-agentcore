@@ -403,6 +403,17 @@ class StreamEventProcessor:
 
                         # Also send a response message
                         yield self.formatter.create_response_event(f"\n\n*{stream_data.get('message', 'Browser session started')}*\n\n")
+
+                    # Check if this is browser step event (real-time progress)
+                    elif isinstance(stream_data, dict) and stream_data.get("type") == "browser_step":
+                        step_content = stream_data.get("content", "")
+                        step_number = stream_data.get("stepNumber", 0)
+
+                        if step_content:
+                            logger.info(f"[Browser Step] 🔴 Streaming browser_step_{step_number} to frontend")
+                            # Send as browser_progress event (NOT response) to display in Browser Modal
+                            yield self.formatter.create_browser_progress_event(step_content, step_number)
+
                     else:
                         # Other tool stream events (e.g., progress)
                         logger.debug(f"[Tool Stream] Received: {stream_data}")

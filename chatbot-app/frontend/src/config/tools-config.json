@@ -52,7 +52,7 @@
       "id": "generate_diagram_and_validate",
       "name": "Diagram Generator",
       "description": "Generate diagrams and charts using Python code with Bedrock Code Interpreter",
-      "category": "code_interpreter",
+      "category": "code_execution_tools",
       "icon": "📊",
       "enabled": true,
       "isDynamic": false
@@ -61,9 +61,9 @@
   "browser_automation": [
     {
       "id": "browser_automation",
-      "name": "Browser Automation - Nova Act",
+      "name": "Browser Control with Nova Act",
       "description": "Web browser automation powered by Nova Act AI (5 tools)",
-      "category": "browser",
+      "category": "browser_automation_agents",
       "icon": "🌐",
       "enabled": true,
       "isDynamic": true,
@@ -99,7 +99,7 @@
       "id": "agentcore_browser-use-agent",
       "name": "Browser-Use Agent",
       "description": "Autonomous browser automation powered by browser-use AI with live view support",
-      "category": "browser",
+      "category": "browser_automation_agents",
       "icon": "🤖",
       "enabled": true,
       "isDynamic": true,

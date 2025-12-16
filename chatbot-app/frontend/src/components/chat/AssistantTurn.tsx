@@ -260,9 +260,14 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       status={
                         browserExecution.isComplete
                           ? (() => {
-                              // Check for errors
+                              // Check for declined first (matching Research Agent pattern)
+                              if (browserExecution.isCancelled) return 'declined'
                               const resultText = (browserExecution.toolResult || '').toLowerCase()
-                              if (browserExecution.isCancelled || resultText.includes('error:') || resultText.includes('failed:') || resultText.includes('browser automation failed')) {
+                              if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) {
+                                return 'declined'
+                              }
+                              // Then check for errors
+                              if (resultText.includes('error:') || resultText.includes('failed:') || resultText.includes('browser automation failed')) {
                                 return 'error'
                               }
                               return 'complete'
@@ -273,13 +278,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       }
                       isLoading={!browserExecution.isComplete}
                       hasResult={(() => {
-                        // Cancelled executions have no result
+                        // No result if task was declined/cancelled
                         if (browserExecution.isCancelled) return false
-
-                        // Completed: check toolResult for errors
-                        if (browserExecution.isComplete && browserExecution.toolResult) {
+                        if (browserExecution.toolResult) {
                           const resultText = browserExecution.toolResult.toLowerCase()
-                          return !(resultText.includes('browser automation failed'))
+                          if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) {
+                            return false
+                          }
                         }
 
                         // Running: enable real-time viewing
@@ -287,16 +292,25 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                           return true
                         }
 
+                        // Completed: has result if no errors
+                        if (browserExecution.isComplete && browserExecution.toolResult) {
+                          const resultText = browserExecution.toolResult.toLowerCase()
+                          return !(resultText.includes('browser automation failed'))
+                        }
+
                         return false
                       })()}
                       onClick={() => {
                         if (!onBrowserClick) return
 
-                        // Allow opening during execution (no toolResult check)
-                        // Only block if cancelled or failed
+                        // Block if declined/cancelled
                         if (browserExecution.isCancelled) return
+                        if (browserExecution.toolResult) {
+                          const resultText = browserExecution.toolResult.toLowerCase()
+                          if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) return
+                        }
 
-                        // If completed, check for failure
+                        // Block if failed
                         if (browserExecution.isComplete && browserExecution.toolResult) {
                           const resultText = browserExecution.toolResult.toLowerCase()
                           if (resultText.includes('browser automation failed')) return
