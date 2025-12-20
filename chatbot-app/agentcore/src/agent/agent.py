@@ -380,16 +380,9 @@ class ChatbotAgent:
         self.model_id = model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
         self.temperature = temperature if temperature is not None else 0.7
 
-        # Use provided system prompt or default prompt
-        # Note: Date is already added by BFF (chatbot-app/frontend/src/app/api/stream/chat/route.ts)
-        # If no system_prompt provided, use default with date
-        if system_prompt:
-            # BFF already added date, use as-is
-            self.system_prompt = system_prompt
-            logger.info("Using system prompt from BFF (with date already included)")
-        else:
-            # Fallback: Add date here (for direct AgentCore usage without BFF)
-            base_system_prompt = """You are an intelligent AI agent with dynamic tool capabilities. You can perform various tasks based on the combination of tools available to you.
+        # Always build system prompt dynamically with tool-specific guidance
+        # Ignore any system_prompt parameter - always construct from scratch
+        base_system_prompt = """You are an intelligent AI agent with dynamic tool capabilities. You can perform various tasks based on the combination of tools available to you.
 
 Key guidelines:
 - You can ONLY use tools that are explicitly provided to you in each conversation
@@ -399,20 +392,31 @@ Key guidelines:
 - Always explain your reasoning when using tools
 - If you don't have the right tool for a task, clearly inform the user about the limitation
 
-Browser Automation Best Practices:
-- **ALWAYS prefer direct URLs with search parameters** over multi-step form filling
-- Examples:
-  ✓ Use: "https://www.google.com/search?q=AI+news" (1 step)
-  ✗ Avoid: Navigate to google.com → find search box → type → click search (3-4 steps)
-  ✓ Use: "https://www.amazon.com/s?k=wireless+headphones"
-  ✗ Avoid: Navigate to amazon.com → find search → type → submit
-- This reduces steps, improves reliability, and bypasses CAPTCHA challenges more effectively
-- Only use browser_act for interactions when direct URL navigation is not possible
-
 Your goal is to be helpful, accurate, and efficient in completing user requests using the available tools."""
-            current_date = get_current_date_pacific()
-            self.system_prompt = f"{base_system_prompt}\n\nCurrent date: {current_date}"
-            logger.info(f"Using default system prompt with current date: {current_date}")
+
+        # Load tool-specific guidance dynamically based on enabled tools
+        tool_guidance_list = self._load_tool_guidance()
+
+        current_date = get_current_date_pacific()
+
+        # Construct system prompt as string by combining all sections
+        # Note: Strands 1.14.0 uses string system prompts, cached via BedrockModel's cache_prompt="default"
+        prompt_sections = [base_system_prompt]
+
+        # Add tool-specific guidance sections
+        if tool_guidance_list:
+            prompt_sections.extend(tool_guidance_list)
+            logger.info(f"System prompt constructed with {len(tool_guidance_list)} tool guidance sections")
+
+        # Add date as final section
+        prompt_sections.append(f"Current date: {current_date}")
+
+        # Combine all sections with double newline separator
+        self.system_prompt = "\n\n".join(prompt_sections)
+
+        logger.info(f"Using system prompt with {len(prompt_sections)} sections (base + {len(tool_guidance_list)} tool guidance + date)")
+        logger.info(f"System prompt length: {len(self.system_prompt)} characters")
+        logger.info(f"System prompt preview (first 200 chars): {self.system_prompt[:200]}")
 
         self.caching_enabled = caching_enabled if caching_enabled is not None else True
 
@@ -474,10 +478,116 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         return {
             "model_id": self.model_id,
             "temperature": self.temperature,
-            "system_prompts": [self.system_prompt],
+            "system_prompt": self.system_prompt,
             "caching_enabled": self.caching_enabled
         }
 
+    def _load_tool_guidance(self) -> List[str]:
+        """
+        Load tool-specific system prompt guidance based on enabled tools.
+
+        Returns list of guidance texts from tools-config.json systemPromptGuidance fields
+        for all enabled tool groups.
+        """
+        if not self.enabled_tools or len(self.enabled_tools) == 0:
+            return []
+
+        try:
+            import boto3
+            from botocore.exceptions import ClientError
+
+            # Get environment variables
+            aws_region = os.environ.get('AWS_REGION', 'us-west-2')
+            dynamodb_table = os.environ.get('DYNAMODB_TABLE_NAME')
+            is_local = os.environ.get('NEXT_PUBLIC_AGENTCORE_LOCAL', 'false').lower() == 'true'
+
+            guidance_sections = []
+
+            # Local mode: load from tools-config.json
+            if is_local or not dynamodb_table:
+                logger.info("Loading tool guidance from local tools-config.json")
+                try:
+                    import json
+                    config_path = Path(__file__).parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
+
+                    if config_path.exists():
+                        with open(config_path, 'r') as f:
+                            tools_config = json.load(f)
+
+                        # Check all tool categories for systemPromptGuidance
+                        for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
+                            if category in tools_config:
+                                for tool_group in tools_config[category]:
+                                    tool_id = tool_group.get('id')
+
+                                    # Check if any enabled tool matches this group
+                                    if tool_id and self._is_tool_group_enabled(tool_id, tool_group):
+                                        guidance = tool_group.get('systemPromptGuidance')
+                                        if guidance:
+                                            guidance_sections.append(guidance)
+                                            logger.info(f"Added guidance for tool group: {tool_id}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to load tool guidance from local file: {e}")
+
+            # Cloud mode: load from DynamoDB
+            else:
+                logger.info("Loading tool guidance from DynamoDB")
+                try:
+                    dynamodb = boto3.resource('dynamodb', region_name=aws_region)
+                    table = dynamodb.Table(dynamodb_table)
+
+                    # Load tool registry from DynamoDB (userId='TOOL_REGISTRY')
+                    response = table.get_item(Key={'userId': 'TOOL_REGISTRY', 'sessionId': 'default'})
+
+                    if 'Item' in response and 'toolRegistry' in response['Item']:
+                        tool_registry = response['Item']['toolRegistry']
+
+                        # Check all tool categories
+                        for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
+                            if category in tool_registry:
+                                for tool_group in tool_registry[category]:
+                                    tool_id = tool_group.get('id')
+
+                                    # Check if any enabled tool matches this group
+                                    if tool_id and self._is_tool_group_enabled(tool_id, tool_group):
+                                        guidance = tool_group.get('systemPromptGuidance')
+                                        if guidance:
+                                            guidance_sections.append(guidance)
+                                            logger.info(f"Added guidance for tool group: {tool_id}")
+
+                except ClientError as e:
+                    logger.warning(f"Failed to load tool guidance from DynamoDB: {e}")
+                except Exception as e:
+                    logger.warning(f"Error loading tool guidance: {e}")
+
+            return guidance_sections
+
+        except Exception as e:
+            logger.error(f"Error in _load_tool_guidance: {e}")
+            return []
+
+    def _is_tool_group_enabled(self, tool_group_id: str, tool_group: Dict) -> bool:
+        """
+        Check if a tool group is enabled based on enabled_tools list.
+
+        For dynamic tool groups (isDynamic=true), checks if any sub-tool is enabled.
+        For static tool groups, checks if the group ID itself is enabled.
+        """
+        if not self.enabled_tools:
+            return False
+
+        # Check if group ID itself is in enabled tools
+        if tool_group_id in self.enabled_tools:
+            return True
+
+        # For dynamic tool groups, check if any sub-tool is enabled
+        if tool_group.get('isDynamic') and 'tools' in tool_group:
+            for sub_tool in tool_group['tools']:
+                if sub_tool.get('id') in self.enabled_tools:
+                    return True
+
+        return False
 
     def get_filtered_tools(self) -> List:
         """
@@ -598,12 +708,12 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 hooks.append(conversation_hook)
                 logger.info("✅ Conversation caching hook enabled")
 
-            # Create agent with session manager, hooks, and system prompt
+            # Create agent with session manager, hooks, and system prompt (as string)
             # Use SequentialToolExecutor to prevent concurrent browser operations
             # This prevents "Failed to start and initialize Playwright" errors with NovaAct
             self.agent = Agent(
                 model=model,
-                system_prompt=self.system_prompt,  # Always string - BedrockModel handles caching internally
+                system_prompt=self.system_prompt,  # String system prompt (Strands 1.14.0)
                 tools=tools,
                 tool_executor=SequentialToolExecutor(),
                 session_manager=self.session_manager,
@@ -611,6 +721,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             )
 
             logger.info(f"✅ Agent created with {len(tools)} tools")
+            logger.info(f"✅ System prompt: {len(self.system_prompt)} characters")
             logger.info(f"✅ Session Manager: {type(self.session_manager).__name__}")
 
             if AGENTCORE_MEMORY_AVAILABLE and os.environ.get('MEMORY_ID'):
@@ -648,8 +759,8 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             if files:
                 logger.info(f"Processing {len(files)} file(s)")
 
-            # Convert files to Strands ContentBlock format if provided
-            prompt = self._build_prompt(message, files)
+            # Convert files to Strands ContentBlock format and prepare uploaded_files for tools
+            prompt, uploaded_files = self._build_prompt(message, files)
 
             # Log prompt type for debugging (without printing bytes)
             if isinstance(prompt, list):
@@ -657,12 +768,17 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             else:
                 logger.info(f"Prompt is string: {prompt[:100]}")
 
-            # Prepare invocation_state with model_id, user_id, session_id
+            # Prepare invocation_state with model_id, user_id, session_id, and uploaded files
             invocation_state = {
                 "session_id": self.session_id,
                 "user_id": self.user_id,
                 "model_id": self.model_id
             }
+
+            # Add uploaded files to invocation_state (for tool access)
+            if uploaded_files:
+                invocation_state['uploaded_files'] = uploaded_files
+                logger.info(f"Added {len(uploaded_files)} file(s) to invocation_state")
 
             # Use stream processor to handle Strands agent streaming
             async for event in self.stream_processor.process_stream(
@@ -705,11 +821,15 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         Sanitize filename to meet AWS Bedrock requirements:
         - Only alphanumeric, whitespace, hyphens, parentheses, and square brackets
         - No consecutive whitespace
+        - Convert underscores to hyphens
         """
         import re
 
-        # Replace special characters (except allowed ones) with underscore
-        sanitized = re.sub(r'[^a-zA-Z0-9\s\-\(\)\[\]]', '_', filename)
+        # First, replace underscores with hyphens
+        sanitized = filename.replace('_', '-')
+
+        # Keep only allowed characters: alphanumeric, whitespace, hyphens, parentheses, square brackets
+        sanitized = re.sub(r'[^a-zA-Z0-9\s\-\(\)\[\]]', '', sanitized)
 
         # Replace consecutive whitespace with single space
         sanitized = re.sub(r'\s+', ' ', sanitized)
@@ -717,29 +837,107 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         # Trim whitespace
         sanitized = sanitized.strip()
 
+        # If name becomes empty, use default
+        if not sanitized:
+            sanitized = 'document'
+
         return sanitized
+
+    def _get_workspace_context(self) -> Optional[str]:
+        """Get workspace file list as context string"""
+        try:
+            from builtin_tools.lib.document_manager import WordDocumentManager
+            doc_manager = WordDocumentManager(self.user_id, self.session_id)
+            documents = doc_manager.list_s3_documents()
+
+            if documents:
+                files_list = ", ".join([f"{doc['filename']} ({doc['size_kb']})" for doc in documents])
+                return f"[Word documents in your workspace: {files_list}]"
+            return None
+        except Exception as e:
+            logger.debug(f"Failed to get workspace context: {e}")
+            return None
+
+    def _auto_store_docx_files(self, uploaded_files: List[Dict[str, Any]]):
+        """Automatically store uploaded .docx files to workspace"""
+        try:
+            from builtin_tools.lib.document_manager import WordDocumentManager
+            from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+
+            # Filter .docx files
+            docx_files = [f for f in uploaded_files if f['filename'].lower().endswith('.docx')]
+            if not docx_files:
+                return
+
+            doc_manager = WordDocumentManager(self.user_id, self.session_id)
+
+            # Get Code Interpreter ID (from env or Parameter Store)
+            code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
+            if not code_interpreter_id:
+                # Try Parameter Store
+                try:
+                    import boto3
+                    project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
+                    environment = os.getenv('ENVIRONMENT', 'dev')
+                    region = os.getenv('AWS_REGION', 'us-west-2')
+                    param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
+
+                    logger.info(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
+                    ssm = boto3.client('ssm', region_name=region)
+                    response = ssm.get_parameter(Name=param_name)
+                    code_interpreter_id = response['Parameter']['Value']
+                    logger.info(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
+                except Exception as e:
+                    logger.warning(f"CODE_INTERPRETER_ID not found in env or Parameter Store: {e}")
+                    return
+
+            region = os.getenv('AWS_REGION', 'us-west-2')
+            code_interpreter = CodeInterpreter(region)
+            code_interpreter.start(identifier=code_interpreter_id)
+
+            try:
+                for file_info in docx_files:
+                    filename = file_info['filename']
+                    file_bytes = file_info['bytes']
+
+                    # Sync to both S3 and Code Interpreter
+                    doc_manager.sync_to_both(
+                        code_interpreter,
+                        filename,
+                        file_bytes,
+                        metadata={'auto_stored': 'true'}  # S3 metadata values must be strings
+                    )
+                    logger.info(f"✅ Auto-stored: {filename}")
+            finally:
+                code_interpreter.stop()
+
+        except Exception as e:
+            logger.error(f"Failed to auto-store .docx files: {e}")
 
     def _build_prompt(self, message: str, files: Optional[List] = None):
         """
-        Build prompt for Strands Agent
+        Build prompt for Strands Agent and prepare uploaded files for tools
 
         Args:
             message: User message text
             files: Optional list of FileContent objects with base64 bytes
 
         Returns:
-            str or list[ContentBlock]: Prompt for Strands Agent
+            tuple: (prompt, uploaded_files)
+                - prompt: str or list[ContentBlock] for Strands Agent
+                - uploaded_files: list of dicts with filename, bytes, content_type (for tool invocation_state)
         """
         import base64
 
-        # If no files, return simple text
+        # If no files, return simple text message
         if not files or len(files) == 0:
-            return message
+            return message, []
 
         # Build ContentBlock list for multimodal input
         content_blocks = []
+        uploaded_files = []
 
-        # Add text first
+        # Add text first (user message only - no workspace context to avoid UI display issues)
         content_blocks.append({"text": message})
 
         # Add each file as appropriate ContentBlock
@@ -747,8 +945,23 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             content_type = file.content_type.lower()
             filename = file.filename.lower()
 
-            # Decode base64 to bytes
+            # Decode base64 to bytes (do this only once)
             file_bytes = base64.b64decode(file.bytes)
+
+            # Sanitize filename for consistency (used in S3 storage and tool invocation_state)
+            # Split into name and extension, sanitize only the name part
+            if '.' in file.filename:
+                name_parts = file.filename.rsplit('.', 1)
+                sanitized_full_name = self._sanitize_filename(name_parts[0]) + '.' + name_parts[1]
+            else:
+                sanitized_full_name = self._sanitize_filename(file.filename)
+
+            # Store for tool invocation_state with sanitized filename
+            uploaded_files.append({
+                'filename': sanitized_full_name,  # Use sanitized filename for consistency
+                'bytes': file_bytes,
+                'content_type': file.content_type
+            })
 
             # Determine file type and create appropriate ContentBlock
             if content_type.startswith("image/") or filename.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
@@ -768,24 +981,32 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 # Document content
                 doc_format = self._get_document_format(filename)
 
-                # Sanitize filename for Bedrock
-                sanitized_name = self._sanitize_filename(file.filename)
+                # For Bedrock ContentBlock: name should be WITHOUT extension (extension is in format field)
+                # Split sanitized_full_name to get name without extension
+                if '.' in sanitized_full_name:
+                    name_without_ext = sanitized_full_name.rsplit('.', 1)[0]
+                else:
+                    name_without_ext = sanitized_full_name
 
+                logger.info(f"🔍 [DEBUG] About to add document ContentBlock: name='{name_without_ext}', format={doc_format}, original='{file.filename}'")
                 content_blocks.append({
                     "document": {
                         "format": doc_format,
-                        "name": sanitized_name,
+                        "name": name_without_ext,  # Use name WITHOUT extension
                         "source": {
                             "bytes": file_bytes
                         }
                     }
                 })
-                logger.info(f"Added document: {filename} -> {sanitized_name} (format: {doc_format})")
+                logger.info(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
 
             else:
                 logger.warning(f"Unsupported file type: {filename} ({content_type})")
 
-        return content_blocks
+        # Auto-store .docx files to workspace
+        self._auto_store_docx_files(uploaded_files)
+
+        return content_blocks, uploaded_files
 
     def _get_image_format(self, content_type: str, filename: str) -> str:
         """Determine image format from content type or filename"""

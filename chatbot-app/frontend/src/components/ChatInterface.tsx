@@ -638,7 +638,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
             <div className="flex items-center gap-3 bg-muted/30 rounded-2xl p-2 shadow-sm">
               <Input
                 type="file"
-                accept="image/*,application/pdf,.pdf"
+                accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
                 multiple
                 onChange={handleFileSelect}
                 className="hidden"

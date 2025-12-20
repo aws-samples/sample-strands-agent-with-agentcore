@@ -86,6 +86,14 @@ class StreamEventFormatter:
     def create_tool_result_event(tool_result: Dict[str, Any]) -> str:
         """Create tool result event - refactored for clarity"""
         import json
+        import logging
+
+        logger = logging.getLogger(__name__)
+
+        # Debug: Log tool_result structure to see if metadata is present
+        logger.info(f"[DocumentDownload] tool_result keys: {tool_result.keys() if isinstance(tool_result, dict) else 'not a dict'}")
+        if isinstance(tool_result, dict) and "metadata" in tool_result:
+            logger.info(f"[DocumentDownload] metadata found: {tool_result['metadata']}")
 
         # Handle case where entire tool_result might be a JSON string (shouldn't happen but defensive)
         if isinstance(tool_result, str):
@@ -241,6 +249,9 @@ class StreamEventFormatter:
     @staticmethod
     def _build_tool_result_event(tool_result: Dict[str, Any], result_text: str, result_images: List[Dict[str, str]]) -> str:
         """Build the final tool result event"""
+        import logging
+        logger = logging.getLogger(__name__)
+
         tool_result_data = {
             "type": "tool_result",
             "toolUseId": tool_result.get("toolUseId"),
@@ -257,6 +268,13 @@ class StreamEventFormatter:
         # Include metadata if present (e.g., browserSessionId for Live View)
         if "metadata" in tool_result:
             tool_result_data["metadata"] = tool_result["metadata"]
+
+            # Documents are collected at turn level (event_processor.py) and sent in complete event
+            # Don't add documents to tool_result event to avoid duplication
+            if "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
+                logger.info(f"[DocumentDownload] Document metadata found (will be sent in complete event): {tool_result['metadata']['filename']}")
+
+        logger.info(f"[DocumentDownload] Final tool_result_data keys: {tool_result_data.keys()}")
 
         return StreamEventFormatter.format_sse_event(tool_result_data)
     
@@ -292,14 +310,16 @@ class StreamEventFormatter:
         })
 
     @staticmethod
-    def create_complete_event(message: str, images: List[Dict[str, str]] = None, usage: Dict[str, Any] = None) -> str:
-        """Create completion event with optional token usage metrics"""
+    def create_complete_event(message: str, images: List[Dict[str, str]] = None, usage: Dict[str, Any] = None, documents: List[Dict[str, str]] = None) -> str:
+        """Create completion event with optional token usage metrics and documents"""
         completion_data = {
             "type": "complete",
             "message": message
         }
         if images:
             completion_data["images"] = images
+        if documents:
+            completion_data["documents"] = documents
         if usage:
             completion_data["usage"] = usage
 

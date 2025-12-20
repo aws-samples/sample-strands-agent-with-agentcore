@@ -13,6 +13,10 @@ interface SaveMetadataParams {
   ttft?: number
   e2e?: number
   tokenUsage?: TokenUsage
+  documents?: Array<{
+    filename: string
+    tool_type: string
+  }>
 }
 
 /**
@@ -34,12 +38,19 @@ export const useLatencyTracking = () => {
    * @param requestStartTime - Optional custom start time (defaults to Date.now())
    */
   const startTracking = useCallback((requestStartTime?: number) => {
+    // Prevent duplicate calls - only start tracking once per turn
+    if (requestStartTimeRef.current !== null) {
+      console.log('[Latency] Already tracking, skipping startTracking')
+      return
+    }
+
     requestStartTimeRef.current = requestStartTime ?? Date.now()
     ttftRef.current = undefined
     e2eRef.current = undefined
     ttftLoggedRef.current = false
     e2eLoggedRef.current = false
     metadataSavedRef.current = false
+    console.log('[Latency] Started tracking, requestStartTime:', requestStartTimeRef.current)
   }, [])
 
   /**
@@ -64,8 +75,26 @@ export const useLatencyTracking = () => {
    * Returns both TTFT and E2E metrics
    */
   const recordE2E = useCallback((params: SaveMetadataParams) => {
+    console.log('[recordE2E] Called with:', {
+      sessionId: params.sessionId,
+      messageId: params.messageId,
+      hasTokenUsage: !!params.tokenUsage,
+      hasDocuments: !!params.documents,
+      currentState: {
+        metadataSaved: metadataSavedRef.current,
+        requestStartTime: requestStartTimeRef.current,
+        ttft: ttftRef.current,
+        e2e: e2eRef.current,
+        ttftLogged: ttftLoggedRef.current,
+        e2eLogged: e2eLoggedRef.current
+      }
+    })
+
+    let e2e: number | undefined = e2eRef.current
+
+    // Calculate E2E if possible and not already logged
     if (!e2eLoggedRef.current && requestStartTimeRef.current) {
-      const e2e = Date.now() - requestStartTimeRef.current
+      e2e = Date.now() - requestStartTimeRef.current
       e2eRef.current = e2e
       e2eLoggedRef.current = true
 
@@ -73,16 +102,29 @@ export const useLatencyTracking = () => {
       console.log(
         `[Latency] End-to-End Latency: ${e2e}ms (TTFT: ${ttft}ms, Generation: ${e2e - ttft}ms)`
       )
-
-      // Save metadata to storage (only once)
-      if (!metadataSavedRef.current && (ttftRef.current || e2e)) {
-        metadataSavedRef.current = true
-        saveMetadata(params.sessionId, params.messageId, ttftRef.current, e2e, params.tokenUsage)
-      }
-
-      return { ttft: ttftRef.current, e2e }
     }
-    return { ttft: ttftRef.current, e2e: e2eRef.current }
+
+    // Save metadata to storage (only once)
+    // Save if we have any metadata: latency, tokenUsage, or documents
+    const shouldSave = !metadataSavedRef.current && (ttftRef.current || e2e || params.tokenUsage || params.documents)
+    console.log('[recordE2E] Save check:', {
+      metadataSaved: metadataSavedRef.current,
+      hasTTFT: !!ttftRef.current,
+      hasE2E: !!e2e,
+      hasTokenUsage: !!params.tokenUsage,
+      hasDocuments: !!params.documents,
+      shouldSave
+    })
+
+    if (shouldSave) {
+      metadataSavedRef.current = true
+      console.log('[Latency] Saving metadata:', { ttft: ttftRef.current, e2e, hasTokenUsage: !!params.tokenUsage, hasDocuments: !!params.documents })
+      saveMetadata(params.sessionId, params.messageId, ttftRef.current, e2e, params.tokenUsage, params.documents)
+    } else {
+      console.warn('[recordE2E] Metadata NOT saved - condition failed')
+    }
+
+    return { ttft: ttftRef.current, e2e }
   }, [])
 
   /**
@@ -116,14 +158,15 @@ export const useLatencyTracking = () => {
 }
 
 /**
- * Helper function to save latency and token usage metadata to storage
+ * Helper function to save latency, token usage, and documents metadata to storage
  */
 async function saveMetadata(
   sessionId: string,
   messageId: string | number,
   ttft?: number,
   e2e?: number,
-  tokenUsage?: TokenUsage
+  tokenUsage?: TokenUsage,
+  documents?: Array<{ filename: string; tool_type: string }>
 ) {
   console.log('[Metadata] Saving:', {
     sessionId,
@@ -131,6 +174,7 @@ async function saveMetadata(
     ttft,
     e2eLatency: e2e,
     tokenUsage,
+    documents: documents?.length || 0,
   })
 
   // Convert numeric messageId to persistent format by calculating index
@@ -184,6 +228,10 @@ async function saveMetadata(
 
   if (tokenUsage) {
     metadata.tokenUsage = tokenUsage
+  }
+
+  if (documents && documents.length > 0) {
+    metadata.documents = documents
   }
 
   // Get auth token

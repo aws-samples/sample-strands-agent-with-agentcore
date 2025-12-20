@@ -317,6 +317,63 @@ export class AgentRuntimeStack extends cdk.Stack {
     })
 
     // ============================================================
+    // Document Storage Bucket (Word, PowerPoint, Excel, PDF)
+    // ============================================================
+    const documentBucket = new s3.Bucket(this, 'DocumentBucket', {
+      bucketName: `${projectName}-docs-${this.account}-${this.region}`,
+      removalPolicy: cdk.RemovalPolicy.RETAIN, // Retain user documents on stack deletion
+      autoDeleteObjects: false,
+      versioned: true, // Enable versioning for document history
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      lifecycleRules: [
+        {
+          id: 'DeleteOldVersions',
+          noncurrentVersionExpiration: cdk.Duration.days(90), // Keep old versions for 90 days
+        },
+        {
+          id: 'TransitionToIA',
+          transitions: [
+            {
+              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+              transitionAfter: cdk.Duration.days(30), // Move to IA after 30 days
+            },
+          ],
+        },
+      ],
+      cors: [
+        {
+          allowedMethods: [
+            s3.HttpMethods.GET,
+            s3.HttpMethods.PUT,
+            s3.HttpMethods.DELETE,
+          ],
+          allowedOrigins: ['*'], // TODO: Restrict to frontend domain in production
+          allowedHeaders: ['*'],
+          maxAge: 3000,
+        },
+      ],
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+    })
+
+    // Grant Runtime execution role permissions for document bucket
+    executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'DocumentBucketAccess',
+        effect: iam.Effect.ALLOW,
+        actions: [
+          's3:PutObject',
+          's3:GetObject',
+          's3:DeleteObject',
+          's3:ListBucket',
+        ],
+        resources: [
+          documentBucket.bucketArn,
+          `${documentBucket.bucketArn}/*`,
+        ],
+      })
+    )
+
+    // ============================================================
     // Step 2: CodeBuild Project for Building Container
     // ============================================================
     const codeBuildRole = new iam.Role(this, 'CodeBuildRole', {
@@ -836,6 +893,7 @@ async function sendResponse(event, status, data, reason) {
         BROWSER_ID: browser.attrBrowserId,
         BROWSER_NAME: browserCustomName,
         CODE_INTERPRETER_ID: codeInterpreter.attrCodeInterpreterId,
+        DOCUMENT_BUCKET: documentBucket.bucketName,
       },
 
       tags: {
@@ -925,6 +983,18 @@ async function sendResponse(event, status, data, reason) {
       value: codeInterpreter.attrCodeInterpreterArn,
       description: 'Shared Code Interpreter ARN',
       exportName: `${projectName}-code-interpreter-arn`,
+    })
+
+    new cdk.CfnOutput(this, 'DocumentBucketName', {
+      value: documentBucket.bucketName,
+      description: 'S3 bucket for document storage (Word, PowerPoint, Excel, PDF)',
+      exportName: `${projectName}-document-bucket`,
+    })
+
+    new cdk.CfnOutput(this, 'DocumentBucketArn', {
+      value: documentBucket.bucketArn,
+      description: 'S3 bucket ARN for document storage',
+      exportName: `${projectName}-document-bucket-arn`,
     })
   }
 }

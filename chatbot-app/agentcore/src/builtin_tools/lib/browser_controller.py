@@ -155,8 +155,8 @@ class BrowserController:
 
             logger.info(f"🔐 Starting Custom Browser with Web Bot Auth: {self.browser_name} (ID: {self.browser_id})")
             # Pass identifier parameter to use Custom Browser
-            # Nova Act optimal resolution: width 864-1536, height 1296-2304
-            # Using 1536×1296 for landscape-friendly display within optimal range
+            # Nova Act optimal resolution: width 1536-2304, height 864-1296
+            # Using 1536×1296 (minimum width, maximum height) for optimal content visibility
             session_id = self.browser_session_client.start(
                 identifier=self.browser_id,
                 session_timeout_seconds=3600,
@@ -174,7 +174,8 @@ class BrowserController:
                 'cdp_endpoint_url': ws_url,
                 'cdp_headers': headers,
                 'cdp_use_existing_page': True,  # Re-use existing page from AgentCore Browser
-                'go_to_url_timeout': 5  # Max wait time for go_to_url() in seconds
+                'go_to_url_timeout': 5,  # Max wait time for go_to_url() in seconds
+                'ignore_https_errors': True  # Ignore SSL certificate errors (ads, trackers, etc.)
             }
 
             # Both API Key and IAM authentication use Workflow for model selection
@@ -263,12 +264,12 @@ class BrowserController:
                 "screenshot": None
             }
 
-    def act(self, instruction: str, max_steps: int = 5, timeout: int = 120) -> Dict[str, Any]:
+    def act(self, instruction: str, max_steps: int = 4, timeout: int = 120) -> Dict[str, Any]:
         """Execute natural language instruction using Nova Act
 
         Args:
             instruction: Natural language instruction for the browser
-            max_steps: Maximum number of steps (browser actuations) to take
+            max_steps: Maximum number of steps (default: 4 allows combined actions)
             timeout: Timeout in seconds for the entire act call
         """
         try:
@@ -279,12 +280,12 @@ class BrowserController:
             logger.info(f"Parameters: max_steps={max_steps}, timeout={timeout}s")
 
             # Execute Nova Act instruction (first arg is positional)
-            # observation_delay_ms: Wait after action for page loads (1.5s helps with slow-loading content)
+            # observation_delay_ms: Wait after action for page loads (500ms for dynamic content)
             result = self.nova_client.act(
                 instruction,
                 max_steps=max_steps,
                 timeout=timeout,
-                observation_delay_ms=1500  # 1.5 second delay for page loads
+                observation_delay_ms=500  # 0.5 second delay for page loads
             )
 
             # Check if new tabs were opened during action
@@ -357,7 +358,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Task too complex (exceeded {max_steps} steps): {str(e)}\n\nBreak this into smaller, simpler instructions.",
+                "message": f"Task exceeded {max_steps} steps without completing. Try: 1) Simpler instruction, 2) Different tool, or 3) Ask user.",
                 "instruction": instruction,
                 "screenshot": screenshot_data
             }
@@ -368,7 +369,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Operation timed out after {timeout}s: {str(e)}\n\nTry increasing timeout or simplifying the task.",
+                "message": f"Operation timed out after {timeout}s. Task may be too complex or page is slow.",
                 "instruction": instruction,
                 "screenshot": screenshot_data
             }
@@ -404,14 +405,14 @@ class BrowserController:
             pass
         return None
 
-    def extract(self, description: str, schema: Optional[Dict] = None, max_steps: int = 15, timeout: int = 240) -> Dict[str, Any]:
+    def extract(self, description: str, schema: Optional[Dict] = None, max_steps: int = 6, timeout: int = 180) -> Dict[str, Any]:
         """Extract structured data using Nova Act
 
         Args:
             description: Natural language description of what data to extract
             schema: Optional JSON schema for validation (None = no schema validation)
-            max_steps: Maximum number of steps for extraction (default: 15 for scrolling/pagination)
-            timeout: Timeout in seconds for extraction (default: 240s = 4 minutes)
+            max_steps: Maximum number of steps for extraction (default: 6 allows scrolling/pagination)
+            timeout: Timeout in seconds for extraction (default: 180s = 3 minutes)
         """
         try:
             if not self._connected:
@@ -424,13 +425,13 @@ class BrowserController:
             prompt = f"{description} from the current webpage"
 
             # Execute Nova Act extraction (first arg is positional)
-            # observation_delay_ms: Wait after action for page loads (1.5s helps with slow-loading content)
+            # observation_delay_ms: Wait after action for page loads (500ms for dynamic content)
             result = self.nova_client.act(
                 prompt,
                 schema=schema,
                 max_steps=max_steps,
                 timeout=timeout,
-                observation_delay_ms=1500  # 1.5 second delay for page loads
+                observation_delay_ms=500  # 0.5 second delay for page loads
             )
 
             # Use current tab's page
@@ -494,7 +495,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Extraction too complex (exceeded {max_steps} steps): {str(e)}\n\nSimplify what you're trying to extract.",
+                "message": f"Extraction exceeded {max_steps} steps. Try: 1) Simpler schema, 2) Extract partial data, or 3) Different approach.",
                 "description": description,
                 "screenshot": screenshot_data
             }
@@ -505,7 +506,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Extraction timed out after {timeout}s: {str(e)}",
+                "message": f"Extraction timed out after {timeout}s. Data may be too large or page is slow.",
                 "description": description,
                 "screenshot": screenshot_data
             }

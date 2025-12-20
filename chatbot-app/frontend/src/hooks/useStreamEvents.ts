@@ -86,6 +86,7 @@ export const useStreamEvents = ({
         setUIState(prevUI => {
           if (prevUI.agentStatus === 'thinking') {
             const ttft = latencyTracking.recordTTFT()
+            console.log('[Response] First token received, TTFT:', ttft)
             return {
               ...prevUI,
               agentStatus: 'responding',
@@ -96,6 +97,7 @@ export const useStreamEvents = ({
             }
           } else {
             // Already 'responding' (post-tool response) - stay in 'responding'
+            console.log('[Response] Already responding, agentStatus:', prevUI.agentStatus)
             return { ...prevUI, agentStatus: 'responding' }
           }
         })
@@ -232,6 +234,13 @@ export const useStreamEvents = ({
 
   const handleToolResultEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_result') {
+      // Debug: Log documents field
+      console.log('[DocumentDownload] tool_result event received:', {
+        toolUseId: data.toolUseId,
+        hasDocuments: !!data.documents,
+        documents: data.documents
+      })
+
       // Update tool execution with result
       const isCancelled = data.status === 'error'
       const updatedExecutions = currentToolExecutionsRef.current.map(tool =>
@@ -319,7 +328,11 @@ export const useStreamEvents = ({
               ? { ...tool, toolResult: data.result, images: data.images, isComplete: true }
               : tool
           )
-          return { ...msg, toolExecutions: updatedToolExecutions }
+          // Documents are sent in complete event only (not in tool_result)
+          return {
+            ...msg,
+            toolExecutions: updatedToolExecutions
+          }
         }
         return msg
       }))
@@ -340,15 +353,22 @@ export const useStreamEvents = ({
         // Update last activity timestamp (AI response completed = activity)
         updateLastActivity()
 
-        // Record E2E latency and save metadata
+        // Record E2E latency and save metadata (including documents if present)
         const currentSessionId = sessionStorage.getItem('chat-session-id')
+        console.log('[Complete] Recording E2E latency, sessionId:', currentSessionId, 'messageId:', messageId)
         const metrics = currentSessionId
-          ? latencyTracking.recordE2E({ sessionId: currentSessionId, messageId, tokenUsage: data.usage })
+          ? latencyTracking.recordE2E({
+              sessionId: currentSessionId,
+              messageId,
+              tokenUsage: data.usage,
+              documents: data.documents // Include documents in metadata save
+            })
           : latencyTracking.getMetrics()
 
         // Extract values (recordE2E and getMetrics have different return formats)
         const ttftValue = 'ttft' in metrics ? metrics.ttft : metrics.timeToFirstToken
         const e2eValue = 'e2e' in metrics ? metrics.e2e : metrics.endToEndLatency
+        console.log('[Complete] Latency metrics:', { ttftValue, e2eValue, tokenUsage: data.usage })
 
         setUIState(prev => ({
           ...prev,
@@ -371,6 +391,9 @@ export const useStreamEvents = ({
             }
           }
 
+          // Documents now come directly from complete event (like images)
+          console.log('[DocumentDownload] Complete event - documents from data:', data.documents)
+
           return prevMsgs.map((msg, index) =>
           // Update either the streaming message or the last assistant message (for tools)
           msg.id === messageId || (index === lastAssistantIndex && messageId)
@@ -378,6 +401,7 @@ export const useStreamEvents = ({
                 ...msg,
                 isStreaming: false,
                 images: data.images || msg.images || [],
+                documents: data.documents || msg.documents || [],
                 latencyMetrics: {
                   timeToFirstToken: ttftValue,
                   endToEndLatency: e2eValue
@@ -426,16 +450,22 @@ export const useStreamEvents = ({
 
   const handleInitEvent = useCallback(() => {
     setUIState(prev => {
+      // Start latency tracking if requestStartTime exists and not already started
+      if (prev.latencyMetrics.requestStartTime) {
+        console.log('[Init] Starting latency tracking, requestStartTime:', prev.latencyMetrics.requestStartTime, 'status:', prev.agentStatus)
+        latencyTracking.startTracking(prev.latencyMetrics.requestStartTime)
+      } else {
+        console.warn('[Init] No requestStartTime - latency tracking not started!')
+      }
+
       // Don't change status if already in an active state (not idle)
       // This includes 'thinking', 'responding', and 'researching'
       if (prev.agentStatus !== 'idle') {
+        console.log('[Init] Already in active state:', prev.agentStatus, '- keeping current status')
         return prev
       }
 
       // Only transition to 'thinking' if starting a new turn (idle -> thinking)
-      if (prev.latencyMetrics.requestStartTime) {
-        latencyTracking.startTracking(prev.latencyMetrics.requestStartTime)
-      }
       return { ...prev, isTyping: true, agentStatus: 'thinking' }
     })
   }, [setUIState, latencyTracking])

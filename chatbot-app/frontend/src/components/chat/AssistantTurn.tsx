@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check } from 'lucide-react'
+import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Download } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { ReasoningState } from '@/types/events'
 import { Markdown } from '@/components/ui/Markdown'
@@ -89,6 +89,58 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
       } catch (err) {
         console.error('Failed to save feedback:', err)
       }
+    }
+  }
+
+  // Handle document download
+  const handleDocumentDownload = async (filename: string, toolType: string) => {
+    if (!sessionId) {
+      console.error('No session ID available for document download')
+      return
+    }
+
+    try {
+      // Step 1: Get S3 key from documents/download API
+      const s3KeyResponse = await fetch('/api/documents/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          filename,
+          toolType
+        })
+      })
+
+      if (!s3KeyResponse.ok) {
+        throw new Error(`Failed to get S3 key: ${s3KeyResponse.status}`)
+      }
+
+      const { s3Key } = await s3KeyResponse.json()
+
+      // Step 2: Get presigned URL from existing presigned-url API
+      const presignedResponse = await fetch('/api/s3/presigned-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ s3Key })
+      })
+
+      if (!presignedResponse.ok) {
+        throw new Error(`Failed to get presigned URL: ${presignedResponse.status}`)
+      }
+
+      const { url } = await presignedResponse.json()
+
+      // Step 3: Trigger download
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+
+      console.log('[DocumentDownload] Download triggered:', filename)
+    } catch (err) {
+      console.error('Failed to download document:', err)
     }
   }
 
@@ -186,6 +238,17 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
   // Find latency metrics and token usage from the messages
   const latencyMetrics = sortedMessages.find(msg => msg.latencyMetrics)?.latencyMetrics
   const tokenUsage = sortedMessages.find(msg => msg.tokenUsage)?.tokenUsage
+
+  // Collect all documents from the turn (for rendering at the bottom)
+  const turnDocuments = useMemo(() => {
+    const docs: Array<{ filename: string; tool_type: string }> = []
+    sortedMessages.forEach(msg => {
+      if (msg.documents && msg.documents.length > 0) {
+        docs.push(...msg.documents)
+      }
+    })
+    return docs
+  }, [sortedMessages])
 
   return (
     <div className="flex justify-start mb-8 group">
@@ -336,7 +399,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
             return (
               <div key={item.key} className="animate-fade-in">
                 <div className="chat-chart-content w-full overflow-hidden">
-                  <Markdown sessionId={sessionId} toolUseId={item.toolUseId}>{item.content as string}</Markdown>
+                  <Markdown sessionId={sessionId} toolUseId={item.toolUseId} preserveLineBreaks>{item.content as string}</Markdown>
 
                   {/* Generated Images for this text group */}
                   {item.images && item.images.length > 0 && (
@@ -362,6 +425,35 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
               </div>
             )
           })}
+
+          {/* Generated Documents - Rendered at turn bottom */}
+          {turnDocuments.length > 0 && (
+            <div className="mt-4 p-3 bg-gray-50/60 dark:bg-gray-800/30 rounded-lg border border-gray-200/60 dark:border-gray-700/40">
+              <div className="flex items-center gap-2 mb-2">
+                <FileText className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
+                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                  {turnDocuments.length} {turnDocuments.length === 1 ? 'Document' : 'Documents'}
+                </span>
+              </div>
+              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                {turnDocuments.map((doc, idx) => (
+                  <div
+                    key={idx}
+                    className="group relative flex items-center gap-2.5 px-3.5 py-2 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600 flex-shrink-0"
+                    onClick={() => handleDocumentDownload(doc.filename, doc.tool_type)}
+                  >
+                    <div className="flex items-center justify-center w-7 h-7 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
+                      <FileText className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                    </div>
+                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
+                      {doc.filename}
+                    </span>
+                    <Download className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Metrics Badges - Shows on hover at bottom right */}
           {((latencyMetrics && (latencyMetrics.timeToFirstToken || latencyMetrics.endToEndLatency)) || tokenUsage) && (

@@ -1,8 +1,9 @@
 """Built-in tools powered by AWS Bedrock services
 
 This package contains tools that leverage AWS Bedrock capabilities:
-- Code Interpreter: Execute Python code for diagrams and charts
+- Code Interpreter: Execute Python code for diagrams, charts, and Word documents
 - Browser Automation: Navigate, interact, and extract data from web pages using Nova Act AI
+- Word Documents: Create, modify, and manage Word documents with persistent storage
 
 ⚠️  IMPORTANT: When adding a NEW TOOL, you MUST complete ALL 3 steps:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -20,7 +21,13 @@ You can verify the sync with: GET http://localhost:3000/api/tools
 """
 
 from .code_interpreter_diagram_tool import generate_diagram_and_validate
-from .browser_tools import browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs
+from .nova_act_browser_tools import browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs
+from .word_document_tool import (
+    create_word_document,
+    modify_word_document,
+    list_my_word_documents,
+    read_word_document
+)
 
 __all__ = [
     'generate_diagram_and_validate',
@@ -28,5 +35,9 @@ __all__ = [
     'browser_act',
     'browser_extract',
     'browser_get_page_info',
-    'browser_manage_tabs'
+    'browser_manage_tabs',
+    'create_word_document',
+    'modify_word_document',
+    'list_my_word_documents',
+    'read_word_document'
 ]

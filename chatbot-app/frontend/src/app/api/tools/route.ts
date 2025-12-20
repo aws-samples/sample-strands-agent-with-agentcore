@@ -38,8 +38,8 @@ function checkIfRegistryNeedsSync(fallback: any, registry: any): boolean {
     const checks = [
       // Local tools
       (fallback.local_tools?.length || 0) !== (registry.local_tools?.length || 0),
-      // Builtin tools
-      (fallback.builtin_tools?.length || 0) !== (registry.builtin_tools?.length || 0),
+      // Builtin tools (nested tools supported)
+      countNestedTools(fallback.builtin_tools) !== countNestedTools(registry.builtin_tools),
       // Browser automation (nested tools)
       countNestedTools(fallback.browser_automation) !== countNestedTools(registry.browser_automation),
       // Gateway targets (nested tools)
@@ -53,7 +53,7 @@ function checkIfRegistryNeedsSync(fallback: any, registry: any): boolean {
     if (needsSync) {
       console.log('[API] Tool count comparison:')
       console.log(`  local_tools: ${fallback.local_tools?.length || 0} vs ${registry.local_tools?.length || 0}`)
-      console.log(`  builtin_tools: ${fallback.builtin_tools?.length || 0} vs ${registry.builtin_tools?.length || 0}`)
+      console.log(`  builtin_tools (nested): ${countNestedTools(fallback.builtin_tools)} vs ${countNestedTools(registry.builtin_tools)}`)
       console.log(`  browser_automation (nested): ${countNestedTools(fallback.browser_automation)} vs ${countNestedTools(registry.browser_automation)}`)
       console.log(`  gateway_targets (nested): ${countNestedTools(fallback.gateway_targets)} vs ${countNestedTools(registry.gateway_targets)}`)
       console.log(`  agentcore_runtime_a2a: ${fallback.agentcore_runtime_a2a?.length || 0} vs ${registry.agentcore_runtime_a2a?.length || 0}`)
@@ -154,16 +154,47 @@ export async function GET(request: NextRequest) {
       enabled: enabledToolIds.includes(tool.id)
     }))
 
-    const builtinTools = (toolsConfig.builtin_tools || []).map((tool: any) => ({
-      id: tool.id,
-      name: tool.name,
-      description: tool.description,
-      category: tool.category,
-      icon: tool.icon,
-      type: 'builtin_tools',
-      tool_type: 'builtin',
-      enabled: enabledToolIds.includes(tool.id)
-    }))
+    const builtinTools = (toolsConfig.builtin_tools || []).map((tool: any) => {
+      // Check if this is a dynamic tool with nested tools
+      const isDynamic = tool.isDynamic === true
+      const hasNestedTools = tool.tools && Array.isArray(tool.tools)
+
+      if (isDynamic && hasNestedTools) {
+        // For dynamic builtin tools (like Word Document Manager), check nested tools
+        const anyToolEnabled = tool.tools.some((nestedTool: any) => enabledToolIds.includes(nestedTool.id))
+
+        return {
+          id: tool.id,
+          name: tool.name,
+          description: tool.description,
+          category: tool.category,
+          icon: tool.icon,
+          type: 'builtin_tools',
+          tool_type: 'builtin',
+          enabled: anyToolEnabled,
+          isDynamic: true,
+          tools: tool.tools.map((nestedTool: any) => ({
+            id: nestedTool.id,
+            name: nestedTool.name,
+            description: nestedTool.description,
+            enabled: enabledToolIds.includes(nestedTool.id)
+          }))
+        }
+      } else {
+        // For regular builtin tools (like Diagram Generator)
+        return {
+          id: tool.id,
+          name: tool.name,
+          description: tool.description,
+          category: tool.category,
+          icon: tool.icon,
+          type: 'builtin_tools',
+          tool_type: 'builtin',
+          enabled: enabledToolIds.includes(tool.id),
+          isDynamic: false
+        }
+      }
+    })
 
     // Browser automation tools (separate category)
     const browserAutomation = (toolsConfig.browser_automation || []).map((group: any) => {
@@ -261,16 +292,39 @@ export async function GET(request: NextRequest) {
       enabled: tool.enabled ?? true
     }))
 
-    const builtinTools = (toolsConfigFallback.builtin_tools || []).map((tool: any) => ({
-      id: tool.id,
-      name: tool.name,
-      description: tool.description,
-      category: tool.category,
-      icon: tool.icon,
-      type: 'builtin_tools',
-      tool_type: 'builtin',
-      enabled: tool.enabled ?? true
-    }))
+    const builtinTools = (toolsConfigFallback.builtin_tools || []).map((tool: any) => {
+      const isDynamic = tool.isDynamic === true
+      const hasNestedTools = tool.tools && Array.isArray(tool.tools)
+
+      if (isDynamic && hasNestedTools) {
+        // Dynamic builtin tools with nested tools
+        return {
+          id: tool.id,
+          name: tool.name,
+          description: tool.description,
+          category: tool.category,
+          icon: tool.icon,
+          type: 'builtin_tools',
+          tool_type: 'builtin',
+          enabled: tool.enabled ?? true,
+          isDynamic: true,
+          tools: tool.tools || undefined
+        }
+      } else {
+        // Regular builtin tools
+        return {
+          id: tool.id,
+          name: tool.name,
+          description: tool.description,
+          category: tool.category,
+          icon: tool.icon,
+          type: 'builtin_tools',
+          tool_type: 'builtin',
+          enabled: tool.enabled ?? true,
+          isDynamic: false
+        }
+      }
+    })
 
     // Browser automation tools (fallback - grouped)
     const browserAutomation = (toolsConfigFallback.browser_automation || []).map((group: any) => ({

@@ -20,7 +20,7 @@ Combines Strands Agent orchestration with AWS Bedrock AgentCore services:
 
 ## Architecture
 
-<img src="docs/images/architecture-overview.svg"
+<img src="docs/images/architecture-overview.png"
      alt="Architecture Overview"
      width="1200">
 
@@ -103,11 +103,11 @@ Tools communicate via different protocols based on their characteristics:
 | Tool Type | Protocol | Count | Examples | Authentication |
 |-----------|----------|-------|----------|----------------|
 | **Local Tools** | Direct function calls | 5 | Weather, Web Search, Visualization | N/A |
-| **Built-in Tools** | AWS SDK + WebSocket | 4 | AgentCore Code Interpreter, Browser (Nova Act) | IAM |
+| **Built-in Tools** | AWS SDK + WebSocket | 9 | AgentCore Code Interpreter, Browser (Nova Act), Word Documents | IAM |
 | **Gateway Tools** | MCP | 12 | Wikipedia, ArXiv, Finance (Lambda) | AWS SigV4 |
-| **A2A Tools** | A2A protocol | 1 | Research Agent | AWS SigV4 |
+| **A2A Tools** | A2A protocol | 2 | Research Agent, Browser-Use Agent | AWS SigV4 |
 
-Status: 22 tools ✅. See [Implementation Details](#multi-protocol-tool-architecture) for complete tool list.
+Status: 28 tools ✅. See [Implementation Details](#multi-protocol-tool-architecture) for complete tool list.
 
 **3. Multi-Model Selection**
 
@@ -171,6 +171,7 @@ See [docs/TOOLS.md](docs/TOOLS.md) for detailed tool specifications.
 | **Built-in Tools** | | | | |
 | Diagram Generator | AWS SDK | No | ✅ | Charts/diagrams via AgentCore Code Interpreter |
 | Browser Automation (3 tools) | AWS SDK + WebSocket | Yes | ✅ | Navigate, action, extract via AgentCore Browser (Nova Act) |
+| Word Document Tools (5 tools) | AWS SDK | No | ✅ | Create, modify, list, read, store Word documents with Code Interpreter |
 | **Gateway Tools** | | | | |
 | Wikipedia (2 tools) | MCP | No | ✅ | Article search and retrieval |
 | ArXiv (2 tools) | MCP | No | ✅ | Scientific paper search |
@@ -179,6 +180,7 @@ See [docs/TOOLS.md](docs/TOOLS.md) for detailed tool specifications.
 | Financial Market (4 tools) | MCP | No | ✅ | Stock quotes, history, news, analysis (Yahoo Finance) |
 | **A2A Tools** | | | | |
 | Research Agent | A2A protocol | No | ✅ | Comprehensive web research with markdown reports and citations |
+| Browser-Use Agent | A2A protocol | No | ✅ | Autonomous browser automation with AI-driven adaptive navigation |
 
 **Protocol Details:**
 - **Direct call**: Python function with `@tool` decorator, executed in runtime container
@@ -187,7 +189,7 @@ See [docs/TOOLS.md](docs/TOOLS.md) for detailed tool specifications.
 - **MCP**: Model Context Protocol (via AgentCore Gateway with SigV4 authentication)
 - **A2A protocol**: Agent-to-Agent communication with AWS SigV4 authentication for runtime-to-runtime collaboration
 
-**Total: 22 tools** (22 ✅)
+**Total: 28 tools** (28 ✅)
 
 ### Dynamic Tool Filtering
 
@@ -443,9 +445,9 @@ User → CloudFront → ALB → Frontend+BFF (Fargate)
 
 **Tools & Integration:**
 - **Local Tools**: Direct Python function calls (5 tools)
-- **Built-in Tools**: AWS SDK + WebSocket (4 tools)
+- **Built-in Tools**: AWS SDK + WebSocket (9 tools)
 - **Gateway Tools**: Lambda + MCP protocol (12 tools)
-- **Runtime Tools**: A2A protocol (9 tools, in progress)
+- **A2A Tools**: A2A protocol (2 tools)
 
 **Infrastructure:**
 - **IaC**: AWS CDK (TypeScript)

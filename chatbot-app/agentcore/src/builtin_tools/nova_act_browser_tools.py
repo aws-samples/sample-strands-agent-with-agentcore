@@ -158,25 +158,19 @@ Current page is shown in the screenshot below."""
 @tool(context=True)
 def browser_act(instruction: str, tool_context: ToolContext) -> Dict[str, Any]:
     """
-    Execute browser actions using natural language (AI-powered visual understanding).
+    Execute browser UI actions: click, type, scroll, select dropdowns.
 
-    CRITICAL: Combine multiple steps into ONE instruction whenever possible.
+    Limitations:
+    - CANNOT extract DOM data (image URLs, link hrefs) or use right-click/F12
+    - Has 4-step limit. If fails 2-3 times, try different tool or ask user
+    - For DOM attributes, use browser_get_page_info() or add custom tool
 
     Args:
-        instruction: ENGLISH instruction combining 2-4 actions when the sequence is clear.
+        instruction: Can combine 2-3 sequential actions for efficiency, or use single actions
+                    when you need to observe results between steps.
 
-    Multi-Step Strategy (DEFAULT - Use this):
-        ✓ "Type 'laptop' in the search box and click the search button"
-        ✓ "Scroll down to the products section and click the first item"
-        ✓ "Fill in email field with 'test@example.com' and click submit"
-        ✓ "Click the 'Load More' button and wait for items to appear"
-
-    Single-Step Only When:
-        - You need to SEE the page state before deciding next action
-        - The page layout is completely unknown
-        - You're exploring/discovering page structure
-
-    Instructions MUST be in ENGLISH with clear element descriptions.
+                    Combined: "Type 'laptop' in search box and click search button"
+                    Single: "Click the login button" (when exploring unknown page)
 
     Returns screenshot showing the result.
     """
@@ -251,61 +245,31 @@ Current page state is shown in the screenshot below."""
 @tool(context=True)
 def browser_extract(description: str, extraction_schema: dict, tool_context: ToolContext) -> Dict[str, Any]:
     """
-    Extract structured data from the current page using natural language + JSON schema.
+    Extract visible text/numbers from page into structured JSON.
+    Can auto-scroll and paginate to collect data across multiple screens.
 
-    🔥 POWERFUL EXTRACTION: This tool can AUTOMATICALLY SCROLL through the entire page,
-    click "Load More" buttons, navigate pagination, and collect ALL matching data across
-    multiple screens in a SINGLE call. No need to manually scroll first!
-
-    The AI will intelligently navigate the page to gather complete data that matches
-    your schema, even if it spans multiple viewport screens or requires interaction.
+    Limitations:
+    - CANNOT extract DOM attributes (image src, link href, HTML)
+    - Has 6-step limit. If too complex, break down or simplify schema
+    - For DOM attributes, use browser_get_page_info() or add custom tool
 
     Args:
-        description: ENGLISH description of what to extract from the page.
-                    Be specific about scope:
-                    - "Extract ALL products on this page" (will auto-scroll/paginate)
-                    - "Extract the top 10 articles" (will collect limited set)
-                    - "Extract complete product details" (will gather all fields)
+        description: What to extract. Example: "Extract all product names and prices"
+        extraction_schema: JSON schema with 'type', 'properties', field descriptions.
 
-        extraction_schema: JSON schema defining the exact structure of data to extract.
-                Must include 'type', 'properties', and optionally 'required' fields.
-
-    Schema Guidelines:
-        - Use simple types: string, number, boolean, array, object
-        - Add 'description' to each field to help AI understand
-        - Mark important fields as 'required'
-        - Keep structure flat when possible
-        - Use 'array' type for collecting multiple items
-
-    Example - Extract ALL products (auto-scrolls entire page):
-        description: "Extract all products shown on this page, scrolling to collect everything"
-        extraction_schema: {
+    Schema Example:
+        {
             "type": "array",
             "items": {
                 "type": "object",
                 "properties": {
                     "title": {"type": "string", "description": "Product title"},
-                    "price": {"type": "number", "description": "Product price"},
-                    "url": {"type": "string", "description": "Product page URL"}
+                    "price": {"type": "number", "description": "Price in dollars"}
                 }
             }
         }
 
-    Example - Single product details:
-        description: "Extract the main product details from this product page"
-        extraction_schema: {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string", "description": "Product name"},
-                "price": {"type": "number", "description": "Current price in dollars"},
-                "rating": {"type": "number", "description": "Average rating out of 5"},
-                "reviews": {"type": "array", "items": {"type": "string"}, "description": "Customer reviews"}
-            },
-            "required": ["name", "price"]
-        }
-
-    Performance: Can take 1-4 minutes for complex extractions with scrolling/pagination.
-    Returns extracted data matching the provided schema (no screenshot).
+    Returns extracted data as JSON (no screenshot).
     """
     try:
         # Get session_id from ToolContext to avoid race condition with os.environ
@@ -392,26 +356,24 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
 @tool(context=True)
 def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
     """
-    Get structured information about the current page state - FAST, no AI needed.
+    Get page structure and DOM data - FAST (<300ms), no AI needed.
 
-    Returns comprehensive page information including:
-    - Page context: URL, title, scroll position
-    - All open tabs: Full list with URLs, titles, and current tab indicator
-    - Interactive elements: Visible buttons, links, input fields (top 10 each)
-    - Content structure: Headings, images, forms, tables
-    - State indicators: Alerts, modals, loading states
-    - Navigation: Breadcrumbs, history
+    Returns:
+    - URL, title, scroll position, all tabs
+    - Interactive elements: buttons, links, input fields (with text/href)
+    - Content: headings, images (count only - not URLs), forms, tables
+    - State: alerts, modals, loading indicators
 
-    Use cases:
-    - Quick situation assessment: "What can I do on this page?"
-    - Check all open tabs: "What tabs are open?" "Which tab am I on?"
-    - Debugging: "Why isn't the button appearing?"
-    - State checking: "Is there a loading indicator?"
-    - Form discovery: "What inputs are available?"
+    Use when you need:
+    - Page structure understanding
+    - Check what tabs are open
+    - Find available buttons/links/inputs
+    - Detect modals or loading states
 
-    Performance: < 300ms (no AI inference, direct DOM access)
+    Note: Shows image count, not URLs. For DOM attributes (img src, link href),
+    you'll need to add a dedicated tool using Playwright's page.evaluate().
 
-    Returns structured JSON with all tab information (no screenshot).
+    Returns JSON (no screenshot).
     """
     try:
         # Get session_id from ToolContext

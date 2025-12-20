@@ -26,6 +26,10 @@ export interface Message {
     format: string
     data: string
   }>
+  documents?: Array<{
+    filename: string
+    tool_type: string  // 'word_document', 'powerpoint', etc.
+  }>
   isToolMessage?: boolean // Mark messages that are purely for tool execution display
   turnId?: string // Turn ID for grouping messages by conversation turn
   toolUseId?: string // Tool use ID for session-based image paths

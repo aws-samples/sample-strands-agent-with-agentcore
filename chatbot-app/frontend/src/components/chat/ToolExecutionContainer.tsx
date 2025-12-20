@@ -377,35 +377,35 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           <React.Fragment key={toolExecution.id}>
             <div className={`${
               compact
-                ? "bg-card/80 rounded-md border border-border/60"
-                : "bg-card/80 rounded-md border border-border shadow-sm"
-            } overflow-hidden break-words`} style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+                ? "bg-gray-50/60 dark:bg-gray-800/30 rounded-lg border border-gray-200/50 dark:border-gray-700/40"
+                : "bg-gray-50/60 dark:bg-gray-800/30 rounded-lg border border-gray-200/80 dark:border-gray-700/50"
+            } overflow-hidden break-words transition-all duration-200`} style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
               {/* Tool Header - More Compact */}
               <button
                 onClick={() => toggleToolExpansion(toolExecution.id)}
-                className={`w-full ${compact ? "px-3 py-2" : "px-3 py-2.5"} flex items-center justify-between hover:bg-muted/50 transition-colors`}
+                className={`w-full ${compact ? "px-3 py-2" : "px-3.5 py-2"} flex items-center justify-between hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-colors rounded-lg`}
               >
-                <div className="flex items-center gap-2">
-                  <div className="p-1 bg-primary/10 rounded border border-primary/20">
-                    <IconComponent className="h-3 w-3 text-primary" />
+                <div className="flex items-center gap-2.5">
+                  <div className="flex items-center justify-center w-7 h-7 bg-white dark:bg-gray-900 rounded shadow-sm">
+                    <IconComponent className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
                   </div>
                   <div className="text-left">
                     <div className="flex items-center gap-1.5">
-                      <p className="font-medium text-xs text-foreground">{toolExecution.toolName}</p>
+                      <span className="font-medium text-sm text-gray-700 dark:text-gray-200">{toolExecution.toolName}</span>
                       {toolExecution.isComplete ? (
-                        <CheckCircle className="h-3 w-3 text-green-500" />
+                        <CheckCircle className="h-3.5 w-3.5 text-green-500 dark:text-green-400" />
                       ) : (
-                        <Clock className="h-3 w-3 text-primary animate-pulse" />
+                        <Clock className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400 animate-pulse" />
                       )}
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="outline" className="text-xs px-1.5 py-0.5 bg-background/70 text-primary border-primary/30">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs px-2 py-0.5 bg-white/70 dark:bg-gray-900/70 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600">
                     {toolExecution.isComplete ? 'Completed' : 'Running'}
                   </Badge>
                   <ChevronRight
-                    className="h-3 w-3 text-muted-foreground transition-transform"
+                    className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 transition-transform"
                     style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
                   />
                 </div>
@@ -413,13 +413,13 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
 
               {/* Tool Content */}
               {isExpanded && (
-                <div className={`border-t ${compact ? "border-border/60 bg-background/50" : "border-primary/20 bg-background/70"} backdrop-blur-sm`}>
+                <div className={`border-t ${compact ? "border-gray-200/60 dark:border-gray-700/60 bg-white/50 dark:bg-gray-900/50" : "border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/70"} backdrop-blur-sm`}>
                   <div className={`${compact ? "p-3" : "p-4"} min-w-0 max-w-full overflow-x-auto break-words`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
                     {/* Tool Input */}
                     <div className={compact ? "mb-4" : "mb-6"}>
                       <div className="flex items-center gap-2 mb-3">
-                        <Zap className="h-4 w-4 text-primary" />
-                        <h4 className="text-sm font-semibold text-foreground">Input Parameters</h4>
+                        <Zap className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Input Parameters</h4>
                       </div>
                       {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 ? (
                         <div className="bg-background rounded-lg border border-border overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
@@ -444,8 +444,8 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
                       <div className={compact ? "mb-4" : "mb-6"}>
                         <div className="flex items-center gap-2 mb-3">
-                          <Brain className="h-4 w-4 text-secondary" />
-                          <h4 className="text-sm font-semibold text-foreground">AI Reasoning Process</h4>
+                          <Brain className="h-4 w-4 text-purple-500 dark:text-purple-400" />
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">AI Reasoning Process</h4>
                         </div>
                         <div className="bg-background rounded-lg border-l-4 border-secondary overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
                           <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
@@ -464,8 +464,8 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     {toolExecution.toolResult && (
                       <div className={compact ? "mb-4" : "mb-6"}>
                         <div className="flex items-center gap-2 mb-3">
-                          <CheckCircle className="h-4 w-4 text-green-500" />
-                          <h4 className="text-sm font-semibold text-foreground">Tool Result</h4>
+                          <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400" />
+                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Tool Result</h4>
                           {(toolExecution.toolName === 'bedrock_code_interpreter' || toolExecution.toolName === 'run_python_code' || toolExecution.toolName === 'finalize_document') && toolExecution.isComplete && (
                             <button
                               onClick={() => handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult)}

@@ -163,6 +163,9 @@ class StreamEventProcessor:
             else:
                 stream_iterator = agent.stream_async(multimodal_message)
 
+            # Track documents from tool results in this turn (for complete event)
+            self.turn_documents = []
+
             # Note: Keepalive is handled at the router level (chat.py) via stream_with_keepalive wrapper
             async for event in stream_iterator:
                 # Check if session was cancelled (stop button clicked)
@@ -248,7 +251,12 @@ class StreamEventProcessor:
                         logger.error(f"[Token Usage] Error extracting token usage: {e}")
                         # Continue without usage data
 
-                    yield self.formatter.create_complete_event(result_text, images, usage)
+                    # Include documents collected during this turn
+                    documents = self.turn_documents if hasattr(self, 'turn_documents') and self.turn_documents else None
+                    if documents:
+                        logger.info(f"[DocumentDownload] Including {len(documents)} documents in complete event")
+
+                    yield self.formatter.create_complete_event(result_text, images, usage, documents)
                     return
                 
                 
@@ -316,15 +324,9 @@ class StreamEventProcessor:
                     processed_input = None
 
                     # Handle empty input case
-                    if tool_input == "":
-                        # For tools with no parameters, empty input is valid
-                        # For tools with parameters, we need to wait for input
-                        # Check if tool_input arrives as empty string initially then gets populated
-                        # To be safe, we'll wait a bit to see if parameters arrive
-                        should_process = False
-                        processed_input = None
-                    elif tool_input == "{}":
-                        # Empty JSON object means tool has no parameters (valid)
+                    if tool_input == "" or tool_input == "{}":
+                        # Empty string or empty JSON object means tool has no parameters or all optional parameters
+                        # This is valid for tools like store_word_document(custom_filename: Optional[str] = None)
                         should_process = True
                         processed_input = {}
                     else:
@@ -346,34 +348,49 @@ class StreamEventProcessor:
                             # Input is still incomplete
                             should_process = False
                     
-                    if should_process and tool_use_id and tool_use_id not in self.seen_tool_uses:
-                        self.seen_tool_uses.add(tool_use_id)
-                        
-                        # Create a copy of tool_use with processed input (don't modify original)
-                        tool_use_copy = {
-                            "toolUseId": tool_use_id,
-                            "name": tool_name,
-                            "input": processed_input
-                        }
-                        
-                        # Create tool execution context for all tools with session_id
-                        if tool_name and self.current_session_id:
-                            try:
-                                from utils.tool_execution_context import tool_context_manager
-                                await tool_context_manager.create_context(tool_use_id, tool_name, self.current_session_id)
-                            except ImportError:
-                                pass
-                        
-                        # Register tool info for later result processing
-                        if tool_name:
-                            self.tool_use_registry[tool_use_id] = {
-                                'tool_name': tool_name,
-                                'tool_use_id': tool_use_id,
-                                'session_id': self.current_session_id,
-                                'input': processed_input
+                    if should_process and tool_use_id:
+                        # Check if this is a new tool or an update to existing tool
+                        is_new_tool = tool_use_id not in self.seen_tool_uses
+                        is_parameter_update = (not is_new_tool and
+                                             processed_input is not None and
+                                             len(processed_input) > 0)
+
+                        if is_new_tool or is_parameter_update:
+                            # Mark as seen on first encounter
+                            if is_new_tool:
+                                self.seen_tool_uses.add(tool_use_id)
+
+                            # Create a copy of tool_use with processed input (don't modify original)
+                            tool_use_copy = {
+                                "toolUseId": tool_use_id,
+                                "name": tool_name,
+                                "input": processed_input
                             }
-                        yield self.formatter.create_tool_use_event(tool_use_copy)
-                        await asyncio.sleep(0.1)
+
+                            # Create tool execution context for new tools
+                            if is_new_tool and tool_name and self.current_session_id:
+                                try:
+                                    from utils.tool_execution_context import tool_context_manager
+                                    await tool_context_manager.create_context(tool_use_id, tool_name, self.current_session_id)
+                                except ImportError:
+                                    pass
+
+                            # Register or update tool info for later result processing
+                            if tool_name:
+                                self.tool_use_registry[tool_use_id] = {
+                                    'tool_name': tool_name,
+                                    'tool_use_id': tool_use_id,
+                                    'session_id': self.current_session_id,
+                                    'input': processed_input
+                                }
+
+                            # Yield event (create new or update existing)
+                            yield self.formatter.create_tool_use_event(tool_use_copy)
+
+                            if is_parameter_update:
+                                logger.info(f"[Tool Update] Updated parameters for {tool_name} ({tool_use_id}): {list(processed_input.keys()) if processed_input else 'empty'}")
+
+                            await asyncio.sleep(0.1)
                 
                 # Handle tool streaming events (from async generator tools)
                 elif event.get("tool_stream_event"):
@@ -497,6 +514,13 @@ class StreamEventProcessor:
                                     tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
                                     logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
 
+                                # Collect documents from tool result (for complete event)
+                                if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
+                                    self.turn_documents.append({
+                                        "filename": tool_result["metadata"]["filename"],
+                                        "tool_type": tool_result["metadata"]["tool_type"]
+                                    })
+
                                 # Process the tool result
                                 yield self.formatter.create_tool_result_event(tool_result)
 
@@ -511,6 +535,13 @@ class StreamEventProcessor:
                                     tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
                                     logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
 
+                                # Collect documents from tool result (for complete event)
+                                if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
+                                    self.turn_documents.append({
+                                        "filename": tool_result["metadata"]["filename"],
+                                        "tool_type": tool_result["metadata"]["tool_type"]
+                                    })
+
                                 yield self.formatter.create_tool_result_event(tool_result)
                         except ImportError:
                             # Add browser session metadata even if import fails
@@ -520,8 +551,22 @@ class StreamEventProcessor:
                                 tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
                                 logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
 
+                            # Collect documents from tool result (for complete event)
+                            if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
+                                self.turn_documents.append({
+                                    "filename": tool_result["metadata"]["filename"],
+                                    "tool_type": tool_result["metadata"]["tool_type"]
+                                })
+
                             yield self.formatter.create_tool_result_event(tool_result)
                     else:
+                        # Collect documents from tool result (for complete event)
+                        if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
+                            self.turn_documents.append({
+                                "filename": tool_result["metadata"]["filename"],
+                                "tool_type": tool_result["metadata"]["tool_type"]
+                            })
+
                         yield self.formatter.create_tool_result_event(tool_result)
     
     def _create_multimodal_message(self, text: str, file_paths: list = None):

@@ -29,6 +29,10 @@ export interface ToolResultEvent {
     format: string;
     data: string;
   }>;
+  documents?: Array<{
+    filename: string;
+    tool_type: string;
+  }>;
   metadata?: Record<string, any>;
 }
 
@@ -48,6 +52,10 @@ export interface CompleteEvent {
   images?: Array<{
     format: string;
     data: string;
+  }>;
+  documents?: Array<{
+    filename: string;
+    tool_type: string;
   }>;
   usage?: TokenUsage;
 }

@@ -56,6 +56,38 @@
       "icon": "📊",
       "enabled": true,
       "isDynamic": false
+    },
+    {
+      "id": "word_document_tools",
+      "name": "Word Documents",
+      "description": "Create, modify, and manage Word documents with automatic storage (4 tools)",
+      "category": "code_execution_tools",
+      "icon": "📝",
+      "enabled": true,
+      "isDynamic": true,
+      "systemPromptGuidance": "Word Document Best Practices:\n\n**Filename Rules:**\n- Use ONLY letters (a-z, A-Z), numbers (0-9), and hyphens (-)\n- Examples: \"sales-report.docx\", \"Q4-analysis.docx\", \"report-final.docx\"\n- Avoid: underscores, spaces, special characters\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
+      "tools": [
+        {
+          "id": "create_word_document",
+          "name": "Create Document",
+          "description": "Create new Word document from Markdown content"
+        },
+        {
+          "id": "modify_word_document",
+          "name": "Modify Document",
+          "description": "Edit existing Word document using python-docx code"
+        },
+        {
+          "id": "list_my_word_documents",
+          "name": "List Documents",
+          "description": "List all Word documents in workspace"
+        },
+        {
+          "id": "read_word_document",
+          "name": "Read Document",
+          "description": "Read and download document from workspace"
+        }
+      ]
     }
   ],
   "browser_automation": [
@@ -67,6 +99,7 @@
       "icon": "🌐",
       "enabled": true,
       "isDynamic": true,
+      "systemPromptGuidance": "Browser Automation Best Practices:\n- **ALWAYS prefer direct URLs with search parameters** over multi-step form filling\n- Examples:\n  ✓ Use: \"https://www.google.com/search?q=AI+news\" (1 step)\n  ✗ Avoid: Navigate to google.com → find search box → type → click search (3-4 steps)\n  ✓ Use: \"https://www.amazon.com/s?k=wireless+headphones\"\n  ✗ Avoid: Navigate to amazon.com → find search → type → submit\n- This reduces steps, improves reliability, and bypasses CAPTCHA challenges more effectively\n- Only use browser_act for interactions when direct URL navigation is not possible",
       "tools": [
         {
           "id": "browser_navigate",

@@ -124,7 +124,7 @@ plt.savefig('chart.png', dpi=300, bbox_inches='tight')
 - Returns JSON data
 
 **Implementation Details:**
-- Location: `chatbot-app/agentcore/src/builtin_tools/browser_tools.py`
+- Location: `chatbot-app/agentcore/src/builtin_tools/nova_act_browser_tools.py`
 - Controller: `browser_controller.py` manages session lifecycle and WebSocket connection
 - Session isolation: Each conversation has isolated browser via `SESSION_ID` env var
 

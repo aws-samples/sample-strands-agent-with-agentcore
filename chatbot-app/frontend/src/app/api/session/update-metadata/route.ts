@@ -23,14 +23,16 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[API] Updating metadata for message ${messageId} in session ${sessionId}`)
+    console.log(`[API] Updating metadata for message ${messageId} in session ${sessionId}`, metadata)
 
     if (IS_LOCAL) {
       const { updateSession, getSession } = await import('@/lib/local-session-store')
       const session = getSession(userId, sessionId)
+      console.log(`[API] LOCAL - Session found: ${!!session}`)
       if (session) {
         const existingMessages = session.metadata?.messages || {}
         const existingMessageData = existingMessages[messageId] || {}
+        console.log(`[API] LOCAL - Existing messages: ${Object.keys(existingMessages).length}, updating message: ${messageId}`)
 
         updateSession(userId, sessionId, {
           metadata: {
@@ -44,6 +46,9 @@ export async function POST(request: NextRequest) {
             }
           }
         })
+        console.log(`[API] LOCAL - Metadata updated successfully`)
+      } else {
+        console.warn(`[API] LOCAL - Session not found: ${sessionId}`)
       }
     } else {
       const { updateSession, getSession } = await import('@/lib/dynamodb-client')

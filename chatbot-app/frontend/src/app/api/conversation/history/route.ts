@@ -244,7 +244,7 @@ export async function GET(request: NextRequest) {
       sessionMetadata = session?.metadata
     }
 
-    // Merge message metadata (latency, tokenUsage, feedback, etc.) with messages
+    // Merge message metadata (latency, tokenUsage, feedback, documents, etc.) with messages
     if (sessionMetadata?.messages) {
       messages = messages.map(msg => {
         const messageMetadata = sessionMetadata.messages[msg.id]
@@ -257,6 +257,8 @@ export async function GET(request: NextRequest) {
             ...(messageMetadata.tokenUsage && { tokenUsage: messageMetadata.tokenUsage }),
             // Merge feedback if available
             ...(messageMetadata.feedback && { feedback: messageMetadata.feedback }),
+            // Merge documents if available (for Word/PPT download buttons)
+            ...(messageMetadata.documents && { documents: messageMetadata.documents }),
           }
         }
         return msg

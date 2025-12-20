@@ -210,7 +210,7 @@ export function BrowserLiveViewModal({
                     console.log('[DCV] Connected successfully');
                     setLoading(false);
 
-                    // Keep browser at 1536×1296 (Nova Act optimal range: 864-1536 width, 1296-2304 height)
+                    // Keep browser at 1536×1296 (Nova Act optimal range: 1536-2304 width, 864-1296 height)
                     // Scaling is handled by displayLayout callback
                     // Request display layout to ensure proper size
                     if (connectionRef.current?.requestDisplayLayout) {

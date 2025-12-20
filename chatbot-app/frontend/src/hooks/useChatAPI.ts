@@ -508,12 +508,47 @@ export const useChatAPI = ({
           let text = ''
           const toolExecutions: ToolExecution[] = []
           const processedToolUseIds = new Set<string>()
+          const uploadedFiles: Array<{ name: string; type: string; size: number }> = []
 
           if (Array.isArray(msg.content)) {
             msg.content.forEach((item: any) => {
               // Extract text content
               if (item.text) {
                 text += item.text
+              }
+
+              // Extract document ContentBlocks for file badge display
+              else if (item.document) {
+                const doc = item.document
+                const format = doc.format || 'unknown'
+                const name = doc.name || 'document'
+
+                // Reconstruct filename with extension (Bedrock stores name without extension)
+                const filename = format !== 'unknown' ? `${name}.${format}` : name
+
+                // Map format to MIME type
+                const mimeTypeMap: Record<string, string> = {
+                  'pdf': 'application/pdf',
+                  'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  'doc': 'application/msword',
+                  'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  'xls': 'application/vnd.ms-excel',
+                  'csv': 'text/csv',
+                  'txt': 'text/plain',
+                  'md': 'text/markdown',
+                  'html': 'text/html'
+                }
+
+                const mimeType = mimeTypeMap[format] || 'application/octet-stream'
+
+                // Estimate size from bytes if available
+                const size = doc.source?.bytes ? doc.source.bytes.length : 0
+
+                uploadedFiles.push({
+                  name: filename,
+                  type: mimeType,
+                  size: size
+                })
               }
 
               // Handle toolUse - toolResult is always paired with toolUse in the map
@@ -543,6 +578,9 @@ export const useChatAPI = ({
               toolExecutions: toolExecutions,
               isToolMessage: true
             }),
+            ...(uploadedFiles.length > 0 && {
+              uploadedFiles: uploadedFiles
+            }),
             ...(msg.latencyMetrics && {
               latencyMetrics: msg.latencyMetrics
             }),
@@ -551,6 +589,9 @@ export const useChatAPI = ({
             }),
             ...(msg.feedback && {
               feedback: msg.feedback
+            }),
+            ...(msg.documents && {
+              documents: msg.documents
             })
           }
         })
