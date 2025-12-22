@@ -46,37 +46,15 @@ def generate_diagram_and_validate(
 ) -> Dict[str, Any]:
     """Generate diagrams and charts using Python code via Bedrock Code Interpreter.
 
-    This tool executes Python code in a sandboxed environment and returns the generated
-    diagram as raw bytes in Strands ToolResult format for proper display.
-
     Available libraries: matplotlib.pyplot, seaborn, pandas, numpy
 
     Args:
-        python_code: Complete Python code for diagram generation.
+        python_code: Python code for diagram generation
                     Must include: plt.savefig(diagram_filename, dpi=300, bbox_inches='tight')
-
-                    Example:
-                    ```python
-                    import matplotlib.pyplot as plt
-                    import numpy as np
-
-                    x = np.linspace(0, 10, 100)
-                    y = np.sin(x)
-
-                    plt.figure(figsize=(10, 6))
-                    plt.plot(x, y, 'b-', linewidth=2)
-                    plt.title('Sine Wave', fontsize=14)
-                    plt.xlabel('X axis')
-                    plt.ylabel('Y axis')
-                    plt.grid(True, alpha=0.3)
-                    plt.savefig('sine_wave.png', dpi=300, bbox_inches='tight')
-                    ```
-
-        diagram_filename: PNG filename (required). Must end with .png
-                         Example: "sales_chart.png", "architecture_diagram.png"
+        diagram_filename: PNG filename (must end with .png)
 
     Returns:
-        ToolResult with multimodal content:
+        Diagram as image in ToolResult format:
         {
             "content": [
                 {"text": "✅ Diagram generated: ..."},

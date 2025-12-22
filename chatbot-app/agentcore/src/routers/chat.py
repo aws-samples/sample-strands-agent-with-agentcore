@@ -250,13 +250,7 @@ async def chat_stream(request: ChatRequest):
                     if await request.is_disconnected():
                         client_disconnected = True
                         logger.info(f"🔌 Client disconnected during streaming for session {request.session_id}")
-                        # CRITICAL: Flush before breaking to save completed work
-                        if hasattr(agent.session_manager, 'flush'):
-                            try:
-                                agent.session_manager.flush()
-                                logger.info(f"💾 Flushed buffered messages before break (client disconnected)")
-                            except Exception as flush_error:
-                                logger.error(f"Failed to flush before break: {flush_error}")
+                        # No flush needed - messages are already saved immediately
                         break
 
                     yield event
@@ -265,38 +259,17 @@ async def chat_stream(request: ChatRequest):
                 client_disconnected = True
                 logger.warning(f"⚠️ Client disconnected during streaming for session {request.session_id}")
 
-                # Mark session manager as cancelled to prevent further message buffering
-                if hasattr(agent.session_manager, 'cancelled'):
-                    agent.session_manager.cancelled = True
-                    logger.info(f"🚫 Session manager marked as cancelled - will ignore further messages")
+                # Mark agent as cancelled to prevent further tool execution
+                if hasattr(agent, 'cancelled'):
+                    agent.cancelled = True
+                    logger.info(f"🚫 Agent marked as cancelled - will stop tool execution")
 
-                # Add final assistant message with stop reason
-                stop_message = {
-                    "role": "assistant",
-                    "content": [{"text": "Session stopped by user"}]
-                }
-                if hasattr(agent.session_manager, 'pending_messages'):
-                    agent.session_manager.pending_messages.append(stop_message)
-                    logger.info(f"📝 Added stop message to pending buffer")
-
-                # Flush buffered messages including stop message
-                if hasattr(agent.session_manager, 'flush'):
-                    try:
-                        agent.session_manager.flush()
-                        logger.info(f"💾 Flushed buffered messages with stop message after client disconnect")
-                    except Exception as flush_error:
-                        logger.error(f"Failed to flush on disconnect: {flush_error}")
+                # No buffering logic needed - messages are already saved immediately
 
                 raise  # Re-raise to properly close the connection
             except Exception as e:
                 logger.error(f"Error during streaming: {e}")
-                # Flush on error as well
-                if hasattr(agent.session_manager, 'flush'):
-                    try:
-                        agent.session_manager.flush()
-                        logger.info(f"💾 Flushed buffered messages after error")
-                    except Exception as flush_error:
-                        logger.error(f"Failed to flush on error: {flush_error}")
+                # No flush needed - messages are already saved immediately
                 raise
             finally:
                 # Cleanup: close the stream iterator if possible

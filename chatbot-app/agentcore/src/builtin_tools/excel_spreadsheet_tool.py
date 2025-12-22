@@ -1,14 +1,14 @@
 """
-Word Document Tools - 4 essential tools for Word document management.
+Excel Spreadsheet Tools - 4 essential tools for Excel spreadsheet management.
 
 Tools:
-1. create_word_document - Create new Word document from Python code
-2. modify_word_document - Modify existing Word document with python-docx code
-3. list_my_word_documents - List all Word documents in workspace
-4. read_word_document - Retrieve document for download
+1. create_excel_spreadsheet - Create new Excel spreadsheet from Python code
+2. modify_excel_spreadsheet - Modify existing Excel spreadsheet with openpyxl code
+3. list_my_excel_spreadsheets - List all Excel spreadsheets in workspace
+4. read_excel_spreadsheet - Retrieve spreadsheet for download
 
-Note: Uploaded .docx files are automatically stored to workspace by agent.py
-Pattern follows diagram_tool for Code Interpreter usage.
+Note: Uploaded .xlsx files are automatically stored to workspace by agent.py
+Pattern follows word_document_tool for Code Interpreter usage.
 """
 
 import os
@@ -17,13 +17,13 @@ import logging
 from typing import Dict, Any, Optional
 from strands import tool, ToolContext
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-from .lib.document_manager import WordDocumentManager
+from .lib.document_manager import ExcelDocumentManager
 
 logger = logging.getLogger(__name__)
 
 
-def _validate_document_name(name: str) -> tuple[bool, Optional[str]]:
-    """Validate document name meets requirements (without extension).
+def _validate_spreadsheet_name(name: str) -> tuple[bool, Optional[str]]:
+    """Validate spreadsheet name meets requirements (without extension).
 
     Rules:
     - Only letters (a-z, A-Z), numbers (0-9), and hyphens (-)
@@ -32,7 +32,7 @@ def _validate_document_name(name: str) -> tuple[bool, Optional[str]]:
     - No leading/trailing hyphens
 
     Args:
-        name: Document name without extension (e.g., "sales-report")
+        name: Spreadsheet name without extension (e.g., "sales-report")
 
     Returns:
         (is_valid, error_message)
@@ -41,7 +41,7 @@ def _validate_document_name(name: str) -> tuple[bool, Optional[str]]:
     """
     # Check for empty name
     if not name:
-        return False, "Document name cannot be empty"
+        return False, "Spreadsheet name cannot be empty"
 
     # Check for valid characters: only letters, numbers, hyphens
     if not re.match(r'^[a-zA-Z0-9\-]+$', name):
@@ -59,17 +59,17 @@ def _validate_document_name(name: str) -> tuple[bool, Optional[str]]:
     return True, None
 
 
-def _sanitize_document_name_for_bedrock(filename: str) -> str:
+def _sanitize_spreadsheet_name_for_bedrock(filename: str) -> str:
     """Sanitize existing filename for Bedrock API (removes extension).
 
     Use this ONLY for existing files being read from S3.
-    For new files, use _validate_document_name() instead.
+    For new files, use _validate_spreadsheet_name() instead.
 
     Args:
-        filename: Original filename with extension (e.g., "test_document_v2.docx")
+        filename: Original filename with extension (e.g., "test_spreadsheet_v2.xlsx")
 
     Returns:
-        Sanitized name without extension (e.g., "test-document-v2")
+        Sanitized name without extension (e.g., "test-spreadsheet-v2")
     """
     # Remove extension
     if '.' in filename:
@@ -91,10 +91,10 @@ def _sanitize_document_name_for_bedrock(filename: str) -> str:
 
     # If name becomes empty, use default
     if not name:
-        name = 'document'
+        name = 'spreadsheet'
 
-    if name != filename.replace('.docx', ''):
-        logger.info(f"Sanitized document name for Bedrock: '{filename}' → '{name}'")
+    if name != filename.replace('.xlsx', ''):
+        logger.info(f"Sanitized spreadsheet name for Bedrock: '{filename}' → '{name}'")
 
     return name
 
@@ -249,74 +249,106 @@ print(f"Image uploaded: {filename} ({{len(file_bytes)}} bytes)")
 
 
 @tool(context=True)
-def create_word_document(
+def create_excel_spreadsheet(
     python_code: str,
-    document_name: str,
+    spreadsheet_name: str,
     tool_context: ToolContext
 ) -> Dict[str, Any]:
-    """Create a new Word document using python-docx code.
+    """Create a new Excel spreadsheet using openpyxl code.
 
-    This tool executes python-docx code to create a document from scratch.
-    Perfect for generating structured documents with headings, paragraphs, tables, and charts.
+    This tool executes openpyxl code to create a spreadsheet from scratch.
+    Perfect for generating structured data with sheets, tables, charts, and formatting.
 
-    Available libraries: python-docx, matplotlib, seaborn, pandas, numpy
+    Available libraries: openpyxl, pandas, matplotlib, numpy
 
     Use this tool when:
-    - User asks to create/generate a new Word document
-    - User wants a document with specific structure and formatting
-    - User needs charts/diagrams in the initial document
+    - User asks to create/generate a new Excel spreadsheet
+    - User wants a spreadsheet with specific data structure
+    - User needs charts/pivot tables in the initial spreadsheet
 
     Args:
-        python_code: Python code using python-docx to build the document.
-                    The document is initialized as: doc = Document()
+        python_code: Python code using openpyxl to build the spreadsheet.
+                    The workbook is initialized as: wb = Workbook()
+                    The active sheet is: ws = wb.active
                     After your code, it's automatically saved.
 
-                    DO NOT include Document() initialization or doc.save() calls.
+                    DO NOT include Workbook() initialization or wb.save() calls.
 
                     Uploaded images are automatically available in Code Interpreter.
                     Use os.listdir() to discover available image files.
 
                     Common Patterns:
 
-                    Basic Structure:
+                    Basic Data Entry:
                     ```python
-doc.add_heading('Quarterly Report', level=1)
-doc.add_heading('Executive Summary', level=2)
-doc.add_paragraph('Revenue increased by 15%...')
+# Set sheet title
+ws.title = 'Sales Data'
 
-# Table with data
-table = doc.add_table(rows=4, cols=3)
-table.style = 'Light Grid Accent 1'
-table.rows[0].cells[0].text = 'Quarter'
-table.rows[0].cells[1].text = 'Revenue'
+# Add headers with formatting
+ws['A1'] = 'Product'
+ws['B1'] = 'Quantity'
+ws['C1'] = 'Price'
+from openpyxl.styles import Font, PatternFill
+ws['A1'].font = Font(bold=True, size=12)
+ws['A1'].fill = PatternFill(start_color='4472C4', end_color='4472C4', fill_type='solid')
+
+# Add data rows
+data = [
+    ['Widget A', 100, 25.50],
+    ['Widget B', 150, 30.00],
+    ['Widget C', 200, 20.00]
+]
+for row in data:
+    ws.append(row)
                     ```
 
-                    With Generated Chart:
+                    With Table:
                     ```python
-import matplotlib.pyplot as plt
-from docx.shared import Inches
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
-doc.add_heading('Sales Analysis', level=1)
+# Add data first
+ws['A1'] = 'Product'
+ws['B1'] = 'Sales'
+ws.append(['Product A', 1000])
+ws.append(['Product B', 1500])
 
-# Generate chart
-plt.figure(figsize=(8, 5))
-plt.bar(['Q1','Q2','Q3','Q4'], [100, 120, 150, 140])
-plt.title('Quarterly Sales')
-plt.savefig('sales.png', dpi=300, bbox_inches='tight')
-plt.close()
+# Create table
+tab = Table(displayName='SalesTable', ref='A1:B3')
+style = TableStyleInfo(name='TableStyleMedium9', showFirstColumn=False,
+                       showLastColumn=False, showRowStripes=True, showColumnStripes=False)
+tab.tableStyleInfo = style
+ws.add_table(tab)
+                    ```
 
-# Insert chart
-doc.add_paragraph().add_run().add_picture('sales.png', width=Inches(6))
-doc.add_paragraph('Figure 1: Sales performance')
+                    With Chart:
+                    ```python
+from openpyxl.chart import BarChart, Reference
+
+# Add data
+ws['A1'] = 'Month'
+ws['B1'] = 'Sales'
+for i, (month, sales) in enumerate([('Jan', 100), ('Feb', 120), ('Mar', 150)], 2):
+    ws[f'A{i}'] = month
+    ws[f'B{i}'] = sales
+
+# Create chart
+chart = BarChart()
+chart.title = 'Monthly Sales'
+chart.x_axis.title = 'Month'
+chart.y_axis.title = 'Sales'
+
+data = Reference(ws, min_col=2, min_row=1, max_row=4)
+categories = Reference(ws, min_col=1, min_row=2, max_row=4)
+chart.add_data(data, titles_from_data=True)
+chart.set_categories(categories)
+
+ws.add_chart(chart, 'D2')
                     ```
 
                     With Uploaded Image:
                     ```python
-from docx.shared import Inches
+from openpyxl.drawing.image import Image
 import os
-
-doc.add_heading('Product Catalog', level=1)
-doc.add_paragraph('Our new product line:')
 
 # Discover available images
 available_images = [f for f in os.listdir() if f.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
@@ -324,74 +356,62 @@ available_images = [f for f in os.listdir() if f.endswith(('.png', '.jpg', '.jpe
 if available_images:
     # Use the first image (or select specific one by filename matching)
     image_file = available_images[0]
-    doc.add_paragraph().add_run().add_picture(image_file, width=Inches(5))
-    doc.add_paragraph(f'Figure: {image_file}')
+    img = Image(image_file)
+    ws.add_image(img, 'E1')
 else:
-    # No images found - add placeholder
-    doc.add_paragraph('[No images available in workspace]')
+    # No images found - add note in cell
+    ws['E1'] = '[No images available in workspace]'
                     ```
 
-                    With Hyperlinks:
+                    With Multiple Sheets:
                     ```python
-from docx.oxml.shared import OxmlElement
-from docx.oxml.ns import qn
+# Create additional sheets
+ws2 = wb.create_sheet('Summary')
+ws3 = wb.create_sheet('Details')
 
-def add_hyperlink(paragraph, text, url):
-    part = paragraph.part
-    r_id = part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
-    hyperlink = OxmlElement('w:hyperlink')
-    hyperlink.set(qn('r:id'), r_id)
-    new_run = OxmlElement('w:r')
-    new_run.text = text
-    hyperlink.append(new_run)
-    paragraph._p.append(hyperlink)
+# Add data to each sheet
+ws.title = 'Overview'
+ws['A1'] = 'Main Data'
 
-para = doc.add_paragraph('Visit ')
-add_hyperlink(para, 'our website', 'https://example.com')
+ws2['A1'] = 'Summary'
+ws3['A1'] = 'Detailed Analysis'
                     ```
 
-                    With Placeholders for Future Edits:
-                    ```python
-doc.add_heading('Analysis', level=2)
-doc.add_paragraph('{{INSERT_CHART_HERE}}')  # Marker for modify_word_document
-doc.add_paragraph('Summary text...')
-                    ```
-
-        document_name: Document name WITHOUT extension (.docx is added automatically)
-                      Use ONLY letters, numbers, hyphens (no underscores or spaces)
-                      Examples: "sales-report", "Q4-analysis", "report-final"
+        spreadsheet_name: Spreadsheet name WITHOUT extension (.xlsx is added automatically)
+                         Use ONLY letters, numbers, hyphens (no underscores or spaces)
+                         Examples: "sales-report", "Q4-data", "inventory-2024"
 
     Returns:
         Success message with file details and workspace list
 
     Note:
-        - Document is saved to workspace for future editing with modify_word_document
+        - Spreadsheet is saved to workspace for future editing
         - Uploaded images are automatically available in Code Interpreter
-        - Keep code focused on structure; use modify_word_document for complex refinements
+        - Keep code focused on structure; use modify_excel_spreadsheet for refinements
     """
     try:
-        logger.info("=== create_word_document called ===")
-        logger.info(f"Document name: {document_name}")
+        logger.info("=== create_excel_spreadsheet called ===")
+        logger.info(f"Spreadsheet name: {spreadsheet_name}")
 
-        # Validate document name (without extension)
-        is_valid, error_msg = _validate_document_name(document_name)
+        # Validate spreadsheet name (without extension)
+        is_valid, error_msg = _validate_spreadsheet_name(spreadsheet_name)
         if not is_valid:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid document name**: {document_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report\n- Q4-analysis\n- report-final-v2"
+                    "text": f"❌ **Invalid spreadsheet name**: {spreadsheet_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report\n- Q4-data\n- inventory-2024"
                 }],
                 "status": "error"
             }
 
-        # Add .docx extension
-        document_filename = f"{document_name}.docx"
-        logger.info(f"Full filename: {document_filename}")
+        # Add .xlsx extension
+        spreadsheet_filename = f"{spreadsheet_name}.xlsx"
+        logger.info(f"Full filename: {spreadsheet_filename}")
 
         # Get user and session IDs
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = ExcelDocumentManager(user_id, session_id)
 
         # Get Code Interpreter
         code_interpreter_id = _get_code_interpreter_id()
@@ -413,24 +433,26 @@ doc.add_paragraph('Summary text...')
             if loaded_images:
                 logger.info(f"Loaded {len(loaded_images)} image(s) from workspace: {loaded_images}")
 
-            # Get Code Interpreter path for file (filename only, no subdirectory)
-            ci_path = doc_manager.get_ci_path(document_filename)
+            # Get Code Interpreter path for file
+            ci_path = doc_manager.get_ci_path(spreadsheet_filename)
 
-            # Build document creation code
+            # Build spreadsheet creation code
             creation_code = f"""
-from docx import Document
-from docx.shared import Pt, RGBColor, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
-# Create new document
-doc = Document()
+# Create new workbook
+wb = Workbook()
+ws = wb.active
 
 # Execute user's creation code
 {python_code}
 
-# Save document
-doc.save('{ci_path}')
-print(f"Document created: {ci_path}")
+# Save workbook
+wb.save('{ci_path}')
+print(f"Spreadsheet created: {ci_path}")
 """
 
             # Execute creation
@@ -449,19 +471,19 @@ print(f"Document created: {ci_path}")
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Failed to create document**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your python-docx code for syntax errors or incorrect API usage."
+                            "text": f"❌ **Failed to create spreadsheet**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your openpyxl code for syntax errors or incorrect API usage."
                         }],
                         "status": "error"
                     }
 
-            logger.info("Document creation completed")
+            logger.info("Spreadsheet creation completed")
 
             # Download from Code Interpreter
-            file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, document_filename)
+            file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, spreadsheet_filename)
 
             # Save to S3 for persistence
             s3_info = doc_manager.save_to_s3(
-                document_filename,
+                spreadsheet_filename,
                 file_bytes,
                 metadata={'source': 'python_code_creation'}
             )
@@ -470,9 +492,9 @@ print(f"Document created: {ci_path}")
             workspace_docs = doc_manager.list_s3_documents()
             workspace_summary = doc_manager.format_file_list(workspace_docs)
 
-            message = f"""✅ **Document created successfully**
+            message = f"""✅ **Spreadsheet created successfully**
 
-**File**: {document_filename} ({s3_info['size_kb']})
+**File**: {spreadsheet_filename} ({s3_info['size_kb']})
 
 {workspace_summary}"""
 
@@ -481,8 +503,8 @@ print(f"Document created: {ci_path}")
                 "content": [{"text": message}],
                 "status": "success",
                 "metadata": {
-                    "filename": document_filename,
-                    "tool_type": "word_document",
+                    "filename": spreadsheet_filename,
+                    "tool_type": "excel_spreadsheet",
                     "user_id": user_id,
                     "session_id": session_id
                 }
@@ -492,142 +514,108 @@ print(f"Document created: {ci_path}")
             code_interpreter.stop()
 
     except Exception as e:
-        logger.error(f"create_word_document failed: {e}")
+        logger.error(f"create_excel_spreadsheet failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to create document**\n\n{str(e)}"
+                "text": f"❌ **Failed to create spreadsheet**\n\n{str(e)}"
             }],
             "status": "error"
         }
 
 
 @tool(context=True)
-def modify_word_document(
+def modify_excel_spreadsheet(
     source_name: str,
     output_name: str,
     python_code: str,
     tool_context: ToolContext
 ) -> Dict[str, Any]:
-    """Modify existing Word document using python-docx code and save with a new name.
+    """Modify existing Excel spreadsheet using openpyxl code and save with a new name.
 
-    This tool loads a document from workspace, executes python-docx code to modify it,
+    This tool loads a spreadsheet from workspace, executes openpyxl code to modify it,
     and saves it with a new filename to preserve the original.
 
-    Available libraries: python-docx, matplotlib, seaborn, pandas, numpy
+    Available libraries: openpyxl, pandas, matplotlib, numpy
 
     Use this tool when:
-    - User wants to edit/modify/update an existing document
-    - User asks to add content, charts, or images to a document
-    - User wants to refine or change parts of a document
+    - User wants to edit/modify/update an existing spreadsheet
+    - User asks to add sheets, data, charts, or images to a spreadsheet
+    - User wants to refine or change parts of a spreadsheet
 
     IMPORTANT Safety Rules:
-    - Always use different output_filename than source_filename (e.g., "report.docx" → "report_v2.docx")
-    - Always check array lengths before accessing (len(doc.paragraphs))
+    - Always use different output_name than source_name (e.g., "report" → "report-v2")
+    - Always check sheet exists before accessing
     - Use try-except for operations that might fail
 
     Args:
-        source_name: Document name to load (WITHOUT extension, must exist in workspace)
-                    Example: "sales-report", "Q4-analysis"
-        output_name: New document name (WITHOUT extension, must be different from source)
+        source_name: Spreadsheet name to load (WITHOUT extension, must exist in workspace)
+                    Example: "sales-report", "Q4-data"
+        output_name: New spreadsheet name (WITHOUT extension, must be different from source)
                     Use ONLY letters, numbers, hyphens (no underscores or spaces)
-                    Example: "sales-report-v2", "Q4-analysis-final"
-        python_code: Python code using python-docx library to modify document.
-                    The document is loaded as: doc = Document('<filename>')
+                    Example: "sales-report-v2", "Q4-data-final"
+        python_code: Python code using openpyxl library to modify spreadsheet.
+                    The workbook is loaded as: wb = load_workbook('<filename>')
                     After modifications, it's automatically saved.
 
-                    DO NOT include Document() initialization or doc.save() calls.
+                    DO NOT include load_workbook() or wb.save() calls.
 
-                    Uploaded images are automatically available in Code Interpreter.
-                    Use os.listdir() to discover available image files.
+                    IMPORTANT: Uploaded images are automatically available in Code Interpreter.
 
                     Common Patterns:
 
-                    Insert Chart at Marker:
+                    Add New Sheet with Data:
                     ```python
-import matplotlib.pyplot as plt
-from docx.shared import Inches
+# Create new sheet
+ws_new = wb.create_sheet('Q1 Summary')
 
-# Generate chart
-plt.figure(figsize=(8, 5))
-plt.plot([1,2,3,4], [10, 20, 25, 30])
-plt.title('Sales Trend')
-plt.savefig('trend.png', dpi=300, bbox_inches='tight')
-plt.close()
+# Add data
+ws_new['A1'] = 'Summary Data'
+ws_new['A1'].font = Font(bold=True, size=14)
+ws_new.append(['Item', 'Value'])
+ws_new.append(['Total', 10000])
+                    ```
 
-# Find marker and replace with chart
-for para in doc.paragraphs:
-    if '{{CHART}}' in para.text:
-        para.clear()
-        para.add_run().add_picture('trend.png', width=Inches(6))
-        break
+                    Modify Existing Data:
+                    ```python
+# Access existing sheet
+ws = wb['Sales Data']
+
+# Update specific cells
+ws['B2'] = 150  # Update value
+ws['C2'].font = Font(color='FF0000')  # Change color
+                    ```
+
+                    Add Chart to Existing Sheet:
+                    ```python
+from openpyxl.chart import BarChart, Reference
+
+# Access sheet
+ws = wb.active
+
+# Create chart from existing data
+chart = BarChart()
+chart.title = 'Sales Analysis'
+data = Reference(ws, min_col=2, min_row=1, max_row=10)
+categories = Reference(ws, min_col=1, min_row=2, max_row=10)
+chart.add_data(data, titles_from_data=True)
+chart.set_categories(categories)
+
+ws.add_chart(chart, 'E2')
                     ```
 
                     Insert Uploaded Image:
                     ```python
-from docx.shared import Inches
+from openpyxl.drawing.image import Image
+
+# Access sheet
+ws = wb['Dashboard']
+
+# Images from workspace are automatically available
 import os
-
-# Discover available images
-available_images = [f for f in os.listdir() if f.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp'))]
-
-if available_images:
-    # Use the first image (or select specific one by filename matching)
-    image_file = available_images[0]
-
-    # Add new paragraph with image
-    para = doc.add_paragraph()
-    run = para.add_run()
-    run.add_picture(image_file, width=Inches(6.5))
-
-    # Add caption
-    caption = doc.add_paragraph(f'Figure: {image_file}')
-    caption.alignment = WD_ALIGN_PARAGRAPH.CENTER
-else:
-    # No images found - add placeholder text
-    doc.add_paragraph('[Image placeholder - no images found in workspace]')
-                    ```
-
-                    Add Hyperlink:
-                    ```python
-from docx.oxml.shared import OxmlElement
-from docx.oxml.ns import qn
-
-def add_hyperlink(paragraph, text, url):
-    part = paragraph.part
-    r_id = part.relate_to(url, 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink', is_external=True)
-    hyperlink = OxmlElement('w:hyperlink')
-    hyperlink.set(qn('r:id'), r_id)
-    new_run = OxmlElement('w:r')
-    new_run.text = text
-    hyperlink.append(new_run)
-    paragraph._p.append(hyperlink)
-
-# Add to end of document
-para = doc.add_paragraph('For more info: ')
-add_hyperlink(para, 'Click here', 'https://example.com')
-                    ```
-
-                    Preserve Formatting When Editing:
-                    ```python
-# Preserve existing formatting when modifying text
-if len(doc.paragraphs) > 0:
-    p = doc.paragraphs[0]
-    if len(p.runs) > 0:
-        # Copy original formatting
-        original_run = p.runs[0]
-        font_name = original_run.font.name
-        font_size = original_run.font.size
-        is_bold = original_run.font.bold
-
-        # Clear and add new text with same formatting
-        for run in p.runs:
-            run.text = ''
-
-        new_run = p.runs[0] if len(p.runs) > 0 else p.add_run()
-        new_run.text = 'New text with preserved formatting'
-        new_run.font.name = font_name
-        new_run.font.size = font_size
-        new_run.font.bold = is_bold
+images = [f for f in os.listdir() if f.endswith(('.png', '.jpg', '.jpeg'))]
+if images:
+    img = Image(images[0])
+    ws.add_image(img, 'F5')
                     ```
 
     Returns:
@@ -635,19 +623,18 @@ if len(doc.paragraphs) > 0:
 
     Note:
         - Uploaded images are automatically available in Code Interpreter
-        - Use 0-based indexing (first paragraph = index 0)
         - Document automatically synced to S3
     """
     try:
-        logger.info("=== modify_word_document called ===")
+        logger.info("=== modify_excel_spreadsheet called ===")
         logger.info(f"Source: {source_name}, Output: {output_name}")
 
         # Validate output name format
-        is_valid, error_msg = _validate_document_name(output_name)
+        is_valid, error_msg = _validate_spreadsheet_name(output_name)
         if not is_valid:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report-v2\n- Q4-analysis-final\n- report-revised"
+                    "text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report-v2\n- Q4-data-final\n- report-revised"
                 }],
                 "status": "error"
             }
@@ -661,16 +648,16 @@ if len(doc.paragraphs) > 0:
                 "status": "error"
             }
 
-        # Add .docx extensions
-        source_filename = f"{source_name}.docx"
-        output_filename = f"{output_name}.docx"
+        # Add .xlsx extensions
+        source_filename = f"{source_name}.xlsx"
+        output_filename = f"{output_name}.xlsx"
         logger.info(f"Full filenames: {source_filename} → {output_filename}")
 
         # Get user and session IDs
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = ExcelDocumentManager(user_id, session_id)
 
         # Get Code Interpreter
         code_interpreter_id = _get_code_interpreter_id()
@@ -700,19 +687,20 @@ if len(doc.paragraphs) > 0:
 
             # Build modification code
             modification_code = f"""
-from docx import Document
-from docx.shared import Pt, RGBColor, Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
+from openpyxl import load_workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.chart import BarChart, LineChart, PieChart, Reference
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
-# Load source document
-doc = Document('{source_ci_path}')
+# Load source spreadsheet
+wb = load_workbook('{source_ci_path}')
 
 # Execute user's modification code
 {python_code}
 
 # Save to output file
-doc.save('{output_ci_path}')
-print(f"Document modified and saved: {output_ci_path}")
+wb.save('{output_ci_path}')
+print(f"Spreadsheet modified and saved: {output_ci_path}")
 """
 
             # Execute modification
@@ -731,14 +719,14 @@ print(f"Document modified and saved: {output_ci_path}")
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your python-docx code for syntax errors or incorrect API usage."
+                            "text": f"❌ **Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your openpyxl code for syntax errors or incorrect API usage."
                         }],
                         "status": "error"
                     }
 
-            logger.info("Document modification completed")
+            logger.info("Spreadsheet modification completed")
 
-            # Download modified document from Code Interpreter
+            # Download modified spreadsheet from Code Interpreter
             file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, output_filename)
 
             # Save to S3 with output filename
@@ -757,7 +745,7 @@ print(f"Document modified and saved: {output_ci_path}")
             workspace_summary = doc_manager.format_file_list(workspace_docs)
 
             # Build success message
-            message = f"""✅ **Document modified successfully**
+            message = f"""✅ **Spreadsheet modified successfully**
 
 **Source**: {source_filename}
 **Saved as**: {output_filename} ({s3_info['size_kb']})
@@ -770,7 +758,7 @@ print(f"Document modified and saved: {output_ci_path}")
                 "status": "success",
                 "metadata": {
                     "filename": output_filename,
-                    "tool_type": "word_document",
+                    "tool_type": "excel_spreadsheet",
                     "user_id": user_id,
                     "session_id": session_id
                 }
@@ -780,62 +768,62 @@ print(f"Document modified and saved: {output_ci_path}")
             code_interpreter.stop()
 
     except FileNotFoundError as e:
-        logger.error(f"Document not found: {e}")
+        logger.error(f"Spreadsheet not found: {e}")
         return {
             "content": [{
-                "text": f"❌ **Document not found**: {source_filename}"
+                "text": f"❌ **Spreadsheet not found**: {source_filename}"
             }],
             "status": "error"
         }
     except Exception as e:
-        logger.error(f"modify_word_document failed: {e}")
+        logger.error(f"modify_excel_spreadsheet failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to modify document**\n\n{str(e)}"
+                "text": f"❌ **Failed to modify spreadsheet**\n\n{str(e)}"
             }],
             "status": "error"
         }
 
 
 @tool(context=True)
-def list_my_word_documents(
+def list_my_excel_spreadsheets(
     tool_context: ToolContext
 ) -> Dict[str, Any]:
-    """List all Word documents in workspace.
+    """List all Excel spreadsheets in workspace.
 
-    Shows all .docx files in workspace with size and metadata.
+    Shows all .xlsx files in workspace with size and metadata.
 
     Use this tool when:
-    - User asks "what Word files do I have?"
-    - User says "show my documents", "list files"
-    - Before modifying: verify document exists
+    - User asks "what Excel files do I have?"
+    - User says "show my spreadsheets", "list files"
+    - Before modifying: verify spreadsheet exists
     - User wants to see workspace contents
 
     No arguments needed.
 
     Returns:
-        - Formatted list of all Word documents
+        - Formatted list of all Excel spreadsheets
         - Each entry shows: filename, size, last modified date
         - Total file count
         - Metadata for frontend download buttons
 
     Example Usage:
         Scenario 1 - Check available files:
-            User: "What Word documents do I have?"
-            AI: list_my_word_documents()
-            → Shows: report.docx, proposal.docx, analysis.docx
+            User: "What Excel spreadsheets do I have?"
+            AI: list_my_excel_spreadsheets()
+            → Shows: sales.xlsx, inventory.xlsx, report.xlsx
 
         Scenario 2 - Before modifying:
-            User: "Edit my report"
+            User: "Edit my sales data"
             AI: [Unclear which file]
-            AI: list_my_word_documents()
-            AI: "I found these documents: ... Which one should I modify?"
+            AI: list_my_excel_spreadsheets()
+            AI: "I found these spreadsheets: ... Which one should I modify?"
 
     Example Output:
-        📁 Workspace (3 documents):
-          - q4_report.docx (45.6 KB) - Modified: 2025-01-15
-          - proposal.docx (32.1 KB) - Modified: 2025-01-14
-          - analysis.docx (78.4 KB) - Modified: 2025-01-13
+        📁 Workspace (3 spreadsheets):
+          - sales-report.xlsx (52.3 KB) - Modified: 2025-01-15
+          - inventory.xlsx (41.8 KB) - Modified: 2025-01-14
+          - Q4-analysis.xlsx (89.2 KB) - Modified: 2025-01-13
 
     Note:
         - Shows files from workspace
@@ -843,13 +831,13 @@ def list_my_word_documents(
         - Frontend renders download buttons automatically
     """
     try:
-        logger.info("=== list_my_word_documents called ===")
+        logger.info("=== list_my_excel_spreadsheets called ===")
 
         # Get user and session IDs
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = ExcelDocumentManager(user_id, session_id)
 
         # List documents from S3
         documents = doc_manager.list_s3_documents()
@@ -881,91 +869,90 @@ def list_my_word_documents(
         }
 
     except Exception as e:
-        logger.error(f"list_my_word_documents failed: {e}")
+        logger.error(f"list_my_excel_spreadsheets failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to list documents**\n\n{str(e)}"
+                "text": f"❌ **Failed to list spreadsheets**\n\n{str(e)}"
             }],
             "status": "error"
         }
 
 
 @tool(context=True)
-def read_word_document(
-    document_name: str,
+def read_excel_spreadsheet(
+    spreadsheet_name: str,
     tool_context: ToolContext
 ) -> Dict[str, Any]:
-    """Read and retrieve a specific Word document.
+    """Read and retrieve a specific Excel spreadsheet.
 
-    This tool loads a document from workspace and returns it as downloadable bytes.
-    The document content is accessible to you (the agent) for analysis and answering questions.
+    This tool loads a spreadsheet from workspace and returns it as downloadable bytes.
+    The spreadsheet content is accessible to you (the agent) for analysis and answering questions.
 
     Use this tool when:
-    - User asks about document contents: "What's in report.docx?", "Summarize this document"
-    - User wants to analyze the document: "How many tables are in this file?", "What's the main topic?"
-    - User explicitly requests download: "Send me [filename]", "I need [document]"
-    - You need to verify document contents before modification
+    - User asks about spreadsheet contents: "What's in sales.xlsx?", "Summarize this data"
+    - User wants to analyze the spreadsheet: "How many sheets?", "What's the total?"
+    - User explicitly requests download: "Send me [filename]", "I need [spreadsheet]"
+    - You need to verify spreadsheet contents before modification
 
     IMPORTANT:
-    - For creating new documents: use create_word_document
-    - For modifying documents: use modify_word_document
+    - For creating new spreadsheets: use create_excel_spreadsheet
+    - For modifying spreadsheets: use modify_excel_spreadsheet
 
     Args:
-        document_name: Document name WITHOUT extension (.docx is added automatically)
-                      Must exist in workspace.
-                      Example: "report", "proposal", "Q4-analysis"
+        spreadsheet_name: Spreadsheet name WITHOUT extension (.xlsx is added automatically)
+                         Must exist in workspace.
+                         Example: "sales-report", "inventory", "Q4-data"
 
     Returns:
-        - Document metadata (filename, size, S3 location)
+        - Spreadsheet metadata (filename, size, S3 location)
         - Special metadata format for frontend download
         - Frontend automatically shows download button
 
     Example Usage:
         # Download request
-        User: "Send me the report"
-        AI: read_word_document("report.docx")
+        User: "Send me the sales report"
+        AI: read_excel_spreadsheet("sales-report")
 
         # After creation
         User: "Create report and send it"
-        AI: create_word_document(...)
-        AI: read_word_document("report.docx")
+        AI: create_excel_spreadsheet(...)
+        AI: read_excel_spreadsheet("sales-report")
 
     Note:
         - File must exist in workspace
         - Frontend handles download automatically
     """
     try:
-        logger.info("=== read_word_document called ===")
-        logger.info(f"Document name: {document_name}")
+        logger.info("=== read_excel_spreadsheet called ===")
+        logger.info(f"Spreadsheet name: {spreadsheet_name}")
 
-        # Add .docx extension
-        document_filename = f"{document_name}.docx"
-        logger.info(f"Full filename: {document_filename}")
+        # Add .xlsx extension
+        spreadsheet_filename = f"{spreadsheet_name}.xlsx"
+        logger.info(f"Full filename: {spreadsheet_filename}")
 
         # Get user and session IDs
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = ExcelDocumentManager(user_id, session_id)
 
         # Load from S3
-        file_bytes = doc_manager.load_from_s3(document_filename)
+        file_bytes = doc_manager.load_from_s3(spreadsheet_filename)
 
         # Get file info
         documents = doc_manager.list_s3_documents()
-        doc_info = next((d for d in documents if d['filename'] == document_filename), None)
+        doc_info = next((d for d in documents if d['filename'] == spreadsheet_filename), None)
 
         if not doc_info:
-            raise FileNotFoundError(f"Document not found: {document_filename}")
+            raise FileNotFoundError(f"Spreadsheet not found: {spreadsheet_filename}")
 
-        message = f"""✅ **Document ready for download**
+        message = f"""✅ **Spreadsheet ready for download**
 
-**File**: {document_filename} ({doc_info['size_kb']})
+**File**: {spreadsheet_filename} ({doc_info['size_kb']})
 **Last Modified**: {doc_info['last_modified'].split('T')[0]}"""
 
-        # Sanitize document name for Bedrock API (remove extension, handle legacy files)
-        # This handles legacy files with underscores or spaces
-        sanitized_name = _sanitize_document_name_for_bedrock(document_filename)
+        # Sanitize spreadsheet name for Bedrock API (remove extension, handle legacy files)
+        sanitized_name = _sanitize_spreadsheet_name_for_bedrock(spreadsheet_filename)
 
         # Return with downloadable bytes
         return {
@@ -973,7 +960,7 @@ def read_word_document(
                 {"text": message},
                 {
                     "document": {
-                        "format": "docx",
+                        "format": "xlsx",
                         "name": sanitized_name,
                         "source": {
                             "bytes": file_bytes
@@ -983,29 +970,29 @@ def read_word_document(
             ],
             "status": "success",
             "metadata": {
-                "filename": document_filename,
-                "s3_key": doc_manager.get_s3_key(document_filename),
+                "filename": spreadsheet_filename,
+                "s3_key": doc_manager.get_s3_key(spreadsheet_filename),
                 "size_kb": doc_info['size_kb'],
                 "last_modified": doc_info['last_modified'],
-                "tool_type": "word_document",
+                "tool_type": "excel_spreadsheet",
                 "user_id": user_id,
                 "session_id": session_id
             }
         }
 
     except FileNotFoundError as e:
-        logger.error(f"Document not found: {e}")
+        logger.error(f"Spreadsheet not found: {e}")
         return {
             "content": [{
-                "text": f"❌ **Document not found**: {document_filename}"
+                "text": f"❌ **Spreadsheet not found**: {spreadsheet_filename}"
             }],
             "status": "error"
         }
     except Exception as e:
-        logger.error(f"read_word_document failed: {e}")
+        logger.error(f"read_excel_spreadsheet failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to read document**\n\n{str(e)}"
+                "text": f"❌ **Failed to read spreadsheet**\n\n{str(e)}"
             }],
             "status": "error"
         }

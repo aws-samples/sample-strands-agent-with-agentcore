@@ -93,7 +93,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
   }
 
   // Handle document download
-  const handleDocumentDownload = async (filename: string, toolType: string) => {
+  const handleDocumentDownload = async (filename: string, toolType: string, userId?: string) => {
     if (!sessionId) {
       console.error('No session ID available for document download')
       return
@@ -107,7 +107,8 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
         body: JSON.stringify({
           sessionId,
           filename,
-          toolType
+          toolType,
+          userId  // Pass userId from metadata for accurate S3 path reconstruction
         })
       })
 
@@ -241,7 +242,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
   // Collect all documents from the turn (for rendering at the bottom)
   const turnDocuments = useMemo(() => {
-    const docs: Array<{ filename: string; tool_type: string }> = []
+    const docs: Array<{ filename: string; tool_type: string; user_id?: string }> = []
     sortedMessages.forEach(msg => {
       if (msg.documents && msg.documents.length > 0) {
         docs.push(...msg.documents)
@@ -440,7 +441,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                   <div
                     key={idx}
                     className="group relative flex items-center gap-2.5 px-3.5 py-2 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600 flex-shrink-0"
-                    onClick={() => handleDocumentDownload(doc.filename, doc.tool_type)}
+                    onClick={() => handleDocumentDownload(doc.filename, doc.tool_type, doc.user_id)}
                   >
                     <div className="flex items-center justify-center w-7 h-7 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
                       <FileText className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />

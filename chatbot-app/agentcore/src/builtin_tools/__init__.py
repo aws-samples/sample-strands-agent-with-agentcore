@@ -28,6 +28,12 @@ from .word_document_tool import (
     list_my_word_documents,
     read_word_document
 )
+from .excel_spreadsheet_tool import (
+    create_excel_spreadsheet,
+    modify_excel_spreadsheet,
+    list_my_excel_spreadsheets,
+    read_excel_spreadsheet
+)
 
 __all__ = [
     'generate_diagram_and_validate',
@@ -39,5 +45,9 @@ __all__ = [
     'create_word_document',
     'modify_word_document',
     'list_my_word_documents',
-    'read_word_document'
+    'read_word_document',
+    'create_excel_spreadsheet',
+    'modify_excel_spreadsheet',
+    'list_my_excel_spreadsheets',
+    'read_excel_spreadsheet'
 ]

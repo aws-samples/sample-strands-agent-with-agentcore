@@ -49,15 +49,22 @@ class TurnBasedSessionManager:
         Determine if we should flush the current turn.
 
         Flush when:
-        1. New user message arrives (previous turn is complete)
+        1. New user TEXT message arrives (not toolResult) - previous turn is complete
         2. Assistant message has only text (no toolUse) - turn is complete
         """
         role = message.get("role", "")
         content = message.get("content", [])
 
-        # Case 1: New user message starts a new turn
+        # Case 1: New user TEXT message (not toolResult) starts a new turn
         if role == "user" and self.last_message_role == "assistant":
-            return True
+            # Check if this is a toolResult (part of current assistant turn)
+            is_tool_result = any(
+                isinstance(item, dict) and "toolResult" in item
+                for item in content
+            )
+            # Only flush if this is NOT a toolResult
+            if not is_tool_result:
+                return True
 
         # Case 2: Assistant message with no toolUse means turn is complete
         if role == "assistant":
@@ -82,6 +89,14 @@ class TurnBasedSessionManager:
 
         # If only 1 message, return as-is
         if len(self.pending_messages) == 1:
+            return self.pending_messages[0]
+
+        # Safety check: ensure all messages have the same role
+        roles = {msg.get("role") for msg in self.pending_messages}
+        if len(roles) > 1:
+            logger.error(f"⚠️  Cannot merge messages with different roles: {roles}")
+            logger.error(f"   Pending messages: {[m.get('role') for m in self.pending_messages]}")
+            # Return first message only to avoid corruption
             return self.pending_messages[0]
 
         # Merge all content blocks
@@ -134,8 +149,18 @@ class TurnBasedSessionManager:
         """
         Add a message to the turn buffer.
         Automatically flushes when turn is complete or batch size is reached.
+
+        User text messages (not toolResults) are flushed immediately to prevent role mixing.
         """
         role = message.get("role", "")
+        content = message.get("content", [])
+
+        # Detect if this is a user text message vs toolResult
+        is_tool_result = role == "user" and any(
+            isinstance(item, dict) and "toolResult" in item
+            for item in content
+        )
+        is_user_text = role == "user" and not is_tool_result
 
         # Check if we should flush previous turn
         if self._should_flush_turn(message):
@@ -145,7 +170,15 @@ class TurnBasedSessionManager:
         self.pending_messages.append(message)
         self.last_message_role = role
 
-        logger.debug(f"📝 Buffered message (role={role}, total={len(self.pending_messages)})")
+        logger.debug(f"📝 Buffered message (role={role}, is_tool_result={is_tool_result}, total={len(self.pending_messages)})")
+
+        # IMPORTANT: User TEXT messages (not toolResults) are flushed immediately
+        # This prevents role mixing and ensures proper conversation structure
+        # toolResults are part of the assistant's turn and should be buffered
+        if is_user_text:
+            logger.info(f"💾 Flushing user text message immediately")
+            self._flush_turn()
+            return
 
         # Periodic flush: if buffer reaches batch_size, flush to prevent data loss
         if len(self.pending_messages) >= self.batch_size:

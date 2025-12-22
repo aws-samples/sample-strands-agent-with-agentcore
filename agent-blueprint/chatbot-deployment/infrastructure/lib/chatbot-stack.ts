@@ -637,6 +637,22 @@ async function sendResponse(event, status, data, reason) {
       })
     );
 
+    // Add S3 permissions for Document Bucket (Word documents, Excel spreadsheets, etc.)
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        sid: 'DocumentBucketAccess',
+        effect: iam.Effect.ALLOW,
+        actions: [
+          's3:GetObject',
+          's3:ListBucket'
+        ],
+        resources: [
+          `arn:aws:s3:::${projectName}-docs-${this.account}-${this.region}`,
+          `arn:aws:s3:::${projectName}-docs-${this.account}-${this.region}/*`
+        ]
+      })
+    );
+
     // Add CloudWatch permissions for logging
     frontendTaskDefinition.addToTaskRolePolicy(
       new iam.PolicyStatement({

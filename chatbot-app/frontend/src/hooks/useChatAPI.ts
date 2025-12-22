@@ -466,6 +466,15 @@ export const useChatAPI = ({
   }, [handleStreamEvent, handleLegacyEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated])
   // sessionId removed from dependency array - using sessionIdRef.current instead
 
+  /**
+   * Remove file hints from user message text (added for agent's context)
+   * These hints should not be displayed in the UI
+   */
+  const removeFileHints = (text: string): string => {
+    // Remove <uploaded_files>...</uploaded_files> blocks
+    return text.replace(/<uploaded_files>[\s\S]*?<\/uploaded_files>/g, '').trim()
+  }
+
   const loadSession = useCallback(async (newSessionId: string): Promise<SessionPreferences | null> => {
     try {
       logger.info(`Loading session: ${newSessionId}`)
@@ -551,6 +560,36 @@ export const useChatAPI = ({
                 })
               }
 
+              // Extract image ContentBlocks for file badge display
+              else if (item.image) {
+                const image = item.image
+                const format = image.format || 'png'
+
+                // Generate filename (images don't have names in ContentBlock, use generic name)
+                const filename = `image.${format}`
+
+                // Map format to MIME type
+                const imageMimeTypeMap: Record<string, string> = {
+                  'png': 'image/png',
+                  'jpeg': 'image/jpeg',
+                  'jpg': 'image/jpeg',
+                  'gif': 'image/gif',
+                  'webp': 'image/webp',
+                  'bmp': 'image/bmp'
+                }
+
+                const mimeType = imageMimeTypeMap[format] || 'image/png'
+
+                // Estimate size from bytes if available
+                const size = image.source?.bytes ? image.source.bytes.length : 0
+
+                uploadedFiles.push({
+                  name: filename,
+                  type: mimeType,
+                  size: size
+                })
+              }
+
               // Handle toolUse - toolResult is always paired with toolUse in the map
               else if (item.toolUse) {
                 const toolUseId = item.toolUse.toolUseId
@@ -569,9 +608,12 @@ export const useChatAPI = ({
             })
           }
 
+          // Clean user message text by removing file hints (these are for agent's context only)
+          const cleanedText = msg.role === 'user' ? removeFileHints(text) : text
+
           return {
             id: msg.id || `${newSessionId}-${index}`,
-            text: text,
+            text: cleanedText,
             sender: msg.role === 'user' ? 'user' : 'bot',
             timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
             ...(toolExecutions.length > 0 && {
@@ -596,7 +638,7 @@ export const useChatAPI = ({
           }
         })
         // Filter out user messages that only contain toolResults (no actual text content)
-        // These are intermediate messages in Claude API format that shouldn't be displayed
+        // These are intermediate messages that shouldn't be displayed
         .filter((msg: Message) => {
           // Skip user messages with no text
           if (msg.sender === 'user' && !msg.text) {

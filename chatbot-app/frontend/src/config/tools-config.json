@@ -26,7 +26,8 @@
       "category": "utilities",
       "icon": "📊",
       "enabled": true,
-      "isDynamic": false
+      "isDynamic": false,
+      "systemPromptGuidance": "Visualization Best Practices:\n\n**Data Format:**\n- Bar/Line charts: [{\"x\": label, \"y\": value}]\n- Pie charts: [{\"segment\": name, \"value\": number}]\n- Optional colors: \"color\": \"hsl(210, 100%, 50%)\""
     },
     {
       "id": "ddg_web_search",
@@ -55,7 +56,8 @@
       "category": "code_execution_tools",
       "icon": "📊",
       "enabled": true,
-      "isDynamic": false
+      "isDynamic": false,
+      "systemPromptGuidance": "Diagram Generator Best Practices:\n\n**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, seaborn, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability"
     },
     {
       "id": "word_document_tools",
@@ -65,7 +67,7 @@
       "icon": "📝",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Word Document Best Practices:\n\n**Filename Rules:**\n- Use ONLY letters (a-z, A-Z), numbers (0-9), and hyphens (-)\n- Examples: \"sales-report.docx\", \"Q4-analysis.docx\", \"report-final.docx\"\n- Avoid: underscores, spaces, special characters\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
+      "systemPromptGuidance": "Word Document Best Practices:\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
       "tools": [
         {
           "id": "create_word_document",
@@ -88,6 +90,38 @@
           "description": "Read and download document from workspace"
         }
       ]
+    },
+    {
+      "id": "excel_spreadsheet_tools",
+      "name": "Excel Spreadsheets",
+      "description": "Create, modify, and manage Excel spreadsheets with automatic storage (4 tools)",
+      "category": "code_execution_tools",
+      "icon": "📊",
+      "enabled": true,
+      "isDynamic": true,
+      "systemPromptGuidance": "Excel Spreadsheet Best Practices:\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"Q4-sales.xlsx\")\n\n**Data Structure:**\n- Use tables for structured data (TableStyleInfo)\n- Add charts for visualization (BarChart, LineChart, PieChart)\n- Format cells appropriately (Font, PatternFill, Alignment)\n- Use multiple sheets for organization\n\n**Formulas:**\n- Use Excel formulas instead of hardcoded values: '=SUM(B2:B10)', '=AVERAGE(C2:C50)'\n- Avoid circular references (A1='=A1+1' or A1='=B1' and B1='=A1')",
+      "tools": [
+        {
+          "id": "create_excel_spreadsheet",
+          "name": "Create Spreadsheet",
+          "description": "Create new Excel spreadsheet with openpyxl code"
+        },
+        {
+          "id": "modify_excel_spreadsheet",
+          "name": "Modify Spreadsheet",
+          "description": "Edit existing Excel spreadsheet using openpyxl code"
+        },
+        {
+          "id": "list_my_excel_spreadsheets",
+          "name": "List Spreadsheets",
+          "description": "List all Excel spreadsheets in workspace"
+        },
+        {
+          "id": "read_excel_spreadsheet",
+          "name": "Read Spreadsheet",
+          "description": "Read and download spreadsheet from workspace"
+        }
+      ]
     }
   ],
   "browser_automation": [
@@ -99,7 +133,7 @@
       "icon": "🌐",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Browser Automation Best Practices:\n- **ALWAYS prefer direct URLs with search parameters** over multi-step form filling\n- Examples:\n  ✓ Use: \"https://www.google.com/search?q=AI+news\" (1 step)\n  ✗ Avoid: Navigate to google.com → find search box → type → click search (3-4 steps)\n  ✓ Use: \"https://www.amazon.com/s?k=wireless+headphones\"\n  ✗ Avoid: Navigate to amazon.com → find search → type → submit\n- This reduces steps, improves reliability, and bypasses CAPTCHA challenges more effectively\n- Only use browser_act for interactions when direct URL navigation is not possible",
+      "systemPromptGuidance": "Browser Automation Best Practices:\n- ALWAYS prefer direct URLs with search parameters over multi-step navigation\n- Example: Use \"https://www.google.com/search?q=AI+news\" instead of navigating → typing → submitting\n- Only use browser_act when direct URL navigation is not possible",
       "tools": [
         {
           "id": "browser_navigate",
@@ -272,7 +306,8 @@
       "icon": "🔍",
       "enabled": false,
       "isDynamic": false,
-      "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn"
+      "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
+      "systemPromptGuidance": "Research Agent Best Practices:\n\n**Before calling:**\n- If request is broad/unclear, clarify scope first (depth, audience, focus areas)\n- Create specific research plan based on clarification\n\n**If user declines:**\n- Acknowledge and offer to adjust scope or provide simpler answer\n- NEVER repeat the same declined plan\n\n**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
     }
   ]
 }

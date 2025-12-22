@@ -308,10 +308,10 @@ export function ResearchModal({
 
                       if (isLoading) {
                         return (
-                          <div className="flex items-center justify-center p-4 bg-muted rounded">
+                          <span className="flex items-center justify-center p-4 bg-muted rounded" style={{ display: 'flex' }}>
                             <Loader2 className="w-4 h-4 animate-spin mr-2" />
                             <span className="text-sm text-muted-foreground">Loading image...</span>
-                          </div>
+                          </span>
                         )
                       }
 
@@ -323,9 +323,9 @@ export function ResearchModal({
                       // Fallback while resolving
                       console.log(`[ResearchModal] No URL found, showing pending...`)
                       return (
-                        <div className="flex items-center justify-center p-4 bg-muted rounded">
+                        <span className="flex items-center justify-center p-4 bg-muted rounded" style={{ display: 'flex' }}>
                           <span className="text-sm text-muted-foreground">Image pending...</span>
-                        </div>
+                        </span>
                       )
                     }
 

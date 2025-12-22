@@ -63,20 +63,8 @@ def browser_navigate(url: str, tool_context: ToolContext) -> Dict[str, Any]:
     """
     Navigate browser to a URL and capture the loaded page with screenshot.
 
-    CRITICAL: Use direct URLs with search parameters whenever possible.
-
     Args:
-        url: Complete URL with search parameters
-
-    Common Search URL Patterns:
-        Google:  https://www.google.com/search?q={query}
-        Amazon:  https://www.amazon.com/s?k={product}
-        YouTube: https://www.youtube.com/results?search_query={video}
-        GitHub:  https://github.com/search?q={repo}
-
-    Example - User asks "search for python tutorials on Google":
-        ✓ CORRECT: browser_navigate("https://www.google.com/search?q=python+tutorials")
-        ✗ WRONG:   browser_navigate("https://google.com") then browser_act("type python tutorials and search")
+        url: Complete URL (use direct URLs with search parameters when possible)
 
     Returns screenshot showing the loaded page.
     """

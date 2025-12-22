@@ -601,42 +601,30 @@ def create_a2a_tool(agent_id: str):
         # Define function WITHOUT decorator first
         async def tool_impl(plan: str, tool_context: ToolContext = None) -> str:
             """
-            Comprehensive web research agent that searches multiple sources, analyzes information,
-            and generates structured markdown reports with proper citations.
-
-            Before using this tool:
-            - If the user's request is too broad or unclear (e.g., "research AI"), clarify the scope first
-            - Ask about: depth level (quick/detailed/deep-dive), target audience, specific focus areas
-            - Create a clear, specific research plan based on user's clarification
-
-            If the user declines the research:
-            - Acknowledge: "I understand you've declined the research."
-            - Ask: "Would you like me to adjust the scope, or provide a simpler answer?"
-            - Offer alternatives: Modify the plan or use a different approach
-            - NEVER repeat the exact same research plan that was just declined
+            Comprehensive web research agent with multi-source search and structured markdown reports.
 
             Args:
-                plan: Research plan with objectives, topics, and expected report structure.
+                plan: Research plan with objectives, topics, and report structure
 
             Returns:
-                Detailed research report in markdown format with citations
+                Detailed markdown report with citations (displayed in Research Modal)
 
             Example plan:
                 "Research Plan: AI Market Analysis 2024
 
                 Objectives:
-                - Analyze current AI market size and growth trends
-                - Identify key players and their market share
+                - Analyze AI market size and growth trends
+                - Identify key players and market share
 
-                Topics to investigate:
-                1. Global AI market statistics (2023-2024)
-                2. Leading AI companies and their products
-                3. Investment trends and funding
+                Topics:
+                1. Global AI statistics (2023-2024)
+                2. Leading AI companies
+                3. Investment trends
 
-                Report structure:
+                Structure:
                 - Executive Summary
                 - Market Overview
-                - Key Players Analysis
+                - Key Players
                 - Future Outlook"
             """
             session_id, user_id, model_id = extract_context(tool_context)
@@ -660,9 +648,13 @@ def create_a2a_tool(agent_id: str):
             if final_result is None:
                 return "No response from research agent"
 
-            # Research agent should always return string (not dict)
-            if isinstance(final_result, dict):
-                return final_result.get('text', str(final_result))
+            # Extract text from A2A format: {"status": "success", "content": [{"text": "..."}]}
+            if isinstance(final_result, dict) and 'content' in final_result:
+                content = final_result['content']
+                if isinstance(content, list) and content and 'text' in content[0]:
+                    return content[0]['text']
+
+            # If not in expected format, return as-is
             return final_result
 
         # Set correct function name and docstring BEFORE decorating

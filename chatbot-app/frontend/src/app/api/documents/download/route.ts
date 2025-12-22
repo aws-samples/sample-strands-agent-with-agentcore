@@ -6,19 +6,20 @@ const region = process.env.AWS_REGION || 'us-west-2'
 /**
  * POST /api/documents/download
  *
- * Reconstructs S3 key from sessionId and filename, returns it for frontend to fetch presigned URL.
+ * Reconstructs S3 key from userId, sessionId and filename, returns it for frontend to fetch presigned URL.
  *
  * Request body:
  * - sessionId: string (chat session ID)
  * - filename: string (document filename)
  * - toolType: string (e.g., 'word_document')
+ * - userId: string (optional, user ID from tool metadata)
  *
  * Returns:
  * - s3Key: string (s3://bucket/path format for presigned URL generation)
  */
 export async function POST(request: NextRequest) {
   try {
-    const { sessionId, filename, toolType } = await request.json()
+    const { sessionId, filename, toolType, userId: providedUserId } = await request.json()
 
     if (!sessionId || !filename || !toolType) {
       return NextResponse.json(
@@ -27,10 +28,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Determine userId from sessionId format
+    // Use provided userId from tool metadata, or derive from sessionId as fallback
     // For anonymous users: sessionId starts with 'anon' → userId = 'anonymous'
-    // For authenticated users: sessionId starts with user's Cognito sub → userId = that sub
-    const userId = sessionId.startsWith('anon') ? 'anonymous' : sessionId.split('_')[0]
+    // For authenticated users: use provided userId from metadata (full UUID)
+    const userId = providedUserId || (sessionId.startsWith('anon') ? 'anonymous' : sessionId.split('_')[0])
 
     // Get document bucket from environment or Parameter Store
     let documentBucket = process.env.DOCUMENT_BUCKET
@@ -61,14 +62,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Reconstruct S3 path based on tool type
-    let s3Key: string
-    if (toolType === 'word_document') {
-      s3Key = `s3://${documentBucket}/documents/${userId}/${sessionId}/word/${filename}`
-    } else {
-      // Future: support other document types
-      s3Key = `s3://${documentBucket}/documents/${userId}/${sessionId}/${toolType}/${filename}`
+    // Map tool type to document type (for S3 path)
+    const toolTypeToDocType: Record<string, string> = {
+      'word_document': 'word',
+      'excel_spreadsheet': 'excel',
+      'powerpoint_presentation': 'powerpoint'  // Future
     }
+
+    const documentType = toolTypeToDocType[toolType] || toolType
+
+    // Reconstruct S3 path based on document type
+    const s3Key = `s3://${documentBucket}/documents/${userId}/${sessionId}/${documentType}/${filename}`
 
     console.log(`[DocumentDownload] Reconstructed S3 key: ${s3Key}`)
 

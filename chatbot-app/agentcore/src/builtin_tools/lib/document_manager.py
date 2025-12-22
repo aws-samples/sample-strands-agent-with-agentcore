@@ -123,13 +123,35 @@ class BaseDocumentManager:
             s3_metadata['document_type'] = self.document_type
             s3_metadata['upload_time'] = datetime.utcnow().isoformat()
 
+            # Determine ContentType based on document type
+            content_type_map = {
+                'word': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'excel': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'powerpoint': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+            }
+
+            # For images, determine MIME type from file extension
+            if self.document_type == 'image':
+                extension = filename.lower().split('.')[-1]
+                image_mime_map = {
+                    'png': 'image/png',
+                    'jpg': 'image/jpeg',
+                    'jpeg': 'image/jpeg',
+                    'gif': 'image/gif',
+                    'webp': 'image/webp',
+                    'bmp': 'image/bmp'
+                }
+                content_type = image_mime_map.get(extension, 'image/png')
+            else:
+                content_type = content_type_map.get(self.document_type, 'application/octet-stream')
+
             # Upload to S3
             self.s3_client.put_object(
                 Bucket=self.bucket,
                 Key=s3_key,
                 Body=file_bytes,
                 Metadata=s3_metadata,
-                ContentType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                ContentType=content_type
             )
 
             size_kb = len(file_bytes) / 1024
@@ -483,3 +505,80 @@ class ExcelDocumentManager(BaseDocumentManager):
 
     def __init__(self, user_id: str, session_id: str):
         super().__init__(user_id, session_id, document_type='excel')
+        logger.info("ExcelDocumentManager initialized")
+
+    def validate_xlsx_filename(self, filename: str) -> bool:
+        """Validate that filename ends with .xlsx"""
+        if not filename.endswith('.xlsx'):
+            raise ValueError(f"Filename must end with .xlsx: {filename}")
+        return True
+
+    def format_file_list(self, documents: List[Dict[str, Any]]) -> str:
+        """Format spreadsheet list for display
+
+        Args:
+            documents: List of document info dicts from list_s3_documents()
+
+        Returns:
+            Formatted string for display
+        """
+        if not documents:
+            return "📁 **Workspace**: Empty (no spreadsheets yet)"
+
+        lines = [f"📁 **Workspace** ({len(documents)} spreadsheet{'s' if len(documents) > 1 else ''}):"]
+
+        for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
+            # Parse ISO timestamp
+            modified_date = doc['last_modified'].split('T')[0]
+            lines.append(f"  - **{doc['filename']}** ({doc['size_kb']}) - Modified: {modified_date}")
+
+        return "\n".join(lines)
+
+
+class ImageDocumentManager(BaseDocumentManager):
+    """Document manager for image files (.png, .jpg, .jpeg, .gif, .webp)"""
+
+    def __init__(self, user_id: str, session_id: str):
+        super().__init__(user_id, session_id, document_type='image')
+        logger.info("ImageDocumentManager initialized")
+
+    def validate_image_filename(self, filename: str) -> bool:
+        """Validate that filename is a supported image format"""
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')
+        if not filename.lower().endswith(valid_extensions):
+            raise ValueError(f"Filename must be a supported image format: {filename}")
+        return True
+
+    def get_image_mime_type(self, filename: str) -> str:
+        """Get MIME type for image based on extension"""
+        extension = filename.lower().split('.')[-1]
+        mime_type_map = {
+            'png': 'image/png',
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'gif': 'image/gif',
+            'webp': 'image/webp',
+            'bmp': 'image/bmp'
+        }
+        return mime_type_map.get(extension, 'image/png')
+
+    def format_file_list(self, documents: List[Dict[str, Any]]) -> str:
+        """Format image list for display
+
+        Args:
+            documents: List of document info dicts from list_s3_documents()
+
+        Returns:
+            Formatted string for display
+        """
+        if not documents:
+            return "📁 **Workspace**: Empty (no images yet)"
+
+        lines = [f"📁 **Workspace** ({len(documents)} image{'s' if len(documents) > 1 else ''}):"]
+
+        for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
+            # Parse ISO timestamp
+            modified_date = doc['last_modified'].split('T')[0]
+            lines.append(f"  - **{doc['filename']}** ({doc['size_kb']}) - Modified: {modified_date}")
+
+        return "\n".join(lines)

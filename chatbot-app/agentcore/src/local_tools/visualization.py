@@ -114,53 +114,20 @@ def create_visualization(
     y_label: str = ""
 ) -> str:
     """
-    Create interactive chart visualizations from data with custom colors.
-
-    This tool generates chart specifications that the frontend will render.
-    Supports bar charts, line charts, and pie charts with customizable colors.
+    Create interactive chart visualizations (bar, line, pie) from data.
 
     Args:
-        chart_type: Type of chart ("bar", "line", or "pie")
+        chart_type: "bar", "line", or "pie"
         data: Array of data objects
-            - For bar/line charts: [{"x": value, "y": value, "color": "hsl(...)"}, ...]
-            - For pie charts: [{"segment": name, "value": number, "color": "hsl(...)"}, ...]
-            - Color field is optional. If not provided, default theme colors will be used.
-            - Colors should be in HSL format: "hsl(210, 100%, 50%)" or CSS color names
+            - Bar/line: [{"x": value, "y": value}, ...]
+            - Pie: [{"segment": name, "value": number}, ...]
+            - Optional color: "color": "hsl(210, 100%, 50%)"
         title: Chart title (optional)
-        x_label: X-axis label for bar/line charts (optional)
-        y_label: Y-axis label for bar/line charts (optional)
+        x_label: X-axis label (optional)
+        y_label: Y-axis label (optional)
 
     Returns:
-        Chart specification with validated data
-
-    Examples:
-        # Bar chart with custom colors
-        create_visualization(
-            chart_type="bar",
-            data=[
-                {"x": "Jan", "y": 100, "color": "hsl(210, 100%, 50%)"},
-                {"x": "Feb", "y": 150, "color": "hsl(150, 80%, 45%)"}
-            ],
-            title="Monthly Sales"
-        )
-
-        # Pie chart with custom colors
-        create_visualization(
-            chart_type="pie",
-            data=[
-                {"segment": "Food", "value": 300, "color": "hsl(25, 95%, 53%)"},
-                {"segment": "Transport", "value": 200, "color": "hsl(220, 70%, 50%)"},
-                {"segment": "Entertainment", "value": 150, "color": "hsl(340, 75%, 55%)"}
-            ],
-            title="Spending by Category"
-        )
-
-        # Chart without custom colors (uses default theme colors)
-        create_visualization(
-            chart_type="line",
-            data=[{"x": "Mon", "y": 20}, {"x": "Tue", "y": 35}],
-            title="Weekly Trend"
-        )
+        Chart specification for frontend rendering
     """
     try:
         # Validate input

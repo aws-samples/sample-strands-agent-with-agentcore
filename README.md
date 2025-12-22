@@ -34,7 +34,6 @@ Combines Strands Agent orchestration with AWS Bedrock AgentCore services:
 
 2. **AgentCore Runtime**
    - Strands Agent with Bedrock Claude models
-   - Turn-based session manager (optimized message buffering)
    - Uses AgentCore Memory for conversation persistence
    - Integrates with AgentCore Gateway via SigV4
    - Calls Built-in Tools via AWS API
@@ -251,30 +250,6 @@ Two-level caching via Strands hooks:
 - 🟧 **Orange**: Cache creation (new content cached)
 - 🟦 **Blue**: Cache read (reusing cached content)
 - Event1 creates initial cache, Event2+ reuses and extends cached context
-
-### Turn-based Session Manager
-
-**Implementation:** `turn_based_session_manager.py:15-188`
-
-Buffers messages within a turn to reduce AgentCore Memory API calls:
-
-```
-Without buffering:
-User message     → API call 1
-Assistant reply  → API call 2
-Tool use         → API call 3
-Tool result      → API call 4
-Total: 4 API calls per turn
-
-With buffering:
-User → Assistant → Tool → Result  → Single merged API call
-Total: 1 API call per turn (75% reduction)
-```
-
-**Key Methods:**
-- `append_message()`: Buffers messages instead of immediate persistence
-- `_should_flush_turn()`: Detects turn completion
-- `flush()`: Writes merged message to AgentCore Memory
 
 ### Multimodal I/O
 

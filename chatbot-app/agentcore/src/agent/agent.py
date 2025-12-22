@@ -89,15 +89,15 @@ def get_current_date_pacific() -> str:
 class StopHook(HookProvider):
     """Hook to handle session stop requests by cancelling tool execution"""
 
-    def __init__(self, session_manager):
-        self.session_manager = session_manager
+    def __init__(self, agent_instance):
+        self.agent = agent_instance
 
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
         registry.add_callback(BeforeToolCallEvent, self.check_cancelled)
 
     def check_cancelled(self, event: BeforeToolCallEvent) -> None:
         """Cancel tool execution if session is stopped by user"""
-        if hasattr(self.session_manager, 'cancelled') and self.session_manager.cancelled:
+        if hasattr(self.agent, 'cancelled') and self.agent.cancelled:
             tool_name = event.tool_use.get("name", "unknown")
             logger.info(f"🚫 Cancelling tool execution: {tool_name} (session stopped by user)")
             event.cancel_tool = "Session stopped by user"
@@ -172,7 +172,7 @@ class ConversationCachingHook(HookProvider):
     - Maintain 3 cache points in conversation (sliding window)
     - Prioritize recent assistant messages and tool results
     - When limit reached, remove oldest cache point and add new one
-    - Combined with system prompt cache = 4 total cache breakpoints (Claude/Bedrock limit)
+    - Combined with system prompt cache = 4 total cache breakpoints (Bedrock limit)
     - Sliding cache points keep the most recent turns cached for optimal efficiency
     """
 
@@ -375,6 +375,7 @@ class ChatbotAgent:
         self.user_id = user_id or session_id  # Use session_id as user_id if not provided
         self.enabled_tools = enabled_tools
         self.gateway_client = None  # Store Gateway MCP client for lifecycle management
+        self.cancelled = False  # Flag to stop tool execution (used by StopHook)
 
         # Store model configuration
         self.model_id = model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
@@ -442,15 +443,14 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 }
             )
 
-            # Create Turn-based Session Manager (reduces API calls by 75%)
-            from agent.turn_based_session_manager import TurnBasedSessionManager
-
-            self.session_manager = TurnBasedSessionManager(
+            # Use AgentCore Memory Session Manager directly (no buffering)
+            # Messages are saved immediately to ensure data consistency
+            self.session_manager = AgentCoreMemorySessionManager(
                 agentcore_memory_config=agentcore_memory_config,
                 region_name=aws_region
             )
 
-            logger.info(f"✅ AgentCore Memory initialized: user_id={self.user_id}")
+            logger.info(f"✅ AgentCore Memory initialized (direct mode): user_id={self.user_id}")
         else:
             # Local development: Use file-based session manager with buffering wrapper
             logger.info(f"💻 Local mode: Using FileSessionManager with buffering")
@@ -693,7 +693,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             hooks = []
 
             # Add stop hook for session cancellation (always enabled)
-            stop_hook = StopHook(self.session_manager)
+            stop_hook = StopHook(self)  # Pass agent instance instead of session_manager
             hooks.append(stop_hook)
             logger.info("✅ Stop hook enabled (BeforeToolCallEvent)")
 
@@ -790,23 +790,14 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             ):
                 yield event
 
-            # Flush any buffered messages (turn-based session manager)
-            if hasattr(self.session_manager, 'flush'):
-                self.session_manager.flush()
-                logger.debug(f"💾 Session flushed after streaming complete")
+            # No flush needed - messages are saved immediately by AgentCoreMemorySessionManager
 
         except Exception as e:
             import traceback
             logger.error(f"Error in stream_async: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
 
-            # Emergency flush: save buffered messages before losing them
-            if hasattr(self.session_manager, 'flush'):
-                try:
-                    self.session_manager.flush()
-                    logger.warning(f"🚨 Emergency flush on error - saved {len(getattr(self.session_manager, 'pending_messages', []))} buffered messages")
-                except Exception as flush_error:
-                    logger.error(f"Failed to emergency flush: {flush_error}")
+            # No flush needed - messages are already saved immediately
 
             # Send error event
             import json
@@ -858,61 +849,161 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             logger.debug(f"Failed to get workspace context: {e}")
             return None
 
-    def _auto_store_docx_files(self, uploaded_files: List[Dict[str, Any]]):
-        """Automatically store uploaded .docx files to workspace"""
+    def _get_code_interpreter_id(self) -> Optional[str]:
+        """Get Code Interpreter ID from environment or Parameter Store
+
+        Returns:
+            Code Interpreter ID string, or None if not found
+        """
+        # Check environment variable first
+        code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
+        if code_interpreter_id:
+            logger.info(f"Found CODE_INTERPRETER_ID in environment: {code_interpreter_id}")
+            return code_interpreter_id
+
+        # Try Parameter Store
         try:
-            from builtin_tools.lib.document_manager import WordDocumentManager
+            import boto3
+            project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
+            environment = os.getenv('ENVIRONMENT', 'dev')
+            region = os.getenv('AWS_REGION', 'us-west-2')
+            param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
+
+            logger.info(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
+            ssm = boto3.client('ssm', region_name=region)
+            response = ssm.get_parameter(Name=param_name)
+            code_interpreter_id = response['Parameter']['Value']
+            logger.info(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
+            return code_interpreter_id
+        except Exception as e:
+            logger.warning(f"CODE_INTERPRETER_ID not found in env or Parameter Store: {e}")
+            return None
+
+    def _store_files_by_type(
+        self,
+        uploaded_files: List[Dict[str, Any]],
+        code_interpreter,
+        extensions: List[str],
+        manager_class,
+        document_type: str
+    ):
+        """Store files of specific type to workspace
+
+        Args:
+            uploaded_files: List of uploaded file info dicts
+            code_interpreter: Active CodeInterpreter instance
+            extensions: List of file extensions to filter (e.g., ['.docx'])
+            manager_class: DocumentManager class (e.g., WordDocumentManager)
+            document_type: Type name for logging (e.g., 'Word', 'Excel', 'image')
+        """
+        # Debug: log what we're filtering
+        logger.info(f"🔍 Filtering {len(uploaded_files)} files for {document_type} (extensions: {extensions})")
+        for f in uploaded_files:
+            logger.info(f"   - {f['filename']} (matches: {any(f['filename'].lower().endswith(ext) for ext in extensions)})")
+
+        # Filter files by extensions
+        filtered_files = [
+            f for f in uploaded_files
+            if any(f['filename'].lower().endswith(ext) for ext in extensions)
+        ]
+
+        logger.info(f"✅ Filtered {len(filtered_files)} {document_type} file(s)")
+
+        if not filtered_files:
+            return
+
+        # Initialize document manager
+        doc_manager = manager_class(self.user_id, self.session_id)
+
+        # Store each file
+        for file_info in filtered_files:
+            try:
+                filename = file_info['filename']
+                file_bytes = file_info['bytes']
+
+                # Sync to both S3 and Code Interpreter
+                doc_manager.sync_to_both(
+                    code_interpreter,
+                    filename,
+                    file_bytes,
+                    metadata={'auto_stored': 'true'}
+                )
+                logger.info(f"✅ Auto-stored {document_type}: {filename}")
+            except Exception as e:
+                logger.error(f"Failed to auto-store {document_type} file {filename}: {e}")
+
+    def _auto_store_files(self, uploaded_files: List[Dict[str, Any]]):
+        """Automatically store all uploaded files to S3 workspace (unified orchestrator)
+
+        This method handles Word documents, Excel spreadsheets, and images in a single
+        Code Interpreter session for better performance and maintainability.
+
+        Architecture: S3 as Single Source of Truth
+        - All uploaded files → S3 workspace (persistent storage)
+        - When tools execute → Load from S3 to Code Interpreter (on-demand)
+        - This enables multi-turn file usage and consistent file management
+
+        Args:
+            uploaded_files: List of uploaded file info dicts with 'filename' and 'bytes'
+        """
+        # Debug: log what files we're processing
+        logger.info(f"📦 Auto-store called with {len(uploaded_files)} file(s):")
+        for f in uploaded_files:
+            logger.info(f"   - {f['filename']} ({f['content_type']})")
+
+        try:
+            from builtin_tools.lib.document_manager import (
+                WordDocumentManager,
+                ExcelDocumentManager,
+                ImageDocumentManager
+            )
             from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 
-            # Filter .docx files
-            docx_files = [f for f in uploaded_files if f['filename'].lower().endswith('.docx')]
-            if not docx_files:
+            # Get Code Interpreter ID
+            code_interpreter_id = self._get_code_interpreter_id()
+            if not code_interpreter_id:
+                logger.warning("Cannot auto-store files: CODE_INTERPRETER_ID not configured")
                 return
 
-            doc_manager = WordDocumentManager(self.user_id, self.session_id)
+            # Configuration for file types - all stored to S3 workspace for persistence
+            file_type_configs = [
+                {
+                    'extensions': ['.docx'],
+                    'manager_class': WordDocumentManager,
+                    'document_type': 'Word document'
+                },
+                {
+                    'extensions': ['.xlsx'],
+                    'manager_class': ExcelDocumentManager,
+                    'document_type': 'Excel spreadsheet'
+                },
+                {
+                    'extensions': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'],
+                    'manager_class': ImageDocumentManager,
+                    'document_type': 'image'
+                }
+            ]
 
-            # Get Code Interpreter ID (from env or Parameter Store)
-            code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
-            if not code_interpreter_id:
-                # Try Parameter Store
-                try:
-                    import boto3
-                    project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
-                    environment = os.getenv('ENVIRONMENT', 'dev')
-                    region = os.getenv('AWS_REGION', 'us-west-2')
-                    param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
-
-                    logger.info(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
-                    ssm = boto3.client('ssm', region_name=region)
-                    response = ssm.get_parameter(Name=param_name)
-                    code_interpreter_id = response['Parameter']['Value']
-                    logger.info(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
-                except Exception as e:
-                    logger.warning(f"CODE_INTERPRETER_ID not found in env or Parameter Store: {e}")
-                    return
-
+            # Start Code Interpreter (single session for all file types)
             region = os.getenv('AWS_REGION', 'us-west-2')
             code_interpreter = CodeInterpreter(region)
             code_interpreter.start(identifier=code_interpreter_id)
 
             try:
-                for file_info in docx_files:
-                    filename = file_info['filename']
-                    file_bytes = file_info['bytes']
-
-                    # Sync to both S3 and Code Interpreter
-                    doc_manager.sync_to_both(
+                # Process each file type
+                for config in file_type_configs:
+                    self._store_files_by_type(
+                        uploaded_files,
                         code_interpreter,
-                        filename,
-                        file_bytes,
-                        metadata={'auto_stored': 'true'}  # S3 metadata values must be strings
+                        config['extensions'],
+                        config['manager_class'],
+                        config['document_type']
                     )
-                    logger.info(f"✅ Auto-stored: {filename}")
             finally:
                 code_interpreter.stop()
 
         except Exception as e:
-            logger.error(f"Failed to auto-store .docx files: {e}")
+            logger.error(f"Failed to auto-store files: {e}")
 
     def _build_prompt(self, message: str, files: Optional[List] = None):
         """
@@ -937,8 +1028,11 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         content_blocks = []
         uploaded_files = []
 
-        # Add text first (user message only - no workspace context to avoid UI display issues)
-        content_blocks.append({"text": message})
+        # Add text first (file hints will be added after sanitization)
+        text_block_content = message
+
+        # Track sanitized filenames for agent's reference
+        sanitized_filenames = []
 
         # Add each file as appropriate ContentBlock
         for file in files:
@@ -962,6 +1056,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 'bytes': file_bytes,
                 'content_type': file.content_type
             })
+
+            # Track sanitized filename for agent's reference
+            sanitized_filenames.append(sanitized_full_name)
 
             # Determine file type and create appropriate ContentBlock
             if content_type.startswith("image/") or filename.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
@@ -1003,8 +1100,17 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             else:
                 logger.warning(f"Unsupported file type: {filename} ({content_type})")
 
-        # Auto-store .docx files to workspace
-        self._auto_store_docx_files(uploaded_files)
+        # Add file hints to text block (so agent knows the exact filenames stored in workspace)
+        if sanitized_filenames:
+            file_hints = "\n".join([f"- {fn}" for fn in sanitized_filenames])
+            text_block_content = f"{text_block_content}\n\n<uploaded_files>\n{file_hints}\n</uploaded_files>"
+            logger.info(f"Added file hints to prompt: {sanitized_filenames}")
+
+        # Insert text block at the beginning of content_blocks
+        content_blocks.insert(0, {"text": text_block_content})
+
+        # Auto-store files to workspace (Word, Excel, images)
+        self._auto_store_files(uploaded_files)
 
         return content_blocks, uploaded_files
 

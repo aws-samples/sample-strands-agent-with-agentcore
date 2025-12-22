@@ -168,13 +168,12 @@ class StreamEventProcessor:
 
             # Note: Keepalive is handled at the router level (chat.py) via stream_with_keepalive wrapper
             async for event in stream_iterator:
-                # Check if session was cancelled (stop button clicked)
-                if hasattr(agent, 'session_manager') and hasattr(agent.session_manager, 'cancelled'):
-                    if agent.session_manager.cancelled:
-                        logger.info(f"🛑 Stream cancelled for session {session_id} - stopping event processing")
-                        # Send stop event and exit stream
-                        yield self.formatter.create_response_event("\n\n*Session stopped by user*")
-                        break
+                # Check if agent was cancelled (stop button clicked)
+                if hasattr(agent, 'cancelled') and agent.cancelled:
+                    logger.info(f"🛑 Stream cancelled for session {session_id} - stopping event processing")
+                    # Send stop event and exit stream
+                    yield self.formatter.create_response_event("\n\n*Session stopped by user*")
+                    break
                 while self.pending_events:
                     pending_event = self.pending_events.pop(0)
                     yield pending_event
@@ -326,7 +325,7 @@ class StreamEventProcessor:
                     # Handle empty input case
                     if tool_input == "" or tool_input == "{}":
                         # Empty string or empty JSON object means tool has no parameters or all optional parameters
-                        # This is valid for tools like store_word_document(custom_filename: Optional[str] = None)
+                        # This is valid for tools with all optional parameters
                         should_process = True
                         processed_input = {}
                     else:
@@ -516,10 +515,16 @@ class StreamEventProcessor:
 
                                 # Collect documents from tool result (for complete event)
                                 if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                                    self.turn_documents.append({
+                                    doc_info = {
                                         "filename": tool_result["metadata"]["filename"],
                                         "tool_type": tool_result["metadata"]["tool_type"]
-                                    })
+                                    }
+                                    # Include user_id and session_id if available (needed for S3 path reconstruction)
+                                    if "user_id" in tool_result["metadata"]:
+                                        doc_info["user_id"] = tool_result["metadata"]["user_id"]
+                                    if "session_id" in tool_result["metadata"]:
+                                        doc_info["session_id"] = tool_result["metadata"]["session_id"]
+                                    self.turn_documents.append(doc_info)
 
                                 # Process the tool result
                                 yield self.formatter.create_tool_result_event(tool_result)
@@ -537,10 +542,16 @@ class StreamEventProcessor:
 
                                 # Collect documents from tool result (for complete event)
                                 if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                                    self.turn_documents.append({
+                                    doc_info = {
                                         "filename": tool_result["metadata"]["filename"],
                                         "tool_type": tool_result["metadata"]["tool_type"]
-                                    })
+                                    }
+                                    # Include user_id and session_id if available (needed for S3 path reconstruction)
+                                    if "user_id" in tool_result["metadata"]:
+                                        doc_info["user_id"] = tool_result["metadata"]["user_id"]
+                                    if "session_id" in tool_result["metadata"]:
+                                        doc_info["session_id"] = tool_result["metadata"]["session_id"]
+                                    self.turn_documents.append(doc_info)
 
                                 yield self.formatter.create_tool_result_event(tool_result)
                         except ImportError:
@@ -553,19 +564,31 @@ class StreamEventProcessor:
 
                             # Collect documents from tool result (for complete event)
                             if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                                self.turn_documents.append({
+                                doc_info = {
                                     "filename": tool_result["metadata"]["filename"],
                                     "tool_type": tool_result["metadata"]["tool_type"]
-                                })
+                                }
+                                # Include user_id and session_id if available (needed for S3 path reconstruction)
+                                if "user_id" in tool_result["metadata"]:
+                                    doc_info["user_id"] = tool_result["metadata"]["user_id"]
+                                if "session_id" in tool_result["metadata"]:
+                                    doc_info["session_id"] = tool_result["metadata"]["session_id"]
+                                self.turn_documents.append(doc_info)
 
                             yield self.formatter.create_tool_result_event(tool_result)
                     else:
                         # Collect documents from tool result (for complete event)
                         if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                            self.turn_documents.append({
+                            doc_info = {
                                 "filename": tool_result["metadata"]["filename"],
                                 "tool_type": tool_result["metadata"]["tool_type"]
-                            })
+                            }
+                            # Include user_id and session_id if available (needed for S3 path reconstruction)
+                            if "user_id" in tool_result["metadata"]:
+                                doc_info["user_id"] = tool_result["metadata"]["user_id"]
+                            if "session_id" in tool_result["metadata"]:
+                                doc_info["session_id"] = tool_result["metadata"]["session_id"]
+                            self.turn_documents.append(doc_info)
 
                         yield self.formatter.create_tool_result_event(tool_result)
     
