@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, startTransition } from 'react'
 import { Message, ToolExecution } from '@/types/chat'
 import { StreamEvent, ChatSessionState, ChatUIState } from '@/types/events'
 import { useLatencyTracking } from './useLatencyTracking'
@@ -182,22 +182,26 @@ export const useStreamEvents = ({
         }
 
         currentToolExecutionsRef.current = updatedExecutions
-        setSessionState(prev => ({
-          ...prev,
-          toolExecutions: updatedExecutions
-        }))
 
-        setMessages(prevMessages => prevMessages.map(msg => {
-          if (msg.isToolMessage && msg.toolExecutions) {
-            const updatedToolExecutions = msg.toolExecutions.map(tool =>
-              tool.id === data.toolUseId
-                ? { ...tool, toolInput: normalizedInput }
-                : tool
-            )
-            return { ...msg, toolExecutions: updatedToolExecutions }
-          }
-          return msg
-        }))
+        // Use startTransition to batch state updates and prevent flickering
+        startTransition(() => {
+          setSessionState(prev => ({
+            ...prev,
+            toolExecutions: updatedExecutions
+          }))
+
+          setMessages(prevMessages => prevMessages.map(msg => {
+            if (msg.isToolMessage && msg.toolExecutions) {
+              const updatedToolExecutions = msg.toolExecutions.map(tool =>
+                tool.id === data.toolUseId
+                  ? { ...tool, toolInput: normalizedInput }
+                  : tool
+              )
+              return { ...msg, toolExecutions: updatedToolExecutions }
+            }
+            return msg
+          }))
+        })
       } else {
         // Create new tool execution
         const newToolExecution: ToolExecution = {
@@ -212,22 +216,25 @@ export const useStreamEvents = ({
         const updatedExecutions = [...currentToolExecutionsRef.current, newToolExecution]
         currentToolExecutionsRef.current = updatedExecutions
 
-        setSessionState(prev => ({
-          ...prev,
-          toolExecutions: updatedExecutions
-        }))
+        // Use startTransition to batch state updates and prevent flickering
+        startTransition(() => {
+          setSessionState(prev => ({
+            ...prev,
+            toolExecutions: updatedExecutions
+          }))
 
-        // Create new tool message
-        const toolMessageId = Date.now() + Math.random()
-        setMessages(prevMessages => [...prevMessages, {
-          id: toolMessageId,
-          text: '',
-          sender: 'bot',
-          timestamp: new Date().toLocaleTimeString(),
-          toolExecutions: [newToolExecution],
-          isToolMessage: true,
-          turnId: currentTurnIdRef.current || undefined
-        }])
+          // Create new tool message
+          const toolMessageId = Date.now() + Math.random()
+          setMessages(prevMessages => [...prevMessages, {
+            id: toolMessageId,
+            text: '',
+            sender: 'bot',
+            timestamp: new Date().toLocaleTimeString(),
+            toolExecutions: [newToolExecution],
+            isToolMessage: true,
+            turnId: currentTurnIdRef.current || undefined
+          }])
+        })
       }
     }
   }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages, setUIState, uiState])
@@ -235,9 +242,12 @@ export const useStreamEvents = ({
   const handleToolResultEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_result') {
       // Debug: Log documents field
-      console.log('[DocumentDownload] tool_result event received:', {
+      console.log('[ToolResult] 🔧 tool_result event received:', {
         toolUseId: data.toolUseId,
+        status: data.status,
+        hasResult: !!data.result,
         hasDocuments: !!data.documents,
+        hasImages: !!data.images,
         documents: data.documents
       })
 
@@ -307,42 +317,47 @@ export const useStreamEvents = ({
         console.log('[Live View] No browser session in metadata:', data.metadata)
       }
 
-      // Update state
-      setSessionState(prev => {
-        const newState = {
-          ...prev,
-          toolExecutions: updatedExecutions,
-          ...browserSessionUpdate
-        }
-        if (browserSessionUpdate.browserSession) {
-          console.log('[Live View] State updated with browser session:', newState.browserSession)
-        }
-        return newState
-      })
-
-      // Update tool message
-      setMessages(prev => prev.map(msg => {
-        if (msg.isToolMessage && msg.toolExecutions) {
-          const updatedToolExecutions = msg.toolExecutions.map(tool =>
-            tool.id === data.toolUseId
-              ? { ...tool, toolResult: data.result, images: data.images, isComplete: true }
-              : tool
-          )
-          // Documents are sent in complete event only (not in tool_result)
-          return {
-            ...msg,
-            toolExecutions: updatedToolExecutions
+      // Update state - Use startTransition to batch updates and prevent flickering
+      startTransition(() => {
+        setSessionState(prev => {
+          const newState = {
+            ...prev,
+            toolExecutions: updatedExecutions,
+            ...browserSessionUpdate
           }
-        }
-        return msg
-      }))
+          if (browserSessionUpdate.browserSession) {
+            console.log('[Live View] State updated with browser session:', newState.browserSession)
+          }
+          return newState
+        })
+
+        // Update tool message
+        setMessages(prev => prev.map(msg => {
+          if (msg.isToolMessage && msg.toolExecutions) {
+            const updatedToolExecutions = msg.toolExecutions.map(tool =>
+              tool.id === data.toolUseId
+                ? { ...tool, toolResult: data.result, images: data.images, isComplete: true }
+                : tool
+            )
+            // Documents are sent in complete event only (not in tool_result)
+            return {
+              ...msg,
+              toolExecutions: updatedToolExecutions
+            }
+          }
+          return msg
+        }))
+      })
     }
   }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages])
 
   const handleCompleteEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'complete') {
+      console.log('[Complete] 🎯 Complete event received:', { messageId: streamingIdRef.current, dataImages: data.images?.length, dataDocuments: data.documents?.length })
+
       // Prevent duplicate processing
       if (completeProcessedRef.current) {
+        console.log('[Complete] ⚠️ Already processed, skipping')
         return
       }
       completeProcessedRef.current = true
@@ -395,8 +410,10 @@ export const useStreamEvents = ({
           console.log('[DocumentDownload] Complete event - documents from data:', data.documents)
 
           return prevMsgs.map((msg, index) =>
-          // Update either the streaming message or the last assistant message (for tools)
-          msg.id === messageId || (index === lastAssistantIndex && messageId)
+          // Update ONLY ONE message: either the streaming message OR the last assistant message (not both)
+          // If messageId exists (text was streamed), update that message only
+          // If no messageId (tool-only response), update the last assistant message
+          msg.id === messageId || (index === lastAssistantIndex && !messageId)
             ? {
                 ...msg,
                 isStreaming: false,

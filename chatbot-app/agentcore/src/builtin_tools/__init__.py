@@ -1,9 +1,11 @@
 """Built-in tools powered by AWS Bedrock services
 
 This package contains tools that leverage AWS Bedrock capabilities:
-- Code Interpreter: Execute Python code for diagrams, charts, and Word documents
+- Code Interpreter: Execute Python code for diagrams, charts, and document creation
 - Browser Automation: Navigate, interact, and extract data from web pages using Nova Act AI
 - Word Documents: Create, modify, and manage Word documents with persistent storage
+- Excel Spreadsheets: Create, modify, and manage Excel spreadsheets with persistent storage
+- PowerPoint Presentations: Create, modify, and manage PowerPoint presentations with persistent storage
 
 ⚠️  IMPORTANT: When adding a NEW TOOL, you MUST complete ALL 3 steps:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -34,6 +36,18 @@ from .excel_spreadsheet_tool import (
     list_my_excel_spreadsheets,
     read_excel_spreadsheet
 )
+from .powerpoint_presentation_tool import (
+    list_my_powerpoint_presentations,
+    get_presentation_layouts,
+    analyze_presentation,
+    create_presentation,
+    update_slide_content,
+    add_slide,
+    delete_slides,
+    move_slide,
+    duplicate_slide,
+    update_slide_notes
+)
 
 __all__ = [
     'generate_diagram_and_validate',
@@ -49,5 +63,44 @@ __all__ = [
     'create_excel_spreadsheet',
     'modify_excel_spreadsheet',
     'list_my_excel_spreadsheets',
-    'read_excel_spreadsheet'
+    'read_excel_spreadsheet',
+    # PowerPoint tools
+    'list_my_powerpoint_presentations',
+    'get_presentation_layouts',
+    'analyze_presentation',
+    'create_presentation',
+    'update_slide_content',
+    'add_slide',
+    'delete_slides',
+    'move_slide',
+    'duplicate_slide',
+    'update_slide_notes'
+]
+
+# Collection of all builtin tools for registry sync
+BUILTIN_TOOLS = [
+    generate_diagram_and_validate,
+    browser_navigate,
+    browser_act,
+    browser_extract,
+    browser_get_page_info,
+    browser_manage_tabs,
+    create_word_document,
+    modify_word_document,
+    list_my_word_documents,
+    read_word_document,
+    create_excel_spreadsheet,
+    modify_excel_spreadsheet,
+    list_my_excel_spreadsheets,
+    read_excel_spreadsheet,
+    list_my_powerpoint_presentations,
+    get_presentation_layouts,
+    analyze_presentation,
+    create_presentation,
+    update_slide_content,
+    add_slide,
+    delete_slides,
+    move_slide,
+    duplicate_slide,
+    update_slide_notes
 ]

@@ -560,6 +560,31 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
       // If metrics changed, we need to re-render
       if (latencyChanged || tokenUsageChanged) return false
 
+      // Compare toolExecutions (critical for preventing flickering during tool updates)
+      const prevToolExecs = msg.toolExecutions || []
+      const nextToolExecs = nextMsg.toolExecutions || []
+
+      if (prevToolExecs.length !== nextToolExecs.length) return false
+
+      const toolExecutionsChanged = prevToolExecs.some((tool, toolIdx) => {
+        const nextTool = nextToolExecs[toolIdx]
+        if (!nextTool) return true
+
+        // Compare critical tool execution fields
+        if (tool.id !== nextTool.id) return true
+        if (tool.isComplete !== nextTool.isComplete) return true
+        if (tool.toolResult !== nextTool.toolResult) return true
+
+        // Compare toolInput to detect parameter updates
+        const prevInput = JSON.stringify(tool.toolInput || {})
+        const nextInput = JSON.stringify(nextTool.toolInput || {})
+        if (prevInput !== nextInput) return true
+
+        return false
+      })
+
+      if (toolExecutionsChanged) return false
+
       return true
     })
 

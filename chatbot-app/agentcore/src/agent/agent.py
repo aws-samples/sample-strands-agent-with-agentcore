@@ -668,7 +668,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                     'mode': 'adaptive'  # Adaptive retry with exponential backoff
                 },
                 connect_timeout=30,
-                read_timeout=120
+                read_timeout=300  # Increased to 5 minutes for complex Code Interpreter operations (document generation, charts, etc.)
             )
 
             # Create model configuration
@@ -810,23 +810,23 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
     def _sanitize_filename(self, filename: str) -> str:
         """
         Sanitize filename to meet AWS Bedrock requirements:
-        - Only alphanumeric, whitespace, hyphens, parentheses, and square brackets
-        - No consecutive whitespace
-        - Convert underscores to hyphens
+        - Only alphanumeric, hyphens, parentheses, and square brackets
+        - Convert underscores and spaces to hyphens for consistency
+        - No consecutive hyphens
         """
         import re
 
-        # First, replace underscores with hyphens
-        sanitized = filename.replace('_', '-')
+        # First, replace underscores and spaces with hyphens
+        sanitized = filename.replace('_', '-').replace(' ', '-')
 
-        # Keep only allowed characters: alphanumeric, whitespace, hyphens, parentheses, square brackets
-        sanitized = re.sub(r'[^a-zA-Z0-9\s\-\(\)\[\]]', '', sanitized)
+        # Keep only allowed characters: alphanumeric, hyphens, parentheses, square brackets
+        sanitized = re.sub(r'[^a-zA-Z0-9\-\(\)\[\]]', '', sanitized)
 
-        # Replace consecutive whitespace with single space
-        sanitized = re.sub(r'\s+', ' ', sanitized)
+        # Replace consecutive hyphens with single hyphen
+        sanitized = re.sub(r'\-+', '-', sanitized)
 
-        # Trim whitespace
-        sanitized = sanitized.strip()
+        # Trim hyphens from start/end
+        sanitized = sanitized.strip('-')
 
         # If name becomes empty, use default
         if not sanitized:
@@ -955,6 +955,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             from builtin_tools.lib.document_manager import (
                 WordDocumentManager,
                 ExcelDocumentManager,
+                PowerPointDocumentManager,
                 ImageDocumentManager
             )
             from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
@@ -976,6 +977,11 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                     'extensions': ['.xlsx'],
                     'manager_class': ExcelDocumentManager,
                     'document_type': 'Excel spreadsheet'
+                },
+                {
+                    'extensions': ['.pptx'],
+                    'manager_class': PowerPointDocumentManager,
+                    'document_type': 'PowerPoint presentation'
                 },
                 {
                     'extensions': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'],
@@ -1074,6 +1080,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 })
                 logger.info(f"Added image: {filename} (format: {image_format})")
 
+            elif filename.endswith(".pptx"):
+                logger.info(f"PowerPoint presentation uploaded: {sanitized_full_name} (will be stored in workspace, not sent to model)")
+
             elif filename.endswith((".pdf", ".csv", ".doc", ".docx", ".xls", ".xlsx", ".html", ".txt", ".md")):
                 # Document content
                 doc_format = self._get_document_format(filename)
@@ -1102,7 +1111,34 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
         # Add file hints to text block (so agent knows the exact filenames stored in workspace)
         if sanitized_filenames:
-            file_hints = "\n".join([f"- {fn}" for fn in sanitized_filenames])
+            # Separate pptx files from others
+            pptx_files = [fn for fn in sanitized_filenames if fn.endswith('.pptx')]
+            other_files = [fn for fn in sanitized_filenames if not fn.endswith('.pptx')]
+
+            file_hints_lines = []
+
+            # Add non-pptx files (these are sent as ContentBlocks)
+            if other_files:
+                file_hints_lines.append("Attached files:")
+                file_hints_lines.extend([f"- {fn}" for fn in other_files])
+
+            # Add pptx files with tool hint if enabled
+            if pptx_files:
+                if other_files:
+                    file_hints_lines.append("")  # Empty line for separation
+
+                # Check if PowerPoint tools are enabled
+                ppt_tools_enabled = self.enabled_tools and 'powerpoint_presentation_tools' in self.enabled_tools
+
+                file_hints_lines.append("PowerPoint presentations in workspace:")
+                for fn in pptx_files:
+                    name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
+                    if ppt_tools_enabled:
+                        file_hints_lines.append(f"- {fn} (use analyze_presentation('{name_without_ext}', verbose=False) to view content)")
+                    else:
+                        file_hints_lines.append(f"- {fn}")
+
+            file_hints = "\n".join(file_hints_lines)
             text_block_content = f"{text_block_content}\n\n<uploaded_files>\n{file_hints}\n</uploaded_files>"
             logger.info(f"Added file hints to prompt: {sanitized_filenames}")
 

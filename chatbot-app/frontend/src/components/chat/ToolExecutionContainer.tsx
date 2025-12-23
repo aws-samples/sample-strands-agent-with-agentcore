@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { ChevronRight, Zap, Brain, CheckCircle, Clock, TrendingUp, Download } from 'lucide-react'
+import { ChevronRight, Zap, Brain, CheckCircle, Clock, TrendingUp, Download, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolIconById } from '@/utils/chat'
 import { ChartRenderer } from '@/components/ChartRenderer'
@@ -21,6 +21,118 @@ interface ToolExecutionContainerProps {
   sessionId?: string // Add session ID prop
 }
 
+// Memoized component for tool input parameters to prevent unnecessary re-renders
+const ToolInputParameters = React.memo<{ toolInput: any; isComplete: boolean; compact: boolean }>(
+  ({ toolInput, isComplete, compact }) => {
+    return (
+      <div className={compact ? "mb-4" : "mb-6"}>
+        <div className="flex items-center gap-2 mb-3">
+          <Zap className="h-4 w-4 text-blue-500 dark:text-blue-400" />
+          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Input Parameters</h4>
+        </div>
+        {toolInput && Object.keys(toolInput).length > 0 ? (
+          // Case 1: Full parameters available
+          <div className="bg-background rounded-lg border border-border overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
+            <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
+              <JsonDisplay
+                data={toolInput}
+                maxLines={6}
+                label="Parameters"
+              />
+            </div>
+          </div>
+        ) : isComplete ? (
+          // Case 2: Tool completed with no parameters (legitimate)
+          <div className="bg-background rounded-lg border border-border p-3 break-words" style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
+            <div className="text-sm text-muted-foreground italic">
+              No input parameters (this tool takes no arguments)
+            </div>
+          </div>
+        ) : (
+          // Case 3: Tool running but parameters not yet received (loading)
+          <div className="bg-background rounded-lg border border-border p-3 break-words" style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
+            <div className="flex items-center gap-2">
+              <Loader2 className="h-4 w-4 animate-spin text-blue-500 dark:text-blue-400" />
+              <div className="text-sm text-muted-foreground italic">
+                Loading parameters...
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  },
+  (prevProps, nextProps) => {
+    // Custom comparison: only re-render if data actually changed
+    return (
+      JSON.stringify(prevProps.toolInput) === JSON.stringify(nextProps.toolInput) &&
+      prevProps.isComplete === nextProps.isComplete &&
+      prevProps.compact === nextProps.compact
+    )
+  }
+)
+
+// Collapsible Markdown component for tool results with show more/less functionality
+const CollapsibleMarkdown = React.memo<{
+  children: string;
+  maxLines?: number;
+  sessionId?: string;
+}>(({ children, maxLines = 10, sessionId }) => {
+  const [isExpanded, setIsExpanded] = useState(false)
+
+  // Memoize expensive operations
+  const lines = useMemo(() => children.split('\n'), [children])
+  const needsTruncation = useMemo(() => lines.length > maxLines, [lines.length, maxLines])
+
+  const displayContent = useMemo(() => {
+    return isExpanded || !needsTruncation
+      ? children
+      : lines.slice(0, maxLines).join('\n') + '\n...'
+  }, [isExpanded, needsTruncation, children, lines, maxLines])
+
+  const handleToggleExpand = useCallback(() => {
+    setIsExpanded(!isExpanded)
+  }, [isExpanded])
+
+  return (
+    <div className="bg-background rounded-lg border border-border" style={{ maxWidth: '100%', width: '100%' }}>
+      {/* Markdown Content */}
+      <div className="p-3 overflow-x-auto" style={{ maxWidth: '100%' }}>
+        <div className={needsTruncation && !isExpanded ? 'max-h-96 overflow-hidden' : ''}>
+          <Markdown size="sm" sessionId={sessionId}>
+            {displayContent}
+          </Markdown>
+        </div>
+
+        {/* Expand/Collapse Button */}
+        {needsTruncation && (
+          <div className="mt-3 pt-2 border-t border-border">
+            <button
+              onClick={handleToggleExpand}
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+            >
+              {isExpanded ? (
+                <>
+                  <ChevronUp className="h-3 w-3" />
+                  Show Less ({lines.length} lines)
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-3 w-3" />
+                  Show More (+{lines.length - maxLines} lines)
+                </>
+              )}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}, (prevProps, nextProps) => {
+  return prevProps.children === nextProps.children &&
+         prevProps.maxLines === nextProps.maxLines &&
+         prevProps.sessionId === nextProps.sessionId
+})
 
 export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
@@ -415,30 +527,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
               {isExpanded && (
                 <div className={`border-t ${compact ? "border-gray-200/60 dark:border-gray-700/60 bg-white/50 dark:bg-gray-900/50" : "border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/70"} backdrop-blur-sm`}>
                   <div className={`${compact ? "p-3" : "p-4"} min-w-0 max-w-full overflow-x-auto break-words`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                    {/* Tool Input */}
-                    <div className={compact ? "mb-4" : "mb-6"}>
-                      <div className="flex items-center gap-2 mb-3">
-                        <Zap className="h-4 w-4 text-blue-500 dark:text-blue-400" />
-                        <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Input Parameters</h4>
-                      </div>
-                      {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 ? (
-                        <div className="bg-background rounded-lg border border-border overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
-                          <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                            <JsonDisplay
-                              data={toolExecution.toolInput}
-                              maxLines={6}
-                              label="Parameters"
-                            />
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="bg-background rounded-lg border border-border p-3 break-words" style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
-                          <div className="text-sm text-muted-foreground italic">
-                            No input parameters (this tool takes no arguments)
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    {/* Tool Input - Memoized to prevent re-renders during parameter streaming */}
+                    <ToolInputParameters
+                      toolInput={toolExecution.toolInput}
+                      isComplete={toolExecution.isComplete}
+                      compact={compact}
+                    />
 
                     {/* Reasoning Process */}
                     {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
@@ -477,19 +571,17 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                             </button>
                           )}
                         </div>
-                        <div className="bg-background rounded-lg border-l-4 border-green-500/30 dark:border-green-400/30 overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
-                          <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                            {containsMarkdown(toolExecution.toolResult) ? (
-                              <Markdown size="sm" sessionId={sessionId}>{toolExecution.toolResult}</Markdown>
-                            ) : (
-                              <JsonDisplay
-                                data={toolExecution.toolResult}
-                                maxLines={8}
-                                label="Tool Result"
-                              />
-                            )}
-                          </div>
-                        </div>
+                        {containsMarkdown(toolExecution.toolResult) ? (
+                          <CollapsibleMarkdown sessionId={sessionId} maxLines={10}>
+                            {toolExecution.toolResult}
+                          </CollapsibleMarkdown>
+                        ) : (
+                          <JsonDisplay
+                            data={toolExecution.toolResult}
+                            maxLines={8}
+                            label="Tool Result"
+                          />
+                        )}
                       </div>
                     )}
                   </div>
@@ -560,11 +652,35 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     </>
   )
 }, (prevProps, nextProps) => {
-  return prevProps.toolExecutions.length === nextProps.toolExecutions.length &&
-    prevProps.toolExecutions.every((tool, idx) =>
-      tool.id === nextProps.toolExecutions[idx]?.id &&
-      tool.isComplete === nextProps.toolExecutions[idx]?.isComplete
-    ) &&
-    prevProps.compact === nextProps.compact &&
-    prevProps.sessionId === nextProps.sessionId
+  // Check if array lengths differ
+  if (prevProps.toolExecutions.length !== nextProps.toolExecutions.length) {
+    return false
+  }
+
+  // Check basic props
+  if (prevProps.compact !== nextProps.compact || prevProps.sessionId !== nextProps.sessionId) {
+    return false
+  }
+
+  // Deep compare each tool execution
+  return prevProps.toolExecutions.every((tool, idx) => {
+    const nextTool = nextProps.toolExecutions[idx]
+    if (!nextTool) return false
+
+    // Compare critical fields that affect rendering
+    if (tool.id !== nextTool.id) return false
+    if (tool.isComplete !== nextTool.isComplete) return false
+    if (tool.toolResult !== nextTool.toolResult) return false
+
+    // Compare toolInput (critical for preventing flickering during parameter loading)
+    // Use JSON.stringify for deep comparison since toolInput is an object
+    const prevInput = JSON.stringify(tool.toolInput || {})
+    const nextInput = JSON.stringify(nextTool.toolInput || {})
+    if (prevInput !== nextInput) return false
+
+    // Compare images array
+    if ((tool.images?.length || 0) !== (nextTool.images?.length || 0)) return false
+
+    return true
+  })
 })

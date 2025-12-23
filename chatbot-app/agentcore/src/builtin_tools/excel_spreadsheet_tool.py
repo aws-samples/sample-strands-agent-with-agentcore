@@ -80,8 +80,9 @@ def _sanitize_spreadsheet_name_for_bedrock(filename: str) -> str:
     # Replace underscores and spaces with hyphens
     name = name.replace('_', '-').replace(' ', '-')
 
-    # Keep only alphanumeric and hyphens
-    name = re.sub(r'[^a-zA-Z0-9\-]', '', name)
+    # Keep only allowed characters: alphanumeric, hyphens, parentheses, square brackets
+    # This matches agent.py's _sanitize_filename behavior
+    name = re.sub(r'[^a-zA-Z0-9\-\(\)\[\]]', '', name)
 
     # Replace multiple consecutive hyphens with single hyphen
     name = re.sub(r'\-+', '-', name)
@@ -260,11 +261,6 @@ def create_excel_spreadsheet(
     Perfect for generating structured data with sheets, tables, charts, and formatting.
 
     Available libraries: openpyxl, pandas, matplotlib, numpy
-
-    Use this tool when:
-    - User asks to create/generate a new Excel spreadsheet
-    - User wants a spreadsheet with specific data structure
-    - User needs charts/pivot tables in the initial spreadsheet
 
     Args:
         python_code: Python code using openpyxl to build the spreadsheet.
@@ -536,11 +532,6 @@ def modify_excel_spreadsheet(
     and saves it with a new filename to preserve the original.
 
     Available libraries: openpyxl, pandas, matplotlib, numpy
-
-    Use this tool when:
-    - User wants to edit/modify/update an existing spreadsheet
-    - User asks to add sheets, data, charts, or images to a spreadsheet
-    - User wants to refine or change parts of a spreadsheet
 
     IMPORTANT Safety Rules:
     - Always use different output_name than source_name (e.g., "report" → "report-v2")

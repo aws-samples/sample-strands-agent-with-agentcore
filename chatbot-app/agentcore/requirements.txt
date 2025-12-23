@@ -29,7 +29,6 @@ ddgs>=9.0.0
 # OpenTelemetry (for observability)
 aws-opentelemetry-distro>=0.10.1
 
-# Note: MCP, Redis, DynamoDB will be added in Phase 2
 bedrock-agentcore
 
 # Nova Act SDK (for natural language browser automation via AgentCore Browser)

@@ -194,6 +194,7 @@ class StreamEventProcessor:
 
                 # Handle final result
                 if "result" in event:
+                    logger.info("[Final Result] 🎯 Received final result event from agent")
                     final_result = event["result"]
 
                     # Check for interrupt (HITL - Human-in-the-loop)
@@ -215,6 +216,7 @@ class StreamEventProcessor:
                             return
 
                     images, result_text = self.formatter.extract_final_result_data(final_result)
+                    logger.info(f"[Final Result] Extracted data - has images: {bool(images)}, text length: {len(result_text) if result_text else 0}")
 
                     # Extract token usage from Strands SDK metrics
                     usage = None
@@ -255,7 +257,9 @@ class StreamEventProcessor:
                     if documents:
                         logger.info(f"[DocumentDownload] Including {len(documents)} documents in complete event")
 
+                    logger.info(f"[Final Result] 📤 Emitting complete event and closing stream")
                     yield self.formatter.create_complete_event(result_text, images, usage, documents)
+                    logger.info(f"[Final Result] ✅ Complete event emitted, stream ended")
                     return
                 
                 
@@ -317,15 +321,19 @@ class StreamEventProcessor:
                     tool_use_id = tool_use.get("toolUseId")
                     tool_name = tool_use.get("name")
                     tool_input = tool_use.get("input", "")
-                    
+
+                    # Debug logging
+                    logger.info(f"[Tool Use Event] 🔧 Received current_tool_use - tool: {tool_name}, toolUseId: {tool_use_id}, input type: {type(tool_input).__name__}, input: {str(tool_input)[:100]}")
+
                     # Only process if input looks complete (valid JSON or empty for no-param tools)
                     should_process = False
                     processed_input = None
 
                     # Handle empty input case
                     if tool_input == "" or tool_input == "{}":
-                        # Empty string or empty JSON object means tool has no parameters or all optional parameters
-                        # This is valid for tools with all optional parameters
+                        # Empty string or empty JSON object
+                        # Emit to frontend so it can show "Preparing..." state
+                        logger.info(f"[Tool Use Event] 📋 Empty input for {tool_name} - emitting for frontend to show preparing state")
                         should_process = True
                         processed_input = {}
                     else:
@@ -337,27 +345,34 @@ class StreamEventProcessor:
                                 parsed_input = json.loads(tool_input)
                                 should_process = True
                                 processed_input = parsed_input  # Use parsed input
+                                logger.info(f"[Tool Use Event] ✅ Parsed string input - keys: {list(parsed_input.keys()) if isinstance(parsed_input, dict) else 'not a dict'}")
                             elif isinstance(tool_input, dict):
                                 # Already parsed
                                 should_process = True
                                 processed_input = tool_input
+                                logger.info(f"[Tool Use Event] ✅ Dict input received - keys: {list(tool_input.keys())}")
                             else:
                                 should_process = False
-                        except json.JSONDecodeError:
+                                logger.info(f"[Tool Use Event] ⚠️  Unexpected input type: {type(tool_input).__name__}")
+                        except json.JSONDecodeError as e:
                             # Input is still incomplete
                             should_process = False
-                    
+                            logger.info(f"[Tool Use Event] ⏸️  JSON decode error (incomplete input): {str(e)[:100]}")
+
                     if should_process and tool_use_id:
-                        # Check if this is a new tool or an update to existing tool
+                        # Check if this is a new tool or parameter update
                         is_new_tool = tool_use_id not in self.seen_tool_uses
                         is_parameter_update = (not is_new_tool and
                                              processed_input is not None and
                                              len(processed_input) > 0)
 
+                        logger.info(f"[Tool Use Event] 🔍 Processing decision - is_new_tool: {is_new_tool}, is_parameter_update: {is_parameter_update}, will emit: {is_new_tool or is_parameter_update}")
+
                         if is_new_tool or is_parameter_update:
-                            # Mark as seen on first encounter
+                            # Mark as seen for new tools
                             if is_new_tool:
                                 self.seen_tool_uses.add(tool_use_id)
+                                logger.info(f"[Tool Use Event] 🆕 New tool use registered: {tool_name} ({tool_use_id})")
 
                             # Create a copy of tool_use with processed input (don't modify original)
                             tool_use_copy = {
@@ -374,8 +389,8 @@ class StreamEventProcessor:
                                 except ImportError:
                                     pass
 
-                            # Register or update tool info for later result processing
-                            if tool_name:
+                            # Register tool info for later result processing (for new tools)
+                            if is_new_tool and tool_name:
                                 self.tool_use_registry[tool_use_id] = {
                                     'tool_name': tool_name,
                                     'tool_use_id': tool_use_id,
@@ -383,13 +398,13 @@ class StreamEventProcessor:
                                     'input': processed_input
                                 }
 
-                            # Yield event (create new or update existing)
+                            # Yield event (new tool or parameter update)
+                            logger.info(f"[Tool Use Event] 📤 Emitting tool_use event for {tool_name} with {len(processed_input)} parameter(s)")
                             yield self.formatter.create_tool_use_event(tool_use_copy)
 
-                            if is_parameter_update:
-                                logger.info(f"[Tool Update] Updated parameters for {tool_name} ({tool_use_id}): {list(processed_input.keys()) if processed_input else 'empty'}")
-
                             await asyncio.sleep(0.1)
+                    else:
+                        logger.info(f"[Tool Use Event] ⏭️  Skipped processing - should_process: {should_process}, has toolUseId: {bool(tool_use_id)}")
                 
                 # Handle tool streaming events (from async generator tools)
                 elif event.get("tool_stream_event"):
@@ -443,6 +458,7 @@ class StreamEventProcessor:
 
                 # Handle tool results from message events
                 elif event.get("message"):
+                    logger.info("[Message Event] 📨 Received message event (likely contains tool_result)")
                     async for result in self._process_message_event(event):
                         yield result
             
@@ -489,15 +505,18 @@ class StreamEventProcessor:
             content = None
 
         if content:
+            logger.info(f"[Message Event] Processing message with {len(content)} content item(s)")
             for content_item in content:
                 if isinstance(content_item, dict) and "toolResult" in content_item:
                     tool_result = content_item["toolResult"]
+                    tool_use_id = tool_result.get("toolUseId")
+                    status = tool_result.get("status", "unknown")
+                    logger.info(f"[Tool Result] 🔧 Processing tool_result - toolUseId: {tool_use_id}, status: {status}")
 
                     # Note: browserSessionId is now handled via tool stream events (immediate)
                     # No need to extract from tool result (too late)
 
                     # Set context before tool execution and cleanup after
-                    tool_use_id = tool_result.get("toolUseId")
                     if tool_use_id:
                         try:
                             from utils.tool_execution_context import tool_context_manager
@@ -527,6 +546,7 @@ class StreamEventProcessor:
                                     self.turn_documents.append(doc_info)
 
                                 # Process the tool result
+                                logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id}")
                                 yield self.formatter.create_tool_result_event(tool_result)
 
                                 # Clean up context after processing
@@ -553,6 +573,7 @@ class StreamEventProcessor:
                                         doc_info["session_id"] = tool_result["metadata"]["session_id"]
                                     self.turn_documents.append(doc_info)
 
+                                logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (no context)")
                                 yield self.formatter.create_tool_result_event(tool_result)
                         except ImportError:
                             # Add browser session metadata even if import fails
@@ -575,6 +596,7 @@ class StreamEventProcessor:
                                     doc_info["session_id"] = tool_result["metadata"]["session_id"]
                                 self.turn_documents.append(doc_info)
 
+                            logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (import error)")
                             yield self.formatter.create_tool_result_event(tool_result)
                     else:
                         # Collect documents from tool result (for complete event)
@@ -590,6 +612,7 @@ class StreamEventProcessor:
                                 doc_info["session_id"] = tool_result["metadata"]["session_id"]
                             self.turn_documents.append(doc_info)
 
+                        logger.info(f"[Tool Result] 📤 Emitting tool_result event (no tool_use_id)")
                         yield self.formatter.create_tool_result_event(tool_result)
     
     def _create_multimodal_message(self, text: str, file_paths: list = None):

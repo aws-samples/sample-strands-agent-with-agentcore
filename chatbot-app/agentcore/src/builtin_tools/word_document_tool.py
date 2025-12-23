@@ -80,8 +80,9 @@ def _sanitize_document_name_for_bedrock(filename: str) -> str:
     # Replace underscores and spaces with hyphens
     name = name.replace('_', '-').replace(' ', '-')
 
-    # Keep only alphanumeric and hyphens
-    name = re.sub(r'[^a-zA-Z0-9\-]', '', name)
+    # Keep only allowed characters: alphanumeric, hyphens, parentheses, square brackets
+    # This matches agent.py's _sanitize_filename behavior
+    name = re.sub(r'[^a-zA-Z0-9\-\(\)\[\]]', '', name)
 
     # Replace multiple consecutive hyphens with single hyphen
     name = re.sub(r'\-+', '-', name)
@@ -259,12 +260,7 @@ def create_word_document(
     This tool executes python-docx code to create a document from scratch.
     Perfect for generating structured documents with headings, paragraphs, tables, and charts.
 
-    Available libraries: python-docx, matplotlib, seaborn, pandas, numpy
-
-    Use this tool when:
-    - User asks to create/generate a new Word document
-    - User wants a document with specific structure and formatting
-    - User needs charts/diagrams in the initial document
+    Available libraries: python-docx, matplotlib, pandas, numpy
 
     Args:
         python_code: Python code using python-docx to build the document.
@@ -513,12 +509,7 @@ def modify_word_document(
     This tool loads a document from workspace, executes python-docx code to modify it,
     and saves it with a new filename to preserve the original.
 
-    Available libraries: python-docx, matplotlib, seaborn, pandas, numpy
-
-    Use this tool when:
-    - User wants to edit/modify/update an existing document
-    - User asks to add content, charts, or images to a document
-    - User wants to refine or change parts of a document
+    Available libraries: python-docx, matplotlib, pandas, numpy
 
     IMPORTANT Safety Rules:
     - Always use different output_filename than source_filename (e.g., "report.docx" → "report_v2.docx")

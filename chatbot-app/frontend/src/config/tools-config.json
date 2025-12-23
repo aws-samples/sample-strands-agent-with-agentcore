@@ -67,7 +67,7 @@
       "icon": "📝",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Word Document Best Practices:\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
+      "systemPromptGuidance": "Word Document Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_word_document: User asks to create/generate a NEW Word document\n- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document\n- list_my_word_documents: User asks what documents are available\n- read_word_document: User wants to download a document\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Available Libraries:**\n- python-docx (document creation)\n- matplotlib, pandas, numpy (charts and data)\n- Note: seaborn NOT available - use matplotlib instead\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
       "tools": [
         {
           "id": "create_word_document",
@@ -99,7 +99,7 @@
       "icon": "📊",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Excel Spreadsheet Best Practices:\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"Q4-sales.xlsx\")\n\n**Data Structure:**\n- Use tables for structured data (TableStyleInfo)\n- Add charts for visualization (BarChart, LineChart, PieChart)\n- Format cells appropriately (Font, PatternFill, Alignment)\n- Use multiple sheets for organization\n\n**Formulas:**\n- Use Excel formulas instead of hardcoded values: '=SUM(B2:B10)', '=AVERAGE(C2:C50)'\n- Avoid circular references (A1='=A1+1' or A1='=B1' and B1='=A1')",
+      "systemPromptGuidance": "Excel Spreadsheet Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_excel_spreadsheet: User asks to create/generate a NEW Excel spreadsheet\n- modify_excel_spreadsheet: User asks to edit/modify/update an EXISTING spreadsheet or add sheets/data to existing spreadsheet\n- list_my_excel_spreadsheets: User asks what spreadsheets are available\n- read_excel_spreadsheet: User wants to download a spreadsheet\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"Q4-sales.xlsx\")\n\n**Available Libraries:**\n- openpyxl (spreadsheet creation)\n- matplotlib, pandas, numpy (charts and data)\n\n**Data Structure:**\n- Use tables for structured data (TableStyleInfo)\n- Add charts for visualization (BarChart, LineChart, PieChart)\n- Format cells appropriately (Font, PatternFill, Alignment)\n- Use multiple sheets for organization\n\n**Formulas:**\n- Use Excel formulas instead of hardcoded values: '=SUM(B2:B10)', '=AVERAGE(C2:C50)'\n- Avoid circular references (A1='=A1+1' or A1='=B1' and B1='=A1')",
       "tools": [
         {
           "id": "create_excel_spreadsheet",
@@ -120,6 +120,68 @@
           "id": "read_excel_spreadsheet",
           "name": "Read Spreadsheet",
           "description": "Read and download spreadsheet from workspace"
+        }
+      ]
+    },
+    {
+      "id": "powerpoint_presentation_tools",
+      "name": "PPT Presentations",
+      "description": "Create, modify, and manage PPT presentations with high-level operations (10 tools)",
+      "category": "code_execution_tools",
+      "icon": "📊",
+      "enabled": true,
+      "isDynamic": true,
+      "systemPromptGuidance": "PowerPoint Best Practices:\n\n**CRITICAL Rules:**\n- Batch required: 1 call for all slides (parallel calls = data loss)\n- Operations: update_text, update_image only\n- update_text: replaces entire element (use \\n for multi-line)\n- Output name must differ from source\n\n**Text Editing:**\n- Preserve original text length when possible\n- Long existing text often indicates design constraints\n- Be concise - not all improvements need longer text\n- Consider layout: expanding text can break visual design\n\n**Position Info:**\n- analyze shows element positions: (left\", top\", width\"×height\")\n- Helps understand layout: titles ~top:0.3\", bodies ~top:1.5\"\n\n**Speaker Notes:**\n- analyze shows existing notes\n- Use update_slide_notes when user wants to review/modify notes\n\n**File Handling:**\n- Existing/uploaded files: use modify tools only (create_presentation destroys layout)\n- New files: create_presentation(name, outline, template_name)\n\n**Rules:**\n- Names: letters, numbers, hyphens only\n- Indices: 0-based (slides & elements)",
+      "tools": [
+        {
+          "id": "list_my_powerpoint_presentations",
+          "name": "List Presentations",
+          "description": "List all PowerPoint presentations in workspace"
+        },
+        {
+          "id": "get_presentation_layouts",
+          "name": "Get Layouts",
+          "description": "Get all available slide layouts from presentation"
+        },
+        {
+          "id": "analyze_presentation",
+          "name": "Analyze Presentation",
+          "description": "Analyze presentation structure with detailed element IDs for editing"
+        },
+        {
+          "id": "create_presentation",
+          "name": "Create Presentation",
+          "description": "Create presentation from outline or blank (outline=None for blank)"
+        },
+        {
+          "id": "update_slide_content",
+          "name": "Update Slides",
+          "description": "Edit one or more slides in a single call using operations (replace_text, add_paragraph, replace_image, etc.)"
+        },
+        {
+          "id": "add_slide",
+          "name": "Add Slide",
+          "description": "Add new slide at specified position with chosen layout"
+        },
+        {
+          "id": "delete_slides",
+          "name": "Delete Slides",
+          "description": "Delete one or more slides by indices"
+        },
+        {
+          "id": "move_slide",
+          "name": "Move Slide",
+          "description": "Move slide from one position to another"
+        },
+        {
+          "id": "duplicate_slide",
+          "name": "Duplicate Slide",
+          "description": "Copy slide to specified position"
+        },
+        {
+          "id": "update_slide_notes",
+          "name": "Update Notes",
+          "description": "Update speaker notes for a specific slide"
         }
       ]
     }

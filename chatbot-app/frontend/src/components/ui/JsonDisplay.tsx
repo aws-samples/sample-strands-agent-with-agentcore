@@ -80,11 +80,11 @@ const formatJsonData = (data: any): string => {
   return String(data)
 }
 
-export const JsonDisplay: React.FC<JsonDisplayProps> = ({ 
-  data, 
-  maxLines = 8, 
+export const JsonDisplay = React.memo<JsonDisplayProps>(({
+  data,
+  maxLines = 8,
   className = "",
-  label 
+  label
 }) => {
   const [isExpanded, setIsExpanded] = useState(false)
   const [isCopied, setIsCopied] = useState(false)
@@ -181,10 +181,10 @@ export const JsonDisplay: React.FC<JsonDisplayProps> = ({
       </div>
     </div>
   )
-}
+})
 
 // Helper component for displaying key-value pairs in a more readable format
-export const KeyValueDisplay: React.FC<{ data: Record<string, any>, className?: string }> = ({ 
+export const KeyValueDisplay = React.memo<{ data: Record<string, any>, className?: string }>(({ 
   data, 
   className = "" 
 }) => {
@@ -216,4 +216,4 @@ export const KeyValueDisplay: React.FC<{ data: Record<string, any>, className?: 
       ))}
     </div>
   )
-}
+})
