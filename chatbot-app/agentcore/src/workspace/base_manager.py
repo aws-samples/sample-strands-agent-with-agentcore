@@ -1,64 +1,28 @@
 """
-Document Manager for Word document storage and synchronization.
-Handles S3 storage and Code Interpreter workspace sync.
+Base Document Manager - Core workspace management functionality
 
-Pattern follows ReportManager from Research Agent for consistency.
+Provides base class for managing documents in S3 and Code Interpreter workspaces.
+All specific document managers (Word, Excel, PowerPoint, Image) inherit from this base.
 """
 
 import os
 import re
-import json
 import logging
 import boto3
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 
+from .config import get_workspace_bucket
+
 logger = logging.getLogger(__name__)
-
-
-def _get_document_bucket() -> str:
-    """Get Document Bucket name from environment or Parameter Store
-
-    Returns:
-        S3 bucket name for document storage
-
-    Raises:
-        ValueError: If bucket name not found
-    """
-    # 1. Check environment variable (set by AgentCore Runtime)
-    bucket_name = os.getenv('DOCUMENT_BUCKET')
-    if bucket_name:
-        logger.info(f"Found DOCUMENT_BUCKET in environment: {bucket_name}")
-        return bucket_name
-
-    # 2. Try Parameter Store (for local development)
-    try:
-        project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
-        environment = os.getenv('ENVIRONMENT', 'dev')
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        param_name = f"/{project_name}/{environment}/agentcore/document-bucket"
-
-        logger.info(f"Checking Parameter Store for Document Bucket: {param_name}")
-        ssm = boto3.client('ssm', region_name=region)
-        response = ssm.get_parameter(Name=param_name)
-        bucket_name = response['Parameter']['Value']
-        logger.info(f"Found DOCUMENT_BUCKET in Parameter Store: {bucket_name}")
-        return bucket_name
-    except Exception as e:
-        logger.error(f"Document Bucket not found in Parameter Store: {e}")
-        raise ValueError(
-            "DOCUMENT_BUCKET not configured. "
-            "Set environment variable or create Parameter Store entry: "
-            f"/{project_name}/{environment}/agentcore/document-bucket"
-        )
 
 
 class BaseDocumentManager:
     """
     Base class for document management with S3 and Code Interpreter sync.
 
-    Can be extended for different document types (Word, PowerPoint, Excel, PDF).
+    Can be extended for different document types (Word, PowerPoint, Excel, Image).
     Pattern mirrors ReportManager from Research Agent for consistency.
     """
 
@@ -67,7 +31,7 @@ class BaseDocumentManager:
         Args:
             user_id: User identifier
             session_id: Session identifier (for workspace isolation)
-            document_type: Document type ('word', 'powerpoint', 'excel', 'pdf')
+            document_type: Document type ('word', 'powerpoint', 'excel', 'image')
         """
         # Security: Validate identifiers (same as ReportManager)
         if not re.match(r'^[a-zA-Z0-9_-]+$', user_id):
@@ -81,8 +45,8 @@ class BaseDocumentManager:
 
         # S3 configuration (session-isolated)
         self.s3_client = boto3.client('s3')
-        # Get bucket from environment or Parameter Store
-        self.bucket = _get_document_bucket()
+        # Get bucket from centralized config
+        self.bucket = get_workspace_bucket()
         self.s3_prefix = f"documents/{user_id}/{session_id}/{document_type}"
 
         # Code Interpreter path (use current directory, no subdirectory like diagram_tool)
@@ -456,237 +420,121 @@ print(f"File written: {ci_path} ({{len(file_bytes)}} bytes)")
             logger.error(f"Failed to generate presigned URL: {e}")
             raise
 
+    def load_workspace_images_to_ci(self, code_interpreter) -> List[str]:
+        """Load all images from S3 workspace to Code Interpreter
 
-class WordDocumentManager(BaseDocumentManager):
-    """Document manager specifically for Word (.docx) files"""
+        This method loads all images from the S3 workspace and uploads them
+        to the Code Interpreter workspace, making them available for document generation.
 
-    def __init__(self, user_id: str, session_id: str):
-        super().__init__(user_id, session_id, document_type='word')
-        logger.info("WordDocumentManager initialized")
+        Args:
+            code_interpreter: Active CodeInterpreter instance
 
-    def validate_docx_filename(self, filename: str) -> bool:
-        """Validate that filename ends with .docx"""
-        if not filename.endswith('.docx'):
-            raise ValueError(f"Filename must end with .docx: {filename}")
-        return True
+        Returns:
+            List of loaded image filenames
+        """
+        try:
+            # Lazy import to avoid circular dependency
+            from .managers import ImageManager
+
+            # Initialize image document manager for same user/session
+            image_manager = ImageManager(self.user_id, self.session_id)
+
+            # List all images from S3 workspace
+            images = image_manager.list_s3_documents()
+
+            if not images:
+                logger.info("No images found in workspace")
+                return []
+
+            logger.info(f"Found {len(images)} image(s) in workspace: {[img['filename'] for img in images]}")
+
+            # Load each image from S3 and upload to Code Interpreter
+            loaded_filenames = []
+            for image_info in images:
+                try:
+                    filename = image_info['filename']
+
+                    # Load image bytes from S3
+                    file_bytes = image_manager.load_from_s3(filename)
+
+                    # Upload to Code Interpreter
+                    self._upload_image_to_ci(code_interpreter, filename, file_bytes)
+
+                    loaded_filenames.append(filename)
+                    logger.info(f"✅ Loaded image from S3 workspace: {filename}")
+
+                except Exception as e:
+                    logger.error(f"Failed to load image {filename} from workspace: {e}")
+                    continue
+
+            return loaded_filenames
+
+        except Exception as e:
+            logger.error(f"Failed to load workspace images: {e}")
+            return []
+
+    def _upload_image_to_ci(self, code_interpreter, filename: str, file_bytes: bytes) -> None:
+        """Upload a single image file to Code Interpreter workspace
+
+        Args:
+            code_interpreter: Active CodeInterpreter instance
+            filename: Image filename
+            file_bytes: Image file bytes
+        """
+        try:
+            import base64
+            encoded_bytes = base64.b64encode(file_bytes).decode('utf-8')
+
+            write_code = f"""
+import base64
+
+# Decode and write image file
+file_bytes = base64.b64decode('{encoded_bytes}')
+with open('{filename}', 'wb') as f:
+    f.write(file_bytes)
+
+print(f"Image uploaded: {filename} ({{len(file_bytes)}} bytes)")
+"""
+
+            response = code_interpreter.invoke("executeCode", {
+                "code": write_code,
+                "language": "python",
+                "clearContext": False
+            })
+
+            # Check for errors
+            for event in response.get("stream", []):
+                result = event.get("result", {})
+                if result.get("isError", False):
+                    error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
+                    logger.error(f"Failed to upload image {filename}: {error_msg[:200]}")
+                    raise Exception(f"Failed to upload image: {error_msg[:200]}")
+
+            logger.info(f"✅ Uploaded image to Code Interpreter: {filename}")
+
+        except Exception as e:
+            logger.error(f"Failed to upload image {filename}: {e}")
+            raise
 
     def format_file_list(self, documents: List[Dict[str, Any]]) -> str:
         """Format document list for display
 
         Args:
-            documents: List of document info dicts from list_s3_documents()
+            documents: List of document info dicts
 
         Returns:
-            Formatted string for display
+            Formatted string with document list
         """
         if not documents:
-            return "📁 **Workspace**: Empty (no documents yet)"
+            return f"📁 **Workspace** (empty)\n\nNo {self.document_type} files found."
 
-        lines = [f"📁 **Workspace** ({len(documents)} document{'s' if len(documents) > 1 else ''}):"]
+        # Sort by last_modified (most recent first)
+        sorted_docs = sorted(documents, key=lambda x: x['last_modified'], reverse=True)
 
-        for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
-            # Parse ISO timestamp
-            modified_date = doc['last_modified'].split('T')[0]
-            lines.append(f"  - **{doc['filename']}** ({doc['size_kb']}) - Modified: {modified_date}")
-
-        return "\n".join(lines)
-
-
-# Future implementations (for reference):
-
-class PowerPointDocumentManager(BaseDocumentManager):
-    """Document manager for PowerPoint (.pptx) files"""
-
-    def __init__(self, user_id: str, session_id: str):
-        super().__init__(user_id, session_id, document_type='powerpoint')
-        logger.info("PowerPointDocumentManager initialized")
-
-    def validate_pptx_filename(self, filename: str) -> bool:
-        """Validate that filename ends with .pptx
-
-        Args:
-            filename: Filename to validate
-
-        Returns:
-            True if valid
-
-        Raises:
-            ValueError: If filename doesn't end with .pptx
-        """
-        if not filename.endswith('.pptx'):
-            raise ValueError(f"Filename must end with .pptx: {filename}")
-        return True
-
-    def format_file_list(self, documents: List[Dict[str, Any]]) -> str:
-        """Format presentation list for display
-
-        Args:
-            documents: List of document info dicts from list_s3_documents()
-
-        Returns:
-            Formatted string for display
-        """
-        if not documents:
-            return "📁 **Workspace**: Empty (no presentations yet)"
-
-        lines = [f"📁 **Workspace** ({len(documents)} presentation{'s' if len(documents) > 1 else ''}):"]
-
-        for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
-            # Parse ISO timestamp
-            modified_date = doc['last_modified'].split('T')[0]
-            lines.append(f"  - **{doc['filename']}** ({doc['size_kb']}) - Modified: {modified_date}")
-
-        return "\n".join(lines)
-
-    def save_template_metadata(self, template_info: dict, source_filename: str) -> str:
-        """Save template analysis as JSON metadata in S3
-
-        Args:
-            template_info: Template analysis result (layouts, theme, etc.)
-            source_filename: Source PPT filename (e.g., "company-template.pptx")
-
-        Returns:
-            S3 key of saved metadata
-        """
-        # Create metadata filename with dot prefix (hidden file pattern)
-        metadata_filename = f".template-{source_filename}.json"
-        metadata_bytes = json.dumps(template_info, indent=2).encode('utf-8')
-
-        # Save to S3 with metadata
-        s3_info = self.save_to_s3(
-            metadata_filename,
-            metadata_bytes,
-            metadata={'type': 'template_metadata', 'source': source_filename}
-        )
-
-        logger.info(f"Saved template metadata: {metadata_filename}")
-        return s3_info['s3_key']
-
-    def load_template_metadata(self, source_filename: str) -> Optional[dict]:
-        """Load template metadata if exists
-
-        Args:
-            source_filename: Source PPT filename (e.g., "company-template.pptx")
-
-        Returns:
-            Template metadata dict or None if not found
-        """
-        metadata_filename = f".template-{source_filename}.json"
-
-        try:
-            metadata_bytes = self.load_from_s3(metadata_filename)
-            template_info = json.loads(metadata_bytes.decode('utf-8'))
-            logger.info(f"Loaded template metadata for {source_filename}")
-            return template_info
-        except FileNotFoundError:
-            logger.info(f"No template metadata found for {source_filename}")
-            return None
-        except Exception as e:
-            logger.error(f"Failed to load template metadata: {e}")
-            return None
-
-    def get_available_templates(self) -> List[str]:
-        """List all presentations that have template metadata
-
-        Returns:
-            List of presentation filenames that can be used as templates
-        """
-        all_docs = self.list_s3_documents()
-        templates = []
-
-        for doc in all_docs:
-            if doc['filename'].endswith('.pptx'):
-                # Check if template metadata exists
-                metadata_filename = f".template-{doc['filename']}.json"
-                try:
-                    self.load_from_s3(metadata_filename)
-                    templates.append(doc['filename'])
-                except:
-                    pass
-
-        logger.info(f"Found {len(templates)} available templates")
-        return templates
-
-
-class ExcelDocumentManager(BaseDocumentManager):
-    """Document manager for Excel (.xlsx) files"""
-
-    def __init__(self, user_id: str, session_id: str):
-        super().__init__(user_id, session_id, document_type='excel')
-        logger.info("ExcelDocumentManager initialized")
-
-    def validate_xlsx_filename(self, filename: str) -> bool:
-        """Validate that filename ends with .xlsx"""
-        if not filename.endswith('.xlsx'):
-            raise ValueError(f"Filename must end with .xlsx: {filename}")
-        return True
-
-    def format_file_list(self, documents: List[Dict[str, Any]]) -> str:
-        """Format spreadsheet list for display
-
-        Args:
-            documents: List of document info dicts from list_s3_documents()
-
-        Returns:
-            Formatted string for display
-        """
-        if not documents:
-            return "📁 **Workspace**: Empty (no spreadsheets yet)"
-
-        lines = [f"📁 **Workspace** ({len(documents)} spreadsheet{'s' if len(documents) > 1 else ''}):"]
-
-        for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
-            # Parse ISO timestamp
-            modified_date = doc['last_modified'].split('T')[0]
-            lines.append(f"  - **{doc['filename']}** ({doc['size_kb']}) - Modified: {modified_date}")
-
-        return "\n".join(lines)
-
-
-class ImageDocumentManager(BaseDocumentManager):
-    """Document manager for image files (.png, .jpg, .jpeg, .gif, .webp)"""
-
-    def __init__(self, user_id: str, session_id: str):
-        super().__init__(user_id, session_id, document_type='image')
-        logger.info("ImageDocumentManager initialized")
-
-    def validate_image_filename(self, filename: str) -> bool:
-        """Validate that filename is a supported image format"""
-        valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')
-        if not filename.lower().endswith(valid_extensions):
-            raise ValueError(f"Filename must be a supported image format: {filename}")
-        return True
-
-    def get_image_mime_type(self, filename: str) -> str:
-        """Get MIME type for image based on extension"""
-        extension = filename.lower().split('.')[-1]
-        mime_type_map = {
-            'png': 'image/png',
-            'jpg': 'image/jpeg',
-            'jpeg': 'image/jpeg',
-            'gif': 'image/gif',
-            'webp': 'image/webp',
-            'bmp': 'image/bmp'
-        }
-        return mime_type_map.get(extension, 'image/png')
-
-    def format_file_list(self, documents: List[Dict[str, Any]]) -> str:
-        """Format image list for display
-
-        Args:
-            documents: List of document info dicts from list_s3_documents()
-
-        Returns:
-            Formatted string for display
-        """
-        if not documents:
-            return "📁 **Workspace**: Empty (no images yet)"
-
-        lines = [f"📁 **Workspace** ({len(documents)} image{'s' if len(documents) > 1 else ''}):"]
-
-        for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
-            # Parse ISO timestamp
-            modified_date = doc['last_modified'].split('T')[0]
-            lines.append(f"  - **{doc['filename']}** ({doc['size_kb']}) - Modified: {modified_date}")
+        lines = [f"📁 **Workspace** ({len(documents)} file(s)):"]
+        for doc in sorted_docs:
+            # Format date to YYYY-MM-DD
+            date_str = doc['last_modified'].split('T')[0]
+            lines.append(f"  - {doc['filename']} ({doc['size_kb']}) - {date_str}")
 
         return "\n".join(lines)

@@ -22,7 +22,7 @@ your new tool will NOT appear in the agent's tool list!
 You can verify the sync with: GET http://localhost:3000/api/tools
 """
 
-from .code_interpreter_diagram_tool import generate_diagram_and_validate
+from .diagram_tool import generate_diagram_and_validate
 from .nova_act_browser_tools import browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs
 from .word_document_tool import (
     create_word_document,

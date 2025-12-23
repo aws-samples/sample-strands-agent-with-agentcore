@@ -1,10 +1,12 @@
 """Diagram generation tool using Bedrock Code Interpreter
 
 This tool generates diagrams and charts by executing Python code in AWS Bedrock Code Interpreter.
-It supports matplotlib, seaborn, pandas, and numpy for creating visualizations.
+It supports matplotlib, pandas, and numpy for creating visualizations.
+
+Generated diagrams are automatically saved to workspace for reuse in Word/Excel/PowerPoint documents.
 """
 
-from strands import tool
+from strands import tool, ToolContext
 from typing import Dict, Any, Optional
 import logging
 import os
@@ -39,19 +41,39 @@ def _get_code_interpreter_id() -> Optional[str]:
         return None
 
 
-@tool
+def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
+    """Extract user_id and session_id from ToolContext
+
+    Returns:
+        (user_id, session_id) tuple
+    """
+    invocation_state = tool_context.invocation_state
+    user_id = invocation_state.get('user_id', 'default_user')
+    session_id = invocation_state.get('session_id', 'default_session')
+
+    logger.info(f"Extracted IDs: user_id={user_id}, session_id={session_id}")
+    return user_id, session_id
+
+
+@tool(context=True)
 def generate_diagram_and_validate(
     python_code: str,
-    diagram_filename: str
+    diagram_filename: str,
+    tool_context: ToolContext
 ) -> Dict[str, Any]:
     """Generate diagrams and charts using Python code via Bedrock Code Interpreter.
 
-    Available libraries: matplotlib.pyplot, seaborn, pandas, numpy
+    Available libraries: matplotlib.pyplot, pandas, numpy
 
     Args:
-        python_code: Python code for diagram generation
+        python_code: Python code for diagram generation.
                     Must include: plt.savefig(diagram_filename, dpi=300, bbox_inches='tight')
-        diagram_filename: PNG filename (must end with .png)
+                    Best practices:
+                    - Use figsize=(10, 6) or larger for readable diagrams
+                    - Include proper labels, titles, and legends
+                    - Use high DPI (300) for crisp output
+        diagram_filename: PNG filename (must end with .png).
+                         Example: 'revenue-chart.png'
 
     Returns:
         Diagram as image in ToolResult format:
@@ -62,14 +84,11 @@ def generate_diagram_and_validate(
             ],
             "status": "success"
         }
-
-    Note:
-        - The generated diagram is returned as raw PNG bytes (not base64)
-        - Use figsize=(10, 6) or larger for readable diagrams
-        - Include proper labels, titles, and legends
-        - Use high DPI (300) for crisp output
+        - The diagram is returned as raw PNG bytes (not base64)
+        - Automatically saved to workspace for reuse in Word/Excel/PowerPoint documents
     """
     from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+    from workspace import ImageManager
 
     # Validate diagram_filename
     if not diagram_filename or not diagram_filename.endswith('.png'):
@@ -186,6 +205,16 @@ Please try again or simplify your code."""
 
             logger.info(f"Successfully downloaded diagram: {diagram_filename} ({len(file_content)} bytes)")
 
+            # Save to workspace for reuse in documents
+            user_id, session_id = _get_user_session_ids(tool_context)
+            image_manager = ImageManager(user_id, session_id)
+            s3_info = image_manager.save_to_s3(
+                diagram_filename,
+                file_content,
+                metadata={'source': 'diagram_tool', 'tool': 'generate_diagram_and_validate'}
+            )
+            logger.info(f"Saved diagram to workspace: {s3_info['s3_key']}")
+
         except Exception as e:
             logger.error(f"Failed to download diagram file: {str(e)}")
             code_interpreter.stop()
@@ -225,18 +254,26 @@ plt.savefig('{diagram_filename}', dpi=300, bbox_inches='tight')
         finally:
             code_interpreter.stop()
 
-        # 6. Return ToolResult in Strands SDK format
+        # 6. Get workspace summary
+        user_id, session_id = _get_user_session_ids(tool_context)
+        image_manager = ImageManager(user_id, session_id)
+        workspace_images = image_manager.list_s3_documents()
+        other_images_count = len([img for img in workspace_images if img['filename'] != diagram_filename])
+
         file_size_kb = len(file_content) / 1024
+        logger.info(f"Diagram successfully generated: {file_size_kb:.1f} KB")
 
-        logger.info(f"Diagram successfully generated and encoded: {file_size_kb:.1f} KB")
-
-        # Return ToolResult with ToolResultContent list
+        # 7. Return ToolResult in Strands SDK format
         from strands.types.tools import ToolResult
 
         return {
             "content": [
                 {
-                    "text": f"✅ Diagram generated successfully: {diagram_filename} ({file_size_kb:.1f} KB)"
+                    "text": f"""✅ **Diagram generated: {diagram_filename}**
+
+Saved to workspace for reuse in documents.
+**Size:** {file_size_kb:.1f} KB
+**Other images in workspace:** {other_images_count} image{'s' if other_images_count != 1 else ''}"""
                 },
                 {
                     "image": {

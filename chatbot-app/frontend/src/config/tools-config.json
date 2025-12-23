@@ -57,7 +57,7 @@
       "icon": "📊",
       "enabled": true,
       "isDynamic": false,
-      "systemPromptGuidance": "Diagram Generator Best Practices:\n\n**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, seaborn, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability"
+      "systemPromptGuidance": "Diagram Generator Best Practices:\n\n**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability"
     },
     {
       "id": "word_document_tools",
@@ -369,7 +369,7 @@
       "enabled": false,
       "isDynamic": false,
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
-      "systemPromptGuidance": "Research Agent Best Practices:\n\n**Before calling:**\n- If request is broad/unclear, clarify scope first (depth, audience, focus areas)\n- Create specific research plan based on clarification\n\n**If user declines:**\n- Acknowledge and offer to adjust scope or provide simpler answer\n- NEVER repeat the same declined plan\n\n**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
+      "systemPromptGuidance": "Research Agent Best Practices:\n\n**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
     }
   ]
 }
