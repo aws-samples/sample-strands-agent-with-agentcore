@@ -17,7 +17,7 @@ import logging
 from typing import Dict, Any, Optional
 from strands import tool, ToolContext
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-from .lib.document_manager import WordDocumentManager
+from workspace import WordManager
 
 logger = logging.getLogger(__name__)
 
@@ -142,111 +142,6 @@ def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
     return user_id, session_id
 
 
-def _load_workspace_images_to_ci(code_interpreter: CodeInterpreter, user_id: str, session_id: str) -> list[str]:
-    """Load all images from S3 workspace to Code Interpreter
-
-    This replaces the old invocation_state approach with S3-based storage.
-    Images are now stored in S3 workspace and loaded on-demand when tools execute.
-
-    Args:
-        code_interpreter: Active CodeInterpreter instance
-        user_id: User ID for S3 workspace path
-        session_id: Session ID for S3 workspace path
-
-    Returns:
-        List of loaded image filenames
-    """
-    from .lib.document_manager import ImageDocumentManager
-
-    try:
-        # Initialize image document manager
-        image_manager = ImageDocumentManager(user_id, session_id)
-
-        # List all images from S3 workspace
-        images = image_manager.list_s3_documents()
-
-        if not images:
-            logger.info("No images found in workspace")
-            return []
-
-        logger.info(f"Found {len(images)} image(s) in workspace: {[img['filename'] for img in images]}")
-
-        # Load each image from S3 and upload to Code Interpreter
-        loaded_filenames = []
-        for image_info in images:
-            try:
-                filename = image_info['filename']
-
-                # Load image bytes from S3
-                file_bytes = image_manager.load_from_s3(filename)
-
-                # Upload to Code Interpreter using existing helper
-                _upload_images_to_ci(code_interpreter, [(filename, file_bytes)])
-
-                loaded_filenames.append(filename)
-                logger.info(f"✅ Loaded image from S3 workspace: {filename}")
-
-            except Exception as e:
-                logger.error(f"Failed to load image {filename} from workspace: {e}")
-                continue
-
-        return loaded_filenames
-
-    except Exception as e:
-        logger.error(f"Failed to load workspace images: {e}")
-        return []
-
-
-def _upload_images_to_ci(code_interpreter: CodeInterpreter, images: list[tuple[str, bytes]]) -> list[str]:
-    """Upload multiple image files to Code Interpreter workspace
-
-    Args:
-        code_interpreter: Active CodeInterpreter instance
-        images: List of (filename, file_bytes) tuples
-
-    Returns:
-        List of uploaded filenames
-    """
-    uploaded = []
-
-    for filename, file_bytes in images:
-        try:
-            import base64
-            encoded_bytes = base64.b64encode(file_bytes).decode('utf-8')
-
-            write_code = f"""
-import base64
-
-# Decode and write image file
-file_bytes = base64.b64decode('{encoded_bytes}')
-with open('{filename}', 'wb') as f:
-    f.write(file_bytes)
-
-print(f"Image uploaded: {filename} ({{len(file_bytes)}} bytes)")
-"""
-
-            response = code_interpreter.invoke("executeCode", {
-                "code": write_code,
-                "language": "python",
-                "clearContext": False
-            })
-
-            # Check for errors
-            for event in response.get("stream", []):
-                result = event.get("result", {})
-                if result.get("isError", False):
-                    error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
-                    logger.error(f"Failed to upload image {filename}: {error_msg[:200]}")
-                    continue
-
-            uploaded.append(filename)
-            logger.info(f"✅ Uploaded image to Code Interpreter: {filename}")
-
-        except Exception as e:
-            logger.error(f"Failed to upload image {filename}: {e}")
-            continue
-
-    return uploaded
 
 
 @tool(context=True)
@@ -387,7 +282,7 @@ doc.add_paragraph('Summary text...')
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = WordManager(user_id, session_id)
 
         # Get Code Interpreter
         code_interpreter_id = _get_code_interpreter_id()
@@ -405,7 +300,7 @@ doc.add_paragraph('Summary text...')
 
         try:
             # Load all workspace images from S3 to Code Interpreter
-            loaded_images = _load_workspace_images_to_ci(code_interpreter, user_id, session_id)
+            loaded_images = doc_manager.load_workspace_images_to_ci(code_interpreter)
             if loaded_images:
                 logger.info(f"Loaded {len(loaded_images)} image(s) from workspace: {loaded_images}")
 
@@ -464,13 +359,12 @@ print(f"Document created: {ci_path}")
 
             # Get current workspace list
             workspace_docs = doc_manager.list_s3_documents()
-            workspace_summary = doc_manager.format_file_list(workspace_docs)
+            other_files_count = len([d for d in workspace_docs if d['filename'] != document_filename])
 
             message = f"""✅ **Document created successfully**
 
 **File**: {document_filename} ({s3_info['size_kb']})
-
-{workspace_summary}"""
+**Other files in workspace**: {other_files_count} document{'s' if other_files_count != 1 else ''}"""
 
             # Return success message
             return {
@@ -661,7 +555,7 @@ if len(doc.paragraphs) > 0:
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = WordManager(user_id, session_id)
 
         # Get Code Interpreter
         code_interpreter_id = _get_code_interpreter_id()
@@ -679,7 +573,7 @@ if len(doc.paragraphs) > 0:
 
         try:
             # Load all workspace images from S3 to Code Interpreter
-            loaded_images = _load_workspace_images_to_ci(code_interpreter, user_id, session_id)
+            loaded_images = doc_manager.load_workspace_images_to_ci(code_interpreter)
             if loaded_images:
                 logger.info(f"Loaded {len(loaded_images)} image(s) from workspace: {loaded_images}")
 
@@ -745,15 +639,14 @@ print(f"Document modified and saved: {output_ci_path}")
 
             # Get current workspace list
             workspace_docs = doc_manager.list_s3_documents()
-            workspace_summary = doc_manager.format_file_list(workspace_docs)
+            other_files_count = len([d for d in workspace_docs if d['filename'] != output_filename])
 
             # Build success message
             message = f"""✅ **Document modified successfully**
 
 **Source**: {source_filename}
 **Saved as**: {output_filename} ({s3_info['size_kb']})
-
-{workspace_summary}"""
+**Other files in workspace**: {other_files_count} document{'s' if other_files_count != 1 else ''}"""
 
             # Return success message with metadata for download button
             return {
@@ -840,7 +733,7 @@ def list_my_word_documents(
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = WordManager(user_id, session_id)
 
         # List documents from S3
         documents = doc_manager.list_s3_documents()
@@ -937,7 +830,7 @@ def read_word_document(
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize document manager
-        doc_manager = WordDocumentManager(user_id, session_id)
+        doc_manager = WordManager(user_id, session_id)
 
         # Load from S3
         file_bytes = doc_manager.load_from_s3(document_filename)

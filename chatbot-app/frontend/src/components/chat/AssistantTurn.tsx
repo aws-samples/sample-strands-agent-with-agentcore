@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Download } from 'lucide-react'
+import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Download, FileSpreadsheet, Presentation } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { ReasoningState } from '@/types/events'
 import { Markdown } from '@/components/ui/Markdown'
@@ -30,6 +30,24 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
   const [copied, setCopied] = useState(false)
   const [feedback, setFeedback] = useState<'up' | 'down' | null>(initialFeedback)
+
+  // Get file icon and color based on extension
+  const getFileIcon = (filename: string) => {
+    const ext = filename.toLowerCase().split('.').pop()
+    switch (ext) {
+      case 'xlsx':
+      case 'xls':
+        return { Icon: FileSpreadsheet, color: 'text-green-600 dark:text-green-400' }
+      case 'pptx':
+      case 'ppt':
+        return { Icon: Presentation, color: 'text-orange-600 dark:text-orange-400' }
+      case 'docx':
+      case 'doc':
+        return { Icon: FileText, color: 'text-blue-600 dark:text-blue-400' }
+      default:
+        return { Icon: FileText, color: 'text-blue-600 dark:text-blue-400' }
+    }
+  }
 
   if (!messages || messages.length === 0) {
     return null
@@ -437,21 +455,24 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                 </span>
               </div>
               <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
-                {turnDocuments.map((doc, idx) => (
-                  <div
-                    key={idx}
-                    className="group relative flex items-center gap-2.5 px-3.5 py-2 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600 flex-shrink-0"
-                    onClick={() => handleDocumentDownload(doc.filename, doc.tool_type, doc.user_id)}
-                  >
-                    <div className="flex items-center justify-center w-7 h-7 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
-                      <FileText className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+                {turnDocuments.map((doc, idx) => {
+                  const { Icon, color } = getFileIcon(doc.filename)
+                  return (
+                    <div
+                      key={idx}
+                      className="group relative flex items-center gap-2.5 px-3.5 py-2 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600 flex-shrink-0"
+                      onClick={() => handleDocumentDownload(doc.filename, doc.tool_type, doc.user_id)}
+                    >
+                      <div className="flex items-center justify-center w-7 h-7 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
+                        <Icon className={`h-3.5 w-3.5 ${color}`} />
+                      </div>
+                      <span className="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
+                        {doc.filename}
+                      </span>
+                      <Download className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
-                    <span className="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
-                      {doc.filename}
-                    </span>
-                    <Download className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </div>
           )}

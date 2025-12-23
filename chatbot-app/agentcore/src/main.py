@@ -37,16 +37,12 @@ async def lifespan(app: FastAPI):
     logger.info("=== Agent Core Service Starting ===")
     logger.info("Agent execution engine initialized")
 
-    # Create output directories if they don't exist
+    # Create sessions directory for local development (FileSessionManager)
+    # Workspace files are stored in S3, not local directories
     base_dir = Path(__file__).parent.parent
-    output_dir = os.path.join(base_dir, "output")
-    uploads_dir = os.path.join(base_dir, "uploads")
-    generated_images_dir = os.path.join(base_dir, "generated_images")
-
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(uploads_dir, exist_ok=True)
-    os.makedirs(generated_images_dir, exist_ok=True)
-    logger.info("Output directories ready")
+    sessions_dir = os.path.join(base_dir, "sessions")
+    os.makedirs(sessions_dir, exist_ok=True)
+    logger.info("Sessions directory ready")
 
     yield  # Application is running
 
@@ -87,26 +83,6 @@ app.include_router(chat.router)
 app.include_router(gateway_tools.router)
 app.include_router(tools.router)
 app.include_router(browser_live_view.router)
-
-# Mount static file directories for serving generated content
-# These are created by tools (visualization, code interpreter, etc.)
-# Use parent directory (agentcore/) as base, not src/
-base_dir = Path(__file__).parent.parent
-output_dir = os.path.join(base_dir, "output")
-uploads_dir = os.path.join(base_dir, "uploads")
-generated_images_dir = os.path.join(base_dir, "generated_images")
-
-if os.path.exists(output_dir):
-    app.mount("/output", StaticFiles(directory=output_dir), name="output")
-    logger.info(f"Mounted static files: /output -> {output_dir}")
-
-if os.path.exists(uploads_dir):
-    app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
-    logger.info(f"Mounted static files: /uploads -> {uploads_dir}")
-
-if os.path.exists(generated_images_dir):
-    app.mount("/generated_images", StaticFiles(directory=generated_images_dir), name="generated_images")
-    logger.info(f"Mounted static files: /generated_images -> {generated_images_dir}")
 
 if __name__ == "__main__":
     import uvicorn

@@ -39,7 +39,7 @@ import logging
 from typing import Dict, Any, Optional
 from strands import tool, ToolContext
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-from .lib.document_manager import PowerPointDocumentManager
+from workspace import PowerPointManager
 
 logger = logging.getLogger(__name__)
 
@@ -202,111 +202,6 @@ def _get_file_compatibility_error_response(filename: str, error_msg: str, operat
     }
 
 
-def _load_workspace_images_to_ci(code_interpreter: CodeInterpreter, user_id: str, session_id: str) -> list[str]:
-    """Load all images from S3 workspace to Code Interpreter
-
-    This replaces the old invocation_state approach with S3-based storage.
-    Images are now stored in S3 workspace and loaded on-demand when tools execute.
-
-    Args:
-        code_interpreter: Active CodeInterpreter instance
-        user_id: User ID for S3 workspace path
-        session_id: Session ID for S3 workspace path
-
-    Returns:
-        List of loaded image filenames
-    """
-    from .lib.document_manager import ImageDocumentManager
-
-    try:
-        # Initialize image document manager
-        image_manager = ImageDocumentManager(user_id, session_id)
-
-        # List all images from S3 workspace
-        images = image_manager.list_s3_documents()
-
-        if not images:
-            logger.info("No images found in workspace")
-            return []
-
-        logger.info(f"Found {len(images)} image(s) in workspace: {[img['filename'] for img in images]}")
-
-        # Load each image from S3 and upload to Code Interpreter
-        loaded_filenames = []
-        for image_info in images:
-            try:
-                filename = image_info['filename']
-
-                # Load image bytes from S3
-                file_bytes = image_manager.load_from_s3(filename)
-
-                # Upload to Code Interpreter using existing helper
-                _upload_images_to_ci(code_interpreter, [(filename, file_bytes)])
-
-                loaded_filenames.append(filename)
-                logger.info(f"✅ Loaded image from S3 workspace: {filename}")
-
-            except Exception as e:
-                logger.error(f"Failed to load image {filename} from workspace: {e}")
-                continue
-
-        return loaded_filenames
-
-    except Exception as e:
-        logger.error(f"Failed to load workspace images: {e}")
-        return []
-
-
-def _upload_images_to_ci(code_interpreter: CodeInterpreter, images: list[tuple[str, bytes]]) -> list[str]:
-    """Upload multiple image files to Code Interpreter workspace
-
-    Args:
-        code_interpreter: Active CodeInterpreter instance
-        images: List of (filename, file_bytes) tuples
-
-    Returns:
-        List of uploaded filenames
-    """
-    uploaded = []
-
-    for filename, file_bytes in images:
-        try:
-            import base64
-            encoded_bytes = base64.b64encode(file_bytes).decode('utf-8')
-
-            write_code = f"""
-import base64
-
-# Decode and write image file
-file_bytes = base64.b64decode('{encoded_bytes}')
-with open('{filename}', 'wb') as f:
-    f.write(file_bytes)
-
-print(f"Image uploaded: {filename} ({{len(file_bytes)}} bytes)")
-"""
-
-            response = code_interpreter.invoke("executeCode", {
-                "code": write_code,
-                "language": "python",
-                "clearContext": False
-            })
-
-            # Check for errors
-            for event in response.get("stream", []):
-                result = event.get("result", {})
-                if result.get("isError", False):
-                    error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
-                    logger.error(f"Failed to upload image {filename}: {error_msg[:200]}")
-                    continue
-
-            uploaded.append(filename)
-            logger.info(f"✅ Uploaded image to Code Interpreter: {filename}")
-
-        except Exception as e:
-            logger.error(f"Failed to upload image {filename}: {e}")
-            continue
-
-    return uploaded
 
 
 def _upload_ppt_helpers_to_ci(code_interpreter: CodeInterpreter) -> None:
@@ -385,7 +280,7 @@ def list_my_powerpoint_presentations(tool_context: ToolContext) -> Dict[str, Any
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize presentation manager
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         # List S3 documents
         documents = ppt_manager.list_s3_documents()
@@ -440,7 +335,7 @@ def get_presentation_layouts(
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize presentation manager
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         # Load from S3
         try:
@@ -617,7 +512,7 @@ def analyze_presentation(
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize presentation manager
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         # Load from S3
         try:
@@ -1019,7 +914,7 @@ def update_slide_content(
         user_id, session_id = _get_user_session_ids(tool_context)
 
         # Initialize presentation manager
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         # Load source from S3
         try:
@@ -1053,7 +948,7 @@ def update_slide_content(
             ppt_manager.upload_to_code_interpreter(code_interpreter, source_filename, source_bytes)
 
             # Upload workspace images
-            loaded_images = _load_workspace_images_to_ci(code_interpreter, user_id, session_id)
+            loaded_images = ppt_manager.load_workspace_images_to_ci(code_interpreter)
 
             # Upload ppt_helpers (contains PresentationEditor)
             _upload_ppt_helpers_to_ci(code_interpreter)
@@ -1113,7 +1008,7 @@ def update_slide_content(
 
             # Get updated workspace list
             documents = ppt_manager.list_s3_documents()
-            workspace_list = ppt_manager.format_file_list(documents)
+            other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
             # Calculate total operations
             total_operations = sum(len(update['operations']) for update in slide_updates)
@@ -1128,8 +1023,7 @@ def update_slide_content(
 **Slide:** {slide_numbers[0]}
 **Operations:** {total_operations}
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}
 
 **Next steps:**
 - Use `update_slide_content` again for more edits
@@ -1144,8 +1038,7 @@ def update_slide_content(
 **Slides:** {slides_str}
 **Total operations:** {total_operations}
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}
 
 **Next steps:**
 - Use `update_slide_content` again for more edits
@@ -1304,7 +1197,7 @@ def add_slide(
         output_filename = f"{output_name}.pptx"
 
         user_id, session_id = _get_user_session_ids(tool_context)
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
@@ -1324,7 +1217,7 @@ def add_slide(
 
             # Load workspace images if custom_code provided (might use images)
             if custom_code:
-                _load_workspace_images_to_ci(code_interpreter, user_id, session_id)
+                ppt_manager.load_workspace_images_to_ci(code_interpreter)
 
             from .lib.ppt_operations import generate_add_slide_code
             safe_code = generate_add_slide_code(source_filename, output_filename, layout_name, position, custom_code)
@@ -1355,7 +1248,7 @@ def add_slide(
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
             documents = ppt_manager.list_s3_documents()
-            workspace_list = ppt_manager.format_file_list(documents)
+            other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
             success_msg = f"""✅ **Slide added successfully!**
 
@@ -1364,8 +1257,7 @@ def add_slide(
 **Layout:** {layout_name}
 **Position:** {position if position >= 0 else 'end'}
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}"""
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
             code_interpreter.stop()
             return {
@@ -1431,7 +1323,7 @@ def delete_slides(
         output_filename = f"{output_name}.pptx"
 
         user_id, session_id = _get_user_session_ids(tool_context)
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
@@ -1478,7 +1370,7 @@ def delete_slides(
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
             documents = ppt_manager.list_s3_documents()
-            workspace_list = ppt_manager.format_file_list(documents)
+            other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
             success_msg = f"""✅ **Slides deleted successfully!**
 
@@ -1487,8 +1379,7 @@ def delete_slides(
 **Deleted slides:** {', '.join([str(i+1) for i in sorted(slide_indices)])}
 **Count:** {len(slide_indices)} slide(s)
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}"""
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
             code_interpreter.stop()
             return {
@@ -1552,7 +1443,7 @@ def move_slide(
         output_filename = f"{output_name}.pptx"
 
         user_id, session_id = _get_user_session_ids(tool_context)
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
@@ -1599,7 +1490,7 @@ def move_slide(
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
             documents = ppt_manager.list_s3_documents()
-            workspace_list = ppt_manager.format_file_list(documents)
+            other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
             success_msg = f"""✅ **Slide moved successfully!**
 
@@ -1607,8 +1498,7 @@ def move_slide(
 **Updated:** {output_filename}
 **Moved:** Slide {from_index + 1} → Position {to_index + 1}
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}"""
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
             code_interpreter.stop()
             return {
@@ -1673,7 +1563,7 @@ def duplicate_slide(
         output_filename = f"{output_name}.pptx"
 
         user_id, session_id = _get_user_session_ids(tool_context)
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
@@ -1720,7 +1610,7 @@ def duplicate_slide(
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
             documents = ppt_manager.list_s3_documents()
-            workspace_list = ppt_manager.format_file_list(documents)
+            other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
             success_msg = f"""✅ **Slide duplicated successfully!**
 
@@ -1729,8 +1619,7 @@ def duplicate_slide(
 **Duplicated:** Slide {slide_index + 1}
 **New position:** {position if position >= 0 else f'{slide_index + 2} (after original)'}
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}"""
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
             code_interpreter.stop()
             return {
@@ -1805,7 +1694,7 @@ def update_slide_notes(
         output_filename = f"{output_name}.pptx"
 
         user_id, session_id = _get_user_session_ids(tool_context)
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
@@ -1850,7 +1739,7 @@ def update_slide_notes(
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
             documents = ppt_manager.list_s3_documents()
-            workspace_list = ppt_manager.format_file_list(documents)
+            other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
             notes_preview = notes_text[:100] + "..." if len(notes_text) > 100 else notes_text
             success_msg = f"""✅ **Slide notes updated successfully!**
@@ -1860,8 +1749,7 @@ def update_slide_notes(
 **Slide:** {slide_index + 1}
 **Notes:** "{notes_preview}"
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}"""
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
             code_interpreter.stop()
             return {
@@ -2003,7 +1891,7 @@ chart = slide.shapes.add_chart(
         presentation_filename = f"{presentation_name}.pptx"
 
         user_id, session_id = _get_user_session_ids(tool_context)
-        ppt_manager = PowerPointDocumentManager(user_id, session_id)
+        ppt_manager = PowerPointManager(user_id, session_id)
 
         # Check if file already exists
         try:
@@ -2058,7 +1946,7 @@ chart = slide.shapes.add_chart(
 
             # Upload workspace images if outline includes images
             if outline and outline.get('slides'):
-                _load_workspace_images_to_ci(code_interpreter, user_id, session_id)
+                ppt_manager.load_workspace_images_to_ci(code_interpreter)
 
             # Generate creation code
             import json
@@ -2174,7 +2062,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
 
             # Get updated workspace list
             documents = ppt_manager.list_s3_documents()
-            workspace_list = ppt_manager.format_file_list(documents)
+            other_files_count = len([d for d in documents if d['filename'] != presentation_filename])
 
             # Success message
             theme_display = None
@@ -2194,8 +2082,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
 **Slides:** {slide_count}
 **Theme:** {theme_display}
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}
 
 **Next steps:**
 - Use `analyze_presentation` to view structure
@@ -2207,8 +2094,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
 **Filename:** {presentation_filename}
 **Theme:** {theme_display}
 **Size:** {s3_info['size_kb']}
-
-{workspace_list}
+**Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}
 
 **Next steps:**
 - Use `add_slide` to add more slides

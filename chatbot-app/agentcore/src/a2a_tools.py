@@ -33,12 +33,48 @@ logger = logging.getLogger(__name__)
 A2A_AGENTS_CONFIG = {
     "agentcore_research-agent": {
         "name": "Research Agent",
-        "description": "Web research agent that searches multiple sources and generates structured markdown reports with citations. Clarifies scope if request is too broad.",
+        "description": """Multi-source web research with structured markdown reports and chart generation.
+
+Args:
+    plan: Research plan with objectives, topics, and desired report structure.
+
+Returns:
+    Detailed markdown report with citations and charts (displayed directly to user).
+
+Example plan:
+    "Research Plan: AI Market 2026
+
+    Objectives:
+    - Market size and growth trends
+    - Key players and market share
+
+    Topics:
+    1. Global AI market statistics
+    2. Leading companies
+    3. Investment trends
+
+    Structure:
+    - Executive Summary
+    - Market Overview
+    - Key Players"
+""",
         "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
     },
     "agentcore_browser-use-agent": {
         "name": "Browser Use Agent",
-        "description": "Autonomous browser automation agent that can navigate websites, interact with elements, fill forms, and extract information. Executes multi-step browser tasks using AI-driven navigation.",
+        "description": """Autonomous browser automation that executes multi-step web tasks.
+
+Args:
+    task: Clear description of what to accomplish. Agent decides navigation steps automatically.
+
+Returns:
+    Text summary of completed actions and extracted information.
+
+Examples:
+    "Go to example.com and find the main product price"
+    "Search GitHub for top Python repos and get the star count"
+    "Navigate to AWS pricing page and extract compute costs"
+""",
         "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn",
     },
 }
@@ -537,29 +573,6 @@ def create_a2a_tool(agent_id: str):
         # Browser Use Agent - task parameter only
         # Uses async generator to stream browser_session_arn immediately for Live View
         async def tool_impl(task: str, tool_context: ToolContext = None) -> AsyncGenerator[Dict[str, Any], None]:
-            """
-            Autonomous browser automation that executes complex multi-step web tasks using AI-driven navigation.
-
-            This agent can:
-            - Navigate to any website and interact with elements
-            - Search for information and extract data
-            - Fill out forms and submit data
-            - Handle dynamic content and multi-page workflows
-            - Take actions based on page content
-
-            The agent autonomously decides the steps needed to complete your task.
-
-            Args:
-                task: Clear description of what you want to accomplish in the browser
-
-            Yields:
-                Streaming events including browser session for Live View, then final result
-
-            Examples:
-                "Go to example.com and extract the main heading text"
-                "Search GitHub for the most starred Python repository this month"
-                "Navigate to Amazon and find the price of AWS Bedrock"
-            """
             session_id, user_id, model_id = extract_context(tool_context)
 
             # Prepare metadata (max_steps handled internally by agent)
@@ -582,11 +595,6 @@ def create_a2a_tool(agent_id: str):
                             tool_context.invocation_state['browser_session_arn'] = browser_session_id
                             logger.info(f"🔴 [Live View] Stored browser_session_arn in invocation_state: {browser_session_id}")
 
-                # Yield ALL events (including browser_step)
-                # Strands SDK wraps yielded events in ToolStreamEvent → event_processor processes them
-                # event_processor converts browser_step to browser_progress SSE (Browser Modal)
-                # event_processor converts browser_session_detected to metadata SSE (Live View)
-                # Final result {"status": "success", "content": [...]} becomes tool result (NOT streaming text)
                 yield event
 
         # Set correct function name and docstring BEFORE decorating
@@ -598,35 +606,7 @@ def create_a2a_tool(agent_id: str):
 
     else:
         # Research Agent (default) - plan parameter
-        # Define function WITHOUT decorator first
         async def tool_impl(plan: str, tool_context: ToolContext = None) -> str:
-            """
-            Comprehensive web research agent with multi-source search and structured markdown reports.
-
-            Args:
-                plan: Research plan with objectives, topics, and report structure
-
-            Returns:
-                Detailed markdown report with citations (displayed in Research Modal)
-
-            Example plan:
-                "Research Plan: AI Market Analysis 2024
-
-                Objectives:
-                - Analyze AI market size and growth trends
-                - Identify key players and market share
-
-                Topics:
-                1. Global AI statistics (2023-2024)
-                2. Leading AI companies
-                3. Investment trends
-
-                Structure:
-                - Executive Summary
-                - Market Overview
-                - Key Players
-                - Future Outlook"
-            """
             session_id, user_id, model_id = extract_context(tool_context)
 
             # Prepare metadata

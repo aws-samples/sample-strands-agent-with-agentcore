@@ -837,8 +837,8 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
     def _get_workspace_context(self) -> Optional[str]:
         """Get workspace file list as context string"""
         try:
-            from builtin_tools.lib.document_manager import WordDocumentManager
-            doc_manager = WordDocumentManager(self.user_id, self.session_id)
+            from workspace import WordManager
+            doc_manager = WordManager(self.user_id, self.session_id)
             documents = doc_manager.list_s3_documents()
 
             if documents:
@@ -952,11 +952,11 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             logger.info(f"   - {f['filename']} ({f['content_type']})")
 
         try:
-            from builtin_tools.lib.document_manager import (
-                WordDocumentManager,
-                ExcelDocumentManager,
-                PowerPointDocumentManager,
-                ImageDocumentManager
+            from workspace import (
+                WordManager,
+                ExcelManager,
+                PowerPointManager,
+                ImageManager
             )
             from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 
@@ -970,22 +970,22 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             file_type_configs = [
                 {
                     'extensions': ['.docx'],
-                    'manager_class': WordDocumentManager,
+                    'manager_class': WordManager,
                     'document_type': 'Word document'
                 },
                 {
                     'extensions': ['.xlsx'],
-                    'manager_class': ExcelDocumentManager,
+                    'manager_class': ExcelManager,
                     'document_type': 'Excel spreadsheet'
                 },
                 {
                     'extensions': ['.pptx'],
-                    'manager_class': PowerPointDocumentManager,
+                    'manager_class': PowerPointManager,
                     'document_type': 'PowerPoint presentation'
                 },
                 {
                     'extensions': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'],
-                    'manager_class': ImageDocumentManager,
+                    'manager_class': ImageManager,
                     'document_type': 'image'
                 }
             ]
