@@ -106,6 +106,28 @@ class StreamEventFormatter:
                     "content": [{"text": str(tool_result)}]
                 }
 
+        # Unwrap Lambda response if present (Gateway tools)
+        # Lambda format: content[0].text = "{\"statusCode\":200,\"body\":\"...\"}"
+        if "content" in tool_result and isinstance(tool_result["content"], list):
+            if len(tool_result["content"]) > 0:
+                first_item = tool_result["content"][0]
+                if isinstance(first_item, dict) and "text" in first_item:
+                    try:
+                        text_content = first_item["text"]
+                        logger.info(f"[Lambda Unwrap] Checking text content (first 200 chars): {text_content[:200]}")
+                        parsed = json.loads(text_content)
+                        if isinstance(parsed, dict) and "statusCode" in parsed and "body" in parsed:
+                            logger.info(f"[Lambda Unwrap] Detected Lambda response, unwrapping...")
+                            body = json.loads(parsed["body"]) if isinstance(parsed["body"], str) else parsed["body"]
+                            logger.info(f"[Lambda Unwrap] Body keys: {body.keys() if isinstance(body, dict) else 'not a dict'}")
+                            if "content" in body:
+                                # Replace with unwrapped content
+                                tool_result["content"] = body["content"]
+                                logger.info(f"[Lambda Unwrap] Successfully unwrapped Lambda response")
+                    except (json.JSONDecodeError, KeyError) as e:
+                        logger.warning(f"[Lambda Unwrap] Failed to unwrap: {e}")
+                        pass
+
         # 1. Extract all content (text and images) and process Base64
         result_text, result_images = StreamEventFormatter._extract_all_content(tool_result)
 
@@ -165,6 +187,19 @@ class StreamEventFormatter:
                                 parsed_json = json.loads(text_content)
 
                                 if isinstance(parsed_json, dict):
+                                    # Handle Google search results with images (URL-based)
+                                    if "images" in parsed_json and isinstance(parsed_json["images"], list):
+                                        for img in parsed_json["images"]:
+                                            if isinstance(img, dict) and "link" in img:
+                                                result_images.append({
+                                                    "type": "url",
+                                                    "url": img.get("link"),
+                                                    "thumbnail": img.get("thumbnail"),
+                                                    "title": img.get("title", ""),
+                                                    "width": img.get("width", 0),
+                                                    "height": img.get("height", 0)
+                                                })
+
                                     # Handle A2A tool response format: {"status": "...", "text": "...", "metadata": {...}}
                                     if "text" in parsed_json:
                                         result_text += parsed_json["text"]

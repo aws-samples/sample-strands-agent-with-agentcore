@@ -363,7 +363,8 @@ export class ChatbotStack extends cdk.Stack {
         parameters: {
           projectName: buildProject.projectName,
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`frontend-build-${Date.now()}`),
+        outputPaths: ['build.id'],
+        physicalResourceId: cr.PhysicalResourceId.fromResponse('build.id'),
       },
       onUpdate: {
         service: 'CodeBuild',
@@ -371,7 +372,8 @@ export class ChatbotStack extends cdk.Stack {
         parameters: {
           projectName: buildProject.projectName,
         },
-        physicalResourceId: cr.PhysicalResourceId.of(`frontend-build-${Date.now()}`),
+        outputPaths: ['build.id'],
+        physicalResourceId: cr.PhysicalResourceId.fromResponse('build.id'),
       },
       policy: cr.AwsCustomResourcePolicy.fromStatements([
         new iam.PolicyStatement({

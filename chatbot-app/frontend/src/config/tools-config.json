@@ -8,16 +8,8 @@
       "category": "utilities",
       "icon": "🧮",
       "enabled": true,
-      "isDynamic": false
-    },
-    {
-      "id": "get_current_weather",
-      "name": "Weather Lookup",
-      "description": "Get current weather information for any city worldwide",
-      "category": "utilities",
-      "icon": "🌤️",
-      "enabled": true,
-      "isDynamic": false
+      "isDynamic": false,
+      "tags": ["math", "finance", "business", "report", "analysis"]
     },
     {
       "id": "create_visualization",
@@ -27,7 +19,8 @@
       "icon": "📊",
       "enabled": true,
       "isDynamic": false,
-      "systemPromptGuidance": "Visualization Best Practices:\n\n**Data Format:**\n- Bar/Line charts: [{\"x\": label, \"y\": value}]\n- Pie charts: [{\"segment\": name, \"value\": number}]\n- Optional colors: \"color\": \"hsl(210, 100%, 50%)\""
+      "systemPromptGuidance": "Visualization Best Practices:\n\n**Data Format:**\n- Bar/Line charts: [{\"x\": label, \"y\": value}]\n- Pie charts: [{\"segment\": name, \"value\": number}]\n- Optional colors: \"color\": \"hsl(210, 100%, 50%)\"",
+      "tags": ["report", "analysis", "business", "presentation", "data"]
     },
     {
       "id": "ddg_web_search",
@@ -36,7 +29,8 @@
       "category": "search",
       "icon": "🔍",
       "enabled": true,
-      "isDynamic": false
+      "isDynamic": false,
+      "tags": ["research", "information", "learning", "knowledge"]
     },
     {
       "id": "fetch_url_content",
@@ -45,7 +39,8 @@
       "category": "utilities",
       "icon": "🌐",
       "enabled": true,
-      "isDynamic": false
+      "isDynamic": false,
+      "tags": ["scraping", "research", "data"]
     }
   ],
   "builtin_tools": [
@@ -57,7 +52,8 @@
       "icon": "📊",
       "enabled": true,
       "isDynamic": false,
-      "systemPromptGuidance": "Diagram Generator Best Practices:\n\n**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability"
+      "systemPromptGuidance": "Diagram Generator Best Practices:\n\n**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability",
+      "tags": ["report", "presentation", "analysis", "business", "data"]
     },
     {
       "id": "word_document_tools",
@@ -68,6 +64,7 @@
       "enabled": true,
       "isDynamic": true,
       "systemPromptGuidance": "Word Document Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_word_document: User asks to create/generate a NEW Word document\n- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document\n- list_my_word_documents: User asks what documents are available\n- read_word_document: User wants to download a document\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Available Libraries:**\n- python-docx (document creation)\n- matplotlib, pandas, numpy (charts and data)\n- Note: seaborn NOT available - use matplotlib instead\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
+      "tags": ["report", "business", "document", "writing"],
       "tools": [
         {
           "id": "create_word_document",
@@ -100,6 +97,7 @@
       "enabled": true,
       "isDynamic": true,
       "systemPromptGuidance": "Excel Spreadsheet Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_excel_spreadsheet: User asks to create/generate a NEW Excel spreadsheet\n- modify_excel_spreadsheet: User asks to edit/modify/update an EXISTING spreadsheet or add sheets/data to existing spreadsheet\n- list_my_excel_spreadsheets: User asks what spreadsheets are available\n- read_excel_spreadsheet: User wants to download a spreadsheet\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"Q4-sales.xlsx\")\n\n**Available Libraries:**\n- openpyxl (spreadsheet creation)\n- matplotlib, pandas, numpy (charts and data)\n\n**Data Structure:**\n- Use tables for structured data (TableStyleInfo)\n- Add charts for visualization (BarChart, LineChart, PieChart)\n- Format cells appropriately (Font, PatternFill, Alignment)\n- Use multiple sheets for organization\n\n**Formulas:**\n- Use Excel formulas instead of hardcoded values: '=SUM(B2:B10)', '=AVERAGE(C2:C50)'\n- Avoid circular references (A1='=A1+1' or A1='=B1' and B1='=A1')",
+      "tags": ["report", "business", "finance", "data", "analysis"],
       "tools": [
         {
           "id": "create_excel_spreadsheet",
@@ -132,6 +130,7 @@
       "enabled": true,
       "isDynamic": true,
       "systemPromptGuidance": "PowerPoint Best Practices:\n\n**CRITICAL Rules:**\n- Batch required: 1 call for all slides (parallel calls = data loss)\n- Operations: update_text, update_image only\n- update_text: replaces entire element (use \\n for multi-line)\n- Output name must differ from source\n\n**Text Editing:**\n- Preserve original text length when possible\n- Long existing text often indicates design constraints\n- Be concise - not all improvements need longer text\n- Consider layout: expanding text can break visual design\n\n**Position Info:**\n- analyze shows element positions: (left\", top\", width\"×height\")\n- Helps understand layout: titles ~top:0.3\", bodies ~top:1.5\"\n\n**Speaker Notes:**\n- analyze shows existing notes\n- Use update_slide_notes when user wants to review/modify notes\n\n**File Handling:**\n- Existing/uploaded files: use modify tools only (create_presentation destroys layout)\n- New files: create_presentation(name, outline, template_name)\n\n**Rules:**\n- Names: letters, numbers, hyphens only\n- Indices: 0-based (slides & elements)",
+      "tags": ["presentation", "business", "report", "pitch"],
       "tools": [
         {
           "id": "list_my_powerpoint_presentations",
@@ -189,13 +188,14 @@
   "browser_automation": [
     {
       "id": "browser_automation",
-      "name": "Browser Control with Nova Act",
+      "name": "Nova Act Browser Control",
       "description": "Web browser automation powered by Nova Act AI (5 tools)",
       "category": "browser_automation_agents",
       "icon": "🌐",
       "enabled": true,
       "isDynamic": true,
       "systemPromptGuidance": "Browser Automation Best Practices:\n- ALWAYS prefer direct URLs with search parameters over multi-step navigation\n- Example: Use \"https://www.google.com/search?q=AI+news\" instead of navigating → typing → submitting\n- Only use browser_act when direct URL navigation is not possible",
+      "tags": ["shopping", "automation", "scraping", "research"],
       "tools": [
         {
           "id": "browser_navigate",
@@ -232,6 +232,7 @@
       "icon": "🤖",
       "enabled": true,
       "isDynamic": true,
+      "tags": ["shopping", "automation", "scraping", "research"],
       "tools": [
         {
           "id": "agentcore_browser-use-agent",
@@ -244,6 +245,28 @@
   ],
   "gateway_targets": [
     {
+      "id": "gateway_weather",
+      "name": "Weather",
+      "description": "Current weather and forecasts worldwide",
+      "category": "utilities",
+      "icon": "🌤️",
+      "enabled": false,
+      "isDynamic": true,
+      "tags": ["weather", "forecast", "travel", "planning", "outdoor"],
+      "tools": [
+        {
+          "id": "gateway_get_today_weather",
+          "name": "Today's Weather",
+          "description": "Get current weather and today's hourly forecast"
+        },
+        {
+          "id": "gateway_get_weather_forecast",
+          "name": "Weather Forecast",
+          "description": "Get multi-day weather forecast (up to 16 days)"
+        }
+      ]
+    },
+    {
       "id": "gateway_financial-news",
       "name": "Financial Market",
       "description": "Stock quotes, history, news and analysis",
@@ -251,24 +274,25 @@
       "icon": "📈",
       "enabled": false,
       "isDynamic": true,
+      "tags": ["stock", "finance", "trading", "investment", "business"],
       "tools": [
         {
-          "id": "gateway_stock-quote___stock_quote",
+          "id": "gateway_stock_quote",
           "name": "Stock Quote",
           "description": "Get current stock quote with key metrics"
         },
         {
-          "id": "gateway_stock-history___stock_history",
+          "id": "gateway_stock_history",
           "name": "Stock History",
           "description": "Get historical stock price data"
         },
         {
-          "id": "gateway_financial-news___financial_news",
+          "id": "gateway_financial_news",
           "name": "Financial News",
           "description": "Get latest financial news articles"
         },
         {
-          "id": "gateway_stock-analysis___stock_analysis",
+          "id": "gateway_stock_analysis",
           "name": "Stock Analysis",
           "description": "Get comprehensive stock analysis"
         }
@@ -282,14 +306,15 @@
       "icon": "🔬",
       "enabled": false,
       "isDynamic": true,
+      "tags": ["research", "academic", "science", "paper", "study"],
       "tools": [
         {
-          "id": "gateway_arxiv-search___arxiv_search",
+          "id": "gateway_arxiv_search",
           "name": "Search Papers",
           "description": "Search scientific papers on ArXiv"
         },
         {
-          "id": "gateway_arxiv-get-paper___arxiv_get_paper",
+          "id": "gateway_arxiv_get_paper",
           "name": "Get Paper",
           "description": "Get full paper content from ArXiv by paper ID"
         }
@@ -298,21 +323,17 @@
     {
       "id": "gateway_google-web-search",
       "name": "Google Search",
-      "description": "Google web and image search",
+      "description": "Google web search with integrated image results",
       "category": "search",
       "icon": "🔍",
       "enabled": false,
       "isDynamic": true,
+      "tags": ["research", "information", "learning", "shopping", "knowledge"],
       "tools": [
         {
-          "id": "gateway_google-web-search___google_web_search",
+          "id": "gateway_google_web_search",
           "name": "Web Search",
-          "description": "Search the web using Google Custom Search"
-        },
-        {
-          "id": "gateway_google-image-search___google_image_search",
-          "name": "Image Search",
-          "description": "Search for images using Google"
+          "description": "Search the web using Google Custom Search (includes image results)"
         }
       ]
     },
@@ -324,40 +345,41 @@
       "icon": "🗺️",
       "enabled": false,
       "isDynamic": true,
-      "systemPromptGuidance": "Google Maps Strategy:\n\n**Typical Workflows:**\n1. Place search: search_places → get_place_details (if detailed info needed) → show_on_map (if visual helpful)\n2. Nearby search: geocode_address (if needed) → search_nearby_places\n3. Directions: Infer mode from context → get_directions → show_on_map (helpful for routes)\n4. Reverse lookup: reverse_geocode → search_nearby_places (if needed)\n\n**Tool Chaining:**\n- Preserve place_id from search for get_place_details (more reliable than address)\n- Chain geocode → nearby_search when starting with address\n- Use search_places for text queries, search_nearby_places for coordinate-based\n\n**Mode Selection:**\n- Infer from context: 'walk', 'drive', 'bike', 'transit'\n- Default driving if ambiguous\n\n**Visualization:**\n- Consider show_on_map for directions, comparisons, or when user requests map view\n- Add labels and descriptions to markers for clarity",
+      "systemPromptGuidance": "Google Maps Best Practices:\n\n**When to Use:**\n- ALWAYS call show_on_map after collecting location data - visual maps are the primary value\n- Use for: search results, directions, comparisons, or any location-based query\n\n**Response Pattern (DO NOT call show_on_map in parallel):**\n1. Text: Introduce what you'll show (\"Here are the top restaurants:\")\n2. show_on_map: Display the map\n3. Text: Explain the results (\"These restaurants are rated 4.5+ stars\")\n\nExample:\n- \"Let me show you restaurants in Gangnam:\" → show_on_map(restaurants) → \"All 5 restaurants above have excellent reviews.\"\n- For multiple categories: Text → Map 1 → Text → Map 2 (sequential, not parallel)\n\n**Map Organization:**\n- Separate maps for different categories (restaurants vs hotels)\n- Show 1-5 most relevant places per map\n\n**Tool Selection:**\n- search_places: text queries | search_nearby_places: coordinates\n- Preserve place_id for details | Infer direction mode from context",
+      "tags": ["travel", "navigation", "planning", "directions", "location"],
       "tools": [
         {
-          "id": "gateway_search-places___search_places",
+          "id": "gateway_search_places",
           "name": "Search Places",
           "description": "Search for places using text query (e.g., 'restaurants in New York')"
         },
         {
-          "id": "gateway_search-nearby-places___search_nearby_places",
+          "id": "gateway_search_nearby_places",
           "name": "Nearby Places",
           "description": "Search for places near a specific location"
         },
         {
-          "id": "gateway_get-place-details___get_place_details",
+          "id": "gateway_get_place_details",
           "name": "Place Details",
           "description": "Get detailed information about a place including reviews"
         },
         {
-          "id": "gateway_get-directions___get_directions",
+          "id": "gateway_get_directions",
           "name": "Get Directions",
           "description": "Get directions between two locations with step-by-step instructions"
         },
         {
-          "id": "gateway_geocode-address___geocode_address",
+          "id": "gateway_geocode_address",
           "name": "Geocode Address",
           "description": "Convert address to geographic coordinates"
         },
         {
-          "id": "gateway_reverse-geocode___reverse_geocode",
+          "id": "gateway_reverse_geocode",
           "name": "Reverse Geocode",
           "description": "Convert geographic coordinates to address"
         },
         {
-          "id": "gateway_google-maps___show_on_map",
+          "id": "gateway_show_on_map",
           "name": "Show on Map",
           "description": "Display locations and routes on interactive Google Map"
         }
@@ -371,14 +393,15 @@
       "icon": "📚",
       "enabled": false,
       "isDynamic": true,
+      "tags": ["research", "knowledge", "learning", "education", "information"],
       "tools": [
         {
-          "id": "gateway_wikipedia-search___wikipedia_search",
+          "id": "gateway_wikipedia_search",
           "name": "Search Articles",
           "description": "Search Wikipedia for articles"
         },
         {
-          "id": "gateway_wikipedia-get-article___wikipedia_get_article",
+          "id": "gateway_wikipedia_get_article",
           "name": "Get Article",
           "description": "Get full content of a Wikipedia article"
         }
@@ -392,14 +415,15 @@
       "icon": "🤖",
       "enabled": false,
       "isDynamic": true,
+      "tags": ["research", "information", "learning", "analysis"],
       "tools": [
         {
-          "id": "gateway_tavily-search___tavily_search",
+          "id": "gateway_tavily_search",
           "name": "AI Search",
           "description": "AI-powered web search using Tavily"
         },
         {
-          "id": "gateway_tavily-extract___tavily_extract",
+          "id": "gateway_tavily_extract",
           "name": "Content Extract",
           "description": "Extract clean content from web URLs"
         }

@@ -40,8 +40,6 @@ def lambda_handler(event, context):
         # Route to appropriate tool
         if tool_name == 'google_web_search':
             return google_web_search(event)
-        elif tool_name == 'google_image_search':
-            return google_image_search(event)
         else:
             return error_response(f"Unknown tool: {tool_name}")
 
@@ -100,35 +98,8 @@ def get_google_credentials() -> Optional[Dict[str, str]]:
         return None
 
 
-def check_image_accessible(url: str, timeout: int = 5) -> bool:
-    """Check if image URL is accessible"""
-    try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-            'Accept': 'image/avif,image/webp,image/apng,image/*,*/*;q=0.8',
-            'Referer': 'https://www.google.com/'
-        }
-
-        # Use HEAD request to check accessibility
-        response = requests.head(url, headers=headers, timeout=timeout, allow_redirects=True)
-
-        if response.status_code == 200:
-            content_type = response.headers.get('content-type', '').lower()
-            return 'image' in content_type
-
-        # If HEAD fails, try small range request
-        if response.status_code == 405:
-            headers['Range'] = 'bytes=0-1023'
-            response = requests.get(url, headers=headers, timeout=timeout)
-            return response.status_code in [200, 206]
-
-        return False
-    except Exception:
-        return False
-
-
 def google_web_search(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute Google web search"""
+    """Execute Google web search with optional image results"""
 
     # Get credentials
     credentials = get_google_credentials()
@@ -138,23 +109,24 @@ def google_web_search(params: Dict[str, Any]) -> Dict[str, Any]:
     # Extract parameters (Gateway unwraps them)
     query = params.get('query')
     num_results = 5
+    include_images = params.get('include_images', True)  # Default: include images
 
     if not query:
         return error_response("query parameter required")
 
-    logger.info(f"Google web search: query={query}")
-
-    # Prepare API request
-    url = "https://www.googleapis.com/customsearch/v1"
-    request_params = {
-        'key': credentials['api_key'],
-        'cx': credentials['search_engine_id'],
-        'q': query,
-        'num': num_results,
-        'safe': 'active'
-    }
+    logger.info(f"Google web search: query={query}, include_images={include_images}")
 
     try:
+        # Web search API request
+        url = "https://www.googleapis.com/customsearch/v1"
+        request_params = {
+            'key': credentials['api_key'],
+            'cx': credentials['search_engine_id'],
+            'q': query,
+            'num': num_results,
+            'safe': 'active'
+        }
+
         response = requests.get(url, params=request_params, timeout=30)
 
         if response.status_code == 400:
@@ -166,7 +138,7 @@ def google_web_search(params: Dict[str, Any]) -> Dict[str, Any]:
 
         data = response.json()
 
-        # Format results
+        # Format web results
         results = []
         if 'items' in data:
             for idx, item in enumerate(data['items'], 1):
@@ -177,10 +149,46 @@ def google_web_search(params: Dict[str, Any]) -> Dict[str, Any]:
                     "snippet": item.get('snippet', 'No snippet')
                 })
 
+        # Image search (if enabled)
+        images = []
+        if include_images:
+            try:
+                image_params = {
+                    'key': credentials['api_key'],
+                    'cx': credentials['search_engine_id'],
+                    'q': query,
+                    'searchType': 'image',
+                    'num': 3,  # Get 3 images (limited to reduce clutter)
+                    'safe': 'active'
+                }
+
+                image_response = requests.get(url, params=image_params, timeout=30)
+
+                if image_response.status_code == 200:
+                    image_data = image_response.json()
+
+                    if 'items' in image_data:
+                        for idx, item in enumerate(image_data['items'][:3], 1):
+                            images.append({
+                                "index": idx,
+                                "title": item.get('title', 'Untitled'),
+                                "link": item.get('link', ''),
+                                "thumbnail": item.get('image', {}).get('thumbnailLink', ''),
+                                "context_link": item.get('image', {}).get('contextLink', ''),
+                                "width": item.get('image', {}).get('width', 0),
+                                "height": item.get('image', {}).get('height', 0)
+                            })
+                else:
+                    logger.warning(f"Image search failed: {image_response.status_code}")
+            except Exception as e:
+                logger.warning(f"Image search error (non-fatal): {str(e)}")
+
         result_data = {
             "query": query,
             "results_count": len(results),
-            "results": results
+            "results": results,
+            "images_count": len(images),
+            "images": images
         }
 
         return success_response(json.dumps(result_data, indent=2))
@@ -189,90 +197,6 @@ def google_web_search(params: Dict[str, Any]) -> Dict[str, Any]:
         return error_response("Google API request timed out")
     except Exception as e:
         return error_response(f"Google web search error: {str(e)}")
-
-
-def google_image_search(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Execute Google image search"""
-
-    # Get credentials
-    credentials = get_google_credentials()
-    if not credentials:
-        return error_response("Failed to get Google API credentials")
-
-    # Extract parameters
-    query = params.get('query')
-    num_results = 5
-
-    if not query:
-        return error_response("query parameter required")
-
-    logger.info(f"Google image search: query={query}")
-
-    # Prepare API request
-    url = "https://www.googleapis.com/customsearch/v1"
-    request_params = {
-        'key': credentials['api_key'],
-        'cx': credentials['search_engine_id'],
-        'q': query,
-        'searchType': 'image',
-        'num': 10,  # Get max results to filter for accessible ones
-        'safe': 'active'
-    }
-
-    try:
-        response = requests.get(url, params=request_params, timeout=30)
-
-        if response.status_code == 400:
-            return error_response("Invalid Google API request")
-        elif response.status_code == 403:
-            return error_response("Google API key invalid or quota exceeded")
-        elif response.status_code != 200:
-            return error_response(f"Google API error: {response.status_code}")
-
-        data = response.json()
-
-        # Filter for accessible images
-        accessible_results = []
-        all_items = data.get('items', [])
-
-        for item in all_items:
-            image_url = item.get('link', '')
-
-            if image_url and check_image_accessible(image_url):
-                accessible_results.append({
-                    "title": item.get('title', 'Untitled'),
-                    "link": item.get('link', 'No link'),
-                    "snippet": item.get('snippet', 'No description'),
-                    "image_url": image_url
-                })
-
-                # Stop when we have enough
-                if len(accessible_results) >= num_results:
-                    break
-
-        # Format results
-        formatted_results = []
-        for idx, r in enumerate(accessible_results, 1):
-            formatted_results.append({
-                "index": idx,
-                "title": r['title'],
-                "link": r['link'],
-                "snippet": r['snippet'],
-                "image_url": r['image_url']
-            })
-
-        result_data = {
-            "query": query,
-            "results_count": len(formatted_results),
-            "results": formatted_results
-        }
-
-        return success_response(json.dumps(result_data, indent=2))
-
-    except requests.exceptions.Timeout:
-        return error_response("Google API request timed out")
-    except Exception as e:
-        return error_response(f"Google image search error: {str(e)}")
 
 
 def success_response(content: str) -> Dict[str, Any]:

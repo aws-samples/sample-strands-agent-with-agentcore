@@ -1,7 +1,7 @@
 /**
  * Gateway Target Stack for AgentCore Gateway
  * Creates Gateway Targets that connect Lambda functions to the Gateway
- * Total: 18 tools across 6 Lambda functions
+ * Total: 20 tools across 7 Lambda functions
  */
 import * as cdk from 'aws-cdk-lib'
 import * as agentcore from 'aws-cdk-lib/aws-bedrockagentcore'
@@ -295,7 +295,7 @@ export class GatewayTargetStack extends cdk.Stack {
     })
 
     // ============================================================
-    // Google Search Targets (2 tools)
+    // Google Search Targets (1 tool - web search includes images)
     // ============================================================
 
     const googleFn = functions.get('google-search')!
@@ -329,46 +329,6 @@ export class GatewayTargetStack extends cdk.Stack {
                       query: {
                         type: 'string',
                         description: 'Search query string',
-                      },
-                    },
-                  },
-                },
-              ],
-            },
-          },
-        },
-      },
-    })
-
-    new agentcore.CfnGatewayTarget(this, 'GoogleImageSearchTarget', {
-      name: 'google-image-search',
-      gatewayIdentifier: gateway.attrGatewayIdentifier,
-      description: 'Google image search',
-
-      credentialProviderConfigurations: [
-        {
-          credentialProviderType: 'GATEWAY_IAM_ROLE',
-        },
-      ],
-
-      targetConfiguration: {
-        mcp: {
-          lambda: {
-            lambdaArn: googleFn.functionArn,
-            toolSchema: {
-              inlinePayload: [
-                {
-                  name: 'google_image_search',
-                  description:
-                    "Search for images using Google's image search. Returns up to 5 verified accessible images.",
-                  inputSchema: {
-                    type: 'object',
-                    description: 'Image search parameters',
-                        required: ['query'],
-                    properties: {
-                      query: {
-                        type: 'string',
-                        description: 'Search query for images',
                       },
                     },
                   },
@@ -882,17 +842,211 @@ export class GatewayTargetStack extends cdk.Stack {
       },
     })
 
+    new agentcore.CfnGatewayTarget(this, 'ShowOnMapTarget', {
+      name: 'show-on-map',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Display locations and routes on interactive Google Map',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: googleMapsFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'show_on_map',
+                  description:
+                    'Display locations, routes, or areas on an interactive Google Map. Use after collecting location data from search or directions. Show 1-5 most relevant places per map.',
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Map visualization parameters',
+                    required: ['map_type'],
+                    properties: {
+                      map_type: {
+                        type: 'string',
+                        description: 'Type of map: "markers" (location pins), "directions" (route), or "area" (region). Must be one of: markers, directions, area',
+                      },
+                      markers: {
+                        type: 'array',
+                        description: 'List of location markers (required for map_type="markers")',
+                        items: {
+                          type: 'object',
+                          required: ['lat', 'lng'],
+                          properties: {
+                            lat: { type: 'number', description: 'Latitude' },
+                            lng: { type: 'number', description: 'Longitude' },
+                            title: { type: 'string', description: 'Marker title' },
+                            description: { type: 'string', description: 'Marker description' },
+                            label: { type: 'string', description: 'Single character label (A-Z)' },
+                            place_id: { type: 'string', description: 'Google place_id for linking' },
+                          },
+                        },
+                      },
+                      directions: {
+                        type: 'object',
+                        description: 'Route data (required for map_type="directions")',
+                        properties: {
+                          origin: {
+                            type: 'object',
+                            required: ['lat', 'lng'],
+                            properties: {
+                              lat: { type: 'number' },
+                              lng: { type: 'number' },
+                              address: { type: 'string' },
+                            },
+                          },
+                          destination: {
+                            type: 'object',
+                            required: ['lat', 'lng'],
+                            properties: {
+                              lat: { type: 'number' },
+                              lng: { type: 'number' },
+                              address: { type: 'string' },
+                            },
+                          },
+                          polyline: { type: 'string', description: 'Encoded polyline from get_directions' },
+                          mode: { type: 'string', description: 'Travel mode' },
+                          distance: { type: 'string', description: 'Distance text' },
+                          duration: { type: 'string', description: 'Duration text' },
+                        },
+                      },
+                      center: {
+                        type: 'object',
+                        description: 'Map center {lat, lng}. Auto-calculated if omitted.',
+                        properties: {
+                          lat: { type: 'number' },
+                          lng: { type: 'number' },
+                        },
+                      },
+                      zoom: {
+                        type: 'number',
+                        description: 'Zoom level 1-20 (1=World, 20=Buildings). Auto-calculated if omitted. Valid range: 1-20',
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    // ============================================================
+    // Weather Targets (2 tools)
+    // ============================================================
+
+    const weatherFn = functions.get('weather')!
+
+    new agentcore.CfnGatewayTarget(this, 'GetTodayWeatherTarget', {
+      name: 'get-today-weather',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: "Get today's weather with current conditions and hourly forecast",
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: weatherFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'get_today_weather',
+                  description:
+                    "Get today's weather with current conditions and hourly forecast (24 hours). Includes temperature, humidity, wind, precipitation, and weather conditions. Powered by Open-Meteo API (worldwide coverage).",
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Weather query parameters',
+                    required: ['city_name'],
+                    properties: {
+                      city_name: {
+                        type: 'string',
+                        description: 'City name (e.g., "Seoul", "New York", "London")',
+                      },
+                      country: {
+                        type: 'string',
+                        description: 'Optional: Country name for disambiguation (e.g., "South Korea", "USA")',
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    new agentcore.CfnGatewayTarget(this, 'GetWeatherForecastTarget', {
+      name: 'get-weather-forecast',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Get multi-day weather forecast (up to 16 days)',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: weatherFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'get_weather_forecast',
+                  description:
+                    'Get multi-day weather forecast with daily max/min temperatures, precipitation, sunrise/sunset. Supports 1-16 days forecast. Powered by Open-Meteo API (worldwide coverage).',
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Forecast parameters',
+                    required: ['city_name'],
+                    properties: {
+                      city_name: {
+                        type: 'string',
+                        description: 'City name (e.g., "Tokyo", "Paris", "Sydney")',
+                      },
+                      days: {
+                        type: 'number',
+                        description: 'Number of forecast days (1-16, default: 7)',
+                      },
+                      country: {
+                        type: 'string',
+                        description: 'Optional: Country name for disambiguation',
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
     // ============================================================
     // Outputs
     // ============================================================
 
     new cdk.CfnOutput(this, 'TotalTargets', {
-      value: '18',
+      value: '21',
       description: 'Total number of Gateway Targets (tools)',
     })
 
     new cdk.CfnOutput(this, 'TargetsSummary', {
-      value: 'Tavily (2), Wikipedia (2), ArXiv (2), Google Search (2), Finance (4), Google Maps (6)',
+      value: 'Tavily (2), Wikipedia (2), ArXiv (2), Google Search (2), Finance (4), Google Maps (7), Weather (2)',
       description: 'Gateway Targets by category',
     })
   }

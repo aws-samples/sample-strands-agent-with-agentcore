@@ -77,7 +77,7 @@ const SelectContent = ({ children, className = "" }: SelectContentProps) => {
   if (!context.open) return null
 
   return (
-    <div className="absolute top-full left-0 z-50 w-full mt-1 bg-popover border border-border rounded-md shadow-lg text-popover-foreground">
+    <div className="absolute bottom-full left-0 z-50 w-full mb-2 bg-popover border border-border rounded-md shadow-lg text-popover-foreground">
       <div className={`p-1 ${className}`}>
         {children}
       </div>

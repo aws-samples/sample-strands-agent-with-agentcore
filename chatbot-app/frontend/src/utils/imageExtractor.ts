@@ -3,8 +3,14 @@
  */
 
 export interface ImageData {
-  format: string
-  data: string
+  format?: string
+  data?: string
+  type?: 'url' | 'base64'
+  url?: string
+  thumbnail?: string
+  title?: string
+  width?: number
+  height?: number
 }
 
 /**
@@ -34,7 +40,7 @@ export function extractBlobImages(msg: any, toolUseId: string): ImageData[] {
 
 /**
  * Extract images from toolResult content array
- * Handles multiple image formats from Strands SDK
+ * Handles multiple image formats from Strands SDK and Lambda wrapper unwrapping
  */
 export function extractToolResultImages(toolResult: any): ImageData[] {
   const images: ImageData[] = []
@@ -43,7 +49,30 @@ export function extractToolResultImages(toolResult: any): ImageData[] {
     return images
   }
 
-  toolResult.content.forEach((c: any) => {
+  // Unwrap Lambda response if present (Gateway tools)
+  // Lambda format: content[0].text = "{\"statusCode\":200,\"body\":\"...\"}"
+  let content = toolResult.content
+  if (content.length > 0 && content[0].text) {
+    try {
+      const text = content[0].text
+      const parsed = JSON.parse(text)
+
+      // Check if this is a Lambda wrapper
+      if (parsed.statusCode && parsed.body) {
+        const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body
+
+        // If unwrapped body has content array, use it
+        if (body.content && Array.isArray(body.content)) {
+          content = body.content
+        }
+      }
+    } catch (e) {
+      // Not JSON or parsing failed, use original content
+    }
+  }
+
+  content.forEach((c: any) => {
+    // Handle image ContentBlock
     if (c.image) {
       let imageData = ''
 
@@ -73,13 +102,37 @@ export function extractToolResultImages(toolResult: any): ImageData[] {
         })
       }
     }
+    // Handle Google search images in text JSON (URL-based images)
+    else if (c.text && c.text.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(c.text)
+
+        // Google search format: {query: "...", results: [...], images: [{link, thumbnail, ...}]}
+        if (parsed.images && Array.isArray(parsed.images)) {
+          parsed.images.forEach((img: any) => {
+            if (img.link || img.thumbnail) {
+              images.push({
+                type: 'url',
+                url: img.link || '',
+                thumbnail: img.thumbnail || '',
+                title: img.title || '',
+                width: img.width || 0,
+                height: img.height || 0
+              } as any)
+            }
+          })
+        }
+      } catch (e) {
+        // Not JSON or no images field
+      }
+    }
   })
 
   return images
 }
 
 /**
- * Extract text content from toolResult
+ * Extract text content from toolResult with Lambda wrapper unwrapping
  */
 export function extractToolResultText(toolResult: any): string {
   let text = ''
@@ -88,7 +141,29 @@ export function extractToolResultText(toolResult: any): string {
     return text
   }
 
-  toolResult.content.forEach((c: any) => {
+  // Unwrap Lambda response if present (Gateway tools)
+  // Lambda format: content[0].text = "{\"statusCode\":200,\"body\":\"...\"}"
+  let content = toolResult.content
+  if (content.length > 0 && content[0].text) {
+    try {
+      const textContent = content[0].text
+      const parsed = JSON.parse(textContent)
+
+      // Check if this is a Lambda wrapper
+      if (parsed.statusCode && parsed.body) {
+        const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body
+
+        // If unwrapped body has content array, use it
+        if (body.content && Array.isArray(body.content)) {
+          content = body.content
+        }
+      }
+    } catch (e) {
+      // Not JSON or parsing failed, use original content
+    }
+  }
+
+  content.forEach((c: any) => {
     if (c.text) {
       text += c.text
     } else if (!c.image) {

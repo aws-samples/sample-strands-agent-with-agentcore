@@ -125,29 +125,47 @@ def show_on_map(
     zoom: Optional[int] = None
 ) -> str:
     """
-    Display locations, routes, or areas on an interactive Google Map embedded in chat.
+    Display locations, routes, or areas on an interactive Google Map.
 
-    Use after collecting location data to present results visually. Helpful when user requests
-    map view, when comparing locations, or when showing routes/directions.
+    Show 1-5 most relevant places per map. For multiple categories, create separate maps.
 
     Args:
-        map_type: "markers" (location pins), "directions" (route with path), or "area" (region)
+        map_type: "markers" (location pins), "directions" (route), or "area" (region)
 
-        markers: List of markers for map_type="markers". Each marker needs lat/lng.
-            Optional fields: label, title, description, place_id
+        markers: List of location markers for map_type="markers"
+            Required: lat (float), lng (float)
+            Optional: title (str), description (str), label (str), place_id (str)
+            Limit: 1-5 places per map for clarity
 
-        directions: Route data for map_type="directions". Required: origin and destination with lat/lng.
-            Optional: polyline, mode, distance, duration
+        directions: Route data for map_type="directions"
+            Required: origin {lat, lng}, destination {lat, lng}
+            Optional: polyline (str), mode (str), distance (str), duration (str)
 
-        center: Map center {lat, lng}. Auto-calculated if omitted.
+        center: Map center {lat: float, lng: float}. Auto-calculated if omitted.
 
         zoom: Zoom level 1-20 (1=World, 20=Buildings). Auto-calculated if omitted.
 
     Returns:
-        JSON with map_data for frontend rendering
+        JSON string with map_data for frontend rendering
 
-    Example:
-        show_on_map(map_type="markers", markers=[{"lat": 40.7580, "lng": -73.9855, "title": "Place"}])
+    Examples:
+        # Single location
+        show_on_map(map_type="markers", markers=[
+            {"lat": 40.7580, "lng": -73.9855, "title": "Times Square"}
+        ])
+
+        # Multiple locations (same category)
+        show_on_map(map_type="markers", markers=[
+            {"lat": 40.7580, "lng": -73.9855, "title": "Restaurant A", "description": "4.5★ Italian"},
+            {"lat": 40.7590, "lng": -73.9865, "title": "Restaurant B", "description": "4.7★ Japanese"}
+        ])
+
+        # Route
+        show_on_map(map_type="directions", directions={
+            "origin": {"lat": 40.7580, "lng": -73.9855},
+            "destination": {"lat": 40.7489, "lng": -73.9680},
+            "mode": "driving"
+        })
     """
     try:
         # Validate map_type

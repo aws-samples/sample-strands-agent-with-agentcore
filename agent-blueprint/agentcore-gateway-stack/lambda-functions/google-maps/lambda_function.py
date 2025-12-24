@@ -52,6 +52,8 @@ def lambda_handler(event, context):
             return geocode_address(event)
         elif tool_name == 'reverse_geocode':
             return reverse_geocode(event)
+        elif tool_name == 'show_on_map':
+            return show_on_map(event)
         else:
             return error_response(f"Unknown tool: {tool_name}")
 
@@ -560,3 +562,214 @@ def error_response(message: str) -> Dict[str, Any]:
             'error': message
         })
     }
+
+
+# ============================================================
+# Map Visualization Tool (show_on_map)
+# ============================================================
+
+def validate_marker(marker: dict) -> tuple:
+    """Validate marker structure"""
+    if "lat" not in marker or "lng" not in marker:
+        return False, "Marker must have 'lat' and 'lng' fields"
+
+    lat = marker.get("lat")
+    lng = marker.get("lng")
+
+    if not isinstance(lat, (int, float)) or not isinstance(lng, (int, float)):
+        return False, "Latitude and longitude must be numbers"
+
+    if not (-90 <= lat <= 90):
+        return False, f"Latitude {lat} out of range (-90 to 90)"
+
+    if not (-180 <= lng <= 180):
+        return False, f"Longitude {lng} out of range (-180 to 180)"
+
+    return True, None
+
+
+def validate_directions(directions: dict) -> tuple:
+    """Validate directions structure"""
+    if "origin" not in directions or "destination" not in directions:
+        return False, "Directions must have 'origin' and 'destination' fields"
+
+    origin = directions.get("origin")
+    if not isinstance(origin, dict) or "lat" not in origin or "lng" not in origin:
+        return False, "Origin must be a dict with 'lat' and 'lng'"
+
+    destination = directions.get("destination")
+    if not isinstance(destination, dict) or "lat" not in destination or "lng" not in destination:
+        return False, "Destination must be a dict with 'lat' and 'lng'"
+
+    return True, None
+
+
+def calculate_center_from_markers(markers: list) -> dict:
+    """Calculate center point from list of markers"""
+    if not markers:
+        return {"lat": 0, "lng": 0}
+
+    lat_sum = sum(m["lat"] for m in markers)
+    lng_sum = sum(m["lng"] for m in markers)
+
+    return {
+        "lat": lat_sum / len(markers),
+        "lng": lng_sum / len(markers)
+    }
+
+
+def calculate_zoom_level(markers: Optional[list], directions: Optional[dict]) -> int:
+    """
+    Calculate appropriate zoom level based on data spread
+
+    Zoom levels (approximate):
+    - 1: World
+    - 5: Continent
+    - 10: City
+    - 15: Streets
+    - 20: Buildings
+    """
+    if not markers and not directions:
+        return 12  # Default
+
+    coords = []
+
+    # Collect all coordinates
+    if markers:
+        coords.extend([(m["lat"], m["lng"]) for m in markers])
+
+    if directions:
+        origin = directions.get("origin", {})
+        dest = directions.get("destination", {})
+        if "lat" in origin and "lng" in origin:
+            coords.append((origin["lat"], origin["lng"]))
+        if "lat" in dest and "lng" in dest:
+            coords.append((dest["lat"], dest["lng"]))
+
+    if len(coords) <= 1:
+        return 15  # Single point - street level
+
+    # Calculate lat/lng ranges
+    lats = [c[0] for c in coords]
+    lngs = [c[1] for c in coords]
+
+    lat_range = max(lats) - min(lats)
+    lng_range = max(lngs) - min(lngs)
+    max_range = max(lat_range, lng_range)
+
+    # Estimate zoom level based on coordinate range
+    if max_range > 10:
+        return 5   # Continental
+    elif max_range > 1:
+        return 9   # Regional
+    elif max_range > 0.1:
+        return 12  # City
+    elif max_range > 0.01:
+        return 14  # Neighborhood
+    else:
+        return 15  # Street
+
+
+def show_on_map(event: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Display locations, routes, or areas on an interactive Google Map
+
+    Args:
+        map_type: "markers" (location pins), "directions" (route), or "area" (region)
+        markers: List of location markers for map_type="markers"
+        directions: Route data for map_type="directions"
+        center: Map center {lat, lng}. Auto-calculated if omitted.
+        zoom: Zoom level 1-20. Auto-calculated if omitted.
+
+    Returns:
+        Map visualization data for frontend rendering
+    """
+    try:
+        map_type = event.get("map_type")
+        markers = event.get("markers")
+        directions = event.get("directions")
+        center = event.get("center")
+        zoom = event.get("zoom")
+
+        # Validate map_type
+        if map_type not in ["markers", "directions", "area"]:
+            return error_response(f"Invalid map_type: {map_type}. Must be 'markers', 'directions', or 'area'")
+
+        # Validate required data based on type
+        if map_type == "markers":
+            if not markers or len(markers) == 0:
+                return error_response("markers parameter required and must not be empty for map_type='markers'")
+
+            # Validate each marker
+            for idx, marker in enumerate(markers):
+                is_valid, error_msg = validate_marker(marker)
+                if not is_valid:
+                    return error_response(f"Marker {idx}: {error_msg}")
+
+        elif map_type == "directions":
+            if not directions:
+                return error_response("directions parameter required for map_type='directions'")
+
+            is_valid, error_msg = validate_directions(directions)
+            if not is_valid:
+                return error_response(f"Directions: {error_msg}")
+
+        # Auto-calculate center if not provided
+        if not center:
+            if map_type == "markers" and markers:
+                center = calculate_center_from_markers(markers)
+            elif map_type == "directions" and directions:
+                # Center between origin and destination
+                origin = directions.get("origin", {})
+                dest = directions.get("destination", {})
+                center = {
+                    "lat": (origin.get("lat", 0) + dest.get("lat", 0)) / 2,
+                    "lng": (origin.get("lng", 0) + dest.get("lng", 0)) / 2
+                }
+            else:
+                center = {"lat": 0, "lng": 0}
+
+        # Auto-calculate zoom if not provided
+        if not zoom:
+            zoom = calculate_zoom_level(markers, directions)
+
+        # Ensure zoom is in valid range
+        zoom = max(1, min(20, zoom))
+
+        # Build map data structure
+        map_data = {
+            "type": map_type,
+            "center": center,
+            "zoom": zoom
+        }
+
+        if markers:
+            map_data["markers"] = markers
+
+        if directions:
+            map_data["directions"] = directions
+
+        # Create success message
+        if map_type == "markers":
+            count = len(markers) if markers else 0
+            message = f"📍 Showing {count} location(s) on map"
+        elif map_type == "directions":
+            origin_addr = directions.get("origin", {}).get("address", "Start")
+            dest_addr = directions.get("destination", {}).get("address", "End")
+            message = f"🗺️ Showing route from {origin_addr} to {dest_addr}"
+        else:
+            message = f"🗺️ Showing map ({map_type})"
+
+        logger.info(f"Created map visualization: type={map_type}, markers={len(markers or [])}, zoom={zoom}")
+
+        # Return success response
+        result_data = {
+            "success": True,
+            "map_data": map_data,
+            "message": message
+        }
+        return success_response(json.dumps(result_data))
+
+    except Exception as e:
+        logger.error(f"Error in show_on_map: {e}", exc_info=True)
+        return error_response(str(e))

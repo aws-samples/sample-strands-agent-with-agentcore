@@ -61,25 +61,92 @@ class FilteredMCPClient(MCPClient):
         pass
 
     def list_tools_sync(self, *args, **kwargs):
-        """List tools from Gateway and filter based on enabled_tool_ids."""
+        """List tools from Gateway and filter based on enabled_tool_ids.
+
+        Also simplifies tool names by removing the Gateway namespace prefix.
+        For example: "search-places___search_places" becomes "search_places"
+        This makes tool names cleaner for Claude, Frontend UI, and logs.
+        """
         from strands.types import PaginatedList
 
         paginated_result = super().list_tools_sync()
 
-        filtered_tools = [
-            tool for tool in paginated_result
-            if any(
-                enabled_id.replace(f"{self.prefix}_", "") == tool.tool_name or
-                tool.tool_name in enabled_id
-                for enabled_id in self.enabled_tool_ids
-            )
-        ]
+        # Filter tools based on enabled_tool_ids
+        # Support both full names and simplified names:
+        # - gateway_search-places___search_places (full)
+        # - gateway_search_places (simplified)
+        filtered_tools = []
+        for tool in paginated_result:
+            full_name = tool.tool_name  # e.g., "search-places___search_places"
+
+            # Extract simplified name if tool has ___ separator
+            if '___' in full_name:
+                target_name, schema_name = full_name.split('___', 1)
+                simplified_name = schema_name
+            else:
+                simplified_name = full_name
+
+            # Check if this tool is enabled (support both formats)
+            for enabled_id in self.enabled_tool_ids:
+                # Remove prefix: "gateway_search-places___search_places" → "search-places___search_places"
+                enabled_without_prefix = enabled_id.replace(f"{self.prefix}_", "")
+
+                # Match full name or simplified name
+                if (enabled_without_prefix == full_name or
+                    enabled_without_prefix == simplified_name or
+                    full_name in enabled_id):
+                    filtered_tools.append(tool)
+                    break
 
         logger.info(f"✅ Filtered {len(filtered_tools)} tools from {len(paginated_result)} available")
         logger.info(f"   Enabled tool IDs: {self.enabled_tool_ids}")
-        logger.info(f"   Filtered tool names: {[t.tool_name for t in filtered_tools]}")
+        logger.info(f"   Original tool names: {[t.tool_name for t in filtered_tools]}")
 
-        return PaginatedList(filtered_tools, token=paginated_result.pagination_token)
+        # Build tool name mapping and simplify tool names
+        self._tool_name_map = {}
+        simplified_tools = []
+
+        for tool in filtered_tools:
+            full_name = tool.tool_name  # e.g., "search-places___search_places"
+
+            # Extract simplified name (schema_name: snake_case)
+            if '___' in full_name:
+                target_name, schema_name = full_name.split('___', 1)
+                simplified_name = schema_name  # Use schema_name as the simplified name
+
+                # Build reverse mapping: simplified → full name (for call_tool_sync)
+                self._tool_name_map[simplified_name] = full_name
+
+                # Modify tool_spec to use simplified name
+                # Note: tool is MCPAgentTool, tool_spec is a dict property
+                tool._agent_tool_name = simplified_name
+
+                logger.info(f"📝 Simplified tool name: {full_name} → {simplified_name}")
+            else:
+                simplified_name = full_name
+
+            simplified_tools.append(tool)
+
+        logger.info(f"   Simplified tool names: {[t.tool_name for t in simplified_tools]}")
+        logger.info(f"   Tool name mapping created: {len(self._tool_name_map)} mappings")
+
+        return PaginatedList(simplified_tools, token=paginated_result.pagination_token)
+
+    def call_tool_sync(self, tool_use_id: str, name: str, arguments: dict):
+        """
+        Call tool with automatic name conversion.
+
+        Converts simplified tool name (e.g., "search_places") back to
+        Gateway's full name format (e.g., "search-places___search_places")
+        before calling the Gateway.
+        """
+        # Convert simplified name to full name for Gateway
+        actual_name = name
+        if hasattr(self, '_tool_name_map') and name in self._tool_name_map:
+            actual_name = self._tool_name_map[name]
+            logger.info(f"🔄 Restoring full tool name for Gateway: {name} → {actual_name}")
+
+        return super().call_tool_sync(tool_use_id, actual_name, arguments)
 
 
 def get_gateway_url_from_ssm(

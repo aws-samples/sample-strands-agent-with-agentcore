@@ -317,8 +317,12 @@ export const useStreamEvents = ({
         console.log('[Live View] No browser session in metadata:', data.metadata)
       }
 
-      // Update state - Use startTransition to batch updates and prevent flickering
-      startTransition(() => {
+      // Update state - Use immediate updates for visualization tools (maps, charts)
+      // to ensure live rendering, use startTransition for others to prevent flickering
+      const isVisualizationTool = data.result &&
+        (data.result.includes('"map_data"') || data.result.includes('"chart_data"'))
+
+      const updateStates = () => {
         setSessionState(prev => {
           const newState = {
             ...prev,
@@ -347,7 +351,15 @@ export const useStreamEvents = ({
           }
           return msg
         }))
-      })
+      }
+
+      // Immediate update for visualization tools, batched update for others
+      if (isVisualizationTool) {
+        console.log('[ToolResult] Immediate update for visualization tool')
+        updateStates()
+      } else {
+        startTransition(updateStates)
+      }
     }
   }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages])
 

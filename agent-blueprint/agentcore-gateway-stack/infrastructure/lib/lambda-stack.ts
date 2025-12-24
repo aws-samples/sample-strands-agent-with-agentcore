@@ -51,7 +51,7 @@ export class LambdaStack extends cdk.Stack {
     // ============================================================
     // Step 2: Upload Lambda Source to S3 (Individual Deployments)
     // ============================================================
-    const lambdaFunctions = ['tavily', 'wikipedia', 'arxiv', 'google-search', 'google-maps', 'finance']
+    const lambdaFunctions = ['tavily', 'wikipedia', 'arxiv', 'google-search', 'google-maps', 'finance', 'weather']
     const lambdaSourceUploads: s3deploy.BucketDeployment[] = []
 
     lambdaFunctions.forEach((funcName) => {
@@ -135,7 +135,7 @@ echo "Building Lambda packages for ARM64..."
 echo ""
 
 # Function list
-FUNCTIONS="tavily wikipedia arxiv google-search google-maps finance"
+FUNCTIONS="tavily wikipedia arxiv google-search google-maps finance weather"
 
 # Check for force rebuild flag (set via environment variable in CDK)
 FORCE_REBUILD=\${FORCE_REBUILD:-false}
@@ -513,6 +513,17 @@ async function sendResponse(event, status, data, reason) {
         memorySize: 1024,
         environment: {
           GOOGLE_MAPS_CREDENTIALS_SECRET_NAME: googleMapsCredentialsSecret.secretName,
+          LOG_LEVEL: 'INFO',
+        },
+      },
+      {
+        id: 'weather',
+        functionName: 'mcp-weather',
+        description: 'Weather information using Open-Meteo API',
+        s3Key: `builds/weather-${deploymentId}.zip`,
+        timeout: 30,
+        memorySize: 256,
+        environment: {
           LOG_LEVEL: 'INFO',
         },
       },

@@ -338,3 +338,31 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 .chat-chart-content p {
   @apply text-base mb-4;
 }
+
+/* Custom horizontal scrollbar for image gallery */
+.overflow-x-auto::-webkit-scrollbar {
+  height: 8px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 10px;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 10px;
+  transition: background-color 0.2s ease;
+}
+
+.overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
+
+.dark .overflow-x-auto::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+}
+
+.dark .overflow-x-auto::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.5);
+}

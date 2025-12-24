@@ -7,7 +7,8 @@ import { useIframeAuth, postAuthStatusToParent } from "@/hooks/useIframeAuth"
 import { ChatMessage } from "@/components/chat/ChatMessage"
 import { AssistantTurn } from "@/components/chat/AssistantTurn"
 import { Greeting } from "@/components/Greeting"
-import { ToolSidebar } from "@/components/ToolSidebar"
+import { ChatSidebar } from "@/components/ChatSidebar"
+import { ToolsDropdown } from "@/components/ToolsDropdown"
 import { SuggestedQuestions } from "@/components/SuggestedQuestions"
 import { BrowserLiveViewButton } from "@/components/BrowserLiveViewButton"
 import { ResearchModal } from "@/components/ResearchModal"
@@ -101,12 +102,17 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     currentInterrupt
   } = useChat()
 
-  // Calculate tool counts considering nested tools in dynamic groups
+  // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
   const { enabledCount, totalCount } = useMemo(() => {
     let enabled = 0
     let total = 0
 
     availableTools.forEach(tool => {
+      // Exclude Research Agent from count
+      if (tool.id === 'agentcore_research-agent') {
+        return
+      }
+
       const isDynamic = (tool as any).isDynamic === true
       const nestedTools = (tool as any).tools || []
 
@@ -137,6 +143,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   const [isWideMode, setIsWideMode] = useState<boolean>(false)
   const [currentModelName, setCurrentModelName] = useState<string>("")
   const [isResearchEnabled, setIsResearchEnabled] = useState<boolean>(false)
+  const [isAutopilotEnabled, setIsAutopilotEnabled] = useState<boolean>(false)
   const [isResearchModalOpen, setIsResearchModalOpen] = useState<boolean>(false)
   const [activeResearchId, setActiveResearchId] = useState<string | null>(null)
   // Track each research execution independently
@@ -177,13 +184,48 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   }, [availableTools])
 
   // Toggle Research Agent
-  const toggleResearchAgent = useCallback(() => {
+  const toggleResearchAgent = useCallback(async () => {
     const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
     if (researchTool) {
-      toggleTool(researchTool.id)
-      setIsResearchEnabled(!researchTool.enabled)
+      const willBeEnabled = !researchTool.enabled
+
+      // If enabling research, disable all other tools and autopilot
+      if (willBeEnabled) {
+        // Disable autopilot
+        setIsAutopilotEnabled(false)
+
+        // Disable all tools except research agent
+        const enabledTools = availableTools.filter(tool =>
+          tool.id !== 'agentcore_research-agent' && tool.enabled
+        )
+
+        for (const tool of enabledTools) {
+          const isDynamic = (tool as any).isDynamic === true
+          const nestedTools = (tool as any).tools || []
+
+          if (isDynamic && nestedTools.length > 0) {
+            // Disable all nested tools
+            for (const nestedTool of nestedTools) {
+              if (nestedTool.enabled) {
+                await toggleTool(nestedTool.id)
+              }
+            }
+          } else {
+            await toggleTool(tool.id)
+          }
+        }
+      }
+
+      // Toggle research agent
+      await toggleTool(researchTool.id)
+      setIsResearchEnabled(willBeEnabled)
     }
   }, [availableTools, toggleTool])
+
+  // Toggle Autopilot
+  const toggleAutopilot = useCallback(() => {
+    setIsAutopilotEnabled(prev => !prev)
+  }, [])
 
   // Monitor messages for research_agent and browser_use_agent tool executions separately
   useEffect(() => {
@@ -479,15 +521,11 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
 
   return (
     <>
-      {/* Tool Sidebar */}
-      <ToolSidebar
-        availableTools={availableTools}
-        onToggleTool={handleToggleTool}
-        onNewChat={handleNewChat}
-        refreshTools={refreshTools}
+      {/* Chat Sidebar */}
+      <ChatSidebar
         sessionId={sessionId}
+        onNewChat={handleNewChat}
         loadSession={loadSession}
-        onGatewayToolsChange={onGatewayToolsChange}
       />
 
       {/* Main Chat Area */}
@@ -592,7 +630,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
               key={suggestionKey}
               onQuestionSelect={(question) => setInputMessage(question)}
               onQuestionSubmit={handleQuestionSubmit}
-              enabledTools={availableTools.filter((tool) => tool.enabled).map((tool) => tool.id)}
+              enabledTools={availableTools.filter((tool) => tool.enabled && tool.id !== 'agentcore_research-agent').map((tool) => tool.id)}
             />
           </div>
         )}
@@ -664,7 +702,13 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 onCompositionEnd={() => {
                   isComposingRef.current = false
                 }}
-                placeholder={isResearchEnabled ? "Ask me anything... (Research Agent active)" : "Ask me anything..."}
+                placeholder={
+                  isResearchEnabled
+                    ? "Ask me anything... (Research Agent active)"
+                    : isAutopilotEnabled
+                    ? "Ask me anything... (Autopilot active)"
+                    : "Ask me anything..."
+                }
                 className="flex-1 min-h-[48px] max-h-32 rounded-lg border-0 focus:ring-0 resize-none py-3 px-4 text-base leading-6 overflow-y-auto bg-transparent transition-all duration-200"
                 disabled={agentStatus !== 'idle'}
                 rows={1}
@@ -695,28 +739,32 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
 
           {/* Model selector, keyboard shortcut hint and wide mode toggle */}
           <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground/70">
-            {/* Left: Model Selector and Research Agent */}
-            <div className="flex items-center gap-2">
-              <ModelConfigDialog
-                sessionId={sessionId}
-                onOpenChange={(open) => {
-                  if (!open) {
-                    // Reload model info when dialog closes
-                    loadCurrentModel()
-                  }
-                }}
-                trigger={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-3 hover:bg-muted-foreground/10 transition-all duration-200 text-xs font-medium"
-                    title="Change model settings"
-                  >
-                    {currentModelName || 'Model'}
-                  </Button>
-                }
+            {/* Left: Model Selector, Tools, and Research Agent */}
+            <div className="flex items-center gap-0.5">
+              <ModelConfigDialog sessionId={sessionId} />
+              <ToolsDropdown
+                availableTools={availableTools}
+                onToggleTool={toggleTool}
+                disabled={isResearchEnabled || isAutopilotEnabled}
               />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={toggleAutopilot}
+                disabled={isResearchEnabled}
+                className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
+                  isAutopilotEnabled
+                    ? 'bg-purple-500/20 text-purple-500 hover:bg-purple-500/30'
+                    : isResearchEnabled
+                    ? 'opacity-40 cursor-not-allowed'
+                    : 'hover:bg-muted-foreground/10'
+                }`}
+                title={isAutopilotEnabled ? 'Autopilot enabled - AI selects tools automatically' : 'Enable Autopilot'}
+              >
+                <Bot className="w-3.5 h-3.5" />
+                Autopilot
+              </Button>
               <Button
                 type="button"
                 variant="ghost"
@@ -734,11 +782,8 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
               </Button>
             </div>
 
-            {/* Center: Keyboard shortcut hint */}
-            <div className="flex-1 text-center hidden md:block">
-              <kbd className="px-2 py-1 text-sm bg-muted rounded border border-border/50">⌘B</kbd>
-              {' '}for sidebar
-            </div>
+            {/* Spacer */}
+            <div className="flex-1"></div>
 
             {/* Right: Theme toggle and Wide mode toggle */}
             <TooltipProvider delayDuration={300}>

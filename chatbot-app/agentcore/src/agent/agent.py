@@ -386,9 +386,9 @@ class ChatbotAgent:
         base_system_prompt = """You are an intelligent AI agent with dynamic tool capabilities. You can perform various tasks based on the combination of tools available to you.
 
 Key guidelines:
-- You can ONLY use tools that are explicitly provided to you in each conversation
-- Available tools may change throughout the conversation based on user preferences
-- When multiple tools are available, select and use the most appropriate combination in the optimal order to fulfill the user's request
+- Use available tools whenever they can enhance your response with visualizations, data, or interactive elements
+- You can ONLY use tools that are explicitly provided to you - available tools may change based on user preferences
+- When multiple tools are available, select the most appropriate combination and use them in the optimal order to fulfill the request
 - Break down complex tasks into steps and use multiple tools sequentially or in parallel as needed
 - Always explain your reasoning when using tools
 - If you don't have the right tool for a task, clearly inform the user about the limitation
@@ -608,14 +608,6 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             if tool_id in TOOL_REGISTRY:
                 # Local tool
                 filtered_tools.append(TOOL_REGISTRY[tool_id])
-            elif tool_id.startswith("gateway_") and tool_id.endswith("___show_on_map"):
-                # Special case: show_on_map is a local tool but grouped under gateway_targets
-                # Route to the local implementation
-                if "show_on_map" in TOOL_REGISTRY:
-                    filtered_tools.append(TOOL_REGISTRY["show_on_map"])
-                    logger.info(f"Routing {tool_id} to local show_on_map tool")
-                else:
-                    logger.warning(f"show_on_map not found in local TOOL_REGISTRY")
             elif tool_id.startswith("gateway_"):
                 # Gateway MCP tool - collect for filtering
                 gateway_tool_ids.append(tool_id)
@@ -639,6 +631,10 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 filtered_tools.append(self.gateway_client)
                 logger.info(f"✅ Gateway MCP client added (Managed Integration with Strands 1.16+)")
                 logger.info(f"   Enabled Gateway tool IDs: {gateway_tool_ids}")
+
+                # Note: _tool_name_map will be created when Agent calls list_tools_sync()
+                # during initialization via Managed Integration.
+                # We don't need to call it explicitly here.
             else:
                 logger.warning("⚠️  Gateway MCP client not available")
 
@@ -717,13 +713,10 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 logger.info("✅ Conversation caching hook enabled")
 
             # Create agent with session manager, hooks, and system prompt (as string)
-            # Use SequentialToolExecutor to prevent concurrent browser operations
-            # This prevents "Failed to start and initialize Playwright" errors with NovaAct
             self.agent = Agent(
                 model=model,
                 system_prompt=self.system_prompt,  # String system prompt (Strands 1.14.0)
                 tools=tools,
-                tool_executor=SequentialToolExecutor(),
                 session_manager=self.session_manager,
                 hooks=hooks if hooks else None
             )

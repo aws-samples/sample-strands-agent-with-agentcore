@@ -197,7 +197,25 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           deps.toolResult &&
           deps.isComplete) {
         try {
-          const parsed = JSON.parse(deps.toolResult);
+          let parsed = JSON.parse(deps.toolResult);
+
+          // Unwrap Lambda response if present (Gateway tools)
+          // Format: {"statusCode": 200, "body": "{\"content\": [{\"type\": \"text\", \"text\": \"...\"}]}"}
+          if (parsed.statusCode && parsed.body) {
+            try {
+              const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
+              if (body.content && Array.isArray(body.content)) {
+                const textContent = body.content.find((item: any) => item.type === 'text');
+                if (textContent?.text) {
+                  parsed = JSON.parse(textContent.text);
+                }
+              }
+            } catch (unwrapError) {
+              // If unwrapping fails, use original parsed
+              console.warn('Failed to unwrap Lambda response:', unwrapError);
+            }
+          }
+
           cache.set(deps.id, {
             parsed,
             resultString: deps.toolResult
@@ -615,32 +633,66 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
               )}
             </div>
 
-            {/* Tool Images - Rendered outside tool execution field */}
+            {/* Tool Images - Rendered outside tool execution field with horizontal scroll */}
             {toolExecution.images && toolExecution.images.length > 0 && (
-              <div className="mt-4">
-                {toolExecution.images.map((image, idx) => {
-                  const imageSrc = `data:image/${image.format};base64,${typeof image.data === 'string' ? image.data : btoa(String.fromCharCode(...new Uint8Array(image.data)))}`;
-                  return (
-                    <div key={idx} className="relative group mb-3">
-                      <LazyImage
-                        src={imageSrc}
-                        alt={`Tool generated image ${idx + 1}`}
-                        className="w-full h-auto rounded-lg border border-border shadow-sm cursor-pointer hover:shadow-lg transition-shadow"
-                        onClick={() => setSelectedImage({ src: imageSrc, alt: `Tool generated image ${idx + 1}` })}
-                      />
-                      <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Badge variant="secondary" className="text-xs bg-black/70 text-white border-0">
-                          {image.format.toUpperCase()}
-                        </Badge>
-                      </div>
-                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 rounded-lg pointer-events-none">
-                        <div className="bg-background/90 px-2 py-1 rounded text-xs font-medium text-foreground">
-                          Click to enlarge
+              <div className="mt-6 -mx-2">
+                <div className="flex gap-4 overflow-x-auto px-2 pb-2">
+                  {toolExecution.images
+                    .filter((image) => {
+                      // Filter to only valid images with actual URLs or data
+                      const isUrlImage = image.type === 'url' || image.url;
+                      const hasValidSource = isUrlImage
+                        ? (image.thumbnail || image.url)
+                        : image.data;
+                      return !!hasValidSource;
+                    })
+                    .slice(0, 3)
+                    .map((image, idx) => {
+                    // Handle URL-based images (Google search)
+                    const isUrlImage = image.type === 'url' || image.url;
+                    // Use high-resolution original image URL instead of thumbnail for better quality
+                    const imageSrc = isUrlImage
+                      ? (image.url || image.thumbnail)  // Prioritize original URL over thumbnail
+                      : `data:image/${image.format};base64,${typeof image.data === 'string' ? image.data : btoa(String.fromCharCode(...new Uint8Array(image.data)))}`;
+
+                    const handleClick = () => {
+                      if (isUrlImage && image.url) {
+                        // Open original URL in new tab
+                        window.open(image.url, '_blank', 'noopener,noreferrer');
+                      } else {
+                        // Show modal for base64 images
+                        setSelectedImage({ src: imageSrc, alt: image.title || `Tool generated image ${idx + 1}` });
+                      }
+                    };
+
+                    return (
+                      <div key={idx} className="relative flex-shrink-0 w-[380px]">
+                        {/* Image Container */}
+                        <div className="relative rounded-xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900 hover:scale-[1.02]" onClick={handleClick}>
+                          <LazyImage
+                            src={imageSrc}
+                            alt={image.title || `Tool generated image ${idx + 1}`}
+                            className="w-full h-[280px] object-cover"
+                          />
+
+                          {/* Badge Overlay - Always visible */}
+                          <div className="absolute top-3 right-3">
+                            <Badge variant="secondary" className="text-xs font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1">
+                              {isUrlImage ? 'WEB' : (image.format || 'IMG').toUpperCase()}
+                            </Badge>
+                          </div>
+
+                          {/* Title Overlay - Always visible at bottom */}
+                          {image.title && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-4 pt-8">
+                              <p className="text-sm font-medium text-white line-clamp-2 leading-tight">{image.title}</p>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             )}
           </React.Fragment>

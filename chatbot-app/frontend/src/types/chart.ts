@@ -1,3 +1,5 @@
+import type { MapData } from './map';
+
 export interface ChartConfig {
   [key: string]: {
     label: string;
@@ -40,4 +42,5 @@ export interface ChartToolResult {
   message: string;
   error?: string;
   chart_data?: ChartData;
+  map_data?: MapData;
 }

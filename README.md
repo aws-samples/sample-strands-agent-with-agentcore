@@ -20,7 +20,7 @@ Combines Strands Agent orchestration with AWS Bedrock AgentCore services:
 
 ## Architecture
 
-<img src="docs/images/architecture-overview.png"
+<img src="docs/images/architecture-overview.svg"
      alt="Architecture Overview"
      width="1200">
 
