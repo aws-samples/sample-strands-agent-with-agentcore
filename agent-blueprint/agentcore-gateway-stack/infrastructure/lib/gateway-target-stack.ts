@@ -1,7 +1,7 @@
 /**
  * Gateway Target Stack for AgentCore Gateway
  * Creates Gateway Targets that connect Lambda functions to the Gateway
- * Total: 12 tools across 5 Lambda functions
+ * Total: 18 tools across 6 Lambda functions
  */
 import * as cdk from 'aws-cdk-lib'
 import * as agentcore from 'aws-cdk-lib/aws-bedrockagentcore'
@@ -555,16 +555,344 @@ export class GatewayTargetStack extends cdk.Stack {
     })
 
     // ============================================================
+    // Google Maps Targets (6 tools)
+    // ============================================================
+
+    const googleMapsFn = functions.get('google-maps')!
+
+    new agentcore.CfnGatewayTarget(this, 'SearchPlacesTarget', {
+      name: 'search-places',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Google Maps place search',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: googleMapsFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'search_places',
+                  description:
+                    "Search for places using text query like 'restaurants in Manhattan' or 'hotels near Times Square'. Returns up to 10 results with place_id, name, ratings, address, and location coordinates. Use place_id with get_place_details for reviews and contact info.",
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Place search parameters',
+                    required: ['query'],
+                    properties: {
+                      query: {
+                        type: 'string',
+                        description: "Search query (e.g., 'Italian restaurant in SoHo' or 'coffee shops near Central Park')",
+                      },
+                      location: {
+                        type: 'string',
+                        description: "Optional: Center location as 'lat,lng' to bias results",
+                      },
+                      radius: {
+                        type: 'integer',
+                        description: 'Optional: Search radius in meters (max 50000)',
+                      },
+                      type: {
+                        type: 'string',
+                        description:
+                          "Optional: Place type (e.g., 'restaurant', 'tourist_attraction', 'lodging')",
+                      },
+                      open_now: {
+                        type: 'boolean',
+                        description: 'Optional: Only return places that are open now',
+                      },
+                      language: {
+                        type: 'string',
+                        description: "Optional: Language code (default: 'en')",
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    new agentcore.CfnGatewayTarget(this, 'SearchNearbyPlacesTarget', {
+      name: 'search-nearby-places',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Google Maps nearby search',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: googleMapsFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'search_nearby_places',
+                  description:
+                    "Search for places within radius of coordinates. Requires location (lat,lng) and radius in meters. Use for 'nearby' or 'closest' queries when you have exact coordinates. Returns up to 10 results with place details.",
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Nearby search parameters',
+                    required: ['location'],
+                    properties: {
+                      location: {
+                        type: 'string',
+                        description: "Center location as 'lat,lng' (e.g., '40.7580,-73.9855' for Times Square)",
+                      },
+                      radius: {
+                        type: 'integer',
+                        description: 'Search radius in meters (max 50000)',
+                      },
+                      keyword: {
+                        type: 'string',
+                        description: 'Optional: Search keyword',
+                      },
+                      type: {
+                        type: 'string',
+                        description: "Optional: Place type (e.g., 'cafe', 'restaurant')",
+                      },
+                      rank_by: {
+                        type: 'string',
+                        description: "Optional: 'prominence' (default) or 'distance'",
+                      },
+                      language: {
+                        type: 'string',
+                        description: "Optional: Language code (default: 'en')",
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    new agentcore.CfnGatewayTarget(this, 'GetPlaceDetailsTarget', {
+      name: 'get-place-details',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Google Maps place details',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: googleMapsFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'get_place_details',
+                  description:
+                    "Get detailed info about a place using place_id from search results. Returns address, phone, website, opening hours, up to 5 reviews, and photos count. Use when user wants reviews, contact information, or operating hours.",
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Place details parameters',
+                    required: ['place_id'],
+                    properties: {
+                      place_id: {
+                        type: 'string',
+                        description: 'Place ID from search results',
+                      },
+                      language: {
+                        type: 'string',
+                        description: "Optional: Language code (default: 'en')",
+                      },
+                      reviews_sort: {
+                        type: 'string',
+                        description: "Optional: 'most_relevant' (default) or 'newest'",
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    new agentcore.CfnGatewayTarget(this, 'GetDirectionsTarget', {
+      name: 'get-directions',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Google Maps directions',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: googleMapsFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'get_directions',
+                  description:
+                    "Get turn-by-turn directions between two locations. Supports 4 modes: driving, walking, bicycling, transit. Returns distance, duration, and step-by-step instructions. Can avoid tolls/highways/ferries and provide alternative routes.",
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Directions parameters',
+                    required: ['origin', 'destination'],
+                    properties: {
+                      origin: {
+                        type: 'string',
+                        description: "Starting point (address or 'lat,lng')",
+                      },
+                      destination: {
+                        type: 'string',
+                        description: "Destination (address or 'lat,lng')",
+                      },
+                      mode: {
+                        type: 'string',
+                        description:
+                          "Optional: Travel mode - 'driving' (car, default), 'walking' (pedestrian), 'bicycling' (bike), 'transit' (bus/subway). Choose based on user's transportation method.",
+                      },
+                      alternatives: {
+                        type: 'boolean',
+                        description: 'Optional: Return alternative routes',
+                      },
+                      avoid: {
+                        type: 'string',
+                        description: "Optional: 'tolls', 'highways', 'ferries'",
+                      },
+                      language: {
+                        type: 'string',
+                        description: "Optional: Language code (default: 'en')",
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    new agentcore.CfnGatewayTarget(this, 'GeocodeAddressTarget', {
+      name: 'geocode-address',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Google Maps geocoding',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: googleMapsFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'geocode_address',
+                  description:
+                    "Convert address to coordinates (lat, lng). Returns formatted address, coordinates, place_id, and location_type. Use when you need coordinates for nearby search or mapping. Can return multiple results if address is ambiguous.",
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Geocoding parameters',
+                    required: ['address'],
+                    properties: {
+                      address: {
+                        type: 'string',
+                        description: "Address to geocode (e.g., '1600 Amphitheatre Parkway, Mountain View, CA' or '350 5th Ave, New York, NY')",
+                      },
+                      language: {
+                        type: 'string',
+                        description: "Optional: Language code (default: 'en')",
+                      },
+                      region: {
+                        type: 'string',
+                        description: "Optional: Country code for result bias (e.g., 'us', 'kr', 'jp'). Helps disambiguate addresses.",
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    new agentcore.CfnGatewayTarget(this, 'ReverseGeocodeTarget', {
+      name: 'reverse-geocode',
+      gatewayIdentifier: gateway.attrGatewayIdentifier,
+      description: 'Google Maps reverse geocoding',
+
+      credentialProviderConfigurations: [
+        {
+          credentialProviderType: 'GATEWAY_IAM_ROLE',
+        },
+      ],
+
+      targetConfiguration: {
+        mcp: {
+          lambda: {
+            lambdaArn: googleMapsFn.functionArn,
+            toolSchema: {
+              inlinePayload: [
+                {
+                  name: 'reverse_geocode',
+                  description:
+                    "Convert coordinates to address. Input format: 'lat,lng' (e.g., '40.7580,-73.9855'). Returns multiple address formats from specific (street) to general (city, country). Use when you have coordinates and need the address.",
+                  inputSchema: {
+                    type: 'object',
+                    description: 'Reverse geocoding parameters',
+                    required: ['latlng'],
+                    properties: {
+                      latlng: {
+                        type: 'string',
+                        description: "Coordinates as 'lat,lng' (e.g., '40.7580,-73.9855' for Times Square)",
+                      },
+                      language: {
+                        type: 'string',
+                        description: "Optional: Language code (default: 'en')",
+                      },
+                    },
+                  },
+                },
+              ],
+            },
+          },
+        },
+      },
+    })
+
+    // ============================================================
     // Outputs
     // ============================================================
 
     new cdk.CfnOutput(this, 'TotalTargets', {
-      value: '12',
+      value: '18',
       description: 'Total number of Gateway Targets (tools)',
     })
 
     new cdk.CfnOutput(this, 'TargetsSummary', {
-      value: 'Tavily (2), Wikipedia (2), ArXiv (2), Google (2), Finance (4)',
+      value: 'Tavily (2), Wikipedia (2), ArXiv (2), Google Search (2), Finance (4), Google Maps (6)',
       description: 'Gateway Targets by category',
     })
   }

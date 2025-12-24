@@ -244,23 +244,33 @@
   ],
   "gateway_targets": [
     {
-      "id": "gateway_wikipedia-search",
-      "name": "Wikipedia",
-      "description": "Wikipedia article search and retrieval",
-      "category": "knowledge",
-      "icon": "📚",
+      "id": "gateway_financial-news",
+      "name": "Financial Market",
+      "description": "Stock quotes, history, news and analysis",
+      "category": "finance",
+      "icon": "📈",
       "enabled": false,
       "isDynamic": true,
       "tools": [
         {
-          "id": "gateway_wikipedia-search___wikipedia_search",
-          "name": "Search Articles",
-          "description": "Search Wikipedia for articles"
+          "id": "gateway_stock-quote___stock_quote",
+          "name": "Stock Quote",
+          "description": "Get current stock quote with key metrics"
         },
         {
-          "id": "gateway_wikipedia-get-article___wikipedia_get_article",
-          "name": "Get Article",
-          "description": "Get full content of a Wikipedia article"
+          "id": "gateway_stock-history___stock_history",
+          "name": "Stock History",
+          "description": "Get historical stock price data"
+        },
+        {
+          "id": "gateway_financial-news___financial_news",
+          "name": "Financial News",
+          "description": "Get latest financial news articles"
+        },
+        {
+          "id": "gateway_stock-analysis___stock_analysis",
+          "name": "Stock Analysis",
+          "description": "Get comprehensive stock analysis"
         }
       ]
     },
@@ -307,6 +317,74 @@
       ]
     },
     {
+      "id": "gateway_google-maps",
+      "name": "Google Maps",
+      "description": "Place search, directions, and geocoding",
+      "category": "maps",
+      "icon": "🗺️",
+      "enabled": false,
+      "isDynamic": true,
+      "systemPromptGuidance": "Google Maps Strategy:\n\n**Typical Workflows:**\n1. Place search: search_places → get_place_details (if detailed info needed) → show_on_map (if visual helpful)\n2. Nearby search: geocode_address (if needed) → search_nearby_places\n3. Directions: Infer mode from context → get_directions → show_on_map (helpful for routes)\n4. Reverse lookup: reverse_geocode → search_nearby_places (if needed)\n\n**Tool Chaining:**\n- Preserve place_id from search for get_place_details (more reliable than address)\n- Chain geocode → nearby_search when starting with address\n- Use search_places for text queries, search_nearby_places for coordinate-based\n\n**Mode Selection:**\n- Infer from context: 'walk', 'drive', 'bike', 'transit'\n- Default driving if ambiguous\n\n**Visualization:**\n- Consider show_on_map for directions, comparisons, or when user requests map view\n- Add labels and descriptions to markers for clarity",
+      "tools": [
+        {
+          "id": "gateway_search-places___search_places",
+          "name": "Search Places",
+          "description": "Search for places using text query (e.g., 'restaurants in New York')"
+        },
+        {
+          "id": "gateway_search-nearby-places___search_nearby_places",
+          "name": "Nearby Places",
+          "description": "Search for places near a specific location"
+        },
+        {
+          "id": "gateway_get-place-details___get_place_details",
+          "name": "Place Details",
+          "description": "Get detailed information about a place including reviews"
+        },
+        {
+          "id": "gateway_get-directions___get_directions",
+          "name": "Get Directions",
+          "description": "Get directions between two locations with step-by-step instructions"
+        },
+        {
+          "id": "gateway_geocode-address___geocode_address",
+          "name": "Geocode Address",
+          "description": "Convert address to geographic coordinates"
+        },
+        {
+          "id": "gateway_reverse-geocode___reverse_geocode",
+          "name": "Reverse Geocode",
+          "description": "Convert geographic coordinates to address"
+        },
+        {
+          "id": "gateway_google-maps___show_on_map",
+          "name": "Show on Map",
+          "description": "Display locations and routes on interactive Google Map"
+        }
+      ]
+    },
+    {
+      "id": "gateway_wikipedia-search",
+      "name": "Wikipedia",
+      "description": "Wikipedia article search and retrieval",
+      "category": "knowledge",
+      "icon": "📚",
+      "enabled": false,
+      "isDynamic": true,
+      "tools": [
+        {
+          "id": "gateway_wikipedia-search___wikipedia_search",
+          "name": "Search Articles",
+          "description": "Search Wikipedia for articles"
+        },
+        {
+          "id": "gateway_wikipedia-get-article___wikipedia_get_article",
+          "name": "Get Article",
+          "description": "Get full content of a Wikipedia article"
+        }
+      ]
+    },
+    {
       "id": "gateway_tavily-search",
       "name": "Tavily AI",
       "description": "AI-powered web search and content extraction",
@@ -324,37 +402,6 @@
           "id": "gateway_tavily-extract___tavily_extract",
           "name": "Content Extract",
           "description": "Extract clean content from web URLs"
-        }
-      ]
-    },
-    {
-      "id": "gateway_financial-news",
-      "name": "Financial Market",
-      "description": "Stock quotes, history, news and analysis",
-      "category": "finance",
-      "icon": "📈",
-      "enabled": false,
-      "isDynamic": true,
-      "tools": [
-        {
-          "id": "gateway_stock-quote___stock_quote",
-          "name": "Stock Quote",
-          "description": "Get current stock quote with key metrics"
-        },
-        {
-          "id": "gateway_stock-history___stock_history",
-          "name": "Stock History",
-          "description": "Get historical stock price data"
-        },
-        {
-          "id": "gateway_financial-news___financial_news",
-          "name": "Financial News",
-          "description": "Get latest financial news articles"
-        },
-        {
-          "id": "gateway_stock-analysis___stock_analysis",
-          "name": "Stock Analysis",
-          "description": "Get comprehensive stock analysis"
         }
       ]
     }

@@ -322,9 +322,6 @@ class StreamEventProcessor:
                     tool_name = tool_use.get("name")
                     tool_input = tool_use.get("input", "")
 
-                    # Debug logging
-                    logger.info(f"[Tool Use Event] 🔧 Received current_tool_use - tool: {tool_name}, toolUseId: {tool_use_id}, input type: {type(tool_input).__name__}, input: {str(tool_input)[:100]}")
-
                     # Only process if input looks complete (valid JSON or empty for no-param tools)
                     should_process = False
                     processed_input = None
@@ -345,19 +342,19 @@ class StreamEventProcessor:
                                 parsed_input = json.loads(tool_input)
                                 should_process = True
                                 processed_input = parsed_input  # Use parsed input
-                                logger.info(f"[Tool Use Event] ✅ Parsed string input - keys: {list(parsed_input.keys()) if isinstance(parsed_input, dict) else 'not a dict'}")
+                                logger.info(f"[Tool Use Event] ✅ Parsed input for {tool_name} - keys: {list(parsed_input.keys()) if isinstance(parsed_input, dict) else 'not a dict'}")
                             elif isinstance(tool_input, dict):
                                 # Already parsed
                                 should_process = True
                                 processed_input = tool_input
-                                logger.info(f"[Tool Use Event] ✅ Dict input received - keys: {list(tool_input.keys())}")
+                                logger.info(f"[Tool Use Event] ✅ Dict input received for {tool_name} - keys: {list(tool_input.keys())}")
                             else:
                                 should_process = False
-                                logger.info(f"[Tool Use Event] ⚠️  Unexpected input type: {type(tool_input).__name__}")
+                                logger.debug(f"[Tool Use Event] Unexpected input type: {type(tool_input).__name__}")
                         except json.JSONDecodeError as e:
-                            # Input is still incomplete
+                            # Input is still incomplete (streaming in progress) - this is normal, skip silently
                             should_process = False
-                            logger.info(f"[Tool Use Event] ⏸️  JSON decode error (incomplete input): {str(e)[:100]}")
+                            logger.debug(f"[Tool Use Event] Incomplete input for {tool_name} (streaming): {str(e)[:100]}")
 
                     if should_process and tool_use_id:
                         # Check if this is a new tool or parameter update
@@ -365,8 +362,6 @@ class StreamEventProcessor:
                         is_parameter_update = (not is_new_tool and
                                              processed_input is not None and
                                              len(processed_input) > 0)
-
-                        logger.info(f"[Tool Use Event] 🔍 Processing decision - is_new_tool: {is_new_tool}, is_parameter_update: {is_parameter_update}, will emit: {is_new_tool or is_parameter_update}")
 
                         if is_new_tool or is_parameter_update:
                             # Mark as seen for new tools
@@ -403,8 +398,6 @@ class StreamEventProcessor:
                             yield self.formatter.create_tool_use_event(tool_use_copy)
 
                             await asyncio.sleep(0.1)
-                    else:
-                        logger.info(f"[Tool Use Event] ⏭️  Skipped processing - should_process: {should_process}, has toolUseId: {bool(tool_use_id)}")
                 
                 # Handle tool streaming events (from async generator tools)
                 elif event.get("tool_stream_event"):

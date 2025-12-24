@@ -76,6 +76,7 @@ const lambdaStack = new LambdaStack(app, `${projectName}-GatewayLambdaStack`, {
   gatewayArn: gatewayStack.gatewayArn,
   tavilyApiKeySecret: iamStack.tavilyApiKeySecret,
   googleCredentialsSecret: iamStack.googleCredentialsSecret,
+  googleMapsCredentialsSecret: iamStack.googleMapsCredentialsSecret,
   env,
   tags: {
     Project: projectName,

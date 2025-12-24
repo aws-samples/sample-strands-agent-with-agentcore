@@ -246,6 +246,17 @@ export class ChatbotStack extends cdk.Stack {
       })
     );
 
+    // Secrets Manager Access for Google Maps API Key
+    codeBuildRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:${projectName}/mcp/google-maps-credentials-*`,
+        ],
+      })
+    );
+
     const buildProject = new codebuild.Project(this, 'FrontendBuildProject', {
       projectName: `${projectName}-frontend-builder`,
       description: 'Builds AMD64 container image for Frontend+BFF',
@@ -273,6 +284,10 @@ export class ChatbotStack extends cdk.Stack {
               'echo "Cognito User Pool ID: $COGNITO_USER_POOL_ID"',
               'echo "Cognito Client ID: $COGNITO_CLIENT_ID"',
               'echo "ALB DNS: $ALB_DNS"',
+              'echo Getting Google Maps API key from Secrets Manager...',
+              `GOOGLE_MAPS_SECRET=$(aws secretsmanager get-secret-value --secret-id "${projectName}/mcp/google-maps-credentials" --region ${this.region} --query SecretString --output text || echo "{}")`,
+              `GOOGLE_MAPS_API_KEY=$(echo $GOOGLE_MAPS_SECRET | jq -r '.api_key // empty')`,
+              'echo "Google Maps API Key: ${GOOGLE_MAPS_API_KEY:0:10}..." # Show first 10 chars only for security',
             ],
           },
           build: {
@@ -283,6 +298,7 @@ export class ChatbotStack extends cdk.Stack {
               '--build-arg NEXT_PUBLIC_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID ' +
               '--build-arg NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$COGNITO_CLIENT_ID ' +
               '--build-arg NEXT_PUBLIC_STREAMING_API_URL=$ALB_DNS ' +
+              '--build-arg NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY=$GOOGLE_MAPS_API_KEY ' +
               '-t frontend:latest .',
               `docker tag frontend:latest ${frontendRepository.repositoryUri}:latest`,
             ],

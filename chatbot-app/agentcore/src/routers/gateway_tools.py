@@ -72,6 +72,8 @@ async def list_gateway_tools() -> Dict[str, Any]:
                     tool_info["category"] = "knowledge"
                 elif "arxiv" in tool_name_lower:
                     tool_info["category"] = "research"
+                elif "place" in tool_name_lower or "direction" in tool_name_lower or "geocode" in tool_name_lower:
+                    tool_info["category"] = "maps"
                 elif "google" in tool_name_lower or "search" in tool_name_lower or "tavily" in tool_name_lower:
                     tool_info["category"] = "search"
                 elif "stock" in tool_name_lower or "financ" in tool_name_lower:

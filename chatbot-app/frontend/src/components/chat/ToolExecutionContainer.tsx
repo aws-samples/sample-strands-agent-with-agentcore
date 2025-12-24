@@ -5,6 +5,8 @@ import { ToolExecution } from '@/types/chat'
 import { getToolIconById } from '@/utils/chat'
 import { ChartRenderer } from '@/components/ChartRenderer'
 import { ChartToolResult } from '@/types/chart'
+import { MapRenderer } from '@/components/MapRenderer'
+import { MapToolResult } from '@/types/map'
 import { JsonDisplay } from '@/components/ui/JsonDisplay'
 import { Markdown } from '@/components/ui/Markdown'
 import { LazyImage } from '@/components/ui/LazyImage'
@@ -141,6 +143,15 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
   // Helper to detect if content contains markdown links or formatting
   const containsMarkdown = (text: string): boolean => {
     if (typeof text !== 'string') return false
+
+    // Try to parse as JSON first - if it's valid JSON, it's not markdown
+    try {
+      JSON.parse(text)
+      return false // Valid JSON, not markdown
+    } catch {
+      // Not valid JSON, check for markdown patterns
+    }
+
     // Check for markdown links: [text](url) or **bold** or other markdown syntax
     return /\[([^\]]+)\]\(([^)]+)\)|\*\*[^*]+\*\*|_{1,2}[^_]+_{1,2}|^#+\s/.test(text)
   }
@@ -182,7 +193,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     const cache = new Map<string, { parsed: ChartToolResult, resultString: string }>();
 
     toolExecutionsDeps.forEach((deps) => {
-      if (deps.toolName === 'create_visualization' &&
+      if ((deps.toolName === 'create_visualization' || deps.toolName === 'show_on_map') &&
           deps.toolResult &&
           deps.isComplete) {
         try {
@@ -207,8 +218,20 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
 
     const result = cached.parsed;
 
+    // Check for map data first
+    if (result.success && result.map_data) {
+      return (
+        <div className="my-4">
+          <MapRenderer mapData={result.map_data} />
+          <p className="text-sm text-green-600 mt-2">
+            {result.message}
+          </p>
+        </div>
+      );
+    }
+
+    // Check for chart data
     if (result.success && result.chart_data) {
-      // Direct rendering with chart data
       return (
         <div className="my-4">
           <ChartRenderer chartData={result.chart_data} />
@@ -217,13 +240,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           </p>
         </div>
       );
-    } else {
-      return (
-        <div className="my-4 p-3 bg-red-50 border border-red-200 rounded">
-          <p className="text-red-600">{result.message}</p>
-        </div>
-      );
     }
+
+    // Error state
+    return (
+      <div className="my-4 p-3 bg-red-50 border border-red-200 rounded">
+        <p className="text-red-600">{result.message}</p>
+      </div>
+    );
   }, [chartDataCache, sessionId]);
 
   // Helper function to handle ZIP download
@@ -473,8 +497,10 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
         const IconComponent = getToolIconById(toolExecution.toolName)
         const isExpanded = isToolExpanded(toolExecution.id, toolExecution)
 
-        // Check if this is a visualization tool and render chart directly
-        if (toolExecution.toolName === 'create_visualization' && toolExecution.toolResult && toolExecution.isComplete) {
+        // Check if this is a visualization or map tool and render directly
+        if ((toolExecution.toolName === 'create_visualization' || toolExecution.toolName === 'show_on_map') &&
+            toolExecution.toolResult &&
+            toolExecution.isComplete) {
           const chartResult = renderVisualizationResult(toolExecution.id);
           if (chartResult) {
             return (

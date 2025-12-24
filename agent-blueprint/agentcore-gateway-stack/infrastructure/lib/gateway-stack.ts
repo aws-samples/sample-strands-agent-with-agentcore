@@ -31,7 +31,7 @@ export class GatewayStack extends cdk.Stack {
 
     this.gateway = new agentcore.CfnGateway(this, 'MCPGateway', {
       name: `${projectName}-mcp-gateway`,
-      description: 'MCP Gateway for research and analysis tools (Tavily, Wikipedia, ArXiv, Google, Finance)',
+      description: 'MCP Gateway for research and analysis tools (Tavily, Wikipedia, ArXiv, Google Search, Finance, Google Maps)',
       roleArn: gatewayRole.roleArn,
 
       // Authentication: AWS_IAM (SigV4)

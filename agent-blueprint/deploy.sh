@@ -291,8 +291,8 @@ deploy_mcp_servers() {
 
     log_info "This will deploy:"
     echo "  • AgentCore Gateway (MCP protocol with AWS_IAM auth)"
-    echo "  • 5 Lambda functions (ARM64, Python 3.13)"
-    echo "  • 12 MCP tools via Gateway Targets"
+    echo "  • 6 Lambda functions (ARM64, Python 3.13)"
+    echo "  • 18 MCP tools via Gateway Targets"
     echo ""
 
     log_step "Tools that will be available:"
@@ -301,6 +301,8 @@ deploy_mcp_servers() {
     echo "  • arxiv_search, arxiv_get_paper"
     echo "  • google_web_search, google_image_search"
     echo "  • stock_quote, stock_history, financial_news, stock_analysis"
+    echo "  • search_places, search_nearby_places, get_place_details,"
+    echo "    get_directions, geocode_address, reverse_geocode"
     echo ""
 
     # Check if agentcore-gateway-stack exists

@@ -19,6 +19,7 @@ export interface LambdaStackProps extends cdk.StackProps {
   gatewayArn: string
   tavilyApiKeySecret: secretsmanager.ISecret
   googleCredentialsSecret: secretsmanager.ISecret
+  googleMapsCredentialsSecret: secretsmanager.ISecret
 }
 
 export class LambdaStack extends cdk.Stack {
@@ -27,7 +28,7 @@ export class LambdaStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: LambdaStackProps) {
     super(scope, id, props)
 
-    const { projectName, lambdaRole, gatewayArn, tavilyApiKeySecret, googleCredentialsSecret } =
+    const { projectName, lambdaRole, gatewayArn, tavilyApiKeySecret, googleCredentialsSecret, googleMapsCredentialsSecret } =
       props
 
     this.functions = new Map()
@@ -48,27 +49,24 @@ export class LambdaStack extends cdk.Stack {
     })
 
     // ============================================================
-    // Step 2: Upload Lambda Source to S3
+    // Step 2: Upload Lambda Source to S3 (Individual Deployments)
     // ============================================================
-    const lambdaSourcePath = '../lambda-functions'
-    const lambdaSourceUpload = new s3deploy.BucketDeployment(this, 'LambdaSourceUpload', {
-      sources: [
-        s3deploy.Source.asset(lambdaSourcePath, {
-          exclude: [
-            'build/**',
-            'build.zip',
-            '__pycache__/**',
-            '*.pyc',
-            '.DS_Store',
-            'venv/**',
-            '.venv/**',
-          ],
-        }),
-      ],
-      destinationBucket: lambdaBucket,
-      destinationKeyPrefix: 'source/',
-      prune: false,
-      retainOnDelete: false,
+    const lambdaFunctions = ['tavily', 'wikipedia', 'arxiv', 'google-search', 'google-maps', 'finance']
+    const lambdaSourceUploads: s3deploy.BucketDeployment[] = []
+
+    lambdaFunctions.forEach((funcName) => {
+      const upload = new s3deploy.BucketDeployment(this, `${funcName}SourceUpload`, {
+        sources: [
+          s3deploy.Source.asset(`../lambda-functions/${funcName}`, {
+            exclude: ['__pycache__/**', '*.pyc', '.DS_Store'],
+          }),
+        ],
+        destinationBucket: lambdaBucket,
+        destinationKeyPrefix: `source/${funcName}/`,
+        prune: false,
+        retainOnDelete: false,
+      })
+      lambdaSourceUploads.push(upload)
     })
 
     // ============================================================
@@ -99,6 +97,9 @@ export class LambdaStack extends cdk.Stack {
       })
     )
 
+    // Generate unique deployment ID for this deployment
+    const deploymentId = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+
     const buildProject = new codebuild.Project(this, 'LambdaBuildProject', {
       projectName: `${projectName}-lambda-builder`,
       description: 'Builds ARM64 Lambda deployment packages for Gateway tools',
@@ -107,6 +108,12 @@ export class LambdaStack extends cdk.Stack {
         buildImage: codebuild.LinuxBuildImage.AMAZON_LINUX_2_ARM_3,
         computeType: codebuild.ComputeType.SMALL,
         privileged: false, // No Docker needed for pip install
+        environmentVariables: {
+          DEPLOYMENT_ID: {
+            type: codebuild.BuildEnvironmentVariableType.PLAINTEXT,
+            value: deploymentId,
+          },
+        },
       },
       source: codebuild.Source.s3({
         bucket: lambdaBucket,
@@ -125,44 +132,147 @@ export class LambdaStack extends cdk.Stack {
               `
 set -e
 echo "Building Lambda packages for ARM64..."
+echo ""
 
 # Function list
-FUNCTIONS="tavily wikipedia arxiv google-search finance"
+FUNCTIONS="tavily wikipedia arxiv google-search google-maps finance"
+
+# Check for force rebuild flag (set via environment variable in CDK)
+FORCE_REBUILD=\${FORCE_REBUILD:-false}
+if [ "$FORCE_REBUILD" = "true" ]; then
+  echo "🔄 FORCE_REBUILD enabled - all packages will be rebuilt"
+  echo ""
+fi
 
 for FUNC in $FUNCTIONS; do
-  echo "Building $FUNC..."
-  FUNC_DIR="$FUNC"
-  BUILD_DIR="build-$FUNC"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  echo "📦 Processing: $FUNC"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-  # Create build directory
+  # Check if source exists in S3
+  SOURCE_MODIFIED=$(aws s3 ls "s3://${lambdaBucket.bucketName}/source/$FUNC/" --recursive | sort | tail -n 1 | awk '{print $1" "$2}')
+  BUILD_MODIFIED=$(aws s3 ls "s3://${lambdaBucket.bucketName}/builds/$FUNC.zip" 2>/dev/null | awk '{print $1" "$2}' || echo "")
+
+  # Determine if rebuild is needed
+  REBUILD=false
+  if [ "$FORCE_REBUILD" = "true" ]; then
+    echo "  ⚡ Force rebuild requested"
+    REBUILD=true
+  elif [ -z "$BUILD_MODIFIED" ]; then
+    echo "  📝 No existing build found"
+    REBUILD=true
+  elif [ "$SOURCE_MODIFIED" \> "$BUILD_MODIFIED" ]; then
+    echo "  📝 Source changed (source: $SOURCE_MODIFIED, build: $BUILD_MODIFIED)"
+    REBUILD=true
+  else
+    echo "  ✅ Up to date, skipping build"
+    echo ""
+    continue
+  fi
+
+  echo "  🔨 Building package..."
+
+  # Download source from S3
+  echo "  📥 Downloading source from S3..."
+  aws s3 sync "s3://${lambdaBucket.bucketName}/source/$FUNC/" "$FUNC/" --quiet
+
+  BUILD_DIR="build-$FUNC"
+  rm -rf "$BUILD_DIR"  # Clean previous build
   mkdir -p "$BUILD_DIR"
 
   # Install dependencies if requirements.txt exists
-  if [ -f "$FUNC_DIR/requirements.txt" ]; then
-    echo "  Installing dependencies..."
-    pip3 install -r "$FUNC_DIR/requirements.txt" -t "$BUILD_DIR" --upgrade --no-cache-dir || {
-      echo "  ERROR: pip install failed for $FUNC"
+  if [ -f "$FUNC/requirements.txt" ]; then
+    echo "  📚 Installing dependencies..."
+    echo "     Requirements:"
+    cat "$FUNC/requirements.txt" | sed 's/^/       /'
+
+    # Install with detailed output for debugging
+    # Note: Removed --only-binary=:all: and platform-specific flags to allow
+    # pure Python packages (like sgmllib3k) to install from source
+    pip3 install -r "$FUNC/requirements.txt" -t "$BUILD_DIR" \
+      --upgrade \
+      --no-cache-dir 2>&1 | tee "pip-$FUNC.log" || {
+
+      echo ""
+      echo "  ❌ ERROR: pip install failed for $FUNC"
+      echo "  📄 Requirements file contents:"
+      cat "$FUNC/requirements.txt" | sed 's/^/       /'
+      echo ""
+      echo "  📋 Last 30 lines of pip output:"
+      tail -30 "pip-$FUNC.log" | sed 's/^/       /'
       exit 1
     }
+
+    # Verify main package installation
+    # Skip comments and empty lines to find first real package
+    MAIN_PACKAGE=$(grep -v "^#" "$FUNC/requirements.txt" | grep -v "^$" | head -n 1 | cut -d'=' -f1 | cut -d'>' -f1 | cut -d'<' -f1 | tr -d ' ' || echo "")
+    if [ -n "$MAIN_PACKAGE" ]; then
+      echo "  🔍 Verifying package: $MAIN_PACKAGE"
+
+      # Check if package directory or .dist-info exists
+      if ls "$BUILD_DIR/$MAIN_PACKAGE"* 1> /dev/null 2>&1 || \
+         ls "$BUILD_DIR"/*"$MAIN_PACKAGE"*.dist-info 1> /dev/null 2>&1 || \
+         ls "$BUILD_DIR"/*"$(echo $MAIN_PACKAGE | tr '-' '_')"* 1> /dev/null 2>&1; then
+        echo "  ✅ Package verified: $MAIN_PACKAGE"
+      else
+        echo "  ⚠️  WARNING: Main package '$MAIN_PACKAGE' not found in build directory"
+        echo "  📂 Build directory contents:"
+        ls -la "$BUILD_DIR" | head -20 | sed 's/^/       /'
+        echo ""
+        echo "  ❌ ERROR: Build verification failed - dependencies may be incomplete"
+        exit 1
+      fi
+    else
+      echo "  ℹ️  No package found to verify (empty requirements or comments only)"
+    fi
+  else
+    echo "  ℹ️  No requirements.txt found, skipping dependency installation"
   fi
 
   # Copy source code
-  echo "  Copying source code..."
-  cp "$FUNC_DIR"/*.py "$BUILD_DIR/" 2>/dev/null || true
+  echo "  📝 Copying source code..."
+  cp "$FUNC"/*.py "$BUILD_DIR/" 2>/dev/null || {
+    echo "  ⚠️  WARNING: No .py files found in $FUNC/"
+  }
 
   # Create ZIP package
-  echo "  Creating deployment package..."
+  echo "  📦 Creating deployment package..."
   cd "$BUILD_DIR"
-  zip -r "../\${FUNC}.zip" . -q
+  zip -r "../$FUNC.zip" . -q || {
+    echo "  ❌ ERROR: Failed to create ZIP package"
+    exit 1
+  }
   cd ..
 
-  # Upload to S3
-  aws s3 cp "\${FUNC}.zip" "s3://${lambdaBucket.bucketName}/builds/\${FUNC}.zip"
+  # Verify ZIP file
+  ZIP_SIZE=$(stat -c%s "$FUNC.zip" 2>/dev/null || stat -f%z "$FUNC.zip")
+  # Convert to MB using Python (more reliable than awk/bc)
+  ZIP_SIZE_MB=$(python3 -c "print(round($ZIP_SIZE/1024/1024, 2))")
 
-  echo "  ✓ $FUNC built successfully"
+  echo "  📊 Package size: $ZIP_SIZE_MB MB ($ZIP_SIZE bytes)"
+
+  if [ "$ZIP_SIZE" -lt 1000 ]; then
+    echo "  ❌ ERROR: ZIP file too small ($ZIP_SIZE bytes), build likely failed"
+    exit 1
+  fi
+
+  # Upload to S3 with deployment ID in key to force Lambda update
+  S3_KEY="builds/$FUNC-\${DEPLOYMENT_ID}.zip"
+
+  echo "  📤 Uploading to S3..."
+  aws s3 cp "$FUNC.zip" "s3://${lambdaBucket.bucketName}/$S3_KEY" --quiet || {
+    echo "  ❌ ERROR: Failed to upload to S3"
+    exit 1
+  }
+
+  echo "  ✅ $FUNC built successfully ($ZIP_SIZE_MB MB)"
+  echo "  📝 S3 Key: $S3_KEY"
+  echo ""
 done
 
-echo "All Lambda packages built successfully!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "✅ Build process completed successfully!"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
               `,
             ],
           },
@@ -202,7 +312,9 @@ echo "All Lambda packages built successfully!"
       timeout: cdk.Duration.minutes(5),
     })
 
-    buildTrigger.node.addDependency(lambdaSourceUpload)
+    lambdaSourceUploads.forEach((upload) => {
+      buildTrigger.node.addDependency(upload)
+    })
 
     // ============================================================
     // Step 5: Wait for Build to Complete (using Lambda polling)
@@ -339,7 +451,7 @@ async function sendResponse(event, status, data, reason) {
         id: 'tavily',
         functionName: 'mcp-tavily',
         description: 'Tavily AI-powered web search and content extraction',
-        s3Key: 'builds/tavily.zip',
+        s3Key: `builds/tavily-${deploymentId}.zip`,
         timeout: 300,
         memorySize: 1024,
         environment: {
@@ -351,7 +463,7 @@ async function sendResponse(event, status, data, reason) {
         id: 'wikipedia',
         functionName: 'mcp-wikipedia',
         description: 'Wikipedia article search and retrieval',
-        s3Key: 'builds/wikipedia.zip',
+        s3Key: `builds/wikipedia-${deploymentId}.zip`,
         timeout: 60,
         memorySize: 512,
         environment: {
@@ -362,7 +474,7 @@ async function sendResponse(event, status, data, reason) {
         id: 'arxiv',
         functionName: 'mcp-arxiv',
         description: 'ArXiv scientific paper search and retrieval',
-        s3Key: 'builds/arxiv.zip',
+        s3Key: `builds/arxiv-${deploymentId}.zip`,
         timeout: 120,
         memorySize: 512,
         environment: {
@@ -373,7 +485,7 @@ async function sendResponse(event, status, data, reason) {
         id: 'google-search',
         functionName: 'mcp-google-search',
         description: 'Google Custom Search for web and images',
-        s3Key: 'builds/google-search.zip',
+        s3Key: `builds/google-search-${deploymentId}.zip`,
         timeout: 60,
         memorySize: 512,
         environment: {
@@ -385,10 +497,22 @@ async function sendResponse(event, status, data, reason) {
         id: 'finance',
         functionName: 'mcp-finance',
         description: 'Yahoo Finance stock data and analysis',
-        s3Key: 'builds/finance.zip',
+        s3Key: `builds/finance-${deploymentId}.zip`,
         timeout: 120,
         memorySize: 1024,
         environment: {
+          LOG_LEVEL: 'INFO',
+        },
+      },
+      {
+        id: 'google-maps',
+        functionName: 'mcp-google-maps',
+        description: 'Google Maps Platform (Places, Directions, Geocoding APIs)',
+        s3Key: `builds/google-maps-${deploymentId}.zip`,
+        timeout: 60,
+        memorySize: 1024,
+        environment: {
+          GOOGLE_MAPS_CREDENTIALS_SECRET_NAME: googleMapsCredentialsSecret.secretName,
           LOG_LEVEL: 'INFO',
         },
       },
@@ -400,6 +524,7 @@ async function sendResponse(event, status, data, reason) {
 
     lambdaConfigs.forEach((config) => {
       // Create Lambda function using S3 code
+      // S3 key includes deploymentId, so Lambda will update when code changes
       const fn = new lambda.Function(this, `${config.id}Function`, {
         functionName: config.functionName,
         description: config.description,

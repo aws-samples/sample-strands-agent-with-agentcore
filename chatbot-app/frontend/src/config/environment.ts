@@ -21,6 +21,9 @@ export const ENV_CONFIG = {
   OUTPUT_URL: process.env.NEXT_PUBLIC_OUTPUT_URL || 'http://localhost:8000/output',
   GENERATED_IMAGES_URL: process.env.NEXT_PUBLIC_GENERATED_IMAGES_URL || 'http://localhost:8000/generated_images',
 
+  // Google Maps Embed API Key (for client-side map rendering)
+  GOOGLE_MAPS_EMBED_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY || '',
+
   // API Configuration
   API_TIMEOUT: parseInt(process.env.NEXT_PUBLIC_API_TIMEOUT || '10000'),
   API_RETRY_ATTEMPTS: parseInt(process.env.NEXT_PUBLIC_API_RETRY_ATTEMPTS || '3'),

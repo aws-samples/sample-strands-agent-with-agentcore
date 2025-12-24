@@ -46,18 +46,23 @@ export function ToolItem({ tool, onToggleTool }: ToolItemProps) {
                 }
               }}
               className={cn(
-                "w-full flex items-center justify-center py-1.5 px-2 rounded-md transition-all duration-200 cursor-pointer border min-h-[36px] relative",
+                "w-full flex flex-col items-center justify-center gap-1 py-2 px-2 rounded-lg transition-all duration-200 cursor-pointer border min-h-[52px] relative",
                 anyToolEnabled
-                  ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-sm hover:shadow-md hover:scale-[1.02]"
-                  : "bg-sidebar-accent/40 text-sidebar-foreground border-sidebar-border hover:border-sidebar-border/80 hover:bg-sidebar-accent/60 hover:scale-[1.02] opacity-80 hover:opacity-100"
+                  ? "bg-blue-600 text-white border-blue-500 hover:bg-blue-700 shadow-md hover:shadow-lg hover:shadow-blue-500/30 hover:scale-[1.03] ring-2 ring-blue-400/20"
+                  : "bg-sidebar-accent/30 text-sidebar-foreground border-sidebar-border/60 hover:border-sidebar-border hover:bg-sidebar-accent/50 hover:scale-[1.03] hover:shadow-md opacity-85 hover:opacity-100"
               )}
             >
               {anyToolEnabled && (
-                <div className="absolute top-1 right-1">
-                  <Check className="h-3 w-3" />
+                <div className="absolute top-1.5 right-1.5">
+                  <Check className="h-3.5 w-3.5" />
                 </div>
               )}
-              <div className="font-medium text-[11px] text-center leading-snug line-clamp-2 w-full">
+              {tool.icon && (
+                <div className="text-lg leading-none">
+                  {tool.icon}
+                </div>
+              )}
+              <div className="font-medium text-[10.5px] text-center leading-tight line-clamp-2 w-full">
                 {tool.name}
               </div>
             </button>
@@ -78,18 +83,23 @@ export function ToolItem({ tool, onToggleTool }: ToolItemProps) {
             <button
               onClick={() => onToggleTool(tool.id)}
               className={cn(
-                "w-full flex items-center justify-center py-1.5 px-2 rounded-md transition-all duration-200 cursor-pointer border min-h-[36px] relative",
+                "w-full flex flex-col items-center justify-center gap-1 py-2 px-2 rounded-lg transition-all duration-200 cursor-pointer border min-h-[52px] relative",
                 tool.enabled
-                  ? "bg-blue-600 text-white border-blue-600 hover:bg-blue-700 shadow-sm hover:shadow-md hover:scale-[1.02]"
-                  : "bg-sidebar-accent/40 text-sidebar-foreground border-sidebar-border hover:border-sidebar-border/80 hover:bg-sidebar-accent/60 hover:scale-[1.02] opacity-80 hover:opacity-100"
+                  ? "bg-blue-600 text-white border-blue-500 hover:bg-blue-700 shadow-md hover:shadow-lg hover:shadow-blue-500/30 hover:scale-[1.03] ring-2 ring-blue-400/20"
+                  : "bg-sidebar-accent/30 text-sidebar-foreground border-sidebar-border/60 hover:border-sidebar-border hover:bg-sidebar-accent/50 hover:scale-[1.03] hover:shadow-md opacity-85 hover:opacity-100"
               )}
             >
               {tool.enabled && (
-                <div className="absolute top-1 right-1">
-                  <Check className="h-3 w-3" />
+                <div className="absolute top-1.5 right-1.5">
+                  <Check className="h-3.5 w-3.5" />
                 </div>
               )}
-              <div className="font-medium text-[11px] text-center leading-snug line-clamp-2 w-full">
+              {tool.icon && (
+                <div className="text-lg leading-none">
+                  {tool.icon}
+                </div>
+              )}
+              <div className="font-medium text-[10.5px] text-center leading-tight line-clamp-2 w-full">
                 {tool.name}
               </div>
             </button>

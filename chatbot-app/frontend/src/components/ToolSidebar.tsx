@@ -1,9 +1,10 @@
 'use client';
 
-import React from 'react';
-import { Settings, Wrench, Brain, Plus, Globe } from 'lucide-react';
+import React, { useState, useMemo } from 'react';
+import { Settings, Plus, Search, BarChart3, Globe, MapPin, Wrench } from 'lucide-react';
 import { Tool } from '@/types/chat';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import {
   Sidebar,
   SidebarContent,
@@ -15,7 +16,6 @@ import {
 import { ChatSessionList } from './sidebar/ChatSessionList';
 import { ToolSection } from './sidebar/ToolSection';
 import { useChatSessions } from '@/hooks/useChatSessions';
-import { useToolToggle } from '@/hooks/useToolToggle';
 
 interface ToolSidebarProps {
   availableTools: Tool[];
@@ -40,16 +40,128 @@ export function ToolSidebar({
 }: ToolSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
+  // Search state
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Accordion state - track which sections are expanded
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    analytics: true,
+    research: true,
+    automation: true,
+    location: true,
+  });
+
   // Use custom hooks
   const { chatSessions, isLoadingSessions, deleteSession } = useChatSessions({
     sessionId,
     onNewChat,
   });
 
-  const { groupedTools, toggleCategory, areAllEnabled, enabledCount, totalCount } = useToolToggle({
-    availableTools,
-    onToggleTool,
-  });
+  // Custom tool grouping by purpose
+  const groupedToolsByPurpose = useMemo(() => {
+    const groups = {
+      analytics: [] as Tool[],    // 📊 분석 & 리포트
+      research: [] as Tool[],      // 🔍 리서치 & 검색
+      automation: [] as Tool[],    // 🌐 웹 & 자동화
+      location: [] as Tool[],      // 🗺️ 위치 & 실시간
+    };
+
+    const analyticsIds = [
+      'calculator',
+      'create_visualization',
+      'generate_diagram_and_validate',
+      'word_document_tools',
+      'excel_spreadsheet_tools',
+      'powerpoint_presentation_tools',
+      'gateway_financial-news',
+    ];
+
+    const researchIds = [
+      'ddg_web_search',
+      'gateway_google-web-search',
+      'gateway_tavily-search',
+      'gateway_wikipedia-search',
+      'gateway_arxiv-search',
+      'fetch_url_content',
+    ];
+
+    const automationIds = [
+      'browser_automation',
+      'agentcore_browser-use-agent',
+    ];
+
+    const locationIds = [
+      'gateway_google-maps',
+      'get_current_weather',
+    ];
+
+    availableTools.forEach(tool => {
+      if (analyticsIds.includes(tool.id)) {
+        groups.analytics.push(tool);
+      } else if (researchIds.includes(tool.id)) {
+        groups.research.push(tool);
+      } else if (automationIds.includes(tool.id)) {
+        groups.automation.push(tool);
+      } else if (locationIds.includes(tool.id)) {
+        groups.location.push(tool);
+      }
+    });
+
+    return groups;
+  }, [availableTools]);
+
+  // Calculate enabled count
+  const { enabledCount, totalCount } = useMemo(() => {
+    let enabled = 0;
+    let total = 0;
+
+    availableTools.forEach(tool => {
+      const isDynamic = (tool as any).isDynamic === true;
+      const nestedTools = (tool as any).tools || [];
+
+      if (isDynamic && nestedTools.length > 0) {
+        total += nestedTools.length;
+        enabled += nestedTools.filter((nt: any) => nt.enabled).length;
+      } else {
+        total += 1;
+        if (tool.enabled) {
+          enabled += 1;
+        }
+      }
+    });
+
+    return { enabledCount: enabled, totalCount: total };
+  }, [availableTools]);
+
+  // Toggle section expansion
+  const toggleSection = (category: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [category]: !prev[category],
+    }));
+  };
+
+  // Filter tools based on search query
+  const filteredGroupedTools = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return groupedToolsByPurpose;
+    }
+
+    const query = searchQuery.toLowerCase();
+    const filtered: Record<string, Tool[]> = {};
+
+    Object.entries(groupedToolsByPurpose).forEach(([category, tools]) => {
+      const matchedTools = tools.filter(tool =>
+        tool.name.toLowerCase().includes(query) ||
+        tool.description?.toLowerCase().includes(query)
+      );
+      if (matchedTools.length > 0) {
+        filtered[category] = matchedTools;
+      }
+    });
+
+    return filtered;
+  }, [groupedToolsByPurpose, searchQuery]);
 
   return (
     <Sidebar
@@ -95,7 +207,7 @@ export function ToolSidebar({
       {/* Tools Section - Bottom (2/3) */}
       <div className="flex-[2] min-h-0 flex flex-col">
         <div className="flex-shrink-0 px-4 py-3 border-b border-sidebar-border/50 bg-sidebar-accent/20">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Wrench className="h-4 w-4 text-sidebar-foreground" />
               <span className="text-sm font-semibold text-sidebar-foreground">Tools</span>
@@ -104,54 +216,69 @@ export function ToolSidebar({
               {enabledCount}/{totalCount} enabled
             </span>
           </div>
+          {/* Search Input */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-sidebar-foreground/50" />
+            <Input
+              type="text"
+              placeholder="Search tools..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8 h-9 bg-sidebar-background border-sidebar-border text-sidebar-foreground placeholder:text-sidebar-foreground/40"
+            />
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto">
           <SidebarContent>
             {availableTools.length > 0 && (
-              <div className="animate-in fade-in-0 duration-300">
-                {/* Local Tools */}
-                <ToolSection
-                  title="Local Tools"
-                  icon={Wrench}
-                  tools={groupedTools['local']}
-                  category="local"
-                  onToggleTool={onToggleTool}
-                  onToggleCategory={toggleCategory}
-                  areAllEnabled={areAllEnabled('local')}
-                />
+              <div className="animate-in fade-in-0 duration-300 space-y-1">
+                {/* 📊 분석 & 리포트 */}
+                {filteredGroupedTools['analytics'] && filteredGroupedTools['analytics'].length > 0 && (
+                  <ToolSection
+                    title="Analytics & Reports"
+                    icon={BarChart3}
+                    tools={filteredGroupedTools['analytics']}
+                    onToggleTool={onToggleTool}
+                    isExpanded={expandedSections['analytics']}
+                    onToggleExpand={() => toggleSection('analytics')}
+                  />
+                )}
 
-                {/* Code Execution Tools */}
-                <ToolSection
-                  title="Code Execution Tools"
-                  icon={Brain}
-                  tools={groupedTools['builtin']}
-                  category="builtin"
-                  onToggleTool={onToggleTool}
-                  onToggleCategory={toggleCategory}
-                  areAllEnabled={areAllEnabled('builtin')}
-                />
+                {/* 🔍 리서치 & 검색 */}
+                {filteredGroupedTools['research'] && filteredGroupedTools['research'].length > 0 && (
+                  <ToolSection
+                    title="Research & Search"
+                    icon={Search}
+                    tools={filteredGroupedTools['research']}
+                    onToggleTool={onToggleTool}
+                    isExpanded={expandedSections['research']}
+                    onToggleExpand={() => toggleSection('research')}
+                  />
+                )}
 
-                {/* Browser Automation Agents */}
-                <ToolSection
-                  title="Browser Automation Agents"
-                  icon={Globe}
-                  tools={groupedTools['browser_automation']}
-                  category="browser_automation"
-                  onToggleTool={onToggleTool}
-                  onToggleCategory={toggleCategory}
-                  areAllEnabled={areAllEnabled('browser_automation')}
-                />
+                {/* 🌐 웹 & 자동화 */}
+                {filteredGroupedTools['automation'] && filteredGroupedTools['automation'].length > 0 && (
+                  <ToolSection
+                    title="Web & Automation"
+                    icon={Globe}
+                    tools={filteredGroupedTools['automation']}
+                    onToggleTool={onToggleTool}
+                    isExpanded={expandedSections['automation']}
+                    onToggleExpand={() => toggleSection('automation')}
+                  />
+                )}
 
-                {/* AgentCore Gateway MCP Servers */}
-                <ToolSection
-                  title="AgentCore Gateway MCP Servers"
-                  icon={Globe}
-                  tools={groupedTools['gateway']}
-                  category="gateway"
-                  onToggleTool={onToggleTool}
-                  onToggleCategory={toggleCategory}
-                  areAllEnabled={areAllEnabled('gateway')}
-                />
+                {/* 🗺️ 위치 & 실시간 */}
+                {filteredGroupedTools['location'] && filteredGroupedTools['location'].length > 0 && (
+                  <ToolSection
+                    title="Location & Live Data"
+                    icon={MapPin}
+                    tools={filteredGroupedTools['location']}
+                    onToggleTool={onToggleTool}
+                    isExpanded={expandedSections['location']}
+                    onToggleExpand={() => toggleSection('location')}
+                  />
+                )}
               </div>
             )}
           </SidebarContent>

@@ -10,8 +10,42 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 PROJECT_ROOT="$SCRIPT_DIR/.."
 INFRA_DIR="$PROJECT_ROOT/infrastructure"
 
+# ============================================================================
+# Parse Command Line Arguments
+# ============================================================================
+
+FORCE_REBUILD=false
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --force-rebuild)
+      FORCE_REBUILD=true
+      shift
+      ;;
+    --help)
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "Options:"
+      echo "  --force-rebuild    Force rebuild all Lambda packages even if source hasn't changed"
+      echo "  --help             Show this help message"
+      echo ""
+      exit 0
+      ;;
+    *)
+      echo "Unknown option: $1"
+      echo "Run '$0 --help' for usage information"
+      exit 1
+      ;;
+  esac
+done
+
 echo "🚀 Deploying AgentCore Gateway Stack..."
 echo ""
+
+if [ "$FORCE_REBUILD" = true ]; then
+  echo "⚡ Force rebuild mode enabled"
+  echo ""
+fi
 
 # ============================================================================
 # Environment Variables
@@ -25,6 +59,7 @@ echo "📋 Configuration:"
 echo "   Project: $PROJECT_NAME"
 echo "   Environment: $ENVIRONMENT"
 echo "   Region: $AWS_REGION"
+echo "   Force Rebuild: $FORCE_REBUILD"
 echo ""
 
 # ============================================================================
@@ -144,6 +179,82 @@ else
 fi
 echo ""
 
+# Check if Google Maps Credentials exist
+GOOGLE_MAPS_SECRET_EXISTS=$(aws secretsmanager describe-secret \
+    --secret-id "${PROJECT_NAME}/mcp/google-maps-credentials" \
+    --query 'Name' \
+    --output text \
+    --region "$AWS_REGION" 2>/dev/null || echo "")
+
+if [ -z "$GOOGLE_MAPS_SECRET_EXISTS" ]; then
+    echo "⚠️  Google Maps Credentials not configured"
+    echo ""
+    echo "Google Maps Platform is required for 6 tools:"
+    echo "  • search_places, search_nearby_places, get_place_details"
+    echo "  • get_directions, geocode_address, reverse_geocode"
+    echo ""
+    echo "Setup instructions:"
+    echo "  1. Go to: https://console.cloud.google.com/apis/credentials"
+    echo "  2. Enable APIs: Places API, Directions API, Geocoding API"
+    echo "  3. Create an API Key and restrict it to these 3 APIs"
+    echo ""
+    read -p "Enter Google Maps API Key (or press Enter to skip): " GOOGLE_MAPS_API_KEY
+
+    if [ -n "$GOOGLE_MAPS_API_KEY" ]; then
+        echo "   Setting Google Maps Credentials..."
+        GOOGLE_MAPS_JSON="{\"api_key\":\"$GOOGLE_MAPS_API_KEY\"}"
+        aws secretsmanager create-secret \
+            --name "${PROJECT_NAME}/mcp/google-maps-credentials" \
+            --secret-string "$GOOGLE_MAPS_JSON" \
+            --description "Google Maps Platform API Key" \
+            --region "$AWS_REGION" > /dev/null 2>&1 || \
+        aws secretsmanager put-secret-value \
+            --secret-id "${PROJECT_NAME}/mcp/google-maps-credentials" \
+            --secret-string "$GOOGLE_MAPS_JSON" \
+            --region "$AWS_REGION" > /dev/null 2>&1
+        echo "   ✅ Google Maps Credentials configured"
+    else
+        echo "   ⚠️  Skipped - Google Maps tools will not work without API key"
+    fi
+else
+    echo "   ✅ Google Maps Credentials already configured"
+fi
+echo ""
+
+# ============================================================================
+# Step 4.5: Force Rebuild (if requested)
+# ============================================================================
+
+if [ "$FORCE_REBUILD" = true ]; then
+  echo "🔄 Step 4.5: Forcing Lambda rebuild..."
+  echo ""
+
+  # Get AWS account ID
+  AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
+
+  if [ -n "$AWS_ACCOUNT_ID" ]; then
+    LAMBDA_BUCKET="${PROJECT_NAME}-gateway-lambdas-${AWS_ACCOUNT_ID}-${AWS_REGION}"
+
+    # Check if bucket exists
+    if aws s3 ls "s3://${LAMBDA_BUCKET}" > /dev/null 2>&1; then
+      echo "   Clearing previous builds from S3..."
+
+      # Delete all build artifacts to force rebuild
+      aws s3 rm "s3://${LAMBDA_BUCKET}/builds/" --recursive --quiet || {
+        echo "   ⚠️  Warning: Could not delete previous builds (bucket may not exist yet)"
+      }
+
+      echo "   ✅ Previous builds cleared - CodeBuild will rebuild all packages"
+    else
+      echo "   ℹ️  Lambda bucket doesn't exist yet (first deployment)"
+    fi
+  else
+    echo "   ⚠️  Warning: Could not determine AWS account ID"
+  fi
+
+  echo ""
+fi
+
 # ============================================================================
 # Step 5: Deploy to AWS (CodeBuild will build Lambda packages automatically)
 # ============================================================================
@@ -209,6 +320,12 @@ GOOGLE_CONFIGURED=$(aws secretsmanager describe-secret \
     --output text \
     --region "$AWS_REGION" 2>/dev/null || echo "")
 
+GOOGLE_MAPS_CONFIGURED=$(aws secretsmanager describe-secret \
+    --secret-id "${PROJECT_NAME}/mcp/google-maps-credentials" \
+    --query 'Name' \
+    --output text \
+    --region "$AWS_REGION" 2>/dev/null || echo "")
+
 if [ -n "$TAVILY_CONFIGURED" ]; then
     echo "✅ Tavily API Key: Configured"
     echo "   Tools: tavily_search, tavily_extract"
@@ -239,6 +356,23 @@ else
 fi
 echo ""
 
+if [ -n "$GOOGLE_MAPS_CONFIGURED" ]; then
+    echo "✅ Google Maps Credentials: Configured"
+    echo "   Tools: search_places, search_nearby_places, get_place_details,"
+    echo "          get_directions, geocode_address, reverse_geocode"
+else
+    echo "⚠️  Google Maps Credentials: Not configured"
+    echo "   Tools disabled: search_places, search_nearby_places, get_place_details,"
+    echo "                   get_directions, geocode_address, reverse_geocode"
+    echo ""
+    echo "   To configure manually:"
+    echo "   aws secretsmanager put-secret-value \\"
+    echo "     --secret-id ${PROJECT_NAME}/mcp/google-maps-credentials \\"
+    echo "     --secret-string '{\"api_key\":\"YOUR_GOOGLE_MAPS_API_KEY\"}' \\"
+    echo "     --region $AWS_REGION"
+fi
+echo ""
+
 # API-key-free tools
 echo "✅ Wikipedia Tools: Always available"
 echo "   Tools: wikipedia_search, wikipedia_get_article"
@@ -257,4 +391,9 @@ echo ""
 echo "1. Test Gateway: bash scripts/test-gateway.sh"
 echo "2. Update AgentCore Runtime to use Gateway URL"
 echo "3. Configure missing API keys if needed (see above)"
+echo ""
+echo "💡 Troubleshooting:"
+echo "   If Lambda functions show 'No module named' errors:"
+echo "   - Run: ./scripts/deploy.sh --force-rebuild"
+echo "   - This will rebuild all Lambda packages with fresh dependencies"
 echo ""

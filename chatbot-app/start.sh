@@ -76,6 +76,33 @@ else
     echo "Setting up local development defaults..."
 fi
 
+# Auto-fetch Google Maps API Key from Secrets Manager if not set
+if [ -z "$NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY" ] || [ "$NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY" = "your_google_maps_api_key_here" ]; then
+    if command -v aws &> /dev/null && aws sts get-caller-identity &> /dev/null 2>&1; then
+        echo "Fetching Google Maps API Key from Secrets Manager..."
+        AWS_REGION=${AWS_REGION:-us-west-2}
+        MAPS_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "strands-agent-chatbot/mcp/google-maps-credentials" \
+            --region "$AWS_REGION" \
+            --query 'SecretString' \
+            --output text 2>/dev/null || echo "")
+
+        if [ -n "$MAPS_SECRET" ]; then
+            MAPS_API_KEY=$(echo "$MAPS_SECRET" | jq -r '.api_key // empty' 2>/dev/null)
+            if [ -n "$MAPS_API_KEY" ]; then
+                export NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY="$MAPS_API_KEY"
+                echo "✓ Google Maps API Key loaded from Secrets Manager"
+            else
+                echo "⚠ Failed to parse Google Maps API Key from Secrets Manager"
+            fi
+        else
+            echo "⚠ Google Maps API Key not found in Secrets Manager (map embedding will not work)"
+        fi
+    else
+        echo "⚠ AWS CLI not configured - skipping Google Maps API Key fetch (map embedding will not work)"
+    fi
+fi
+
 # Start AgentCore Runtime (port 8080)
 cd src
 env $(grep -v '^#' "$MASTER_ENV_FILE" 2>/dev/null | xargs) ../venv/bin/python main.py > "$CHATBOT_APP_ROOT/agentcore.log" 2>&1 &

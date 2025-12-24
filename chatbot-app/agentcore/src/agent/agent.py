@@ -608,6 +608,14 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             if tool_id in TOOL_REGISTRY:
                 # Local tool
                 filtered_tools.append(TOOL_REGISTRY[tool_id])
+            elif tool_id.startswith("gateway_") and tool_id.endswith("___show_on_map"):
+                # Special case: show_on_map is a local tool but grouped under gateway_targets
+                # Route to the local implementation
+                if "show_on_map" in TOOL_REGISTRY:
+                    filtered_tools.append(TOOL_REGISTRY["show_on_map"])
+                    logger.info(f"Routing {tool_id} to local show_on_map tool")
+                else:
+                    logger.warning(f"show_on_map not found in local TOOL_REGISTRY")
             elif tool_id.startswith("gateway_"):
                 # Gateway MCP tool - collect for filtering
                 gateway_tool_ids.append(tool_id)

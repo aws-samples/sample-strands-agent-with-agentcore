@@ -16,6 +16,7 @@ export class GatewayIamStack extends cdk.Stack {
   public readonly gatewayRole: iam.Role
   public readonly tavilyApiKeySecret: secretsmanager.ISecret
   public readonly googleCredentialsSecret: secretsmanager.ISecret
+  public readonly googleMapsCredentialsSecret: secretsmanager.ISecret
 
   constructor(scope: Construct, id: string, props: GatewayIamStackProps) {
     super(scope, id, props)
@@ -38,6 +39,13 @@ export class GatewayIamStack extends cdk.Stack {
       this,
       'GoogleCredentials',
       `${projectName}/mcp/google-credentials`
+    )
+
+    // Google Maps API Credentials Secret - Import existing secret
+    this.googleMapsCredentialsSecret = secretsmanager.Secret.fromSecretNameV2(
+      this,
+      'GoogleMapsCredentials',
+      `${projectName}/mcp/google-maps-credentials`
     )
 
     // ============================================================
@@ -63,7 +71,8 @@ export class GatewayIamStack extends cdk.Stack {
         actions: ['secretsmanager:GetSecretValue'],
         resources: [
           `${this.tavilyApiKeySecret.secretArn}*`,
-          `${this.googleCredentialsSecret.secretArn}*`
+          `${this.googleCredentialsSecret.secretArn}*`,
+          `${this.googleMapsCredentialsSecret.secretArn}*`
         ],
       })
     )
@@ -136,11 +145,17 @@ export class GatewayIamStack extends cdk.Stack {
       description: 'Google Credentials Secret ARN',
     })
 
+    new cdk.CfnOutput(this, 'GoogleMapsSecretArn', {
+      value: this.googleMapsCredentialsSecret.secretArn,
+      description: 'Google Maps Credentials Secret ARN',
+    })
+
     new cdk.CfnOutput(this, 'SecretsSetupInstructions', {
       value: `
 To set API keys, run:
 aws secretsmanager put-secret-value --secret-id ${this.tavilyApiKeySecret.secretName} --secret-string "YOUR_TAVILY_API_KEY"
 aws secretsmanager put-secret-value --secret-id ${this.googleCredentialsSecret.secretName} --secret-string '{"api_key":"YOUR_API_KEY","search_engine_id":"YOUR_ENGINE_ID"}'
+aws secretsmanager put-secret-value --secret-id ${this.googleMapsCredentialsSecret.secretName} --secret-string '{"api_key":"YOUR_GOOGLE_MAPS_API_KEY"}'
       `.trim(),
       description: 'Instructions for setting API keys',
     })
