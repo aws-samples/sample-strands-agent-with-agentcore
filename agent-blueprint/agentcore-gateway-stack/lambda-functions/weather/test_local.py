@@ -31,11 +31,12 @@ def test_get_today_weather():
     context = MockContext('get_today_weather')
     result = lambda_handler(event, context)
 
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
+    # Print summary instead of full result to avoid logging sensitive data
     if 'error' not in result:
+        print(f"✅ Success: {result.get('location', {}).get('name')} - {result.get('current_weather', {}).get('temperature')}°C")
         print("\n✅ Test passed!")
     else:
+        print(f"❌ Error: {result.get('error')}")
         print("\n❌ Test failed!")
 
     return result
@@ -55,11 +56,13 @@ def test_get_weather_forecast():
     context = MockContext('get_weather_forecast')
     result = lambda_handler(event, context)
 
-    print(json.dumps(result, indent=2, ensure_ascii=False))
-
+    # Print summary instead of full result to avoid logging sensitive data
     if 'error' not in result:
+        forecast = result.get('forecast', [])
+        print(f"✅ Success: {result.get('location', {}).get('name')} - {len(forecast)} days forecast")
         print("\n✅ Test passed!")
     else:
+        print(f"❌ Error: {result.get('error')}")
         print("\n❌ Test failed!")
 
     return result

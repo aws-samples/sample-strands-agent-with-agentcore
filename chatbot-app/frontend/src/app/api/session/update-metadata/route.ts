@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[API] Updating metadata for message ${messageId} in session ${sessionId}`, metadata)
+    console.log(`[API] Updating metadata for message ${messageId} in session ${sessionId}:`, JSON.stringify(metadata))
 
     if (IS_LOCAL) {
       const { updateSession, getSession } = await import('@/lib/local-session-store')

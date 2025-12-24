@@ -362,6 +362,13 @@ export class ChatbotStack extends cdk.Stack {
         action: 'startBuild',
         parameters: {
           projectName: buildProject.projectName,
+          environmentVariablesOverride: [
+            {
+              name: 'DEPLOY_TIMESTAMP',
+              value: deployTimestamp,
+              type: 'PLAINTEXT',
+            },
+          ],
         },
         outputPaths: ['build.id'],
         physicalResourceId: cr.PhysicalResourceId.fromResponse('build.id'),
@@ -371,6 +378,13 @@ export class ChatbotStack extends cdk.Stack {
         action: 'startBuild',
         parameters: {
           projectName: buildProject.projectName,
+          environmentVariablesOverride: [
+            {
+              name: 'DEPLOY_TIMESTAMP',
+              value: deployTimestamp,
+              type: 'PLAINTEXT',
+            },
+          ],
         },
         outputPaths: ['build.id'],
         physicalResourceId: cr.PhysicalResourceId.fromResponse('build.id'),

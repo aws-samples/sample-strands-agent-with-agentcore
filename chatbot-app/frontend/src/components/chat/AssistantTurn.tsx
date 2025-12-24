@@ -423,21 +423,36 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                   {/* Generated Images for this text group */}
                   {item.images && item.images.length > 0 && (
                     <div className="mt-4 space-y-3">
-                      {item.images.map((image, idx) => (
-                        <div key={idx} className="relative group">
-                          <LazyImage
-                            src={`data:image/${image.format};base64,${image.data}`}
-                            alt={`Generated image ${idx + 1}`}
-                            className="max-w-full h-auto rounded-xl border border-slate-200 shadow-sm"
-                            style={{ maxHeight: '400px' }}
-                          />
-                          <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Badge variant="secondary" className="text-xs bg-black/70 text-white border-0">
-                              {image.format.toUpperCase()}
-                            </Badge>
+                      {item.images.map((image, idx) => {
+                        // Type guard for URL-based images
+                        const isUrlImage = 'type' in image && image.type === 'url';
+                        const imageSrc = isUrlImage
+                          ? (image.url || image.thumbnail || '')
+                          : 'data' in image
+                          ? `data:image/${image.format};base64,${image.data}`
+                          : '';
+                        const imageFormat = isUrlImage
+                          ? 'WEB'
+                          : 'format' in image
+                          ? (image.format || 'IMG').toUpperCase()
+                          : 'IMG';
+
+                        return (
+                          <div key={idx} className="relative group">
+                            <LazyImage
+                              src={imageSrc}
+                              alt={`Generated image ${idx + 1}`}
+                              className="max-w-full h-auto rounded-xl border border-slate-200 shadow-sm"
+                              style={{ maxHeight: '400px' }}
+                            />
+                            <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <Badge variant="secondary" className="text-xs bg-black/70 text-white border-0">
+                                {imageFormat}
+                              </Badge>
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>

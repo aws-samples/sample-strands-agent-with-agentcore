@@ -5,10 +5,10 @@ export interface ToolExecution {
   reasoning: string[]
   reasoningText?: string
   toolResult?: string
-  images?: Array<{
-    format: string
-    data: string
-  }>
+  images?: Array<
+    | { format: string; data: string }
+    | { type: 'url'; url: string; thumbnail?: string }
+  >
   isComplete: boolean
   isCancelled?: boolean
   isExpanded: boolean
@@ -22,10 +22,10 @@ export interface Message {
   timestamp: string
   isStreaming?: boolean
   toolExecutions?: ToolExecution[]
-  images?: Array<{
-    format: string
-    data: string
-  }>
+  images?: Array<
+    | { format: string; data: string }
+    | { type: 'url'; url: string; thumbnail?: string }
+  >
   documents?: Array<{
     filename: string
     tool_type: string  // 'word_document', 'powerpoint', etc.
