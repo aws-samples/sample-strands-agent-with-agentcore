@@ -11,6 +11,7 @@ import { JsonDisplay } from '@/components/ui/JsonDisplay'
 import { Markdown } from '@/components/ui/Markdown'
 import { LazyImage } from '@/components/ui/LazyImage'
 import { getApiUrl } from '@/config/environment'
+import type { ImageData } from '@/utils/imageExtractor'
 
 interface ToolExecutionContainerProps {
   toolExecutions: ToolExecution[]
@@ -640,28 +641,48 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                   {toolExecution.images
                     .filter((image) => {
                       // Filter to only valid images with actual URLs or data
-                      const isUrlImage = image.type === 'url' || image.url;
+                      const isUrlImage = 'type' in image && image.type === 'url';
                       const hasValidSource = isUrlImage
                         ? (image.thumbnail || image.url)
-                        : image.data;
+                        : ('data' in image && image.data);
                       return !!hasValidSource;
                     })
                     .slice(0, 3)
-                    .map((image, idx) => {
+                    .map((image: ImageData, idx: number) => {
                     // Handle URL-based images (Google search)
-                    const isUrlImage = image.type === 'url' || image.url;
+                    const isUrlImage = 'type' in image && image.type === 'url';
+
                     // Use high-resolution original image URL instead of thumbnail for better quality
-                    const imageSrc = isUrlImage
-                      ? (image.url || image.thumbnail)  // Prioritize original URL over thumbnail
-                      : `data:image/${image.format};base64,${typeof image.data === 'string' ? image.data : btoa(String.fromCharCode(...new Uint8Array(image.data)))}`;
+                    let imageSrc: string = '';
+                    if (isUrlImage) {
+                      imageSrc = image.url || image.thumbnail || '';
+                    } else if ('data' in image && 'format' in image) {
+                      const imageData = typeof image.data === 'string'
+                        ? image.data
+                        : btoa(String.fromCharCode(...new Uint8Array(image.data as ArrayBuffer)));
+                      imageSrc = `data:image/${image.format};base64,${imageData}`;
+                    }
+
+                    // Properly type-narrow for title and format based on image type
+                    let imageTitle: string = `Tool generated image ${idx + 1}`;
+                    if (isUrlImage && 'title' in image && typeof image.title === 'string') {
+                      imageTitle = image.title;
+                    }
+
+                    let imageFormat: string = 'IMG';
+                    if (isUrlImage) {
+                      imageFormat = 'WEB';
+                    } else if ('format' in image && typeof image.format === 'string') {
+                      imageFormat = image.format.toUpperCase();
+                    }
 
                     const handleClick = () => {
-                      if (isUrlImage && image.url) {
+                      if (isUrlImage && 'url' in image && image.url) {
                         // Open original URL in new tab
                         window.open(image.url, '_blank', 'noopener,noreferrer');
                       } else {
                         // Show modal for base64 images
-                        setSelectedImage({ src: imageSrc, alt: image.title || `Tool generated image ${idx + 1}` });
+                        setSelectedImage({ src: imageSrc, alt: imageTitle });
                       }
                     };
 
@@ -671,21 +692,23 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                         <div className="relative rounded-xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900 hover:scale-[1.02]" onClick={handleClick}>
                           <LazyImage
                             src={imageSrc}
-                            alt={image.title || `Tool generated image ${idx + 1}`}
+                            alt={imageTitle}
                             className="w-full h-[280px] object-cover"
                           />
 
                           {/* Badge Overlay - Always visible */}
                           <div className="absolute top-3 right-3">
-                            <Badge variant="secondary" className="text-xs font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1">
-                              {isUrlImage ? 'WEB' : (image.format || 'IMG').toUpperCase()}
-                            </Badge>
+                            <div className="text-xs font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1 rounded inline-block">
+                              {String(imageFormat)}
+                            </div>
                           </div>
 
                           {/* Title Overlay - Always visible at bottom */}
-                          {image.title && (
+                          {isUrlImage && 'title' in image && image.title && (
                             <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-4 pt-8">
-                              <p className="text-sm font-medium text-white line-clamp-2 leading-tight">{image.title}</p>
+                              <p className="text-sm font-medium text-white line-clamp-2 leading-tight">
+                                {image.title}
+                              </p>
                             </div>
                           )}
                         </div>

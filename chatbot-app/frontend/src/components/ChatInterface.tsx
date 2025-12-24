@@ -740,47 +740,61 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           {/* Model selector, keyboard shortcut hint and wide mode toggle */}
           <div className="mt-2 flex items-center justify-between text-sm text-muted-foreground/70">
             {/* Left: Model Selector, Tools, and Research Agent */}
-            <div className="flex items-center gap-0.5">
-              <ModelConfigDialog sessionId={sessionId} />
-              <ToolsDropdown
-                availableTools={availableTools}
-                onToggleTool={toggleTool}
-                disabled={isResearchEnabled || isAutopilotEnabled}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={toggleAutopilot}
-                disabled={isResearchEnabled}
-                className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
-                  isAutopilotEnabled
-                    ? 'bg-purple-500/20 text-purple-500 hover:bg-purple-500/30'
-                    : isResearchEnabled
-                    ? 'opacity-40 cursor-not-allowed'
-                    : 'hover:bg-muted-foreground/10'
-                }`}
-                title={isAutopilotEnabled ? 'Autopilot enabled - AI selects tools automatically' : 'Enable Autopilot'}
-              >
-                <Bot className="w-3.5 h-3.5" />
-                Autopilot
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={toggleResearchAgent}
-                className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
-                  isResearchEnabled
-                    ? 'bg-blue-500/20 text-blue-500 hover:bg-blue-500/30'
-                    : 'hover:bg-muted-foreground/10'
-                }`}
-                title={isResearchEnabled ? 'Research Agent enabled' : 'Enable Research Agent'}
-              >
-                <FlaskConical className="w-3.5 h-3.5" />
-                Research
-              </Button>
-            </div>
+            <TooltipProvider delayDuration={300}>
+              <div className="flex items-center gap-0.5">
+                <ModelConfigDialog sessionId={sessionId} />
+                <ToolsDropdown
+                  availableTools={availableTools}
+                  onToggleTool={toggleTool}
+                  disabled={isResearchEnabled || isAutopilotEnabled}
+                />
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleAutopilot}
+                      disabled={isResearchEnabled}
+                      className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
+                        isAutopilotEnabled
+                          ? 'bg-purple-500/20 text-purple-500 hover:bg-purple-500/30'
+                          : isResearchEnabled
+                          ? 'opacity-40 cursor-not-allowed'
+                          : 'hover:bg-muted-foreground/10'
+                      }`}
+                    >
+                      <Bot className="w-3.5 h-3.5" />
+                      Autopilot
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isAutopilotEnabled ? 'Autopilot mode active (Coming soon)' : 'AI selects tools automatically (Coming soon)'}</p>
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={toggleResearchAgent}
+                      className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
+                        isResearchEnabled
+                          ? 'bg-blue-500/20 text-blue-500 hover:bg-blue-500/30'
+                          : 'hover:bg-muted-foreground/10'
+                      }`}
+                    >
+                      <FlaskConical className="w-3.5 h-3.5" />
+                      Research
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isResearchEnabled ? 'Research mode active' : 'Conducts web research, cites sources, generates visualizations'}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+            </TooltipProvider>
 
             {/* Spacer */}
             <div className="flex-1"></div>

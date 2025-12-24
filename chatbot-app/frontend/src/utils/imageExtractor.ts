@@ -2,16 +2,9 @@
  * Image extraction utilities for AgentCore Memory blob handling
  */
 
-export interface ImageData {
-  format?: string
-  data?: string
-  type?: 'url' | 'base64'
-  url?: string
-  thumbnail?: string
-  title?: string
-  width?: number
-  height?: number
-}
+export type ImageData =
+  | { format: string; data: string }
+  | { type: 'url'; url: string; thumbnail?: string; title?: string; width?: number; height?: number }
 
 /**
  * Extract blob images from message, matched by toolUseId
@@ -110,15 +103,15 @@ export function extractToolResultImages(toolResult: any): ImageData[] {
         // Google search format: {query: "...", results: [...], images: [{link, thumbnail, ...}]}
         if (parsed.images && Array.isArray(parsed.images)) {
           parsed.images.forEach((img: any) => {
-            if (img.link || img.thumbnail) {
+            if (img.link) {
               images.push({
-                type: 'url',
-                url: img.link || '',
-                thumbnail: img.thumbnail || '',
-                title: img.title || '',
-                width: img.width || 0,
-                height: img.height || 0
-              } as any)
+                type: 'url' as const,
+                url: img.link,
+                thumbnail: img.thumbnail,
+                title: img.title,
+                width: img.width,
+                height: img.height
+              })
             }
           })
         }

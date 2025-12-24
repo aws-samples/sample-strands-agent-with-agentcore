@@ -148,22 +148,31 @@ export function ToolsDropdown({ availableTools, onToggleTool, disabled = false }
 
   return (
     <Popover open={isOpen && !disabled} onOpenChange={(open) => !disabled && setIsOpen(open)}>
-      <PopoverTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={disabled}
-          className={`h-7 px-3 transition-all duration-200 text-xs font-medium flex items-center gap-1.5 ${
-            disabled
-              ? 'opacity-40 cursor-not-allowed hover:bg-transparent'
-              : 'hover:bg-muted-foreground/10'
-          }`}
-        >
-          <Wrench className="w-3.5 h-3.5" />
-          Tools ({enabledCount})
-        </Button>
-      </PopoverTrigger>
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <PopoverTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={disabled}
+                className={`h-7 px-3 transition-all duration-200 text-xs font-medium flex items-center gap-1.5 ${
+                  disabled
+                    ? 'opacity-40 cursor-not-allowed hover:bg-transparent'
+                    : 'hover:bg-muted-foreground/10'
+                }`}
+              >
+                <Wrench className="w-3.5 h-3.5" />
+                Tools ({enabledCount})
+              </Button>
+            </PopoverTrigger>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>{disabled ? 'Tool selection disabled' : 'Select specific tools to enhance AI abilities'}</p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       <PopoverContent
         align="start"
         side="top"

@@ -211,9 +211,15 @@ async def test_get_place_details(place_id):
                     data = json.loads(content)
                     print(f"   Name: {data.get('name', 'N/A')}")
                     print(f"   Address: {data.get('formatted_address', 'N/A')}")
-                    print(f"   Phone: {data.get('formatted_phone_number', 'N/A')}")
+                    # Mask phone number for security
+                    phone = data.get('formatted_phone_number', 'N/A')
+                    masked_phone = phone[:3] + '****' + phone[-4:] if phone != 'N/A' and len(phone) > 7 else 'N/A'
+                    print(f"   Phone: {masked_phone}")
                     print(f"   Rating: {data.get('rating', 'N/A')} ({data.get('user_ratings_total', 0)} reviews)")
-                    print(f"   Website: {data.get('website', 'N/A')}")
+                    website = data.get('website', 'N/A')
+                    # Mask query parameters in website URL
+                    masked_website = website.split('?')[0] if '?' in website else website
+                    print(f"   Website: {masked_website}")
 
                     # Show opening hours
                     opening_hours = data.get('opening_hours')

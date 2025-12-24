@@ -174,7 +174,7 @@ def get_today_weather(event: Dict[str, Any]) -> Dict[str, Any]:
         }
 
         url = f"{WEATHER_API}?{urlencode(params)}"
-        logger.info(f"Weather request: {url}")
+        logger.info(f"Weather request for location: lat={lat}, lon={lon}")
 
         with urlopen(url, timeout=10) as response:
             weather_data = json.loads(response.read().decode('utf-8'))
@@ -280,7 +280,7 @@ def get_weather_forecast(event: Dict[str, Any]) -> Dict[str, Any]:
         }
 
         url = f"{WEATHER_API}?{urlencode(params)}"
-        logger.info(f"Forecast request: {url}")
+        logger.info(f"Forecast request for location: lat={lat}, lon={lon}, days={days}")
 
         with urlopen(url, timeout=10) as response:
             forecast_data = json.loads(response.read().decode('utf-8'))
