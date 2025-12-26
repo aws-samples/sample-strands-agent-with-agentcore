@@ -268,6 +268,7 @@ async def send_a2a_message(
         browser_id_from_stream = None  # Browser ID from artifact
         browser_session_event_sent = False  # Track if we've sent the event
         sent_browser_steps = set()  # Track sent browser steps to avoid duplicates
+        sent_screenshots = set()  # Track sent screenshots to avoid duplicates
         async with asyncio.timeout(AGENT_TIMEOUT):
             async for event in client.send_message(msg):
                 logger.debug(f"Received A2A event type: {type(event).__name__}")
@@ -354,10 +355,21 @@ async def send_a2a_message(
                         for artifact in task.artifacts:
                             artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
 
-                            if artifact_name == 'screenshot':
-                                logger.info(f"📸 [Screenshot] Found screenshot artifact")
+                            # Check for screenshot_N pattern (screenshot_1, screenshot_2, ...)
+                            if artifact_name.startswith('screenshot_'):
+                                # Skip if already processed (avoid duplicates)
+                                if artifact_name in sent_screenshots:
+                                    logger.debug(f"📸 [Screenshot] Skipping duplicate: {artifact_name}")
+                                    continue
 
-                                # Extract screenshot data and metadata
+                                logger.info(f"📸 [Screenshot] Found new screenshot artifact: {artifact_name}")
+
+                                # Extract metadata
+                                artifact_metadata = artifact.metadata if hasattr(artifact, 'metadata') else {}
+                                filename = artifact_metadata.get('filename', f'screenshot_{uuid4()}.png')
+                                description = artifact_metadata.get('description', 'Browser screenshot')
+
+                                # Extract screenshot data
                                 if hasattr(artifact, 'parts') and artifact.parts:
                                     for part in artifact.parts:
                                         # Get base64 screenshot data
@@ -368,12 +380,7 @@ async def send_a2a_message(
                                             screenshot_b64 = part.text
 
                                         if screenshot_b64:
-                                            # Extract metadata
-                                            metadata = artifact.metadata if hasattr(artifact, 'metadata') else {}
-                                            filename = metadata.get('filename', f'screenshot_{uuid4()}.png')
-                                            description = metadata.get('description', 'Browser screenshot')
-
-                                            logger.info(f"📸 [Screenshot] Processing: {filename} - {description}")
+                                            logger.info(f"📸 [Screenshot] Processing {artifact_name}: {filename} - {description}")
 
                                             try:
                                                 # Decode base64 to bytes
@@ -382,20 +389,30 @@ async def send_a2a_message(
 
                                                 # Save to workspace via ImageManager
                                                 from workspace import ImageManager
-                                                session_id = tool_context.invocation_state.get('session_id', 'unknown')
-                                                user_id = os.environ.get('USER_ID', 'default_user')
+                                                # Use session_id from function parameter (already available in send_a2a_message)
+                                                screenshot_session_id = session_id or 'unknown'
+                                                # Get user_id from artifact metadata (priority), then function metadata, then environment variable
+                                                # Use 'or' to skip None values and try next fallback
+                                                screenshot_user_id = (
+                                                    (artifact_metadata.get('user_id') if artifact_metadata else None)
+                                                    or (metadata.get('user_id') if metadata else None)
+                                                    or os.environ.get('USER_ID', 'default_user')
+                                                )
+                                                logger.info(f"📸 [Screenshot] Using user_id: {screenshot_user_id}, session_id: {screenshot_session_id}")
 
-                                                image_manager = ImageManager(user_id=user_id, session_id=session_id)
+                                                image_manager = ImageManager(user_id=screenshot_user_id, session_id=screenshot_session_id)
                                                 image_manager.save_to_s3(filename, screenshot_bytes)
 
-                                                logger.info(f"📸 [Screenshot] ✅ Saved to workspace: {filename}")
+                                                # Mark as sent to avoid duplicate processing (by artifact name)
+                                                sent_screenshots.add(artifact_name)
+                                                logger.info(f"📸 [Screenshot] ✅ Saved {artifact_name} to workspace: {filename}")
 
                                                 # Add text notification to response_text for LLM context
                                                 screenshot_notification = f"\n\n**📸 Screenshot Saved**\n- **Filename**: {filename}\n- **Description**: {description}\n"
                                                 response_text += screenshot_notification
 
                                             except Exception as e:
-                                                logger.error(f"📸 [Screenshot] ❌ Failed to save: {str(e)}")
+                                                logger.error(f"📸 [Screenshot] ❌ Failed to save {artifact_name}: {str(e)}")
                                                 error_notification = f"\n\n**📸 Screenshot Error**: Failed to save {filename}\n"
                                                 response_text += error_notification
 
@@ -636,13 +653,16 @@ def create_a2a_tool(agent_id: str):
 
             # ✅ Stream events from A2A agent
             async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata):
-                # Store browser_session_arn in invocation_state for frontend access
+                # Store browser_session_arn and browser_id in invocation_state for frontend access
                 if isinstance(event, dict):
                     if event.get("type") == "browser_session_detected":
                         browser_session_id = event.get("browserSessionId")
+                        browser_id = event.get("browserId")
                         if browser_session_id and tool_context:
                             tool_context.invocation_state['browser_session_arn'] = browser_session_id
+                            tool_context.invocation_state['browser_id'] = browser_id
                             logger.info(f"🔴 [Live View] Stored browser_session_arn in invocation_state: {browser_session_id}")
+                            logger.info(f"🔴 [Live View] Stored browser_id in invocation_state: {browser_id}")
 
                 yield event
 

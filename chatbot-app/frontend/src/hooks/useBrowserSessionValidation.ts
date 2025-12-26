@@ -82,7 +82,7 @@ export function useBrowserSessionValidation(
     }
 
     validateSession();
-  }, [chatSessionId, browserSession]);
+  }, [chatSessionId, browserSession?.sessionId, browserSession?.browserId]);
 
   return { isValid, isLoading };
 }

@@ -711,6 +711,13 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }))
 
     // Send interrupt response to backend (similar to sendMessage but with interruptResponse)
+    // For Research Agent or Browser Use Agent, override enabled tools to only include that agent
+    const overrideTools = isResearchInterrupt
+      ? ['agentcore_research-agent']
+      : isBrowserUseInterrupt
+      ? ['agentcore_browser-use-agent']
+      : undefined
+
     try {
       await apiSendMessage(
         JSON.stringify([{
@@ -724,7 +731,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         (error) => {
           console.error('[Interrupt] Error sending interrupt response:', error)
           setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
-        }
+        },
+        overrideTools // Override enabled tools for Research/Browser agents
       )
     } catch (error) {
       console.error('[Interrupt] Failed to respond to interrupt:', error)
