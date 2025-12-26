@@ -59,6 +59,9 @@ class SaveScreenshotParams(BaseModel):
 # Global reference to current browser session and updater (set during agent execution)
 _current_browser_context = None
 _current_updater = None
+_current_screenshot_b64 = None  # Last screenshot taken by browser-use
+_screenshot_queue = []  # Queue of screenshots to upload
+_screenshot_counter = 0  # Counter for unique screenshot artifact names
 
 def create_screenshot_tools():
     """Create Tools instance with custom screenshot action"""
@@ -79,47 +82,25 @@ def create_screenshot_tools():
         Returns:
             Confirmation message
         """
-        global _current_browser_context, _current_updater
+        global _current_screenshot_b64, _screenshot_queue
 
-        if not _current_browser_context or not _current_updater:
-            return "❌ Error: Browser session not available"
+        if not _current_screenshot_b64:
+            return "❌ Error: No screenshot available (browser may not have captured one yet)"
 
-        try:
-            # Validate filename
-            if not params.filename.lower().endswith('.png'):
-                params.filename = params.filename + '.png'
+        # Validate filename
+        if not params.filename.lower().endswith('.png'):
+            params.filename = params.filename + '.png'
 
-            # Take screenshot synchronously (will be run in async context by browser-use)
-            import asyncio
-            import base64
-            from datetime import datetime
+        # Queue screenshot for upload (will be processed in main async loop)
+        # This avoids creating new event loops which can interfere with WebSocket
+        _screenshot_queue.append({
+            'filename': params.filename,
+            'description': params.description,
+            'screenshot_b64': _current_screenshot_b64  # Copy current screenshot
+        })
 
-            # Get event loop and run screenshot coroutine
-            loop = asyncio.get_event_loop()
-
-            # Take screenshot using Page.screenshot()
-            page = _current_browser_context
-            screenshot_b64 = loop.run_until_complete(page.screenshot(format='png'))
-
-            # Send as artifact to main agent
-            loop.run_until_complete(_current_updater.add_artifact(
-                parts=[Part(root=TextPart(text=screenshot_b64))],
-                name="screenshot",
-                metadata={
-                    "filename": params.filename,
-                    "content_type": "image/png",
-                    "encoding": "base64",
-                    "description": params.description
-                }
-            ))
-
-            logger.info(f"✅ Screenshot saved: {params.filename} - {params.description}")
-            return f"✅ Screenshot saved: {params.filename}"
-
-        except Exception as e:
-            error_msg = f"❌ Failed to save screenshot: {str(e)}"
-            logger.error(error_msg)
-            return error_msg
+        logger.info(f"📸 Queued screenshot for upload: {params.filename} - {params.description}")
+        return f"✅ Screenshot queued: {params.filename}"
 
     return tools
 
@@ -154,6 +135,8 @@ class PatchedChatAWSBedrock(ChatAWSBedrock):
 
     def _format_tools_for_request(self, output_format: type[BaseModel]) -> list[dict[str, Any]]:
         """Format a Pydantic model as a tool for structured output."""
+        logger.info(f"🔧 PatchedChatAWSBedrock._format_tools_for_request called for {output_format.__name__}")
+
         schema = output_format.model_json_schema()
 
         # Resolve $ref references inline by merging $defs
@@ -189,6 +172,8 @@ class PatchedChatAWSBedrock(ChatAWSBedrock):
             'required': required
         }
 
+        logger.info(f"✅ PatchedChatAWSBedrock: Tool schema generated with {len(properties)} properties, {len(defs)} $defs resolved")
+
         return [
             {
                 'toolSpec': {
@@ -223,13 +208,17 @@ def get_or_create_llm(model_id: str) -> PatchedChatAWSBedrock:
         import boto3
         boto_session = boto3.Session(region_name=AWS_REGION)
 
-        llm_cache[model_id] = PatchedChatAWSBedrock(
+        llm_instance = PatchedChatAWSBedrock(
             model=model_id,
             aws_region=AWS_REGION,
-            temperature=0.7,
+            temperature=0.3,  # Lower temperature for more consistent structured output
             max_tokens=8192,
             session=boto_session,  # Pass boto3 session explicitly
         )
+        llm_cache[model_id] = llm_instance
+
+        # Log class name to verify PatchedChatAWSBedrock is being used
+        logger.info(f"✅ Created LLM instance: {llm_instance.__class__.__name__} (should be 'PatchedChatAWSBedrock')")
     else:
         logger.info(f"Reusing cached LLM client with model: {model_id}")
 
@@ -518,6 +507,10 @@ class BrowserUseAgentExecutor(AgentExecutor):
             context: A2A request context with messages and metadata
             event_queue: Event queue for streaming progress
         """
+        # Reset screenshot counter for each new task
+        global _screenshot_counter
+        _screenshot_counter = 0
+
         # Create task if not exists and enqueue (same as StrandsA2AExecutor)
         from a2a.utils import new_task
         task = context.current_task
@@ -549,6 +542,18 @@ class BrowserUseAgentExecutor(AgentExecutor):
                 raise ValueError("Empty task text")
 
             logger.info(f"Received browser task: {task_text[:100]}...")
+
+            # Wrap task with screenshot instructions at the BEGINNING for high attention weight
+            wrapped_task = f"""CRITICAL REQUIREMENTS - READ FIRST:
+- You MUST take screenshots at key milestones using save_screenshot action
+- Required screenshots: search results, completed forms, important pages, final state
+- Call save_screenshot(filename="descriptive-name.png", description="what this shows")
+- Screenshots are essential for task verification
+
+TASK:
+{task_text}"""
+
+            logger.info(f"✅ Wrapped task with screenshot requirements (positioned at start)")
 
             # Extract metadata from RequestContext
             # Try both params.metadata (MessageSendParams) and message.metadata (Message)
@@ -623,7 +628,7 @@ class BrowserUseAgentExecutor(AgentExecutor):
             # Create browser-use agent (SINGLE LLM LAYER!)
             logger.info(f"Starting browser-use agent with model {model_id}")
             agent = BrowserUseAgent(
-                task=task_text,
+                task=wrapped_task,  # Use wrapped task with screenshot requirements
                 llm=llm,
                 browser_session=browser_session,  # Use browser_session parameter
                 tools=screenshot_tools,  # Add custom screenshot action
@@ -631,20 +636,6 @@ class BrowserUseAgentExecutor(AgentExecutor):
                 llm_screenshot_size=(1536, 1296),  # Match viewport to avoid scaling overhead
                 use_vision='auto',  # Enable vision mode to allow screenshot action
                 use_judge=False,  # Disable Judge - rely on agent's own completion signal
-                extend_system_message="""
-<screenshot_capture>
-**IMPORTANT**: Use save_screenshot action to capture important pages and states:
-- Search results pages
-- Completed forms before submission
-- Final result pages
-- Any page with critical information
-
-Call save_screenshot with:
-- filename: Descriptive name ending with .png (e.g., "search-results.png")
-- description: What the screenshot shows (e.g., "Product search results")
-
-Screenshots are automatically saved to workspace.
-</screenshot_capture>""",
             )
 
             # Set global variables for custom action access
@@ -660,6 +651,23 @@ Screenshots are automatically saved to workspace.
                 pass
             agent.close = noop_close
 
+            # Hook into browser_session to intercept screenshots from browser-use
+            # This captures the screenshot that browser-use already took, avoiding duplicate work
+            original_get_browser_state = browser_session.get_browser_state_summary
+
+            async def hooked_get_browser_state(**kwargs):
+                """Intercept browser state to capture screenshot before it's discarded"""
+                global _current_screenshot_b64
+                result = await original_get_browser_state(**kwargs)
+                # Capture screenshot if browser-use took one
+                if result.screenshot:
+                    _current_screenshot_b64 = result.screenshot
+                    logger.debug(f"📸 Captured screenshot from browser-use (length: {len(result.screenshot)})")
+                return result
+
+            # Use object.__setattr__ to bypass Pydantic validation
+            object.__setattr__(browser_session, 'get_browser_state_summary', hooked_get_browser_state)
+
             # Execute autonomously with REAL-TIME step streaming
             # Run agent in background while monitoring history
             async def run_agent():
@@ -670,9 +678,35 @@ Screenshots are automatically saved to workspace.
             # Track sent steps to avoid duplicates
             sent_step_numbers = set()
 
+            # Declare global variables for screenshot management
+            global _screenshot_queue
+
             # Monitor history and stream steps in real-time
             while not agent_task.done():
                 await asyncio.sleep(2)  # Check every 2 seconds
+
+                # Screenshot is now captured by hook above - no need to take new screenshot
+
+                # Process screenshot upload queue
+                while _screenshot_queue:
+                    item = _screenshot_queue.pop(0)
+                    try:
+                        _screenshot_counter += 1
+                        await updater.add_artifact(
+                            parts=[Part(root=TextPart(text=item['screenshot_b64']))],
+                            name=f"screenshot_{_screenshot_counter}",
+                            metadata={
+                                "filename": item['filename'],
+                                "content_type": "image/png",
+                                "encoding": "base64",
+                                "description": item['description'],
+                                "user_id": user_id,
+                                "session_id": session_id
+                            }
+                        )
+                        logger.info(f"✅ Uploaded screenshot_{_screenshot_counter}: {item['filename']}")
+                    except Exception as e:
+                        logger.error(f"Failed to upload screenshot {item['filename']}: {e}")
 
                 # Check if agent has history
                 if hasattr(agent, 'history') and agent.history and hasattr(agent.history, 'history'):
@@ -693,6 +727,27 @@ Screenshots are automatically saved to workspace.
 
             # Get final result
             history = await agent_task
+
+            # Process any remaining screenshots in queue
+            while _screenshot_queue:
+                item = _screenshot_queue.pop(0)
+                try:
+                    _screenshot_counter += 1
+                    await updater.add_artifact(
+                        parts=[Part(root=TextPart(text=item['screenshot_b64']))],
+                        name=f"screenshot_{_screenshot_counter}",
+                        metadata={
+                            "filename": item['filename'],
+                            "content_type": "image/png",
+                            "encoding": "base64",
+                            "description": item['description'],
+                            "user_id": user_id,
+                            "session_id": session_id
+                        }
+                    )
+                    logger.info(f"✅ Uploaded final screenshot_{_screenshot_counter}: {item['filename']}")
+                except Exception as e:
+                    logger.error(f"Failed to upload final screenshot {item['filename']}: {e}")
 
             # Send any remaining steps that were added after last loop iteration
             if hasattr(agent, 'history') and agent.history and hasattr(agent.history, 'history'):

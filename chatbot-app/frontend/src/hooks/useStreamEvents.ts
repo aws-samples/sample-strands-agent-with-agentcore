@@ -147,9 +147,7 @@ export const useStreamEvents = ({
       }
 
       // Finalize current streaming message before adding tool
-      // This separates pre-tool response from post-tool response
       if (streamingStartedRef.current && streamingIdRef.current) {
-        // Save TTFT to the first message before finalizing
         const ttft = uiState.latencyMetrics.timeToFirstToken
         setMessages(prevMsgs => prevMsgs.map(msg => {
           if (msg.id === streamingIdRef.current) {
@@ -162,7 +160,7 @@ export const useStreamEvents = ({
           return msg
         }))
 
-        // Reset streaming refs so next response creates a new message
+        // Reset refs so next response creates a new message (maintains correct order)
         streamingStartedRef.current = false
         streamingIdRef.current = null
       }
@@ -262,31 +260,26 @@ export const useStreamEvents = ({
       currentToolExecutionsRef.current = updatedExecutions
 
       // Extract browser session info from metadata (for Live View)
+      // Only set on first browser tool use to prevent unnecessary DCV reconnections
       const browserSessionUpdate: any = {}
-      if (data.metadata?.browserSessionId) {
-        console.log('[Live View] Browser session detected:', {
+      if (!sessionState.browserSession && data.metadata?.browserSessionId) {
+        console.log('[Live View] Browser session detected (first time):', {
           sessionId: data.metadata.browserSessionId,
-          browserId: data.metadata.browserId,
-          liveViewUrl: data.metadata.liveViewUrl ? 'present' : 'missing'
+          browserId: data.metadata.browserId
         })
 
-        // Store browser session info (URL will be fetched on-demand when View Browser is clicked)
         const browserSession = {
           sessionId: data.metadata.browserSessionId,
           browserId: data.metadata.browserId || null
         }
 
-        // Save browserSession for this session
         browserSessionUpdate.browserSession = browserSession
 
-        // Save to DynamoDB session metadata
+        // Save to sessionStorage and DynamoDB (only on first set)
         const currentSessionId = sessionStorage.getItem('chat-session-id')
         if (currentSessionId) {
-          // Save to sessionStorage as cache
           sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
 
-          // Save to DynamoDB (async, don't block UI)
-          // Use IIFE to handle async auth within sync callback
           ;(async () => {
             const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
             try {
@@ -313,53 +306,35 @@ export const useStreamEvents = ({
             console.log('[Live View] Saved browserSession for session:', currentSessionId)
           })()
         }
-      } else {
-        console.log('[Live View] No browser session in metadata:', data.metadata)
       }
 
-      // Update state - Use immediate updates for visualization tools (maps, charts)
-      // to ensure live rendering, use startTransition for others to prevent flickering
-      const isVisualizationTool = data.result &&
-        (data.result.includes('"map_data"') || data.result.includes('"chart_data"'))
+      // Update state immediately to prevent race conditions with subsequent response events
+      setSessionState(prev => {
+        const newState = {
+          ...prev,
+          toolExecutions: updatedExecutions,
+          ...browserSessionUpdate
+        }
+        if (browserSessionUpdate.browserSession) {
+          console.log('[Live View] State updated with browser session:', newState.browserSession)
+        }
+        return newState
+      })
 
-      const updateStates = () => {
-        setSessionState(prev => {
-          const newState = {
-            ...prev,
-            toolExecutions: updatedExecutions,
-            ...browserSessionUpdate
+      setMessages(prev => prev.map(msg => {
+        if (msg.isToolMessage && msg.toolExecutions) {
+          const updatedToolExecutions = msg.toolExecutions.map(tool =>
+            tool.id === data.toolUseId
+              ? { ...tool, toolResult: data.result, images: data.images, isComplete: true }
+              : tool
+          )
+          return {
+            ...msg,
+            toolExecutions: updatedToolExecutions
           }
-          if (browserSessionUpdate.browserSession) {
-            console.log('[Live View] State updated with browser session:', newState.browserSession)
-          }
-          return newState
-        })
-
-        // Update tool message
-        setMessages(prev => prev.map(msg => {
-          if (msg.isToolMessage && msg.toolExecutions) {
-            const updatedToolExecutions = msg.toolExecutions.map(tool =>
-              tool.id === data.toolUseId
-                ? { ...tool, toolResult: data.result, images: data.images, isComplete: true }
-                : tool
-            )
-            // Documents are sent in complete event only (not in tool_result)
-            return {
-              ...msg,
-              toolExecutions: updatedToolExecutions
-            }
-          }
-          return msg
-        }))
-      }
-
-      // Immediate update for visualization tools, batched update for others
-      if (isVisualizationTool) {
-        console.log('[ToolResult] Immediate update for visualization tool')
-        updateStates()
-      } else {
-        startTransition(updateStates)
-      }
+        }
+        return msg
+      }))
     }
   }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages])
 
@@ -622,31 +597,38 @@ export const useStreamEvents = ({
         break
       case 'metadata':
         // Handle metadata updates (e.g., browser session during tool execution)
+        // Only set on first metadata event to prevent unnecessary DCV reconnections
         if (event.metadata?.browserSessionId) {
-          console.log('[Live View] Received metadata event:', {
-            browserSessionId: event.metadata.browserSessionId,
-            browserId: event.metadata.browserId || 'not provided'
+          const metadata = event.metadata
+          setSessionState(prev => {
+            if (prev.browserSession) {
+              return prev
+            }
+
+            console.log('[Live View] Received metadata event (first time):', {
+              browserSessionId: metadata.browserSessionId,
+              browserId: metadata.browserId || 'not provided'
+            })
+
+            const browserSession = {
+              sessionId: metadata.browserSessionId,
+              browserId: metadata.browserId || null
+            }
+
+            // Save to sessionStorage (only on first set)
+            const currentSessionId = sessionStorage.getItem('chat-session-id')
+            if (currentSessionId) {
+              sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
+              console.log('[Live View] Saved browserSession to sessionStorage:', currentSessionId)
+            }
+
+            console.log('[Live View] ✅ Browser session set - Live View now available!', browserSession)
+
+            return {
+              ...prev,
+              browserSession
+            } as ChatSessionState
           })
-
-          const browserSession = {
-            sessionId: event.metadata.browserSessionId,
-            browserId: event.metadata.browserId || null
-          }
-
-          // Update session state immediately
-          setSessionState(prev => ({
-            ...prev,
-            browserSession
-          }))
-
-          // Save to sessionStorage
-          const currentSessionId = sessionStorage.getItem('chat-session-id')
-          if (currentSessionId) {
-            sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
-            console.log('[Live View] Saved browserSession to sessionStorage:', currentSessionId)
-          }
-
-          console.log('[Live View] ✅ Browser session updated - Live View now available!', browserSession)
         }
         break
     }

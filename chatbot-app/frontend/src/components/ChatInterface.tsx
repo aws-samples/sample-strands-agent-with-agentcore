@@ -258,7 +258,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 // Completed with result
                 const resultText = researchExecution.toolResult.toLowerCase()
                 const isError = researchExecution.isCancelled || resultText.includes('error:') || resultText.includes('failed:')
-                const isDeclined = resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')
+                // Match exact declined message from ResearchApprovalHook
+                const isDeclined = resultText === 'user declined to proceed with research' ||
+                                  resultText === 'user declined to proceed with browser automation'
 
                 let status: 'complete' | 'error' | 'declined' = 'complete'
                 if (isError) {

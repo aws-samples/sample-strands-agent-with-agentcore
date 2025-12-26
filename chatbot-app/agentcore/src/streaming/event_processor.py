@@ -523,7 +523,11 @@ class StreamEventProcessor:
                                     if "metadata" not in tool_result:
                                         tool_result["metadata"] = {}
                                     tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
+                                    if 'browser_id' in self.invocation_state:
+                                        tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
                                     logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
+                                    if 'browser_id' in self.invocation_state:
+                                        logger.info(f"[Live View] Added browserId to tool result metadata: {self.invocation_state['browser_id']}")
 
                                 # Collect documents from tool result (for complete event)
                                 if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
@@ -551,7 +555,11 @@ class StreamEventProcessor:
                                     if "metadata" not in tool_result:
                                         tool_result["metadata"] = {}
                                     tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
+                                    if 'browser_id' in self.invocation_state:
+                                        tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
                                     logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
+                                    if 'browser_id' in self.invocation_state:
+                                        logger.info(f"[Live View] Added browserId to tool result metadata: {self.invocation_state['browser_id']}")
 
                                 # Collect documents from tool result (for complete event)
                                 if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
@@ -574,7 +582,11 @@ class StreamEventProcessor:
                                 if "metadata" not in tool_result:
                                     tool_result["metadata"] = {}
                                 tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
+                                if 'browser_id' in self.invocation_state:
+                                    tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
                                 logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
+                                if 'browser_id' in self.invocation_state:
+                                    logger.info(f"[Live View] Added browserId to tool result metadata: {self.invocation_state['browser_id']}")
 
                             # Collect documents from tool result (for complete event)
                             if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:

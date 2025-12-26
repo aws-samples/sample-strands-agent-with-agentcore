@@ -1783,7 +1783,7 @@ def update_slide_notes(
 @tool(context=True)
 def create_presentation(
     presentation_name: str,
-    outline: dict | None,
+    outline: dict | str | None,
     template_name: str | None,
     tool_context: ToolContext,
     theme: str | None = None
@@ -1793,6 +1793,7 @@ def create_presentation(
     Args:
         presentation_name: Output presentation name WITHOUT extension
         outline: Structured outline dict (None for blank)
+                 IMPORTANT: Must be valid JSON - NO trailing commas, NO comments
                  Format: {
                      "title": str,
                      "subtitle": str,
@@ -1882,6 +1883,44 @@ chart = slide.shapes.add_chart(
     try:
         logger.info("=== create_presentation called ===")
         logger.info(f"Name: {presentation_name}, Has outline: {outline is not None}")
+
+        # Parse outline if it's a JSON string (LLM sometimes sends JSON as string)
+        if isinstance(outline, str):
+            import json
+            import re
+
+            logger.info(f"Received outline as string, length: {len(outline)}")
+            logger.debug(f"Outline string (first 500 chars): {outline[:500]}")
+
+            try:
+                # Try standard JSON parsing first
+                outline = json.loads(outline)
+                logger.info("Successfully parsed outline from JSON string")
+            except json.JSONDecodeError as e:
+                # Try fixing common JSON issues
+                logger.warning(f"Initial JSON parse failed: {str(e)}, attempting fixes...")
+
+                try:
+                    # Remove trailing commas before ] or }
+                    fixed_json = re.sub(r',(\s*[}\]])', r'\1', outline)
+
+                    # Remove comments (// style)
+                    fixed_json = re.sub(r'//.*?$', '', fixed_json, flags=re.MULTILINE)
+
+                    # Try parsing again
+                    outline = json.loads(fixed_json)
+                    logger.info("Successfully parsed outline after fixing JSON issues")
+                except json.JSONDecodeError as e2:
+                    # Log the problematic JSON for debugging
+                    logger.error(f"JSON parse failed even after fixes. Error: {str(e2)}")
+                    logger.error(f"Problematic JSON snippet around error position: {outline[max(0, e2.pos-50):min(len(outline), e2.pos+50)]}")
+
+                    return {
+                        "content": [{
+                            "text": f"❌ **Invalid JSON format for outline**\n\nError: {str(e2)}\n\n**Position**: Line {e2.lineno}, Column {e2.colno}\n\n**Hint**: Check for trailing commas, unescaped quotes, or invalid characters around the error position.\n\nPlease provide a valid JSON object."
+                        }],
+                        "status": "error"
+                    }
 
         # Validate name
         is_valid, error_msg = _validate_presentation_name(presentation_name)

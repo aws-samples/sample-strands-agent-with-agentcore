@@ -35,7 +35,7 @@ interface UseChatAPIReturn {
   loadTools: () => Promise<void>
   toggleTool: (toolId: string) => Promise<void>
   newChat: () => Promise<boolean>
-  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void) => Promise<void>
+  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[]) => Promise<void>
   cleanup: () => void
   isLoadingTools: boolean
   loadSession: (sessionId: string) => Promise<SessionPreferences | null>
@@ -286,7 +286,8 @@ export const useChatAPI = ({
     messageToSend: string,
     files?: File[],
     onSuccess?: () => void,
-    onError?: (error: string) => void
+    onError?: (error: string) => void,
+    overrideEnabledTools?: string[] // Override enabled tools (for Research Agent interrupt)
   ) => {
     // Update last activity timestamp (for session timeout tracking)
     updateLastActivity()
@@ -308,24 +309,41 @@ export const useChatAPI = ({
       // Extract enabled tool IDs (including nested tools from groups)
       const enabledToolIds: string[] = []
 
-      availableTools.forEach(tool => {
-        // Check if this is a grouped tool with nested tools
-        if ((tool as any).isDynamic && (tool as any).tools) {
-          // Add enabled nested tools
-          const nestedTools = (tool as any).tools || []
-          nestedTools.forEach((nestedTool: any) => {
-            if (nestedTool.enabled) {
-              enabledToolIds.push(nestedTool.id)
-            }
-          })
-        } else if (tool.enabled && !tool.id.startsWith('gateway_')) {
-          // Add regular enabled tools (exclude gateway prefix)
-          enabledToolIds.push(tool.id)
-        }
-      })
+      // If overrideEnabledTools is provided, use it instead of availableTools
+      if (overrideEnabledTools) {
+        enabledToolIds.push(...overrideEnabledTools)
+      } else {
+        availableTools.forEach(tool => {
+          // Check if this is a grouped tool with nested tools
+          if ((tool as any).isDynamic && (tool as any).tools) {
+            // Add enabled nested tools
+            const nestedTools = (tool as any).tools || []
+            nestedTools.forEach((nestedTool: any) => {
+              if (nestedTool.enabled) {
+                enabledToolIds.push(nestedTool.id)
+              }
+            })
+          } else if (tool.enabled && !tool.id.startsWith('gateway_')) {
+            // Add regular enabled tools (exclude gateway prefix)
+            enabledToolIds.push(tool.id)
+          }
+        })
+      }
 
-      // Combine with Gateway tool IDs (from props)
-      const allEnabledToolIds = [...enabledToolIds, ...gatewayToolIds]
+      // Combine with Gateway tool IDs (from props) - skip if overriding
+      let allEnabledToolIds = overrideEnabledTools
+        ? [...enabledToolIds]
+        : [...enabledToolIds, ...gatewayToolIds]
+
+      // Tool Gating: If research_agent is enabled, disable all other tools
+      // Note: browser_use_agent can run alongside other tools
+      const hasResearchAgent = allEnabledToolIds.includes('agentcore_research-agent')
+
+      if (hasResearchAgent) {
+        // Only allow research_agent, disable all others
+        allEnabledToolIds = ['agentcore_research-agent']
+        logger.info(`🔒 Tool gating: Research Agent active - all other tools disabled`)
+      }
 
       logger.info(`Sending message with ${allEnabledToolIds.length} enabled tools (${enabledToolIds.length} local + ${gatewayToolIds.length} gateway)${files && files.length > 0 ? ` and ${files.length} files` : ''}`)
 

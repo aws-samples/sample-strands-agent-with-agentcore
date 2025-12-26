@@ -302,10 +302,11 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       status={
                         researchExecution.isComplete
                           ? (() => {
-                              // Check both isCancelled flag and tool result text for decline detection
+                              // Check both isCancelled flag and exact declined message from ResearchApprovalHook
                               if (researchExecution.isCancelled) return 'declined'
                               const resultText = (researchExecution.toolResult || '').toLowerCase()
-                              if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) {
+                              if (resultText === 'user declined to proceed with research' ||
+                                  resultText === 'user declined to proceed with browser automation') {
                                 return 'declined'
                               }
                               return 'complete'
@@ -319,15 +320,17 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                         if (!researchExecution.toolResult) return false
                         if (researchExecution.isCancelled) return false
                         const resultText = (researchExecution.toolResult || '').toLowerCase()
-                        return !(resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel'))
+                        return !(resultText === 'user declined to proceed with research' ||
+                                resultText === 'user declined to proceed with browser automation')
                       })()}
                       onClick={() => {
                         if (!onResearchClick || !researchExecution.toolResult) return
 
-                        // Check both isCancelled flag and tool result text
+                        // Check both isCancelled flag and exact declined message
                         if (researchExecution.isCancelled) return
                         const resultText = (researchExecution.toolResult || '').toLowerCase()
-                        if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) return
+                        if (resultText === 'user declined to proceed with research' ||
+                            resultText === 'user declined to proceed with browser automation') return
 
                         onResearchClick(researchExecution.id)
                       }}
@@ -342,10 +345,11 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       status={
                         browserExecution.isComplete
                           ? (() => {
-                              // Check for declined first (matching Research Agent pattern)
+                              // Check for exact declined message from ResearchApprovalHook
                               if (browserExecution.isCancelled) return 'declined'
                               const resultText = (browserExecution.toolResult || '').toLowerCase()
-                              if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) {
+                              if (resultText === 'user declined to proceed with research' ||
+                                  resultText === 'user declined to proceed with browser automation') {
                                 return 'declined'
                               }
                               // Then check for errors
@@ -360,11 +364,12 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       }
                       isLoading={!browserExecution.isComplete}
                       hasResult={(() => {
-                        // No result if task was declined/cancelled
+                        // No result if task was declined
                         if (browserExecution.isCancelled) return false
                         if (browserExecution.toolResult) {
                           const resultText = browserExecution.toolResult.toLowerCase()
-                          if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) {
+                          if (resultText === 'user declined to proceed with research' ||
+                              resultText === 'user declined to proceed with browser automation') {
                             return false
                           }
                         }
@@ -385,11 +390,12 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       onClick={() => {
                         if (!onBrowserClick) return
 
-                        // Block if declined/cancelled
+                        // Block if declined
                         if (browserExecution.isCancelled) return
                         if (browserExecution.toolResult) {
                           const resultText = browserExecution.toolResult.toLowerCase()
-                          if (resultText.includes('declined') || resultText.includes('cancelled') || resultText.includes('cancel')) return
+                          if (resultText === 'user declined to proceed with research' ||
+                              resultText === 'user declined to proceed with browser automation') return
                         }
 
                         // Block if failed

@@ -75,6 +75,7 @@ export function BrowserLiveViewModal({
 
   // Connect to Live View
   useEffect(() => {
+    console.log('[BrowserLiveViewModal] useEffect triggered:', { isOpen, dcvLoaded, sessionId, browserId });
     if (!isOpen || !dcvLoaded || !sessionId || !browserId) return;
 
     // TypeScript type narrowing - both sessionId and browserId are guaranteed to be non-null here
@@ -175,35 +176,36 @@ export function BrowserLiveViewModal({
                 observers: {
                   httpExtraSearchParams: httpExtraSearchParams,
                   displayLayout: (serverWidth: number, serverHeight: number) => {
-                    // Scale the display to fit the modal container
+                    // Scale the display to fill the modal container
                     const display = document.getElementById('dcv-display-container');
-                    if (display) {
-                      // Get the viewport size directly
-                      const viewportWidth = window.innerWidth;
-                      const viewportHeight = window.innerHeight;
+                    if (display && display.parentElement) {
+                      // Get actual parent container dimensions
+                      const parent = display.parentElement;
+                      const parentRect = parent.getBoundingClientRect();
 
-                      // Calculate modal size (95vw x 95vh)
-                      const modalWidth = viewportWidth * 0.95;
-                      const modalHeight = viewportHeight * 0.95;
+                      const availableWidth = parentRect.width;
+                      const availableHeight = parentRect.height;
 
-                      // Subtract header height
-                      const availableWidth = modalWidth;
-                      const availableHeight = modalHeight - 60;
-
-                      // Calculate scale to fit
+                      // Calculate scale to fill container
                       const scaleX = availableWidth / serverWidth;
                       const scaleY = availableHeight / serverHeight;
-                      const scale = Math.min(scaleX, scaleY, 1); // Don't scale up
+                      const scale = Math.min(scaleX, scaleY);
 
-                      // Apply scaling - center origin for better visual alignment
+                      const scaledWidth = serverWidth * scale;
+                      const scaledHeight = serverHeight * scale;
+
+                      // Position display absolutely and center it
                       display.style.width = `${serverWidth}px`;
                       display.style.height = `${serverHeight}px`;
                       display.style.transform = `scale(${scale})`;
                       display.style.transformOrigin = 'center center';
+                      display.style.position = 'absolute';
+                      display.style.left = '50%';
+                      display.style.top = '50%';
+                      display.style.marginLeft = `-${serverWidth / 2}px`;
+                      display.style.marginTop = `-${serverHeight / 2}px`;
 
-                      const browserRatio = (serverWidth / serverHeight).toFixed(2);
-                      const modalRatio = (availableWidth / availableHeight).toFixed(2);
-                      console.log(`[DCV] Browser: ${serverWidth}x${serverHeight} (${browserRatio}:1), Modal: ${availableWidth.toFixed(0)}x${availableHeight.toFixed(0)} (${modalRatio}:1), Scale: ${scale.toFixed(3)} (scaleX: ${scaleX.toFixed(3)}, scaleY: ${scaleY.toFixed(3)})`);
+                      console.log(`[DCV] Browser: ${serverWidth}x${serverHeight}, Container: ${availableWidth.toFixed(0)}x${availableHeight.toFixed(0)}, Scale: ${scale.toFixed(3)}`);
                     }
                   },
                   firstFrame: () => {
@@ -343,31 +345,31 @@ export function BrowserLiveViewModal({
       resizeTimeoutRef.current = setTimeout(() => {
         const display = document.getElementById('dcv-display-container');
 
-        if (display) {
+        if (display && display.parentElement) {
           // Get current browser resolution from display element
           const browserWidth = parseInt(display.style.width) || 1536;
           const browserHeight = parseInt(display.style.height) || 1296;
 
-          // Get the viewport size directly
-          const viewportWidth = window.innerWidth;
-          const viewportHeight = window.innerHeight;
+          // Get actual parent container dimensions
+          const parent = display.parentElement;
+          const parentRect = parent.getBoundingClientRect();
 
-          // Calculate modal size (95vw x 95vh)
-          const modalWidth = viewportWidth * 0.95;
-          const modalHeight = viewportHeight * 0.95;
-
-          // Subtract header height
-          const availableWidth = modalWidth;
-          const availableHeight = modalHeight - 60;
+          const availableWidth = parentRect.width;
+          const availableHeight = parentRect.height;
 
           // Calculate scale to fit
           const scaleX = availableWidth / browserWidth;
           const scaleY = availableHeight / browserHeight;
-          const scale = Math.min(scaleX, scaleY, 1);
+          const scale = Math.min(scaleX, scaleY);
 
-          // Apply new scale
+          // Apply new scale with center positioning
           display.style.transform = `scale(${scale})`;
           display.style.transformOrigin = 'center center';
+          display.style.position = 'absolute';
+          display.style.left = '50%';
+          display.style.top = '50%';
+          display.style.marginLeft = `-${browserWidth / 2}px`;
+          display.style.marginTop = `-${browserHeight / 2}px`;
 
           console.log(`[DCV] Window resized, rescaling to ${scale.toFixed(3)}`);
         }
@@ -386,35 +388,59 @@ export function BrowserLiveViewModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="!max-w-none w-[95vw] h-[95vh] p-0 flex flex-col">
-        <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <Monitor className="w-5 h-5" />
-            <DialogTitle>Browser Live View</DialogTitle>
+      <DialogContent
+        className="!max-w-none p-0 flex flex-col gap-0 border-0 shadow-2xl rounded-xl overflow-hidden"
+        style={{
+          aspectRatio: '1536/1296',
+          maxWidth: '90vw',
+          maxHeight: '90vh',
+          width: 'min(90vw, calc(90vh * 1536 / 1296))',
+          height: 'min(90vh, calc(90vw * 1296 / 1536))'
+        }}
+      >
+        <DialogHeader className="px-4 py-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-b border-slate-200/50 dark:border-slate-700/50 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <Monitor className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+            <DialogTitle className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Live View
+            </DialogTitle>
+            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 dark:bg-green-400/10 rounded">
+              <div className="w-1.5 h-1.5 bg-green-500 dark:bg-green-400 rounded-full animate-pulse" />
+              <span className="text-[10px] font-medium text-green-600 dark:text-green-400">LIVE</span>
+            </div>
           </div>
           <DialogDescription className="sr-only">
             Real-time view of the browser automation session
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative flex-1 w-full bg-gray-900 flex items-center justify-center overflow-hidden">
+        <div className="relative flex-1 w-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
           {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10">
-              <div className="text-center text-white">
-                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
-                <p>Connecting to browser session...</p>
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
+              <div className="text-center">
+                <div className="relative">
+                  <div className="w-16 h-16 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                  <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-400 rounded-full animate-ping mx-auto opacity-20"></div>
+                </div>
+                <p className="text-slate-200 font-medium">Connecting to browser session...</p>
+                <p className="text-slate-400 text-sm mt-1">Please wait</p>
               </div>
             </div>
           )}
 
           {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-gray-900/80 z-10">
-              <div className="text-center text-red-400 max-w-md">
-                <p className="text-lg font-semibold mb-2">Connection Error</p>
-                <p className="text-sm">{error}</p>
+            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
+              <div className="text-center max-w-md px-6">
+                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+                <p className="text-lg font-semibold text-red-400 mb-2">Connection Failed</p>
+                <p className="text-sm text-slate-300 mb-4">{error}</p>
                 <Button
                   variant="outline"
-                  className="mt-4"
+                  className="bg-slate-800 hover:bg-slate-700 text-white border-slate-600"
                   onClick={() => window.location.reload()}
                 >
                   Reload Page
