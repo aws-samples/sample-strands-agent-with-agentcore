@@ -94,7 +94,7 @@ export async function upsertUserProfile(
 
     const command = new PutItemCommand({
       TableName: TABLE_NAME,
-      Item: marshall(record),
+      Item: marshall(record, { removeUndefinedValues: true }),
     })
 
     await dynamoClient.send(command)
@@ -138,7 +138,7 @@ export async function updateUserPreferences(
       ExpressionAttributeValues: marshall({
         ':prefs': updatedPreferences,
         ':lastAccess': now,
-      }),
+      }, { removeUndefinedValues: true }),
     })
 
     await dynamoClient.send(command)
@@ -268,7 +268,7 @@ export async function upsertSession(
 
     const command = new PutItemCommand({
       TableName: TABLE_NAME,
-      Item: marshall(record),
+      Item: marshall(record, { removeUndefinedValues: true }),
     })
 
     await dynamoClient.send(command)
@@ -536,7 +536,7 @@ export async function initializeToolRegistry(config: ToolRegistryConfig): Promis
         sk: 'CONFIG',
         toolRegistry: config,
         updatedAt: new Date().toISOString(),
-      }),
+      }, { removeUndefinedValues: true }),
     })
 
     await dynamoClient.send(command)

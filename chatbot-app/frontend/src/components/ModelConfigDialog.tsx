@@ -108,6 +108,9 @@ export function ModelConfigDialog({ sessionId, trigger }: ModelConfigDialogProps
           headers: sessionId ? { 'X-Session-ID': sessionId } : {},
         }
       );
+
+      // Update currentConfig after successful API call
+      setCurrentConfig({ model_id: modelId });
     } catch (error) {
       console.error('Failed to update model:', error);
       // Revert on error
