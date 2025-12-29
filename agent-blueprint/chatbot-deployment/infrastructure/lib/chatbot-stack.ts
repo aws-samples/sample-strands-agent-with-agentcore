@@ -714,6 +714,7 @@ async function sendResponse(event, status, data, reason) {
       // DynamoDB Tables
       DYNAMODB_USERS_TABLE: usersTable.tableName,
       DYNAMODB_SESSIONS_TABLE: sessionsTable.tableName,
+      DOCUMENT_BUCKET: `${projectName}-docs-${this.account}-${this.region}`,
     };
 
     // Add AgentCore Memory ID from SSM Parameter Store (for conversation history)
