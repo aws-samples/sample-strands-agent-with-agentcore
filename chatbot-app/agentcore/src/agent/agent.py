@@ -86,23 +86,6 @@ def get_current_date_pacific() -> str:
         return now.strftime("%Y-%m-%d (%A) %H:00 UTC")
 
 
-class StopHook(HookProvider):
-    """Hook to handle session stop requests by cancelling tool execution"""
-
-    def __init__(self, agent_instance):
-        self.agent = agent_instance
-
-    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
-        registry.add_callback(BeforeToolCallEvent, self.check_cancelled)
-
-    def check_cancelled(self, event: BeforeToolCallEvent) -> None:
-        """Cancel tool execution if session is stopped by user"""
-        if hasattr(self.agent, 'cancelled') and self.agent.cancelled:
-            tool_name = event.tool_use.get("name", "unknown")
-            logger.info(f"🚫 Cancelling tool execution: {tool_name} (session stopped by user)")
-            event.cancel_tool = "Session stopped by user"
-
-
 class ResearchApprovalHook(HookProvider):
     """Hook to request user approval before executing research agent or browser-use agent"""
 
@@ -373,7 +356,6 @@ class ChatbotAgent:
         self.user_id = user_id or session_id  # Use session_id as user_id if not provided
         self.enabled_tools = enabled_tools
         self.gateway_client = None  # Store Gateway MCP client for lifecycle management
-        self.cancelled = False  # Flag to stop tool execution (used by StopHook)
 
         # Store model configuration
         self.model_id = model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
@@ -480,90 +462,99 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             "caching_enabled": self.caching_enabled
         }
 
+    def _get_dynamodb_table_name(self) -> str:
+        """
+        Get DynamoDB table name using {PROJECT_NAME}-users-v2 pattern.
+        No environment variable dependency - automatic discovery.
+        """
+        project_name = os.environ.get('PROJECT_NAME', 'strands-agent-chatbot')
+        return f"{project_name}-users-v2"
+
     def _load_tool_guidance(self) -> List[str]:
         """
         Load tool-specific system prompt guidance based on enabled tools.
 
-        Returns list of guidance texts from tools-config.json systemPromptGuidance fields
-        for all enabled tool groups.
+        - Local mode: Load from tools-config.json (required)
+        - Cloud mode: Load from DynamoDB {PROJECT_NAME}-users-v2 table (required)
+
+        No fallback - errors are logged clearly for debugging.
         """
         if not self.enabled_tools or len(self.enabled_tools) == 0:
             return []
 
-        try:
-            import boto3
-            from botocore.exceptions import ClientError
+        import boto3
+        from botocore.exceptions import ClientError
 
-            # Get environment variables
-            aws_region = os.environ.get('AWS_REGION', 'us-west-2')
-            dynamodb_table = os.environ.get('DYNAMODB_TABLE_NAME')
-            is_local = os.environ.get('NEXT_PUBLIC_AGENTCORE_LOCAL', 'false').lower() == 'true'
+        # Get environment variables
+        aws_region = os.environ.get('AWS_REGION', 'us-west-2')
+        is_local = os.environ.get('NEXT_PUBLIC_AGENTCORE_LOCAL', 'false').lower() == 'true'
 
-            guidance_sections = []
+        guidance_sections = []
 
-            # Local mode: load from tools-config.json
-            if is_local or not dynamodb_table:
-                logger.info("Loading tool guidance from local tools-config.json")
-                try:
-                    import json
-                    config_path = Path(__file__).parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
+        # Local mode: load from tools-config.json (required)
+        if is_local:
+            import json
+            config_path = Path(__file__).parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
+            logger.info(f"Loading tool guidance from local: {config_path}")
 
-                    if config_path.exists():
-                        with open(config_path, 'r') as f:
-                            tools_config = json.load(f)
+            if not config_path.exists():
+                logger.error(f"❌ TOOL CONFIG NOT FOUND: {config_path}")
+                return []
 
-                        # Check all tool categories for systemPromptGuidance
-                        for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
-                            if category in tools_config:
-                                for tool_group in tools_config[category]:
-                                    tool_id = tool_group.get('id')
+            with open(config_path, 'r') as f:
+                tools_config = json.load(f)
 
-                                    # Check if any enabled tool matches this group
-                                    if tool_id and self._is_tool_group_enabled(tool_id, tool_group):
-                                        guidance = tool_group.get('systemPromptGuidance')
-                                        if guidance:
-                                            guidance_sections.append(guidance)
-                                            logger.info(f"Added guidance for tool group: {tool_id}")
+            # Check all tool categories for systemPromptGuidance
+            for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
+                if category in tools_config:
+                    for tool_group in tools_config[category]:
+                        tool_id = tool_group.get('id')
 
-                except Exception as e:
-                    logger.warning(f"Failed to load tool guidance from local file: {e}")
+                        # Check if any enabled tool matches this group
+                        if tool_id and self._is_tool_group_enabled(tool_id, tool_group):
+                            guidance = tool_group.get('systemPromptGuidance')
+                            if guidance:
+                                guidance_sections.append(guidance)
+                                logger.info(f"Added guidance for tool group: {tool_id}")
 
-            # Cloud mode: load from DynamoDB
-            else:
-                logger.info("Loading tool guidance from DynamoDB")
-                try:
-                    dynamodb = boto3.resource('dynamodb', region_name=aws_region)
-                    table = dynamodb.Table(dynamodb_table)
+        # Cloud mode: load from DynamoDB (required)
+        else:
+            dynamodb_table = self._get_dynamodb_table_name()
+            logger.info(f"Loading tool guidance from DynamoDB table: {dynamodb_table}")
 
-                    # Load tool registry from DynamoDB (userId='TOOL_REGISTRY')
-                    response = table.get_item(Key={'userId': 'TOOL_REGISTRY', 'sessionId': 'default'})
+            dynamodb = boto3.resource('dynamodb', region_name=aws_region)
+            table = dynamodb.Table(dynamodb_table)
 
-                    if 'Item' in response and 'toolRegistry' in response['Item']:
-                        tool_registry = response['Item']['toolRegistry']
+            # Load tool registry from DynamoDB (userId='TOOL_REGISTRY', sk='CONFIG')
+            response = table.get_item(Key={'userId': 'TOOL_REGISTRY', 'sk': 'CONFIG'})
 
-                        # Check all tool categories
-                        for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
-                            if category in tool_registry:
-                                for tool_group in tool_registry[category]:
-                                    tool_id = tool_group.get('id')
+            if 'Item' not in response:
+                logger.error(f"❌ TOOL_REGISTRY NOT FOUND in DynamoDB table: {dynamodb_table}")
+                logger.error("   Please ensure BFF has initialized the tool registry")
+                return []
 
-                                    # Check if any enabled tool matches this group
-                                    if tool_id and self._is_tool_group_enabled(tool_id, tool_group):
-                                        guidance = tool_group.get('systemPromptGuidance')
-                                        if guidance:
-                                            guidance_sections.append(guidance)
-                                            logger.info(f"Added guidance for tool group: {tool_id}")
+            if 'toolRegistry' not in response['Item']:
+                logger.error(f"❌ toolRegistry field NOT FOUND in TOOL_REGISTRY record")
+                return []
 
-                except ClientError as e:
-                    logger.warning(f"Failed to load tool guidance from DynamoDB: {e}")
-                except Exception as e:
-                    logger.warning(f"Error loading tool guidance: {e}")
+            tool_registry = response['Item']['toolRegistry']
+            logger.info(f"✅ Loaded tool registry from DynamoDB: {dynamodb_table}")
 
-            return guidance_sections
+            # Check all tool categories
+            for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
+                if category in tool_registry:
+                    for tool_group in tool_registry[category]:
+                        tool_id = tool_group.get('id')
 
-        except Exception as e:
-            logger.error(f"Error in _load_tool_guidance: {e}")
-            return []
+                        # Check if any enabled tool matches this group
+                        if tool_id and self._is_tool_group_enabled(tool_id, tool_group):
+                            guidance = tool_group.get('systemPromptGuidance')
+                            if guidance:
+                                guidance_sections.append(guidance)
+                                logger.info(f"Added guidance for tool group: {tool_id}")
+
+        logger.info(f"✅ Tool guidance loaded: {len(guidance_sections)} sections")
+        return guidance_sections
 
     def _is_tool_group_enabled(self, tool_group_id: str, tool_group: Dict) -> bool:
         """
@@ -693,11 +684,6 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
             # Create hooks
             hooks = []
-
-            # Add stop hook for session cancellation (always enabled)
-            stop_hook = StopHook(self)  # Pass agent instance instead of session_manager
-            hooks.append(stop_hook)
-            logger.info("✅ Stop hook enabled (BeforeToolCallEvent)")
 
             # Add research approval hook (always enabled)
             research_approval_hook = ResearchApprovalHook(app_name="chatbot")
@@ -1029,6 +1015,11 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         if not files or len(files) == 0:
             return message, []
 
+        # Check if using AgentCore Memory (cloud mode)
+        # AgentCore Memory has a bug where bytes in document ContentBlock cause JSON serialization errors
+        # In cloud mode, we skip document ContentBlocks and rely on workspace tools instead
+        is_cloud_mode = os.environ.get('MEMORY_ID') is not None and AGENTCORE_MEMORY_AVAILABLE
+
         # Build ContentBlock list for multimodal input
         content_blocks = []
         uploaded_files = []
@@ -1038,6 +1029,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
         # Track sanitized filenames for agent's reference
         sanitized_filenames = []
+
+        # Track files that will use workspace tools (not sent as ContentBlock)
+        workspace_only_files = []
 
         # Add each file as appropriate ContentBlock
         for file in files:
@@ -1067,7 +1061,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
             # Determine file type and create appropriate ContentBlock
             if content_type.startswith("image/") or filename.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                # Image content
+                # Image content - always send as ContentBlock (works in both local and cloud)
                 image_format = self._get_image_format(content_type, filename)
                 content_blocks.append({
                     "image": {
@@ -1080,14 +1074,39 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 logger.info(f"Added image: {filename} (format: {image_format})")
 
             elif filename.endswith(".pptx"):
+                # PowerPoint - always use workspace (never sent as ContentBlock)
+                workspace_only_files.append(sanitized_full_name)
                 logger.info(f"PowerPoint presentation uploaded: {sanitized_full_name} (will be stored in workspace, not sent to model)")
 
-            elif filename.endswith((".pdf", ".csv", ".doc", ".docx", ".xls", ".xlsx", ".html", ".txt", ".md")):
-                # Document content
+            elif filename.endswith((".docx", ".xlsx")):
+                # Word/Excel documents - use workspace in cloud mode to avoid bytes serialization error
+                if is_cloud_mode:
+                    workspace_only_files.append(sanitized_full_name)
+                    logger.info(f"📁 [Cloud Mode] {sanitized_full_name} stored in workspace (skipping document ContentBlock to avoid AgentCore Memory serialization error)")
+                else:
+                    # Local mode - can send as document ContentBlock
+                    doc_format = self._get_document_format(filename)
+                    if '.' in sanitized_full_name:
+                        name_without_ext = sanitized_full_name.rsplit('.', 1)[0]
+                    else:
+                        name_without_ext = sanitized_full_name
+
+                    content_blocks.append({
+                        "document": {
+                            "format": doc_format,
+                            "name": name_without_ext,
+                            "source": {
+                                "bytes": file_bytes
+                            }
+                        }
+                    })
+                    logger.info(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
+
+            elif filename.endswith((".pdf", ".csv", ".doc", ".xls", ".html", ".txt", ".md")):
+                # Other documents - send as ContentBlock (PDF, CSV, etc. are usually smaller and work better)
                 doc_format = self._get_document_format(filename)
 
                 # For Bedrock ContentBlock: name should be WITHOUT extension (extension is in format field)
-                # Split sanitized_full_name to get name without extension
                 if '.' in sanitized_full_name:
                     name_without_ext = sanitized_full_name.rsplit('.', 1)[0]
                 else:
@@ -1097,7 +1116,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 content_blocks.append({
                     "document": {
                         "format": doc_format,
-                        "name": name_without_ext,  # Use name WITHOUT extension
+                        "name": name_without_ext,
                         "source": {
                             "bytes": file_bytes
                         }
@@ -1110,25 +1129,52 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
         # Add file hints to text block (so agent knows the exact filenames stored in workspace)
         if sanitized_filenames:
-            # Separate pptx files from others
+            # Categorize files
             pptx_files = [fn for fn in sanitized_filenames if fn.endswith('.pptx')]
-            other_files = [fn for fn in sanitized_filenames if not fn.endswith('.pptx')]
+            docx_files = [fn for fn in workspace_only_files if fn.endswith('.docx')]
+            xlsx_files = [fn for fn in workspace_only_files if fn.endswith('.xlsx')]
+            # Files sent as ContentBlocks (not in workspace_only_files)
+            attached_files = [fn for fn in sanitized_filenames if fn not in workspace_only_files]
 
             file_hints_lines = []
 
-            # Add non-pptx files (these are sent as ContentBlocks)
-            if other_files:
+            # Add files sent as ContentBlocks (attached directly)
+            if attached_files:
                 file_hints_lines.append("Attached files:")
-                file_hints_lines.extend([f"- {fn}" for fn in other_files])
+                file_hints_lines.extend([f"- {fn}" for fn in attached_files])
 
-            # Add pptx files with tool hint if enabled
+            # Add workspace-only files with tool hints
+            # Word documents
+            if docx_files:
+                if file_hints_lines:
+                    file_hints_lines.append("")
+                word_tools_enabled = self.enabled_tools and 'word_document_tools' in self.enabled_tools
+                file_hints_lines.append("Word documents in workspace:")
+                for fn in docx_files:
+                    name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
+                    if word_tools_enabled:
+                        file_hints_lines.append(f"- {fn} (use read_word_document('{name_without_ext}') to view content)")
+                    else:
+                        file_hints_lines.append(f"- {fn}")
+
+            # Excel spreadsheets
+            if xlsx_files:
+                if file_hints_lines:
+                    file_hints_lines.append("")
+                excel_tools_enabled = self.enabled_tools and 'excel_spreadsheet_tools' in self.enabled_tools
+                file_hints_lines.append("Excel spreadsheets in workspace:")
+                for fn in xlsx_files:
+                    name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
+                    if excel_tools_enabled:
+                        file_hints_lines.append(f"- {fn} (use read_excel_spreadsheet('{name_without_ext}') to view content)")
+                    else:
+                        file_hints_lines.append(f"- {fn}")
+
+            # PowerPoint presentations
             if pptx_files:
-                if other_files:
-                    file_hints_lines.append("")  # Empty line for separation
-
-                # Check if PowerPoint tools are enabled
+                if file_hints_lines:
+                    file_hints_lines.append("")
                 ppt_tools_enabled = self.enabled_tools and 'powerpoint_presentation_tools' in self.enabled_tools
-
                 file_hints_lines.append("PowerPoint presentations in workspace:")
                 for fn in pptx_files:
                     name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn

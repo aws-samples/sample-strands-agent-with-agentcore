@@ -234,6 +234,10 @@ class StreamEventFormatter:
                                                             "format": unwrapped_item["image"].get("format", "png"),
                                                             "data": image_data
                                                         })
+                                                elif "document" in unwrapped_item:
+                                                    # Skip document bytes in MCP format too
+                                                    # Document metadata is handled via tool_result["metadata"]
+                                                    pass
                                         continue
 
                             except json.JSONDecodeError:
@@ -261,6 +265,20 @@ class StreamEventFormatter:
                                     "format": item["image"].get("format", "png"),
                                     "data": image_data
                                 })
+
+                    elif "document" in item:
+                        # Handle document content block (Word, Excel, PDF, etc.)
+                        # These are for agent consumption (Bedrock/Claude can read documents)
+                        # Skip bytes from frontend display - metadata is already in tool_result["metadata"]
+                        # Frontend will use metadata to show download button
+                        import logging
+                        doc_logger = logging.getLogger(__name__)
+                        doc_info = item["document"]
+                        doc_name = doc_info.get("name", "unknown")
+                        doc_format = doc_info.get("format", "unknown")
+                        doc_logger.info(f"[Document] Skipping document bytes from frontend display: {doc_name}.{doc_format}")
+                        # Don't add bytes to result_text - they're binary and would show as garbage
+                        # The document metadata (filename, format) is passed via tool_result["metadata"]
 
         return result_text, result_images
     
@@ -392,7 +410,6 @@ class StreamEventFormatter:
             "content": content,
             "stepNumber": step_number
         })
-
 
     @staticmethod
     def _extract_images_from_json_response(response_data):

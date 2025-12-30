@@ -124,7 +124,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [])
 
   // Initialize stream events hook
-  const { handleStreamEvent } = useStreamEvents({
+  const { handleStreamEvent, resetStreamingState } = useStreamEvents({
     sessionState,
     setSessionState,
     setMessages,
@@ -148,7 +148,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [props]);
 
   // Initialize chat API hook
-  const { loadTools, toggleTool: apiToggleTool, newChat: apiNewChat, sendMessage: apiSendMessage, cleanup, loadSession: apiLoadSession } = useChatAPI({
+  const { loadTools, toggleTool: apiToggleTool, newChat: apiNewChat, sendMessage: apiSendMessage, cleanup, sendStopSignal, loadSession: apiLoadSession } = useChatAPI({
     backendUrl,
     setUIState,
     setMessages,
@@ -866,32 +866,10 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setGatewayToolIds(enabledToolIds);
   }, []);
 
-  // Stop generation function
   const stopGeneration = useCallback(() => {
-    // Calculate End-to-End Latency (when manually stopped)
-    const requestStartTime = uiState.latencyMetrics.requestStartTime
-    if (requestStartTime) {
-      const e2eLatency = Date.now() - requestStartTime
-      const ttft = uiState.latencyMetrics.timeToFirstToken || 0
-      console.log(`[Latency] End-to-End Latency (Stopped): ${e2eLatency}ms (TTFT: ${ttft}ms)`)
-    }
-
-    cleanup()
-    setUIState(prev => {
-      const requestStartTime = prev.latencyMetrics.requestStartTime
-      const e2eLatency = requestStartTime ? Date.now() - requestStartTime : null
-
-      return {
-        ...prev,
-        isTyping: false,
-        agentStatus: 'idle',
-        latencyMetrics: {
-          ...prev.latencyMetrics,
-          endToEndLatency: e2eLatency
-        }
-      }
-    })
-  }, [cleanup, uiState])
+    setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
+    sendStopSignal()
+  }, [sendStopSignal, setUIState])
 
   // Cleanup on unmount
   useEffect(() => {

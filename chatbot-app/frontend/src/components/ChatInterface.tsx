@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain, Maximize2, Minimize2, Moon, Sun, FlaskConical } from "lucide-react"
+import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain, Maximize2, Minimize2, Moon, Sun, FlaskConical, Loader2 } from "lucide-react"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
 import { apiGet } from "@/lib/api-client"
 import { useTheme } from "next-themes"
@@ -722,10 +722,14 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                   onClick={stopGeneration}
                   variant="ghost"
                   className="h-10 w-10 hover:bg-muted-foreground/10 transition-all duration-200"
-                  title="Stop generation"
-                  disabled={agentStatus === 'researching' || agentStatus === 'browser_automation'}
+                  title={agentStatus === 'stopping' ? "Stopping..." : "Stop generation"}
+                  disabled={agentStatus === 'researching' || agentStatus === 'browser_automation' || agentStatus === 'stopping'}
                 >
-                  <Square className="w-5 h-5" />
+                  {agentStatus === 'stopping' ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Square className="w-5 h-5" />
+                  )}
                 </Button>
               ) : (
                 <Button

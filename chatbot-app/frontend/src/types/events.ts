@@ -151,7 +151,7 @@ export interface ChatSessionState {
   interrupt: InterruptState | null;
 }
 
-export type AgentStatus = 'idle' | 'thinking' | 'responding' | 'researching' | 'browser_automation';
+export type AgentStatus = 'idle' | 'thinking' | 'responding' | 'researching' | 'browser_automation' | 'stopping';
 
 export interface LatencyMetrics {
   requestStartTime: number | null;

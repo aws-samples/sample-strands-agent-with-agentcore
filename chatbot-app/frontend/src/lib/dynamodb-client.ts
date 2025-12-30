@@ -481,7 +481,7 @@ export interface ToolRegistryConfig {
   builtin_tools: any[]
   browser_automation?: any[]
   gateway_targets?: any[]
-  agentcore_runtime_mcp?: any[]
+  agentcore_runtime_a2a?: any[]
 }
 
 /**

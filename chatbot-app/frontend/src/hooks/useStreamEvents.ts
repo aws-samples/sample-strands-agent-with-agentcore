@@ -82,27 +82,21 @@ export const useStreamEvents = ({
           streaming: { text: data.text, id: newId }
         }))
 
-        // Record TTFT and transition to 'responding' (only on thinking -> responding)
         setUIState(prevUI => {
+          if (prevUI.agentStatus === 'stopping') {
+            return prevUI
+          }
           if (prevUI.agentStatus === 'thinking') {
             const ttft = latencyTracking.recordTTFT()
-            console.log('[Response] First token received, TTFT:', ttft)
             return {
               ...prevUI,
               agentStatus: 'responding',
-              latencyMetrics: {
-                ...prevUI.latencyMetrics,
-                timeToFirstToken: ttft ?? null
-              }
+              latencyMetrics: { ...prevUI.latencyMetrics, timeToFirstToken: ttft ?? null }
             }
-          } else {
-            // Already 'responding' (post-tool response) - stay in 'responding'
-            console.log('[Response] Already responding, agentStatus:', prevUI.agentStatus)
-            return { ...prevUI, agentStatus: 'responding' }
           }
+          return { ...prevUI, agentStatus: 'responding' }
         })
       } else {
-        // Subsequent chunks - append to existing message
         const streamingId = streamingIdRef.current
         if (streamingId) {
           setMessages(prevMsgs => prevMsgs.map(msg =>
@@ -340,37 +334,71 @@ export const useStreamEvents = ({
 
   const handleCompleteEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'complete') {
-      console.log('[Complete] 🎯 Complete event received:', { messageId: streamingIdRef.current, dataImages: data.images?.length, dataDocuments: data.documents?.length })
+      const isStopEvent = data.message === 'Stream stopped by user'
 
-      // Prevent duplicate processing
-      if (completeProcessedRef.current) {
-        console.log('[Complete] ⚠️ Already processed, skipping')
-        return
-      }
+      if (completeProcessedRef.current) return
       completeProcessedRef.current = true
 
       const messageId = streamingIdRef.current
 
+      // Handle stop event
+      if (isStopEvent) {
+        startTransition(() => {
+          setUIState(prev => ({
+            ...prev,
+            isTyping: false,
+            showProgressPanel: false,
+            agentStatus: 'idle'
+          }))
+
+          setMessages(prevMsgs => prevMsgs.map(msg => {
+            if (msg.isStreaming) {
+              return { ...msg, isStreaming: false }
+            }
+            if (msg.isToolMessage && msg.toolExecutions) {
+              const updatedToolExecutions = msg.toolExecutions.map(tool =>
+                !tool.isComplete ? { ...tool, isComplete: true, isCancelled: true } : tool
+              )
+              return { ...msg, toolExecutions: updatedToolExecutions }
+            }
+            return msg
+          }))
+
+          setSessionState(prev => ({
+            reasoning: null,
+            streaming: null,
+            toolExecutions: prev.toolExecutions.map(te =>
+              !te.isComplete ? { ...te, isComplete: true, isCancelled: true } : te
+            ),
+            browserSession: prev.browserSession,
+            browserProgress: undefined,
+            interrupt: null
+          }))
+        })
+
+        streamingStartedRef.current = false
+        streamingIdRef.current = null
+        completeProcessedRef.current = false
+        latencyTracking.reset()
+        return
+      }
+
+      // Normal complete flow
       if (messageId) {
-        // Update last activity timestamp (AI response completed = activity)
         updateLastActivity()
 
-        // Record E2E latency and save metadata (including documents if present)
         const currentSessionId = sessionStorage.getItem('chat-session-id')
-        console.log('[Complete] Recording E2E latency, sessionId:', currentSessionId, 'messageId:', messageId)
         const metrics = currentSessionId
           ? latencyTracking.recordE2E({
               sessionId: currentSessionId,
               messageId,
               tokenUsage: data.usage,
-              documents: data.documents // Include documents in metadata save
+              documents: data.documents
             })
           : latencyTracking.getMetrics()
 
-        // Extract values (recordE2E and getMetrics have different return formats)
         const ttftValue = 'ttft' in metrics ? metrics.ttft : metrics.timeToFirstToken
         const e2eValue = 'e2e' in metrics ? metrics.e2e : metrics.endToEndLatency
-        console.log('[Complete] Latency metrics:', { ttftValue, e2eValue, tokenUsage: data.usage })
 
         setUIState(prev => ({
           ...prev,
@@ -384,7 +412,6 @@ export const useStreamEvents = ({
         }))
 
         setMessages(prevMsgs => {
-          // Find the last assistant message (could be text or tool message)
           let lastAssistantIndex = -1
           for (let i = prevMsgs.length - 1; i >= 0; i--) {
             if (prevMsgs[i].sender === 'bot') {
@@ -393,58 +420,42 @@ export const useStreamEvents = ({
             }
           }
 
-          // Documents now come directly from complete event (like images)
-          console.log('[DocumentDownload] Complete event - documents from data:', data.documents)
-
           return prevMsgs.map((msg, index) =>
-          // Update ONLY ONE message: either the streaming message OR the last assistant message (not both)
-          // If messageId exists (text was streamed), update that message only
-          // If no messageId (tool-only response), update the last assistant message
-          msg.id === messageId || (index === lastAssistantIndex && !messageId)
-            ? {
-                ...msg,
-                isStreaming: false,
-                images: data.images || msg.images || [],
-                documents: data.documents || msg.documents || [],
-                latencyMetrics: {
-                  timeToFirstToken: ttftValue,
-                  endToEndLatency: e2eValue
-                },
-                ...(data.usage && { tokenUsage: data.usage })
-              }
-            : msg
+            msg.id === messageId || (index === lastAssistantIndex && !messageId)
+              ? {
+                  ...msg,
+                  isStreaming: false,
+                  images: data.images || msg.images || [],
+                  documents: data.documents || msg.documents || [],
+                  latencyMetrics: { timeToFirstToken: ttftValue, endToEndLatency: e2eValue },
+                  ...(data.usage && { tokenUsage: data.usage })
+                }
+              : msg
           )
         })
       } else {
-        // No streaming message, just update UI state
         setUIState(prev => {
           const requestStartTime = prev.latencyMetrics.requestStartTime
           const e2eLatency = requestStartTime ? Date.now() - requestStartTime : null
-
           return {
             ...prev,
             isTyping: false,
             showProgressPanel: false,
             agentStatus: 'idle',
-            latencyMetrics: {
-              ...prev.latencyMetrics,
-              endToEndLatency: e2eLatency
-            }
+            latencyMetrics: { ...prev.latencyMetrics, endToEndLatency: e2eLatency }
           }
         })
       }
 
-      // Reset session state (keep browserSession to maintain Live View button)
       setSessionState(prev => ({
         reasoning: null,
         streaming: null,
         toolExecutions: [],
-        browserSession: prev.browserSession,  // Preserve browser session
-        browserProgress: undefined,  // Clear browser progress
+        browserSession: prev.browserSession,
+        browserProgress: undefined,
         interrupt: null
       }))
 
-      // Reset refs for next message
       streamingStartedRef.current = false
       streamingIdRef.current = null
       completeProcessedRef.current = false
@@ -454,18 +465,10 @@ export const useStreamEvents = ({
 
   const handleInitEvent = useCallback(() => {
     setUIState(prev => {
-      // Start latency tracking if requestStartTime exists and not already started
       if (prev.latencyMetrics.requestStartTime) {
-        console.log('[Init] Starting latency tracking, requestStartTime:', prev.latencyMetrics.requestStartTime, 'status:', prev.agentStatus)
         latencyTracking.startTracking(prev.latencyMetrics.requestStartTime)
-      } else {
-        console.warn('[Init] No requestStartTime - latency tracking not started!')
       }
-
-      // Don't change status if already in an active state (not idle)
-      // This includes 'thinking', 'responding', and 'researching'
       if (prev.agentStatus !== 'idle') {
-        console.log('[Init] Already in active state:', prev.agentStatus, '- keeping current status')
         return prev
       }
 
@@ -645,5 +648,25 @@ export const useStreamEvents = ({
     setSessionState
   ])
 
-  return { handleStreamEvent }
+  // Reset streaming state (called when user stops generation)
+  const resetStreamingState = useCallback(() => {
+    console.log('[StreamEvents] Resetting streaming state')
+    streamingStartedRef.current = false
+    streamingIdRef.current = null
+    completeProcessedRef.current = false
+    latencyTracking.reset()
+
+    // Mark current streaming message as stopped (not streaming)
+    setMessages(prev => prev.map(msg =>
+      msg.isStreaming ? { ...msg, isStreaming: false } : msg
+    ))
+
+    setSessionState(prev => ({
+      ...prev,
+      reasoning: null,
+      streaming: null
+    }))
+  }, [setMessages, setSessionState, latencyTracking])
+
+  return { handleStreamEvent, resetStreamingState }
 }

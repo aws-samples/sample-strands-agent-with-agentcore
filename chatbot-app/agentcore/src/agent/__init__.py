@@ -1,5 +1,6 @@
-"""Agent module"""
+"""Agent module
 
-from agent.agent import ChatbotAgent, get_global_stream_processor
-
-__all__ = ['ChatbotAgent', 'get_global_stream_processor']
+Note: To avoid circular imports, use explicit imports:
+    from agent.agent import ChatbotAgent, get_global_stream_processor
+    from agent.stop_signal import get_stop_signal_provider
+"""

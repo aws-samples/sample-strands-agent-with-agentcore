@@ -1,0 +1,10 @@
+# Development dependencies for testing
+# Install with: pip install -r requirements-dev.txt
+
+# Testing framework
+pytest>=8.0.0
+pytest-asyncio>=0.24.0
+pytest-cov>=6.0.0
+
+# AWS mocking (for integration tests)
+moto>=5.0.0

@@ -266,6 +266,21 @@ export async function POST(request: NextRequest) {
         const pollingAbortController = new AbortController()
         let browserSessionPollingStarted = false
 
+        // AbortController for AgentCore stream (to cancel on client disconnect)
+        const agentCoreAbortController = new AbortController()
+        let agentCoreReader: ReadableStreamDefaultReader<Uint8Array> | null = null
+
+        // Listen for client disconnect via request.signal
+        request.signal.addEventListener('abort', () => {
+          console.log('[BFF] Client disconnected (request.signal aborted), cancelling AgentCore stream')
+          agentCoreAbortController.abort()
+          if (agentCoreReader) {
+            agentCoreReader.cancel().catch(err => {
+              console.warn('[BFF] Error cancelling reader on abort:', err)
+            })
+          }
+        })
+
         try {
           // Execute before hooks (session metadata, tool config, etc.)
           const hookManager = createDefaultHookManager()
@@ -319,12 +334,14 @@ export async function POST(request: NextRequest) {
             files, // Pass uploaded files to AgentCore
             modelConfig.temperature,
             modelConfig.system_prompt,
-            modelConfig.caching_enabled
+            modelConfig.caching_enabled,
+            agentCoreAbortController.signal // Pass abort signal for cancellation
           )
           agentStarted = true
 
           // Read from AgentCore stream and forward chunks
           const reader = agentStream.getReader()
+          agentCoreReader = reader // Store for abort handler
 
           while (true) {
             const { done, value } = await reader.read()
@@ -336,8 +353,14 @@ export async function POST(request: NextRequest) {
               controller.enqueue(value)
               lastActivityTime = Date.now()
             } catch (err) {
-              // Controller closed (client disconnected) - stop processing
-              console.log('[BFF] Controller closed, stopping stream processing')
+              // Controller closed (client disconnected) - gracefully cancel AgentCore stream
+              console.log('[BFF] Controller closed, cancelling AgentCore stream for graceful shutdown')
+              try {
+                await reader.cancel()
+                console.log('[BFF] AgentCore stream cancelled successfully')
+              } catch (cancelErr) {
+                console.error('[BFF] Error cancelling AgentCore stream:', cancelErr)
+              }
               break
             }
           }

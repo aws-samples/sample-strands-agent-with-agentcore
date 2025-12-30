@@ -133,101 +133,78 @@ export async function GET(request: NextRequest) {
       // Events are returned newest-first, reverse to get chronological order
       const reversedEvents = [...events].reverse()
 
-      // First pass: collect all blob events indexed by their position
-      // Blobs appear AFTER the conversational event that contains the toolUse
-      const blobsByIndex = new Map<number, any>()
-      reversedEvents.forEach((event: any, index: number) => {
-        if (event.payload && event.payload[0]?.blob) {
-          // Associate this blob with the previous conversational event (index - 1)
-          blobsByIndex.set(index - 1, event.payload[0].blob)
+      // AgentCore Memory SDK stores messages in ONE of two formats (not both):
+      // - conversational: messages under 9000 chars
+      // - blob: messages 9000 chars or more
+      //
+      // SDK logic (session_manager.py create_message):
+      //   if not exceeds_conversational_limit: create conversational event
+      //   else: create blob event (no conversational)
+      messages = []
+      let msgIndex = 0
+
+      for (let i = 0; i < reversedEvents.length; i++) {
+        const event = reversedEvents[i]
+        const payload = event.payload?.[0]
+
+        if (!payload) continue
+
+        // Case 1: Conversational event (message < 9000 chars)
+        if (payload.conversational) {
+          const conv = payload.conversational
+          const content = conv.content?.text || ''
+
+          if (!content) {
+            console.warn(`[API] Event ${event.eventId} has no content, skipping`)
+            continue
+          }
+
+          let parsed
+          try {
+            parsed = JSON.parse(content)
+          } catch (e) {
+            console.error(`[API] Failed to parse conversational content:`, e)
+            continue
+          }
+
+          if (!parsed.message) {
+            console.warn(`[API] Event ${event.eventId} missing "message" key, skipping`)
+            continue
+          }
+
+          const message = {
+            ...parsed.message,
+            id: event.eventId || `msg-${sessionId}-${msgIndex}`,
+            timestamp: event.eventTime || new Date().toISOString()
+          }
+          msgIndex++
+          messages.push(message)
         }
-      })
+        // Case 2: Blob event (message >= 9000 chars)
+        else if (payload.blob && typeof payload.blob === 'string') {
+          try {
+            const blobParsed = JSON.parse(payload.blob)
 
-      if (blobsByIndex.size > 0) {
-        console.log(`[API] Found ${blobsByIndex.size} blob event(s)`)
-      }
+            // Blob format from SDK: ["message_json", "role"] tuple
+            if (Array.isArray(blobParsed) && blobParsed.length >= 1) {
+              const blobMessageData = JSON.parse(blobParsed[0])
 
-      // Second pass: process conversational events and merge with blob toolResults
-      const conversationalEvents = reversedEvents
-        .map((event: any, index: number) => ({ event, index }))
-        .filter(({ event }) => event.payload && event.payload[0]?.conversational)
-
-      messages = conversationalEvents.map(({ event, index }, msgIndex) => {
-        const conv = event.payload[0].conversational
-
-        // Parse content - AgentCore Memory stores messages as JSON string {"message": {...}}
-        const content = conv.content?.text || '';
-
-        if (!content) {
-          throw new Error(`Event ${event.eventId} has no content`);
-        }
-
-        const parsed = JSON.parse(content);
-
-        // Must be in {"message": {...}} format
-        if (!parsed.message) {
-          throw new Error(`Event ${event.eventId} missing "message" key. Got: ${JSON.stringify(parsed)}`);
-        }
-
-        const message = {
-          ...parsed.message, // Contains role and content array
-          id: event.eventId || `msg-${sessionId}-${msgIndex}`,
-          timestamp: event.eventTime || new Date().toISOString()
-        }
-
-        // Check if there's a blob associated with this conversational event
-        // Blob events contain ALL toolResults for this assistant turn
-        if (blobsByIndex.has(index) && message.role === 'assistant') {
-          const blobData = blobsByIndex.get(index)
-
-          if (blobData && typeof blobData === 'string') {
-            try {
-              // Blob from Strands SDK: JSON array ["message_json", "role"]
-              const parsed = JSON.parse(blobData)
-
-              if (Array.isArray(parsed) && parsed.length >= 1) {
-                // Parse the message JSON (first element of array)
-                const messageData = JSON.parse(parsed[0])
-
-                // Extract ALL toolResults from blob and merge into message content
-                if (messageData?.message?.content && Array.isArray(messageData.message.content)) {
-                  const blobToolResults = messageData.message.content.filter((item: any) => item.toolResult)
-
-                  // Process each toolResult
-                  blobToolResults.forEach((toolResultItem: any) => {
-                    const toolResult = toolResultItem.toolResult
-                    const toolUseId = toolResult.toolUseId
-
-                    // Add toolResult to message.content array (after corresponding toolUse)
-                    // Find the index of the toolUse with matching toolUseId
-                    const toolUseIndex = message.content.findIndex(
-                      (item: any) => item.toolUse && item.toolUse.toolUseId === toolUseId
-                    )
-
-                    if (toolUseIndex !== -1) {
-                      // Insert toolResult after toolUse
-                      message.content.splice(toolUseIndex + 1, 0, { toolResult })
-                    } else {
-                      // ToolUse not found - append to end
-                      message.content.push({ toolResult })
-                    }
-
-                    // No need to store in _blobImages - images are already in toolResult.content
-                  })
-
-                  if (blobToolResults.length > 0) {
-                    console.log(`[API] Merged ${blobToolResults.length} toolResult(s) from blob into message ${message.id}`)
-                  }
+              if (blobMessageData?.message) {
+                const message = {
+                  ...blobMessageData.message,
+                  id: event.eventId || `msg-${sessionId}-${msgIndex}`,
+                  timestamp: event.eventTime || new Date().toISOString()
                 }
+                msgIndex++
+                messages.push(message)
+                console.log(`[API] Restored blob message (role: ${message.role}, content items: ${message.content?.length || 0})`)
               }
-            } catch (e) {
-              console.error(`[API] Failed to process blob:`, e)
             }
+          } catch (e) {
+            console.error(`[API] Failed to parse blob:`, e)
           }
         }
-
-        return message
-      })
+      }
 
       console.log(`[API] Loaded ${messages.length} messages for session ${sessionId}`)
     }

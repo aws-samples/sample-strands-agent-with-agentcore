@@ -4,6 +4,7 @@ import time
 import logging
 from typing import AsyncGenerator, Dict, Any
 from .event_formatter import StreamEventFormatter
+from agent.stop_signal import get_stop_signal_provider
 
 # OpenTelemetry imports
 from opentelemetry import trace, baggage, context
@@ -12,21 +13,32 @@ from opentelemetry.metrics import get_meter
 
 logger = logging.getLogger(__name__)
 
+
+class StopRequestedException(Exception):
+    """Raised when stop signal is detected during streaming"""
+    pass
+
 class StreamEventProcessor:
     """Processes streaming events from the agent and formats them for SSE"""
-    
+
     def __init__(self):
         self.formatter = StreamEventFormatter()
         self.seen_tool_uses = set()
-        self.pending_events = []
         self.current_session_id = None
+        self.current_user_id = None
         self.tool_use_registry = {}
-        
+        self.partial_response_text = ""  # Track partial response for graceful abort
+
+        # Stop signal provider (Strategy pattern - Local or DynamoDB)
+        self.stop_signal_provider = get_stop_signal_provider()
+        self.last_stop_check_time = 0
+        self.stop_check_interval = 1.0  # Check every 1 second (configurable)
+
         # Initialize OpenTelemetry
         self.observability_enabled = os.getenv("AGENT_OBSERVABILITY_ENABLED", "false").lower() == "true"
         self.tracer = get_tracer(__name__)
         self.meter = get_meter(__name__)
-        
+
         if self.observability_enabled:
             self._init_metrics()
     
@@ -56,7 +68,95 @@ class StreamEventProcessor:
         """Get current timestamp in ISO format"""
         from datetime import datetime
         return datetime.now().isoformat()
-    
+
+    def _should_check_stop_signal(self) -> bool:
+        """Check if enough time has passed to check stop signal (throttling)"""
+        current_time = time.time()
+        if current_time - self.last_stop_check_time >= self.stop_check_interval:
+            self.last_stop_check_time = current_time
+            return True
+        return False
+
+    def _check_stop_signal(self) -> bool:
+        """Check if stop has been requested for current session"""
+        if not self.current_user_id or not self.current_session_id:
+            logger.debug(f"[StopSignal] Skipping check - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
+            return False
+
+        if not self._should_check_stop_signal():
+            return False
+
+        try:
+            is_stopped = self.stop_signal_provider.is_stop_requested(
+                self.current_user_id,
+                self.current_session_id
+            )
+            if is_stopped:
+                logger.info(f"[StopSignal] 🛑 Stop signal detected for {self.current_user_id}:{self.current_session_id}")
+            return is_stopped
+        except Exception as e:
+            logger.warning(f"[StopSignal] Error checking stop signal: {e}")
+            return False
+
+    def _clear_stop_signal(self) -> None:
+        """Clear stop signal after processing"""
+        if not self.current_user_id or not self.current_session_id:
+            return
+
+        try:
+            self.stop_signal_provider.clear_stop_signal(
+                self.current_user_id,
+                self.current_session_id
+            )
+        except Exception as e:
+            logger.warning(f"[StopSignal] Error clearing stop signal: {e}")
+
+    def _save_partial_response(self, agent, session_id: str) -> bool:
+        """Save partial response when stream is interrupted."""
+        if not self.partial_response_text.strip():
+            return False
+
+        abort_message_text = self.partial_response_text.strip() + "\n\n**[Response interrupted by user]**"
+        self.partial_response_text = ""
+
+        session_mgr = getattr(agent, 'session_manager', None) or getattr(agent, '_session_manager', None)
+        if not session_mgr:
+            return False
+
+        try:
+            abort_message = {"role": "assistant", "content": [{"text": abort_message_text}]}
+            session_mgr.append_message(abort_message, agent)
+            if hasattr(session_mgr, 'flush'):
+                session_mgr.flush()
+            return True
+        except Exception as e:
+            logger.error(f"Failed to save partial response: {e}")
+            return False
+
+    def _get_last_pending_tool_id(self) -> str:
+        """Get the last tool_use_id that was started but hasn't received a result yet.
+
+        This is used for error recovery - when an error occurs, we can emit
+        an error tool_result for the pending tool so the agent can self-recover.
+
+        Returns:
+            The last pending tool_use_id, or None if no pending tools
+        """
+        if not self.tool_use_registry:
+            return None
+
+        # Find tools that were started but might not have completed
+        # Since we track all seen tool uses, return the most recent one
+        # The tool_use_registry contains {tool_use_id: {tool_name, session_id, input}}
+        if self.tool_use_registry:
+            # Return the last registered tool (most recent)
+            last_tool_id = list(self.tool_use_registry.keys())[-1] if self.tool_use_registry else None
+            if last_tool_id:
+                logger.info(f"[Error Recovery] Found pending tool: {last_tool_id}")
+            return last_tool_id
+
+        return None
+
     def _parse_xml_tool_calls(self, text: str) -> list:
         """Parse raw XML tool calls from Claude response"""
         import re
@@ -126,8 +226,21 @@ class StreamEventProcessor:
         self.current_session_id = session_id
         self.invocation_state = invocation_state or {}
 
+        # Extract user_id from invocation_state for stop signal checking
+        self.current_user_id = self.invocation_state.get('user_id')
+
+        # Log stop signal provider info for debugging
+        logger.info(f"[StopSignal] Stream started - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
+        logger.info(f"[StopSignal] Provider: {type(self.stop_signal_provider).__name__}")
+
+        # Reset stop signal check timer
+        self.last_stop_check_time = 0
+
         # Reset seen tool uses for each new stream
         self.seen_tool_uses.clear()
+
+        # Reset partial response tracking for this stream
+        self.partial_response_text = ""
 
         # Add stream-level deduplication
         # Handle both string and list (multimodal) messages
@@ -151,6 +264,7 @@ class StreamEventProcessor:
             return
 
         stream_iterator = None
+        stream_completed_normally = False  # Track if stream completed without interruption
         try:
             multimodal_message = self._create_multimodal_message(message, file_paths)
 
@@ -166,17 +280,12 @@ class StreamEventProcessor:
             # Track documents from tool results in this turn (for complete event)
             self.turn_documents = []
 
-            # Note: Keepalive is handled at the router level (chat.py) via stream_with_keepalive wrapper
             async for event in stream_iterator:
-                # Check if agent was cancelled (stop button clicked)
-                if hasattr(agent, 'cancelled') and agent.cancelled:
-                    logger.info(f"🛑 Stream cancelled for session {session_id} - stopping event processing")
-                    # Send stop event and exit stream
-                    yield self.formatter.create_response_event("\n\n*Session stopped by user*")
-                    break
-                while self.pending_events:
-                    pending_event = self.pending_events.pop(0)
-                    yield pending_event
+                # Check stop signal periodically (throttled to reduce DB calls)
+                if self._check_stop_signal():
+                    logger.info(f"[StopSignal] 🛑 Stopping stream for session {session_id}")
+                    self._clear_stop_signal()
+                    raise StopRequestedException("Stop requested by user")
 
                 # Check for browser session ARN in invocation_state (for Live View)
                 # This is set by A2A tool callback when browser_session_arn artifact is received
@@ -260,6 +369,7 @@ class StreamEventProcessor:
                     logger.info(f"[Final Result] 📤 Emitting complete event and closing stream")
                     yield self.formatter.create_complete_event(result_text, images, usage, documents)
                     logger.info(f"[Final Result] ✅ Complete event emitted, stream ended")
+                    stream_completed_normally = True
                     return
                 
                 
@@ -270,7 +380,10 @@ class StreamEventProcessor:
                 # Handle regular text response
                 elif event.get("data") and not event.get("reasoning"):
                     text_data = event["data"]
-                    
+
+                    # Accumulate text for potential abort handling
+                    self.partial_response_text += text_data
+
                     # Check if this is a raw XML tool call that needs parsing
                     tool_calls = self._parse_xml_tool_calls(text_data)
                     if tool_calls:
@@ -279,12 +392,12 @@ class StreamEventProcessor:
                             # Generate proper tool_use_id if not present
                             if not tool_call.get("toolUseId"):
                                 tool_call["toolUseId"] = f"tool_{tool_call['name']}_{self._get_current_timestamp().replace(':', '').replace('-', '').replace('.', '')}"
-                            
+
                             # Check for duplicates
                             tool_use_id = tool_call["toolUseId"]
                             if tool_use_id and tool_use_id not in self.seen_tool_uses:
                                 self.seen_tool_uses.add(tool_use_id)
-                                
+
                                 # Register tool info with session_id
                                 self.tool_use_registry[tool_use_id] = {
                                     'tool_name': tool_call["name"],
@@ -292,12 +405,12 @@ class StreamEventProcessor:
                                     'session_id': self.current_session_id,
                                     'input': tool_call.get("input", {})
                                 }
-                                
+
                                 # Emit tool_use event
                                 yield self.formatter.create_tool_use_event(tool_call)
 
                                 await asyncio.sleep(0.1)
-                        
+
                         # Remove the XML from the text and send the remaining as regular response
                         cleaned_text = self._remove_xml_tool_calls(text_data)
                         if cleaned_text.strip():
@@ -454,36 +567,50 @@ class StreamEventProcessor:
                     logger.info("[Message Event] 📨 Received message event (likely contains tool_result)")
                     async for result in self._process_message_event(event):
                         yield result
-            
-            # Yield any remaining pending events after stream ends
-            while self.pending_events:
-                pending_event = self.pending_events.pop(0)
-                yield pending_event
-            
-        except GeneratorExit:
-            # Normal termination when client disconnects
+
+        except StopRequestedException:
+            self._save_partial_response(agent, session_id)
+            yield self.formatter.create_complete_event("Stream stopped by user")
+            stream_completed_normally = True
             return
-            
+
+        except GeneratorExit:
+            self._save_partial_response(agent, session_id)
+            stream_completed_normally = True
+            return
+
         except Exception as e:
-            # Log the error for debugging but don't crash
-            logger.debug(f"Stream processing error: {e}")
-            yield self.formatter.create_error_event(f"Sorry, I encountered an error: {str(e)}")
-            
+            logger.error(f"Stream error: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+
+            # Check if there's a pending tool that needs an error result
+            # This allows the agent to self-recover from errors
+            pending_tool_id = self._get_last_pending_tool_id()
+            if pending_tool_id:
+                logger.info(f"[Error Recovery] Emitting error as tool_result for {pending_tool_id}")
+                error_tool_result = {
+                    "toolUseId": pending_tool_id,
+                    "status": "error",
+                    "content": [{"text": f"Tool execution failed: {str(e)}"}]
+                }
+                yield self.formatter.create_tool_result_event(error_tool_result)
+            else:
+                # No pending tool, emit as error event (chat message)
+                yield self.formatter.create_error_event(f"Sorry, I encountered an error: {str(e)}")
+
         finally:
-            # Clean up immediate event callback
-            self._immediate_event_callback = None
-            
-            # Clean up stream iterator if it exists
+            if not stream_completed_normally:
+                self._save_partial_response(agent, session_id)
+
             if stream_iterator and hasattr(stream_iterator, 'aclose'):
                 try:
                     await stream_iterator.aclose()
                 except Exception:
-                    # Ignore cleanup errors - they're usually harmless
                     pass
-            
-            # Remove from active streams
-            if hasattr(self, '_active_streams') and stream_id in self._active_streams:
-                self._active_streams.discard(stream_id)  # Use discard to avoid KeyError
+
+            if hasattr(self, '_active_streams'):
+                self._active_streams.discard(stream_id)
     
     async def _process_message_event(self, event: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """Process message events that may contain tool results"""
@@ -506,120 +633,97 @@ class StreamEventProcessor:
                     status = tool_result.get("status", "unknown")
                     logger.info(f"[Tool Result] 🔧 Processing tool_result - toolUseId: {tool_use_id}, status: {status}")
 
-                    # Note: browserSessionId is now handled via tool stream events (immediate)
-                    # No need to extract from tool result (too late)
+                    # Wrap tool result processing in try-except for graceful error handling
+                    # This ensures errors are returned as tool_result for agent self-recovery
+                    try:
+                        async for result in self._process_single_tool_result(tool_result, tool_use_id):
+                            yield result
+                    except Exception as e:
+                        logger.error(f"[Tool Result] ❌ Error processing tool_result {tool_use_id}: {e}")
+                        # Emit error as tool_result so agent can self-recover
+                        error_tool_result = {
+                            "toolUseId": tool_use_id or "unknown",
+                            "status": "error",
+                            "content": [{"text": f"Error processing tool result: {str(e)}"}]
+                        }
+                        yield self.formatter.create_tool_result_event(error_tool_result)
 
-                    # Set context before tool execution and cleanup after
-                    if tool_use_id:
-                        try:
-                            from utils.tool_execution_context import tool_context_manager
-                            context = tool_context_manager.get_context(tool_use_id)
-                            if context:
-                                # Set as current context during result processing
-                                tool_context_manager.set_current_context(context)
+    async def _process_single_tool_result(self, tool_result: Dict[str, Any], tool_use_id: str) -> AsyncGenerator[str, None]:
+        """Process a single tool result with proper error handling"""
+        # Note: browserSessionId is now handled via tool stream events (immediate)
+        # No need to extract from tool result (too late)
 
-                                # Add browser session metadata from invocation_state (for Live View)
-                                if hasattr(self, 'invocation_state') and 'browser_session_arn' in self.invocation_state:
-                                    if "metadata" not in tool_result:
-                                        tool_result["metadata"] = {}
-                                    tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
-                                    if 'browser_id' in self.invocation_state:
-                                        tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
-                                    logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
-                                    if 'browser_id' in self.invocation_state:
-                                        logger.info(f"[Live View] Added browserId to tool result metadata: {self.invocation_state['browser_id']}")
+        # Set context before tool execution and cleanup after
+        if tool_use_id:
+            try:
+                from utils.tool_execution_context import tool_context_manager
+                context = tool_context_manager.get_context(tool_use_id)
+                if context:
+                    # Set as current context during result processing
+                    tool_context_manager.set_current_context(context)
 
-                                # Collect documents from tool result (for complete event)
-                                if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                                    doc_info = {
-                                        "filename": tool_result["metadata"]["filename"],
-                                        "tool_type": tool_result["metadata"]["tool_type"]
-                                    }
-                                    # Include user_id and session_id if available (needed for S3 path reconstruction)
-                                    if "user_id" in tool_result["metadata"]:
-                                        doc_info["user_id"] = tool_result["metadata"]["user_id"]
-                                    if "session_id" in tool_result["metadata"]:
-                                        doc_info["session_id"] = tool_result["metadata"]["session_id"]
-                                    self.turn_documents.append(doc_info)
+                    # Add browser session metadata from invocation_state (for Live View)
+                    self._add_browser_metadata(tool_result)
 
-                                # Process the tool result
-                                logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id}")
-                                yield self.formatter.create_tool_result_event(tool_result)
+                    # Collect documents from tool result (for complete event)
+                    self._collect_document_info(tool_result)
 
-                                # Clean up context after processing
-                                tool_context_manager.clear_current_context()
-                                await tool_context_manager.cleanup_context(tool_use_id)
-                            else:
-                                # Add browser session metadata even if no context
-                                if hasattr(self, 'invocation_state') and 'browser_session_arn' in self.invocation_state:
-                                    if "metadata" not in tool_result:
-                                        tool_result["metadata"] = {}
-                                    tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
-                                    if 'browser_id' in self.invocation_state:
-                                        tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
-                                    logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
-                                    if 'browser_id' in self.invocation_state:
-                                        logger.info(f"[Live View] Added browserId to tool result metadata: {self.invocation_state['browser_id']}")
+                    # Process the tool result
+                    logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id}")
+                    yield self.formatter.create_tool_result_event(tool_result)
 
-                                # Collect documents from tool result (for complete event)
-                                if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                                    doc_info = {
-                                        "filename": tool_result["metadata"]["filename"],
-                                        "tool_type": tool_result["metadata"]["tool_type"]
-                                    }
-                                    # Include user_id and session_id if available (needed for S3 path reconstruction)
-                                    if "user_id" in tool_result["metadata"]:
-                                        doc_info["user_id"] = tool_result["metadata"]["user_id"]
-                                    if "session_id" in tool_result["metadata"]:
-                                        doc_info["session_id"] = tool_result["metadata"]["session_id"]
-                                    self.turn_documents.append(doc_info)
+                    # Clean up context after processing
+                    tool_context_manager.clear_current_context()
+                    await tool_context_manager.cleanup_context(tool_use_id)
+                else:
+                    # Add browser session metadata even if no context
+                    self._add_browser_metadata(tool_result)
 
-                                logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (no context)")
-                                yield self.formatter.create_tool_result_event(tool_result)
-                        except ImportError:
-                            # Add browser session metadata even if import fails
-                            if hasattr(self, 'invocation_state') and 'browser_session_arn' in self.invocation_state:
-                                if "metadata" not in tool_result:
-                                    tool_result["metadata"] = {}
-                                tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
-                                if 'browser_id' in self.invocation_state:
-                                    tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
-                                logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
-                                if 'browser_id' in self.invocation_state:
-                                    logger.info(f"[Live View] Added browserId to tool result metadata: {self.invocation_state['browser_id']}")
+                    # Collect documents from tool result (for complete event)
+                    self._collect_document_info(tool_result)
 
-                            # Collect documents from tool result (for complete event)
-                            if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                                doc_info = {
-                                    "filename": tool_result["metadata"]["filename"],
-                                    "tool_type": tool_result["metadata"]["tool_type"]
-                                }
-                                # Include user_id and session_id if available (needed for S3 path reconstruction)
-                                if "user_id" in tool_result["metadata"]:
-                                    doc_info["user_id"] = tool_result["metadata"]["user_id"]
-                                if "session_id" in tool_result["metadata"]:
-                                    doc_info["session_id"] = tool_result["metadata"]["session_id"]
-                                self.turn_documents.append(doc_info)
+                    logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (no context)")
+                    yield self.formatter.create_tool_result_event(tool_result)
+            except ImportError:
+                # Add browser session metadata even if import fails
+                self._add_browser_metadata(tool_result)
 
-                            logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (import error)")
-                            yield self.formatter.create_tool_result_event(tool_result)
-                    else:
-                        # Collect documents from tool result (for complete event)
-                        if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-                            doc_info = {
-                                "filename": tool_result["metadata"]["filename"],
-                                "tool_type": tool_result["metadata"]["tool_type"]
-                            }
-                            # Include user_id and session_id if available (needed for S3 path reconstruction)
-                            if "user_id" in tool_result["metadata"]:
-                                doc_info["user_id"] = tool_result["metadata"]["user_id"]
-                            if "session_id" in tool_result["metadata"]:
-                                doc_info["session_id"] = tool_result["metadata"]["session_id"]
-                            self.turn_documents.append(doc_info)
+                # Collect documents from tool result (for complete event)
+                self._collect_document_info(tool_result)
 
-                        logger.info(f"[Tool Result] 📤 Emitting tool_result event (no tool_use_id)")
-                        yield self.formatter.create_tool_result_event(tool_result)
-    
+                logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (without tool_context_manager)")
+                yield self.formatter.create_tool_result_event(tool_result)
+        else:
+            # Collect documents from tool result (for complete event)
+            self._collect_document_info(tool_result)
+
+            logger.info(f"[Tool Result] 📤 Emitting tool_result event (no tool_use_id)")
+            yield self.formatter.create_tool_result_event(tool_result)
+
+    def _add_browser_metadata(self, tool_result: Dict[str, Any]) -> None:
+        """Add browser session metadata to tool result if available"""
+        if hasattr(self, 'invocation_state') and 'browser_session_arn' in self.invocation_state:
+            if "metadata" not in tool_result:
+                tool_result["metadata"] = {}
+            tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
+            if 'browser_id' in self.invocation_state:
+                tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
+            logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
+
+    def _collect_document_info(self, tool_result: Dict[str, Any]) -> None:
+        """Collect document info from tool result for complete event"""
+        if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
+            doc_info = {
+                "filename": tool_result["metadata"]["filename"],
+                "tool_type": tool_result["metadata"]["tool_type"]
+            }
+            # Include user_id and session_id if available (needed for S3 path reconstruction)
+            if "user_id" in tool_result["metadata"]:
+                doc_info["user_id"] = tool_result["metadata"]["user_id"]
+            if "session_id" in tool_result["metadata"]:
+                doc_info["session_id"] = tool_result["metadata"]["session_id"]
+            self.turn_documents.append(doc_info)
+
     def _create_multimodal_message(self, text: str, file_paths: list = None):
         """Create a multimodal message with text, images, and documents for Strands SDK"""
         if not file_paths:

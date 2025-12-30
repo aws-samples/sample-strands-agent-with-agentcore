@@ -75,7 +75,7 @@ if os.getenv('ENVIRONMENT', 'development') == 'development':
     )
 
 # Import routers
-from routers import health, chat, gateway_tools, tools, browser_live_view
+from routers import health, chat, gateway_tools, tools, browser_live_view, stop
 
 # Include routers
 app.include_router(health.router)
@@ -83,6 +83,7 @@ app.include_router(chat.router)
 app.include_router(gateway_tools.router)
 app.include_router(tools.router)
 app.include_router(browser_live_view.router)
+app.include_router(stop.router)
 
 if __name__ == "__main__":
     import uvicorn

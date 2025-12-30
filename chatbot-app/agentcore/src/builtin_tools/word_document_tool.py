@@ -781,8 +781,8 @@ def read_word_document(
 ) -> Dict[str, Any]:
     """Read and retrieve a specific Word document.
 
-    This tool loads a document from workspace and returns it as downloadable bytes.
-    The document content is accessible to you (the agent) for analysis and answering questions.
+    This tool loads a document from workspace and extracts its text content using Code Interpreter.
+    The extracted text (paragraphs, tables, etc.) is returned for analysis and answering questions.
 
     Use this tool when:
     - User asks about document contents: "What's in report.docx?", "Summarize this document"
@@ -800,9 +800,9 @@ def read_word_document(
                       Example: "report", "proposal", "Q4-analysis"
 
     Returns:
+        - Extracted text content (paragraphs, tables, headings)
         - Document metadata (filename, size, S3 location)
-        - Special metadata format for frontend download
-        - Frontend automatically shows download button
+        - Frontend shows download button based on metadata
 
     Example Usage:
         # Download request
@@ -842,40 +842,160 @@ def read_word_document(
         if not doc_info:
             raise FileNotFoundError(f"Document not found: {document_filename}")
 
-        message = f"""✅ **Document ready for download**
-
-**File**: {document_filename} ({doc_info['size_kb']})
-**Last Modified**: {doc_info['last_modified'].split('T')[0]}"""
-
-        # Sanitize document name for Bedrock API (remove extension, handle legacy files)
-        # This handles legacy files with underscores or spaces
-        sanitized_name = _sanitize_document_name_for_bedrock(document_filename)
-
-        # Return with downloadable bytes
-        return {
-            "content": [
-                {"text": message},
-                {
-                    "document": {
-                        "format": "docx",
-                        "name": sanitized_name,
-                        "source": {
-                            "bytes": file_bytes
-                        }
-                    }
-                }
-            ],
-            "status": "success",
-            "metadata": {
-                "filename": document_filename,
-                "s3_key": doc_manager.get_s3_key(document_filename),
-                "size_kb": doc_info['size_kb'],
-                "last_modified": doc_info['last_modified'],
-                "tool_type": "word_document",
-                "user_id": user_id,
-                "session_id": session_id
+        # Get Code Interpreter
+        code_interpreter_id = _get_code_interpreter_id()
+        if not code_interpreter_id:
+            return {
+                "content": [{
+                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                }],
+                "status": "error"
             }
-        }
+
+        region = os.getenv('AWS_REGION', 'us-west-2')
+        code_interpreter = CodeInterpreter(region)
+        code_interpreter.start(identifier=code_interpreter_id)
+
+        try:
+            # Upload document to Code Interpreter
+            doc_manager.upload_to_code_interpreter(code_interpreter, document_filename, file_bytes)
+
+            # Generate extraction code
+            extraction_code = f'''
+import json
+from docx import Document
+
+doc = Document("{document_filename}")
+result = {{
+    "paragraphs": [],
+    "tables": [],
+    "sections": []
+}}
+
+# Extract paragraphs with styles
+for para in doc.paragraphs:
+    if para.text.strip():
+        result["paragraphs"].append({{
+            "text": para.text,
+            "style": para.style.name if para.style else "Normal"
+        }})
+
+# Extract tables
+for table_idx, table in enumerate(doc.tables):
+    table_data = []
+    for row in table.rows:
+        row_data = [cell.text.strip() for cell in row.cells]
+        table_data.append(row_data)
+    result["tables"].append({{
+        "index": table_idx,
+        "rows": len(table.rows),
+        "cols": len(table.columns),
+        "data": table_data
+    }})
+
+# Document properties
+result["properties"] = {{
+    "sections": len(doc.sections),
+    "paragraphs_count": len(doc.paragraphs),
+    "tables_count": len(doc.tables)
+}}
+
+print(json.dumps(result, ensure_ascii=False))
+'''
+
+            # Execute extraction
+            response = code_interpreter.invoke("executeCode", {
+                "code": extraction_code,
+                "language": "python",
+                "clearContext": False
+            })
+
+            # Collect JSON output
+            json_output = ""
+            for event in response.get("stream", []):
+                result = event.get("result", {})
+                if result.get("isError", False):
+                    error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
+                    logger.error(f"Extraction failed: {error_msg[:500]}")
+                    code_interpreter.stop()
+                    return {
+                        "content": [{
+                            "text": f"❌ **Failed to read document**\n\n```\n{error_msg[:1000]}\n```"
+                        }],
+                        "status": "error"
+                    }
+
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    json_output += stdout
+
+            # Parse JSON result
+            import json
+            doc_content = json.loads(json_output)
+
+            # Format output text
+            output_parts = []
+            output_parts.append(f"📄 **Document Content**: {document_filename} ({doc_info['size_kb']})")
+            output_parts.append("")
+
+            # Format paragraphs by style
+            current_style = None
+            for para in doc_content.get("paragraphs", []):
+                style = para.get("style", "Normal")
+                text = para.get("text", "")
+
+                if "Heading 1" in style:
+                    output_parts.append(f"# {text}")
+                elif "Heading 2" in style:
+                    output_parts.append(f"## {text}")
+                elif "Heading 3" in style:
+                    output_parts.append(f"### {text}")
+                elif "Title" in style:
+                    output_parts.append(f"**{text}**")
+                else:
+                    output_parts.append(text)
+                output_parts.append("")
+
+            # Format tables
+            for table in doc_content.get("tables", []):
+                output_parts.append(f"**[Table {table['index'] + 1}]** ({table['rows']} rows × {table['cols']} cols)")
+                for row_idx, row in enumerate(table.get("data", [])):
+                    output_parts.append(" | ".join(row))
+                    if row_idx == 0:
+                        output_parts.append(" | ".join(["---"] * len(row)))
+                output_parts.append("")
+
+            # Add summary
+            props = doc_content.get("properties", {})
+            output_parts.append(f"---\n*{props.get('paragraphs_count', 0)} paragraphs, {props.get('tables_count', 0)} tables*")
+            output_parts.append(f"*Last Modified: {doc_info['last_modified'].split('T')[0]}*")
+
+            output_text = "\n".join(output_parts)
+
+            # Truncate if too long
+            max_chars = 15000
+            if len(output_text) > max_chars:
+                output_text = output_text[:max_chars] + f"\n\n... (truncated, total {len(output_text)} characters)"
+
+            code_interpreter.stop()
+
+            return {
+                "content": [{"text": output_text}],
+                "status": "success",
+                "metadata": {
+                    "filename": document_filename,
+                    "s3_key": doc_manager.get_s3_key(document_filename),
+                    "size_kb": doc_info['size_kb'],
+                    "last_modified": doc_info['last_modified'],
+                    "tool_type": "word_document",
+                    "user_id": user_id,
+                    "session_id": session_id
+                }
+            }
+
+        except Exception as e:
+            code_interpreter.stop()
+            raise e
 
     except FileNotFoundError as e:
         logger.error(f"Document not found: {e}")

@@ -92,7 +92,8 @@ async function invokeLocalAgentCore(
   files?: any[],
   temperature?: number,
   systemPrompt?: string,
-  cachingEnabled?: boolean
+  cachingEnabled?: boolean,
+  abortSignal?: AbortSignal
 ): Promise<ReadableStream> {
   console.log('[AgentCore] 🚀 Invoking LOCAL AgentCore via HTTP POST')
   console.log(`[AgentCore]    URL: ${AGENTCORE_URL}/invocations`)
@@ -153,6 +154,7 @@ async function invokeLocalAgentCore(
       'Accept': 'text/event-stream',
     },
     body: JSON.stringify(payload),
+    signal: abortSignal, // Pass abort signal for cancellation
   })
 
   if (!response.ok) {
@@ -182,7 +184,8 @@ async function invokeAwsAgentCore(
   files?: any[],
   temperature?: number,
   systemPrompt?: string,
-  cachingEnabled?: boolean
+  cachingEnabled?: boolean,
+  abortSignal?: AbortSignal
 ): Promise<ReadableStream> {
   await initializeAwsClients()
   const runtimeArn = await getAgentCoreRuntimeArn()
@@ -270,6 +273,19 @@ async function invokeAwsAgentCore(
 
     return new ReadableStream({
       start(controller) {
+        // Handle abort signal
+        if (abortSignal) {
+          abortSignal.addEventListener('abort', () => {
+            console.log('[AgentCore] Abort signal received, destroying Node.js stream')
+            nodeStream.destroy()
+            try {
+              controller.close()
+            } catch (e) {
+              // Controller might already be closed
+            }
+          })
+        }
+
         nodeStream.on('data', (chunk: Uint8Array) => {
           controller.enqueue(chunk)
         })
@@ -285,25 +301,54 @@ async function invokeAwsAgentCore(
       },
 
       cancel() {
+        console.log('[AgentCore] Stream cancelled, destroying Node.js stream')
         nodeStream.destroy()
       }
     })
   }
 
   // Otherwise, treat as AsyncIterable
+  let aborted = false
+
+  // Handle abort signal for AsyncIterable
+  if (abortSignal) {
+    abortSignal.addEventListener('abort', () => {
+      console.log('[AgentCore] Abort signal received for AsyncIterable stream')
+      aborted = true
+    })
+  }
+
   return new ReadableStream({
     async start(controller) {
       try {
         for await (const chunk of sdkStream as any) {
+          if (aborted) {
+            console.log('[AgentCore] Stream aborted, stopping iteration')
+            break
+          }
           if (chunk) {
             controller.enqueue(chunk)
           }
         }
         controller.close()
       } catch (error) {
-        console.error('[AgentCore] Error reading stream:', error)
-        controller.error(error)
+        if (aborted) {
+          console.log('[AgentCore] Stream aborted during iteration')
+          try {
+            controller.close()
+          } catch (e) {
+            // Controller might already be closed
+          }
+        } else {
+          console.error('[AgentCore] Error reading stream:', error)
+          controller.error(error)
+        }
       }
+    },
+
+    cancel() {
+      console.log('[AgentCore] AsyncIterable stream cancelled')
+      aborted = true
     }
   })
 }
@@ -321,13 +366,14 @@ export async function invokeAgentCoreRuntime(
   files?: any[],
   temperature?: number,
   systemPrompt?: string,
-  cachingEnabled?: boolean
+  cachingEnabled?: boolean,
+  abortSignal?: AbortSignal
 ): Promise<ReadableStream> {
   try {
     if (IS_LOCAL) {
-      return await invokeLocalAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled)
+      return await invokeLocalAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal)
     } else {
-      return await invokeAwsAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled)
+      return await invokeAwsAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal)
     }
   } catch (error) {
     console.error('[AgentCore] ❌ Failed to invoke Runtime:', error)

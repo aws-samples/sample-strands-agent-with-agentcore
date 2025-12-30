@@ -56,6 +56,7 @@ export const useChatAPI = ({
 }: UseChatAPIProps) => {
 
   const abortControllerRef = useRef<AbortController | null>(null)
+  const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const sessionIdRef = useRef<string | null>(null)
 
   // Restore last session on page load (with timeout check)
@@ -409,6 +410,9 @@ export const useChatAPI = ({
         throw new Error('No response body reader available')
       }
 
+      // Store reader ref for cleanup on abort
+      readerRef.current = reader
+
       let buffer = ''
 
       while (true) {
@@ -465,7 +469,17 @@ export const useChatAPI = ({
       onSuccess?.()
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
-        return // Request was aborted, don't show error
+        // Request was aborted - cancel the reader to propagate abort to backend
+        if (readerRef.current) {
+          try {
+            await readerRef.current.cancel()
+            logger.info('[useChatAPI] Reader cancelled on abort')
+          } catch (cancelErr) {
+            logger.debug('[useChatAPI] Error cancelling reader:', cancelErr)
+          }
+          readerRef.current = null
+        }
+        return
       }
       
       logger.error('Error sending message:', error)
@@ -681,10 +695,47 @@ export const useChatAPI = ({
   }, [setMessages, getAuthHeaders])
 
   const cleanup = useCallback(() => {
+    // Cancel reader first to propagate abort to backend
+    // Don't set to null here - let the catch block in sendMessage handle cleanup
+    if (readerRef.current) {
+      readerRef.current.cancel().then(() => {
+        logger.info('[useChatAPI] Reader cancelled via cleanup')
+      }).catch(() => {})
+    }
+    // Then abort the controller
     if (abortControllerRef.current) {
       abortControllerRef.current.abort()
     }
   }, [])
+
+  // Send stop signal to backend (DB-based stop for AgentCore)
+  const sendStopSignal = useCallback(async () => {
+    const currentSessionId = sessionIdRef.current
+    if (!currentSessionId) {
+      logger.warn('[useChatAPI] No session ID for stop signal')
+      return
+    }
+
+    try {
+      const authHeaders = await getAuthHeaders()
+      const response = await fetch(getApiUrl('stream/stop'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders
+        },
+        body: JSON.stringify({ sessionId: currentSessionId })
+      })
+
+      if (response.ok) {
+        logger.info('[useChatAPI] Stop signal sent successfully')
+      } else {
+        logger.warn('[useChatAPI] Stop signal failed:', response.status)
+      }
+    } catch (error) {
+      logger.warn('[useChatAPI] Error sending stop signal:', error)
+    }
+  }, [getAuthHeaders, getApiUrl])
 
   return {
     loadTools,
@@ -692,6 +743,7 @@ export const useChatAPI = ({
     newChat,
     sendMessage,
     cleanup,
+    sendStopSignal,
     isLoadingTools: false,
     loadSession
   }

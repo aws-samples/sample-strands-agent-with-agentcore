@@ -857,6 +857,23 @@ async function sendResponse(event, status, data, reason) {
       })
     )
 
+    // DynamoDB permissions for Tool Registry, Session metadata, and Stop Signal
+    // Using {projectName}-users-v2 table pattern (no additional env vars needed)
+    executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'DynamoDBToolRegistryAccess',
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'dynamodb:GetItem',
+          'dynamodb:Query',
+          'dynamodb:UpdateItem',  // Required for clearing stop signal
+        ],
+        resources: [
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/${projectName}-users-v2`,
+        ],
+      })
+    )
+
     // ============================================================
     // Step 7: Create AgentCore Runtime (after build completes)
     // ============================================================
@@ -886,6 +903,7 @@ async function sendResponse(event, status, data, reason) {
       // Environment variables
       environmentVariables: {
         LOG_LEVEL: 'INFO',
+        AWS_REGION: this.region,
         PROJECT_NAME: projectName,
         ENVIRONMENT: environment,
         MEMORY_ARN: memory.attrMemoryArn,

@@ -4,11 +4,12 @@ Implements AgentCore Runtime standard endpoints:
 - GET /ping (required)
 """
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from typing import Optional, List
+from typing import Optional, List, AsyncGenerator
 import logging
 import json
+import asyncio
 
 from models.schemas import InvocationRequest
 from agent.agent import ChatbotAgent
@@ -16,6 +17,51 @@ from agent.agent import ChatbotAgent
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
+
+# Disconnect check interval (seconds)
+DISCONNECT_CHECK_INTERVAL = 0.5
+
+
+async def disconnect_aware_stream(
+    stream: AsyncGenerator,
+    http_request: Request,
+    session_id: str
+) -> AsyncGenerator[str, None]:
+    """
+    Wrapper generator that checks for client disconnection.
+
+    When BFF aborts the connection, FastAPI's Request.is_disconnected()
+    returns True. This wrapper detects that and closes the underlying stream,
+    which triggers the finally block in event_processor (partial response save).
+    """
+    disconnected = False
+    try:
+        async for chunk in stream:
+            # Check if client disconnected before yielding
+            if await http_request.is_disconnected():
+                logger.info(f"🔌 Client disconnected for session {session_id} - stopping stream")
+                disconnected = True
+                break
+
+            yield chunk
+
+    except GeneratorExit:
+        logger.info(f"🔌 GeneratorExit in disconnect_aware_stream for session {session_id}")
+        disconnected = True
+        raise
+    except Exception as e:
+        logger.error(f"Error in disconnect_aware_stream for session {session_id}: {e}")
+        raise
+    finally:
+        # Close the underlying stream to trigger its finally block
+        # This ensures event_processor saves partial response
+        if disconnected:
+            logger.info(f"🔌 Closing underlying stream for session {session_id} due to disconnect")
+            try:
+                await stream.aclose()
+            except Exception as e:
+                logger.debug(f"Error closing stream: {e}")
+        logger.debug(f"disconnect_aware_stream finished for session {session_id}")
 
 def get_agent(
     session_id: str,
@@ -63,7 +109,7 @@ async def ping():
 
 
 @router.post("/invocations")
-async def invocations(request: InvocationRequest):
+async def invocations(request: InvocationRequest, http_request: Request):
     """
     AgentCore Runtime standard invocation endpoint (required)
 
@@ -137,9 +183,17 @@ async def invocations(request: InvocationRequest):
                 files=input_data.files
             )
 
+        # Wrap stream with disconnect detection
+        # This allows us to detect when BFF aborts the connection
+        wrapped_stream = disconnect_aware_stream(
+            stream,
+            http_request,
+            input_data.session_id
+        )
+
         # Stream response from agent as SSE
         return StreamingResponse(
-            stream,
+            wrapped_stream,
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

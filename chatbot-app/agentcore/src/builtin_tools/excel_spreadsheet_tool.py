@@ -769,8 +769,8 @@ def read_excel_spreadsheet(
 ) -> Dict[str, Any]:
     """Read and retrieve a specific Excel spreadsheet.
 
-    This tool loads a spreadsheet from workspace and returns it as downloadable bytes.
-    The spreadsheet content is accessible to you (the agent) for analysis and answering questions.
+    This tool loads a spreadsheet from workspace and extracts its data content using Code Interpreter.
+    The extracted data (sheets, rows, columns) is returned for analysis and answering questions.
 
     Use this tool when:
     - User asks about spreadsheet contents: "What's in sales.xlsx?", "Summarize this data"
@@ -788,9 +788,9 @@ def read_excel_spreadsheet(
                          Example: "sales-report", "inventory", "Q4-data"
 
     Returns:
+        - Extracted data content (sheet names, cell values, table format)
         - Spreadsheet metadata (filename, size, S3 location)
-        - Special metadata format for frontend download
-        - Frontend automatically shows download button
+        - Frontend shows download button based on metadata
 
     Example Usage:
         # Download request
@@ -830,39 +830,153 @@ def read_excel_spreadsheet(
         if not doc_info:
             raise FileNotFoundError(f"Spreadsheet not found: {spreadsheet_filename}")
 
-        message = f"""✅ **Spreadsheet ready for download**
-
-**File**: {spreadsheet_filename} ({doc_info['size_kb']})
-**Last Modified**: {doc_info['last_modified'].split('T')[0]}"""
-
-        # Sanitize spreadsheet name for Bedrock API (remove extension, handle legacy files)
-        sanitized_name = _sanitize_spreadsheet_name_for_bedrock(spreadsheet_filename)
-
-        # Return with downloadable bytes
-        return {
-            "content": [
-                {"text": message},
-                {
-                    "document": {
-                        "format": "xlsx",
-                        "name": sanitized_name,
-                        "source": {
-                            "bytes": file_bytes
-                        }
-                    }
-                }
-            ],
-            "status": "success",
-            "metadata": {
-                "filename": spreadsheet_filename,
-                "s3_key": doc_manager.get_s3_key(spreadsheet_filename),
-                "size_kb": doc_info['size_kb'],
-                "last_modified": doc_info['last_modified'],
-                "tool_type": "excel_spreadsheet",
-                "user_id": user_id,
-                "session_id": session_id
+        # Get Code Interpreter
+        code_interpreter_id = _get_code_interpreter_id()
+        if not code_interpreter_id:
+            return {
+                "content": [{
+                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                }],
+                "status": "error"
             }
-        }
+
+        region = os.getenv('AWS_REGION', 'us-west-2')
+        code_interpreter = CodeInterpreter(region)
+        code_interpreter.start(identifier=code_interpreter_id)
+
+        try:
+            # Upload spreadsheet to Code Interpreter
+            doc_manager.upload_to_code_interpreter(code_interpreter, spreadsheet_filename, file_bytes)
+
+            # Generate extraction code
+            extraction_code = f'''
+import json
+from openpyxl import load_workbook
+
+wb = load_workbook("{spreadsheet_filename}", data_only=True)
+result = {{
+    "sheets": [],
+    "properties": {{
+        "sheet_count": len(wb.sheetnames),
+        "sheet_names": wb.sheetnames
+    }}
+}}
+
+for sheet_name in wb.sheetnames:
+    sheet = wb[sheet_name]
+    sheet_data = {{
+        "name": sheet_name,
+        "rows": sheet.max_row or 0,
+        "cols": sheet.max_column or 0,
+        "data": []
+    }}
+
+    # Limit rows for efficiency
+    max_rows = min(sheet.max_row or 0, 100)
+    max_cols = min(sheet.max_column or 0, 20)
+
+    for row in sheet.iter_rows(min_row=1, max_row=max_rows, max_col=max_cols, values_only=True):
+        row_values = [str(cell) if cell is not None else "" for cell in row]
+        if any(v.strip() for v in row_values):  # Skip empty rows
+            sheet_data["data"].append(row_values)
+
+    if sheet.max_row and sheet.max_row > 100:
+        sheet_data["truncated"] = True
+        sheet_data["total_rows"] = sheet.max_row
+
+    result["sheets"].append(sheet_data)
+
+print(json.dumps(result, ensure_ascii=False))
+'''
+
+            # Execute extraction
+            response = code_interpreter.invoke("executeCode", {
+                "code": extraction_code,
+                "language": "python",
+                "clearContext": False
+            })
+
+            # Collect JSON output
+            json_output = ""
+            for event in response.get("stream", []):
+                result = event.get("result", {})
+                if result.get("isError", False):
+                    error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
+                    logger.error(f"Extraction failed: {error_msg[:500]}")
+                    code_interpreter.stop()
+                    return {
+                        "content": [{
+                            "text": f"❌ **Failed to read spreadsheet**\n\n```\n{error_msg[:1000]}\n```"
+                        }],
+                        "status": "error"
+                    }
+
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    json_output += stdout
+
+            # Parse JSON result
+            import json
+            spreadsheet_content = json.loads(json_output)
+
+            # Format output text
+            output_parts = []
+            props = spreadsheet_content.get("properties", {})
+            output_parts.append(f"📊 **Spreadsheet Content**: {spreadsheet_filename} ({doc_info['size_kb']})")
+            output_parts.append(f"**Sheets**: {', '.join(props.get('sheet_names', []))}")
+            output_parts.append("")
+
+            # Format each sheet
+            for sheet in spreadsheet_content.get("sheets", []):
+                output_parts.append(f"### Sheet: {sheet['name']} ({sheet['rows']} rows × {sheet['cols']} cols)")
+                output_parts.append("")
+
+                data = sheet.get("data", [])
+                if data:
+                    # Header row
+                    if len(data) > 0:
+                        output_parts.append(" | ".join(data[0]))
+                        output_parts.append(" | ".join(["---"] * len(data[0])))
+
+                    # Data rows
+                    for row in data[1:]:
+                        output_parts.append(" | ".join(row))
+
+                if sheet.get("truncated"):
+                    output_parts.append(f"\n... (showing first 100 of {sheet.get('total_rows', '?')} rows)")
+
+                output_parts.append("")
+
+            # Add summary
+            output_parts.append(f"---\n*{props.get('sheet_count', 0)} sheet(s)*")
+            output_parts.append(f"*Last Modified: {doc_info['last_modified'].split('T')[0]}*")
+
+            output_text = "\n".join(output_parts)
+
+            # Truncate if too long
+            max_chars = 15000
+            if len(output_text) > max_chars:
+                output_text = output_text[:max_chars] + f"\n\n... (truncated, total {len(output_text)} characters)"
+
+            code_interpreter.stop()
+
+            return {
+                "content": [{"text": output_text}],
+                "status": "success",
+                "metadata": {
+                    "filename": spreadsheet_filename,
+                    "s3_key": doc_manager.get_s3_key(spreadsheet_filename),
+                    "size_kb": doc_info['size_kb'],
+                    "last_modified": doc_info['last_modified'],
+                    "tool_type": "excel_spreadsheet",
+                    "user_id": user_id,
+                    "session_id": session_id
+                }
+            }
+
+        except Exception as e:
+            code_interpreter.stop()
+            raise e
 
     except FileNotFoundError as e:
         logger.error(f"Spreadsheet not found: {e}")
