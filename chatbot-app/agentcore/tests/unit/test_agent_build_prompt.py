@@ -153,13 +153,14 @@ class TestBuildPromptCloudMode:
         """Create agent in cloud mode."""
         with patch.dict(os.environ, {'MEMORY_ID': 'test-memory-id'}):
             with patch('agent.agent.AGENTCORE_MEMORY_AVAILABLE', True):
-                agent = mock_agent_class(
-                    session_id="test_session",
-                    user_id="test_user",
-                    enabled_tools=['word_document_tools']
-                )
-                # Ensure cloud mode is detected
-                return agent
+                with patch('agent.agent.CompactingSessionManager'):
+                    agent = mock_agent_class(
+                        session_id="test_session",
+                        user_id="test_user",
+                        enabled_tools=['word_document_tools']
+                    )
+                    # Ensure cloud mode is detected
+                    return agent
 
     def test_image_still_creates_content_block_in_cloud(self, cloud_agent):
         """Test that images still create ContentBlock in cloud mode."""

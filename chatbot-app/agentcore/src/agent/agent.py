@@ -34,6 +34,7 @@ except ImportError:
 try:
     from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
     from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
+    from agent.compacting_session_manager import CompactingSessionManager
     AGENTCORE_MEMORY_AVAILABLE = True
 except ImportError:
     AGENTCORE_MEMORY_AVAILABLE = False
@@ -470,15 +471,35 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 retrieval_config=retrieval_config
             )
 
-            # Use AgentCore Memory Session Manager directly (no buffering)
-            # Messages are saved immediately to ensure data consistency
-            self.session_manager = AgentCoreMemorySessionManager(
+            # Use CompactingSessionManager for threshold-based context optimization
+            # Two-stage compaction:
+            #   Stage 1 (truncation_threshold): Truncate long tool inputs/results
+            #   Stage 2 (compaction_threshold): Load [LTM Summary] + [Recent N turns]
+            # Configuration via environment variables (with sensible defaults)
+            compaction_threshold = int(os.environ.get('COMPACTION_THRESHOLD', '50'))
+            truncation_threshold = int(os.environ.get('COMPACTION_TRUNCATION_THRESHOLD', '20'))
+            recent_turns_count = int(os.environ.get('COMPACTION_RECENT_TURNS', '5'))
+            min_recent_turns = int(os.environ.get('COMPACTION_MIN_TURNS', '3'))
+            max_tool_content_length = int(os.environ.get('COMPACTION_MAX_TOOL_LENGTH', '1000'))
+
+            # Get SUMMARIZATION strategy ID for summary retrieval
+            summarization_strategy_id = strategy_ids.get('SUMMARIZATION')
+
+            self.session_manager = CompactingSessionManager(
                 agentcore_memory_config=agentcore_memory_config,
-                region_name=aws_region
+                region_name=aws_region,
+                compaction_threshold=compaction_threshold,
+                truncation_threshold=truncation_threshold,
+                recent_turns_count=recent_turns_count,
+                min_recent_turns=min_recent_turns,
+                max_tool_content_length=max_tool_content_length,
+                summarization_strategy_id=summarization_strategy_id
             )
 
-            logger.info(f"✅ AgentCore Memory initialized (direct mode): user_id={self.user_id}")
+            logger.info(f"✅ AgentCore Memory initialized (with compaction): user_id={self.user_id}")
             logger.info(f"   LTM retrieval: {len(retrieval_config)} namespace(s) configured")
+            logger.info(f"   Stage 1 (truncation): threshold={truncation_threshold}, max_tool_length={max_tool_content_length}")
+            logger.info(f"   Stage 2 (compaction): threshold={compaction_threshold}, recent_turns={recent_turns_count}, min_turns={min_recent_turns}")
         else:
             # Local development: Use file-based session manager with buffering wrapper
             logger.info(f"💻 Local mode: Using FileSessionManager with buffering")
