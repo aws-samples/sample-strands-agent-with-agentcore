@@ -1,9 +1,10 @@
 import { useCallback, useRef, startTransition } from 'react'
 import { Message, ToolExecution } from '@/types/chat'
-import { StreamEvent, ChatSessionState, ChatUIState } from '@/types/events'
+import { StreamEvent, ChatSessionState, ChatUIState, WorkspaceFile } from '@/types/events'
 import { useLatencyTracking } from './useLatencyTracking'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { updateLastActivity } from '@/config/session'
+import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, DocumentType } from '@/config/document-tools'
 
 interface UseStreamEventsProps {
   sessionState: ChatSessionState
@@ -36,7 +37,7 @@ export const useStreamEvents = ({
 }: UseStreamEventsProps) => {
   // Refs to track streaming state synchronously (avoid React batching issues)
   const streamingStartedRef = useRef(false)
-  const streamingIdRef = useRef<number | null>(null)
+  const streamingIdRef = useRef<string | null>(null)
   const completeProcessedRef = useRef(false)
 
   // Latency tracking hook (encapsulates all latency-related refs and logic)
@@ -65,21 +66,21 @@ export const useStreamEvents = ({
       if (!streamingStartedRef.current) {
         // Create new streaming message
         streamingStartedRef.current = true
-        const newId = Date.now() + Math.random()
+        const newId = String(Date.now())
         streamingIdRef.current = newId
 
         setMessages(prevMsgs => [...prevMsgs, {
           id: newId,
           text: data.text,
           sender: 'bot',
-          timestamp: new Date().toLocaleTimeString(),
+          timestamp: new Date().toISOString(),
           isStreaming: true,
           images: []
         }])
 
         setSessionState(prev => ({
           ...prev,
-          streaming: { text: data.text, id: newId }
+          streaming: { text: data.text, id: Number(newId) }  // StreamingState.id is still number
         }))
 
         setUIState(prevUI => {
@@ -216,12 +217,12 @@ export const useStreamEvents = ({
           }))
 
           // Create new tool message
-          const toolMessageId = Date.now() + Math.random()
+          const toolMessageId = String(Date.now())
           setMessages(prevMessages => [...prevMessages, {
             id: toolMessageId,
             text: '',
             sender: 'bot',
-            timestamp: new Date().toLocaleTimeString(),
+            timestamp: new Date().toISOString(),
             toolExecutions: [newToolExecution],
             isToolMessage: true,
             turnId: currentTurnIdRef.current || undefined
@@ -233,14 +234,17 @@ export const useStreamEvents = ({
 
   const handleToolResultEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_result') {
-      // Debug: Log documents field
+      // Find the tool name from current executions
+      const toolExecution = currentToolExecutionsRef.current.find(tool => tool.id === data.toolUseId)
+      const toolName = toolExecution?.toolName
+
+      // Debug: Log tool result
       console.log('[ToolResult] 🔧 tool_result event received:', {
         toolUseId: data.toolUseId,
+        toolName,
         status: data.status,
         hasResult: !!data.result,
-        hasDocuments: !!data.documents,
-        hasImages: !!data.images,
-        documents: data.documents
+        hasImages: !!data.images
       })
 
       // Update tool execution with result
@@ -332,7 +336,7 @@ export const useStreamEvents = ({
     }
   }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages])
 
-  const handleCompleteEvent = useCallback((data: StreamEvent) => {
+  const handleCompleteEvent = useCallback(async (data: StreamEvent) => {
     if (data.type === 'complete') {
       const isStopEvent = data.message === 'Stream stopped by user'
 
@@ -388,12 +392,71 @@ export const useStreamEvents = ({
         updateLastActivity()
 
         const currentSessionId = sessionStorage.getItem('chat-session-id')
+
+        // Detect used document tools and fetch workspace files from S3
+        let workspaceDocuments: Array<{ filename: string; tool_type: string }> = []
+
+        // Check tool executions for document tools
+        const usedDocTypes = new Set<DocumentType>()
+        for (const toolExec of currentToolExecutionsRef.current) {
+          const docType = TOOL_TO_DOC_TYPE[toolExec.toolName]
+          if (docType) {
+            usedDocTypes.add(docType)
+          }
+        }
+
+        // Fetch workspace files for each used document type
+        if (usedDocTypes.size > 0 && currentSessionId) {
+          try {
+            // Get auth headers for workspace API calls
+            const workspaceHeaders: Record<string, string> = {
+              'X-Session-ID': currentSessionId
+            }
+            try {
+              const session = await fetchAuthSession()
+              const token = session.tokens?.idToken?.toString()
+              if (token) {
+                workspaceHeaders['Authorization'] = `Bearer ${token}`
+              }
+            } catch (error) {
+              console.log('[Complete] No auth session for workspace request')
+            }
+
+            const fetchPromises = Array.from(usedDocTypes).map(async (docType) => {
+              const response = await fetch(`/api/workspace/files?docType=${docType}`, {
+                headers: workspaceHeaders
+              })
+              if (response.ok) {
+                const data = await response.json()
+                if (data.files && Array.isArray(data.files)) {
+                  return data.files.map((file: any) => ({
+                    filename: file.filename,
+                    tool_type: DOC_TYPE_TO_TOOL_TYPE[docType] || file.tool_type
+                  }))
+                }
+              }
+              return []
+            })
+
+            const results = await Promise.all(fetchPromises)
+            workspaceDocuments = results.flat()
+            console.log('[Complete] Fetched workspace documents:', workspaceDocuments)
+          } catch (error) {
+            console.warn('[Complete] Failed to fetch workspace files:', error)
+          }
+        }
+
+        // Use workspace documents if fetched, otherwise fall back to backend-provided documents
+        const finalDocuments = workspaceDocuments.length > 0
+          ? workspaceDocuments
+          : (data.documents || [])
+
         const metrics = currentSessionId
           ? latencyTracking.recordE2E({
               sessionId: currentSessionId,
               messageId,
               tokenUsage: data.usage,
-              documents: data.documents
+              documents: finalDocuments
             })
           : latencyTracking.getMetrics()
 
@@ -426,7 +489,7 @@ export const useStreamEvents = ({
                   ...msg,
                   isStreaming: false,
                   images: data.images || msg.images || [],
-                  documents: data.documents || msg.documents || [],
+                  documents: finalDocuments,
                   latencyMetrics: { timeToFirstToken: ttftValue, endToEndLatency: e2eValue },
                   ...(data.usage && { tokenUsage: data.usage })
                 }
@@ -461,7 +524,7 @@ export const useStreamEvents = ({
       completeProcessedRef.current = false
       latencyTracking.reset()
     }
-  }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, latencyTracking])
+  }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, latencyTracking, currentToolExecutionsRef])
 
   const handleInitEvent = useCallback(() => {
     setUIState(prev => {
@@ -480,10 +543,10 @@ export const useStreamEvents = ({
   const handleErrorEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'error') {
       setMessages(prev => [...prev, {
-        id: Date.now(),
+        id: String(Date.now()),
         text: data.message,
         sender: 'bot',
-        timestamp: new Date().toLocaleTimeString()
+        timestamp: new Date().toISOString()
       }])
 
       // Calculate End-to-End Latency (even on error)

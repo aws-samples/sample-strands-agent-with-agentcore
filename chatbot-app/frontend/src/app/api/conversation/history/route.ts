@@ -255,8 +255,6 @@ export async function GET(request: NextRequest) {
         lastModel: sessionMetadata.lastModel,
         lastTemperature: sessionMetadata.lastTemperature,
         enabledTools: sessionMetadata.enabledTools,
-        selectedPromptId: sessionMetadata.selectedPromptId,
-        customPromptText: sessionMetadata.customPromptText,
       } : null,
     })
   } catch (error) {

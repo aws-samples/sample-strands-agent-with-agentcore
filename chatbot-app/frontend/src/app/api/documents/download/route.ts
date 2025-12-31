@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
+import { extractUserFromRequest } from '@/lib/auth-utils'
 
 const region = process.env.AWS_REGION || 'us-west-2'
 
@@ -7,19 +8,19 @@ const region = process.env.AWS_REGION || 'us-west-2'
  * POST /api/documents/download
  *
  * Reconstructs S3 key from userId, sessionId and filename, returns it for frontend to fetch presigned URL.
+ * userId is extracted from the Authorization header (JWT token).
  *
  * Request body:
  * - sessionId: string (chat session ID)
  * - filename: string (document filename)
  * - toolType: string (e.g., 'word_document')
- * - userId: string (optional, user ID from tool metadata)
  *
  * Returns:
  * - s3Key: string (s3://bucket/path format for presigned URL generation)
  */
 export async function POST(request: NextRequest) {
   try {
-    const { sessionId, filename, toolType, userId: providedUserId } = await request.json()
+    const { sessionId, filename, toolType } = await request.json()
 
     if (!sessionId || !filename || !toolType) {
       return NextResponse.json(
@@ -28,10 +29,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use provided userId from tool metadata, or derive from sessionId as fallback
-    // For anonymous users: sessionId starts with 'anon' → userId = 'anonymous'
-    // For authenticated users: use provided userId from metadata (full UUID)
-    const userId = providedUserId || (sessionId.startsWith('anon') ? 'anonymous' : sessionId.split('_')[0])
+    // Extract userId from Authorization header (JWT token)
+    const user = extractUserFromRequest(request)
+    const userId = user.userId
 
     // Get document bucket from environment or Parameter Store
     let documentBucket = process.env.DOCUMENT_BUCKET

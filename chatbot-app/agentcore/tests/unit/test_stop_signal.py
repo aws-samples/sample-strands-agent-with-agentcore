@@ -526,8 +526,8 @@ class TestStopSignalEdgeCases:
 
     def test_unicode_in_ids(self, local_provider):
         """Test handling of unicode characters in IDs."""
-        user_id = "用户_123"
-        session_id = "세션_456"
+        user_id = "user_cn_123"
+        session_id = "session_kr_456"
 
         local_provider.request_stop(user_id, session_id)
 

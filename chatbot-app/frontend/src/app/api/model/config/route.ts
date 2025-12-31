@@ -11,34 +11,6 @@ const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
 
 export const runtime = 'nodejs'
 
-// Default system prompts
-const DEFAULT_PROMPTS = [
-  {
-    id: 'general',
-    name: 'General',
-    prompt: 'You are a helpful AI assistant.',
-    active: true
-  },
-  {
-    id: 'code',
-    name: 'Code',
-    prompt: 'You are an expert software engineer. Provide clear, concise code examples and explanations.',
-    active: false
-  },
-  {
-    id: 'research',
-    name: 'Research',
-    prompt: 'You are a research assistant. Provide detailed, well-researched answers with citations when possible.',
-    active: false
-  },
-  {
-    id: 'rag',
-    name: 'RAG Agent',
-    prompt: 'You are a RAG (Retrieval-Augmented Generation) agent. Use provided context to answer questions accurately.',
-    active: false
-  }
-]
-
 export async function GET(request: NextRequest) {
   try {
     // Extract user from Cognito JWT token
@@ -49,7 +21,6 @@ export async function GET(request: NextRequest) {
     let config = {
       model_id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
       temperature: 0.7,
-      system_prompts: DEFAULT_PROMPTS
     }
 
     // Load user preferences from storage (local file or DynamoDB)
@@ -64,18 +35,6 @@ export async function GET(request: NextRequest) {
         }
         if (savedConfig.temperature !== undefined) {
           config.temperature = savedConfig.temperature
-        }
-        if (savedConfig.system_prompt) {
-          config.system_prompts = config.system_prompts.map(p => ({
-            ...p,
-            active: false
-          }))
-          config.system_prompts.push({
-            id: 'custom',
-            name: 'Custom',
-            prompt: savedConfig.system_prompt,
-            active: true
-          })
         }
       }
 
@@ -92,19 +51,6 @@ export async function GET(request: NextRequest) {
           }
           if (profile.preferences.defaultTemperature !== undefined) {
             config.temperature = profile.preferences.defaultTemperature
-          }
-          if (profile.preferences.systemPrompt) {
-            // Mark custom prompt as active
-            config.system_prompts = config.system_prompts.map(p => ({
-              ...p,
-              active: false
-            }))
-            config.system_prompts.push({
-              id: 'custom',
-              name: 'Custom',
-              prompt: profile.preferences.systemPrompt,
-              active: true
-            })
           }
         }
 

@@ -363,16 +363,15 @@ class StreamEventFormatter:
         })
 
     @staticmethod
-    def create_complete_event(message: str, images: List[Dict[str, str]] = None, usage: Dict[str, Any] = None, documents: List[Dict[str, str]] = None) -> str:
-        """Create completion event with optional token usage metrics and documents"""
+    def create_complete_event(message: str, images: List[Dict[str, str]] = None, usage: Dict[str, Any] = None) -> str:
+        """Create completion event with optional token usage metrics.
+        Documents are now fetched by frontend via S3 workspace API."""
         completion_data = {
             "type": "complete",
             "message": message
         }
         if images:
             completion_data["images"] = images
-        if documents:
-            completion_data["documents"] = documents
         if usage:
             completion_data["usage"] = usage
 

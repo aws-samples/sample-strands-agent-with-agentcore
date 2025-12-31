@@ -1,0 +1,6 @@
+# Test dependencies for AgentCore Gateway Lambda functions
+pytest>=7.0.0
+pytest-asyncio>=0.21.0
+
+# Lambda function dependencies (for testing)
+arxiv>=2.0.0

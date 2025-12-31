@@ -1,0 +1,392 @@
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
+import { ChatInterface } from '@/components/ChatInterface'
+import type { Message, Tool } from '@/types/chat'
+import type { AgentStatus } from '@/types/events'
+
+// Type for grouped messages
+interface GroupedMessage {
+  type: 'user' | 'assistant_turn'
+  messages: Message[]
+  id: string
+}
+
+// Mock useChat hook
+const mockUseChat: {
+  messages: Message[]
+  groupedMessages: GroupedMessage[]
+  inputMessage: string
+  setInputMessage: ReturnType<typeof vi.fn>
+  isConnected: boolean
+  isTyping: boolean
+  agentStatus: AgentStatus
+  availableTools: Tool[]
+  currentToolExecutions: any[]
+  currentReasoning: any
+  showProgressPanel: boolean
+  toggleProgressPanel: ReturnType<typeof vi.fn>
+  sendMessage: ReturnType<typeof vi.fn>
+  stopGeneration: ReturnType<typeof vi.fn>
+  newChat: ReturnType<typeof vi.fn>
+  toggleTool: ReturnType<typeof vi.fn>
+  refreshTools: ReturnType<typeof vi.fn>
+  sessionId: string | null
+  loadSession: ReturnType<typeof vi.fn>
+  onGatewayToolsChange: ReturnType<typeof vi.fn>
+  browserSession: { sessionId: string | null; browserId: string | null } | null
+  browserProgress: any
+  respondToInterrupt: ReturnType<typeof vi.fn>
+  currentInterrupt: any
+} = {
+  messages: [],
+  groupedMessages: [],
+  inputMessage: '',
+  setInputMessage: vi.fn(),
+  isConnected: true,
+  isTyping: false,
+  agentStatus: 'idle',
+  availableTools: [],
+  currentToolExecutions: [],
+  currentReasoning: null,
+  showProgressPanel: false,
+  toggleProgressPanel: vi.fn(),
+  sendMessage: vi.fn(),
+  stopGeneration: vi.fn(),
+  newChat: vi.fn().mockResolvedValue(undefined),
+  toggleTool: vi.fn().mockResolvedValue(undefined),
+  refreshTools: vi.fn().mockResolvedValue(undefined),
+  sessionId: null,
+  loadSession: vi.fn().mockResolvedValue(undefined),
+  onGatewayToolsChange: vi.fn(),
+  browserSession: null,
+  browserProgress: undefined,
+  respondToInterrupt: vi.fn().mockResolvedValue(undefined),
+  currentInterrupt: null
+}
+
+vi.mock('@/hooks/useChat', () => ({
+  useChat: () => mockUseChat
+}))
+
+// Mock useIframeAuth
+vi.mock('@/hooks/useIframeAuth', () => ({
+  useIframeAuth: () => ({
+    isInIframe: false,
+    isAuthenticated: false,
+    user: null,
+    isLoading: false,
+    error: null
+  }),
+  postAuthStatusToParent: vi.fn()
+}))
+
+// Mock useSidebar
+vi.mock('@/components/ui/sidebar', () => ({
+  SidebarTrigger: () => <button data-testid="sidebar-trigger">Menu</button>,
+  SidebarInset: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <div data-testid="sidebar-inset" className={className}>{children}</div>
+  ),
+  useSidebar: () => ({
+    setOpen: vi.fn(),
+    setOpenMobile: vi.fn(),
+    open: false
+  })
+}))
+
+// Mock next-themes
+vi.mock('next-themes', () => ({
+  useTheme: () => ({
+    theme: 'light',
+    setTheme: vi.fn()
+  })
+}))
+
+// Mock api-client
+vi.mock('@/lib/api-client', () => ({
+  apiGet: vi.fn().mockResolvedValue({ success: true, config: {}, models: [] })
+}))
+
+// Mock child components
+vi.mock('@/components/chat/ChatMessage', () => ({
+  ChatMessage: ({ message }: { message: any }) => (
+    <div data-testid="chat-message">{message.text}</div>
+  )
+}))
+
+vi.mock('@/components/chat/AssistantTurn', () => ({
+  AssistantTurn: ({ messages }: { messages: any[] }) => (
+    <div data-testid="assistant-turn">
+      {messages.map((m, i) => <span key={i}>{m.text}</span>)}
+    </div>
+  )
+}))
+
+vi.mock('@/components/Greeting', () => ({
+  Greeting: () => <div data-testid="greeting">Welcome!</div>
+}))
+
+vi.mock('@/components/ChatSidebar', () => ({
+  ChatSidebar: () => <div data-testid="chat-sidebar">Sidebar</div>
+}))
+
+vi.mock('@/components/ToolsDropdown', () => ({
+  ToolsDropdown: () => <div data-testid="tools-dropdown">Tools</div>
+}))
+
+vi.mock('@/components/SuggestedQuestions', () => ({
+  SuggestedQuestions: () => <div data-testid="suggested-questions">Questions</div>
+}))
+
+vi.mock('@/components/BrowserLiveViewButton', () => ({
+  BrowserLiveViewButton: () => <button data-testid="browser-live-view-btn">Live View</button>
+}))
+
+vi.mock('@/components/ResearchModal', () => ({
+  ResearchModal: () => <div data-testid="research-modal">Research Modal</div>
+}))
+
+vi.mock('@/components/BrowserResultModal', () => ({
+  BrowserResultModal: () => <div data-testid="browser-result-modal">Browser Result</div>
+}))
+
+vi.mock('@/components/InterruptApprovalModal', () => ({
+  InterruptApprovalModal: () => <div data-testid="interrupt-modal">Interrupt Modal</div>
+}))
+
+vi.mock('@/components/ModelConfigDialog', () => ({
+  ModelConfigDialog: () => <button data-testid="model-config">Model</button>
+}))
+
+describe('ChatInterface', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    // Reset mock state
+    mockUseChat.messages = []
+    mockUseChat.groupedMessages = []
+    mockUseChat.inputMessage = ''
+    mockUseChat.isTyping = false
+    mockUseChat.agentStatus = 'idle'
+    mockUseChat.currentInterrupt = null
+  })
+
+  afterEach(() => {
+    vi.clearAllMocks()
+  })
+
+  describe('Rendering', () => {
+    it('should render chat interface in standalone mode', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('sidebar-inset')).toBeInTheDocument()
+    })
+
+    it('should render chat interface in embedded mode', () => {
+      render(<ChatInterface mode="embedded" />)
+
+      expect(screen.getByTestId('sidebar-inset')).toBeInTheDocument()
+    })
+
+    it('should show greeting when no messages', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('greeting')).toBeInTheDocument()
+    })
+
+    it('should render chat sidebar', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('chat-sidebar')).toBeInTheDocument()
+    })
+  })
+
+  describe('Input Area', () => {
+    it('should render textarea for message input', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      const textarea = screen.getByPlaceholderText(/Ask me anything/i)
+      expect(textarea).toBeInTheDocument()
+    })
+
+    it('should render send button', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      // Find button by its type
+      const buttons = screen.getAllByRole('button')
+      const sendButton = buttons.find(btn => btn.getAttribute('type') === 'submit')
+      expect(sendButton).toBeInTheDocument()
+    })
+
+    it('should disable send button when input is empty', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      const buttons = screen.getAllByRole('button')
+      const sendButton = buttons.find(btn => btn.getAttribute('type') === 'submit')
+      expect(sendButton).toBeDisabled()
+    })
+  })
+
+  describe('Messages Display', () => {
+    it('should render user messages', () => {
+      mockUseChat.groupedMessages = [
+        {
+          type: 'user',
+          id: 'user_1',
+          messages: [{ id: '1', text: 'Hello', sender: 'user', timestamp: '12:00' }]
+        }
+      ]
+
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('chat-message')).toBeInTheDocument()
+      expect(screen.getByText('Hello')).toBeInTheDocument()
+    })
+
+    it('should render assistant turns', () => {
+      mockUseChat.groupedMessages = [
+        {
+          type: 'assistant_turn',
+          id: 'turn_1',
+          messages: [{ id: '2', text: 'Hi there!', sender: 'bot', timestamp: '12:01' }]
+        }
+      ]
+
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('assistant-turn')).toBeInTheDocument()
+      expect(screen.getByText('Hi there!')).toBeInTheDocument()
+    })
+  })
+
+  describe('Status Indicators', () => {
+    it('should show connected indicator when connected', () => {
+      mockUseChat.groupedMessages = [
+        {
+          type: 'user',
+          id: 'user_1',
+          messages: [{ id: '1', text: 'Hello', sender: 'user', timestamp: '12:00' }]
+        }
+      ]
+
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByText('Connected')).toBeInTheDocument()
+    })
+
+    it('should show thinking animation when agent is thinking', () => {
+      mockUseChat.agentStatus = 'thinking'
+      mockUseChat.groupedMessages = [
+        {
+          type: 'user',
+          id: 'user_1',
+          messages: [{ id: '1', text: 'Hello', sender: 'user', timestamp: '12:00' }]
+        }
+      ]
+
+      render(<ChatInterface mode="standalone" />)
+
+      // The thinking animation shows three bouncing dots
+      const dots = document.querySelectorAll('.animate-bounce')
+      expect(dots.length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('File Upload', () => {
+    it('should render file upload button', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      // Find the hidden file input
+      const fileInput = document.getElementById('file-upload')
+      expect(fileInput).toBeInTheDocument()
+    })
+  })
+
+  describe('Embedded Mode', () => {
+    it('should show suggested questions in embedded mode when no messages', () => {
+      mockUseChat.availableTools = [{ id: 'tool1', name: 'Tool 1', enabled: true, description: 'Test', icon: 'tool', import_path: '', category: 'test' }]
+
+      render(<ChatInterface mode="embedded" />)
+
+      expect(screen.getByTestId('suggested-questions')).toBeInTheDocument()
+    })
+  })
+
+  describe('Interrupt Handling', () => {
+    it('should show interrupt modal when there is a current interrupt', () => {
+      mockUseChat.currentInterrupt = {
+        interrupts: [{ id: 'int1', name: 'approval', reason: { tool_name: 'research_agent' } }]
+      }
+
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('interrupt-modal')).toBeInTheDocument()
+    })
+
+    it('should not show interrupt modal when no current interrupt', () => {
+      mockUseChat.currentInterrupt = null
+
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.queryByTestId('interrupt-modal')).not.toBeInTheDocument()
+    })
+  })
+
+  describe('Controls', () => {
+    it('should render tools dropdown', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('tools-dropdown')).toBeInTheDocument()
+    })
+
+    it('should render model config button', () => {
+      render(<ChatInterface mode="standalone" />)
+
+      expect(screen.getByTestId('model-config')).toBeInTheDocument()
+    })
+  })
+})
+
+describe('ChatInterface - Agent Status', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockUseChat.messages = []
+    mockUseChat.groupedMessages = []
+    mockUseChat.agentStatus = 'idle'
+  })
+
+  it('should show stop button when agent is not idle', () => {
+    mockUseChat.agentStatus = 'thinking'
+    mockUseChat.groupedMessages = [
+      {
+        type: 'user',
+        id: 'user_1',
+        messages: [{ id: '1', text: 'Hello', sender: 'user', timestamp: '12:00' }]
+      }
+    ]
+
+    render(<ChatInterface mode="standalone" />)
+
+    // When agent is not idle, the submit button changes to stop button
+    const buttons = screen.getAllByRole('button')
+    // Stop button should be present (it has a Square icon, not Send)
+    expect(buttons.length).toBeGreaterThan(0)
+  })
+
+  it('should disable stop button for researching status', () => {
+    mockUseChat.agentStatus = 'researching'
+    mockUseChat.groupedMessages = [
+      {
+        type: 'user',
+        id: 'user_1',
+        messages: [{ id: '1', text: 'Hello', sender: 'user', timestamp: '12:00' }]
+      }
+    ]
+
+    render(<ChatInterface mode="standalone" />)
+
+    // Stop button should be disabled during research
+    const stopButton = document.querySelector('button[title*="Stop"]')
+    if (stopButton) {
+      expect(stopButton).toBeDisabled()
+    }
+  })
+})

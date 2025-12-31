@@ -20,6 +20,14 @@ export interface ToolUseEvent {
   input: Record<string, any>;
 }
 
+export interface WorkspaceFile {
+  filename: string;
+  size_kb: string;
+  last_modified: string;
+  s3_key: string;
+  tool_type: string;
+}
+
 export interface ToolResultEvent {
   type: 'tool_result';
   toolUseId: string;
@@ -28,10 +36,6 @@ export interface ToolResultEvent {
   images?: Array<{
     format: string;
     data: string;
-  }>;
-  documents?: Array<{
-    filename: string;
-    tool_type: string;
   }>;
   metadata?: Record<string, any>;
 }

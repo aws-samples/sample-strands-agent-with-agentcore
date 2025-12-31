@@ -28,6 +28,7 @@ class StreamEventProcessor:
         self.current_user_id = None
         self.tool_use_registry = {}
         self.partial_response_text = ""  # Track partial response for graceful abort
+        self.tool_use_started = False  # Track if tool_use has been emitted (to prevent duplicate assistant messages)
 
         # Stop signal provider (Strategy pattern - Local or DynamoDB)
         self.stop_signal_provider = get_stop_signal_provider()
@@ -112,7 +113,19 @@ class StreamEventProcessor:
             logger.warning(f"[StopSignal] Error clearing stop signal: {e}")
 
     def _save_partial_response(self, agent, session_id: str) -> bool:
-        """Save partial response when stream is interrupted."""
+        """Save partial response when stream is interrupted.
+
+        IMPORTANT: Do NOT save partial response if tool_use has already been emitted.
+        When tool_use is emitted, Strands SDK saves the assistant message (with text + toolUse).
+        If we save partial response here, it creates a DUPLICATE assistant message,
+        which breaks the tool_use/tool_result pairing and causes ValidationException.
+        """
+        # Skip if tool_use was started - Strands SDK already saved the assistant message
+        if self.tool_use_started:
+            logger.info(f"[Partial Response] Skipping save - tool_use already emitted, Strands SDK handles message persistence")
+            self.partial_response_text = ""
+            return False
+
         if not self.partial_response_text.strip():
             return False
 
@@ -128,6 +141,7 @@ class StreamEventProcessor:
             session_mgr.append_message(abort_message, agent)
             if hasattr(session_mgr, 'flush'):
                 session_mgr.flush()
+            logger.info(f"[Partial Response] Saved interrupted response ({len(abort_message_text)} chars)")
             return True
         except Exception as e:
             logger.error(f"Failed to save partial response: {e}")
@@ -242,6 +256,9 @@ class StreamEventProcessor:
         # Reset partial response tracking for this stream
         self.partial_response_text = ""
 
+        # Reset tool_use tracking flag
+        self.tool_use_started = False
+
         # Add stream-level deduplication
         # Handle both string and list (multimodal) messages
         if isinstance(message, list):
@@ -277,8 +294,8 @@ class StreamEventProcessor:
             else:
                 stream_iterator = agent.stream_async(multimodal_message)
 
-            # Track documents from tool results in this turn (for complete event)
-            self.turn_documents = []
+            # Documents are now fetched by frontend via S3 workspace API
+            # No longer need to track documents in backend
 
             async for event in stream_iterator:
                 # Check stop signal periodically (throttled to reduce DB calls)
@@ -361,13 +378,9 @@ class StreamEventProcessor:
                         logger.error(f"[Token Usage] Error extracting token usage: {e}")
                         # Continue without usage data
 
-                    # Include documents collected during this turn
-                    documents = self.turn_documents if hasattr(self, 'turn_documents') and self.turn_documents else None
-                    if documents:
-                        logger.info(f"[DocumentDownload] Including {len(documents)} documents in complete event")
-
+                    # Documents are fetched by frontend via S3 workspace API - no longer sent from backend
                     logger.info(f"[Final Result] 📤 Emitting complete event and closing stream")
-                    yield self.formatter.create_complete_event(result_text, images, usage, documents)
+                    yield self.formatter.create_complete_event(result_text, images, usage)
                     logger.info(f"[Final Result] ✅ Complete event emitted, stream ended")
                     stream_completed_normally = True
                     return
@@ -408,6 +421,7 @@ class StreamEventProcessor:
 
                                 # Emit tool_use event
                                 yield self.formatter.create_tool_use_event(tool_call)
+                                self.tool_use_started = True  # Mark that tool_use was emitted
 
                                 await asyncio.sleep(0.1)
 
@@ -509,6 +523,7 @@ class StreamEventProcessor:
                             # Yield event (new tool or parameter update)
                             logger.info(f"[Tool Use Event] 📤 Emitting tool_use event for {tool_name} with {len(processed_input)} parameter(s)")
                             yield self.formatter.create_tool_use_event(tool_use_copy)
+                            self.tool_use_started = True  # Mark that tool_use was emitted
 
                             await asyncio.sleep(0.1)
                 
@@ -711,18 +726,9 @@ class StreamEventProcessor:
             logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
 
     def _collect_document_info(self, tool_result: Dict[str, Any]) -> None:
-        """Collect document info from tool result for complete event"""
-        if "metadata" in tool_result and "filename" in tool_result["metadata"] and "tool_type" in tool_result["metadata"]:
-            doc_info = {
-                "filename": tool_result["metadata"]["filename"],
-                "tool_type": tool_result["metadata"]["tool_type"]
-            }
-            # Include user_id and session_id if available (needed for S3 path reconstruction)
-            if "user_id" in tool_result["metadata"]:
-                doc_info["user_id"] = tool_result["metadata"]["user_id"]
-            if "session_id" in tool_result["metadata"]:
-                doc_info["session_id"] = tool_result["metadata"]["session_id"]
-            self.turn_documents.append(doc_info)
+        """Document collection is now handled by frontend via S3 workspace API.
+        This method is kept as a no-op for backwards compatibility."""
+        pass
 
     def _create_multimodal_message(self, text: str, file_paths: list = None):
         """Create a multimodal message with text, images, and documents for Strands SDK"""

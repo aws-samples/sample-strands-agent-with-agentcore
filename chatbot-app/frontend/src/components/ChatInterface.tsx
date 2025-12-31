@@ -99,7 +99,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     browserSession,
     browserProgress,
     respondToInterrupt,
-    currentInterrupt
+    currentInterrupt,
   } = useChat()
 
   // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
@@ -900,6 +900,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           interrupts={currentInterrupt.interrupts}
         />
       )}
+
     </>
   )
 }

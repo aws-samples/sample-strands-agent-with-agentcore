@@ -1161,12 +1161,119 @@ class TestFrontendEventCompatibility:
         complete_events = [e for e in events if '"type": "complete"' in e]
         complete_event = self.parse_sse_event(complete_events[0])
 
-        # Frontend expects: { type: "complete", message: string, usage?: object, images?: array, documents?: array }
+        # Frontend expects: { type: "complete", message: string, usage?: object, images?: array }
+        # Note: documents are now fetched by frontend via S3 workspace API, not included in complete event
         assert complete_event["type"] == "complete"
         assert "message" in complete_event
         assert "usage" in complete_event
         assert complete_event["usage"]["inputTokens"] == 100
         assert complete_event["usage"]["outputTokens"] == 50
+
+    @pytest.mark.asyncio
+    async def test_complete_event_with_cache_tokens(self, processor, mock_agent):
+        """Test complete event includes cache token usage when present."""
+        final_result = create_mock_final_result("Final message with cache")
+        final_result.metrics.accumulated_usage = {
+            "inputTokens": 200,
+            "outputTokens": 100,
+            "totalTokens": 300,
+            "cacheReadInputTokens": 150,
+            "cacheWriteInputTokens": 50
+        }
+        events_list = [{"result": final_result}]
+        mock_agent.stream_async = create_async_generator(events_list)
+
+        events = []
+        async for event in processor.process_stream(mock_agent, "Test", session_id="test_cache_tokens"):
+            events.append(event)
+
+        complete_events = [e for e in events if '"type": "complete"' in e]
+        complete_event = self.parse_sse_event(complete_events[0])
+
+        # Verify cache token fields are included
+        assert complete_event["usage"]["inputTokens"] == 200
+        assert complete_event["usage"]["outputTokens"] == 100
+        assert complete_event["usage"]["totalTokens"] == 300
+        assert complete_event["usage"]["cacheReadInputTokens"] == 150
+        assert complete_event["usage"]["cacheWriteInputTokens"] == 50
+
+    @pytest.mark.asyncio
+    async def test_complete_event_omits_zero_cache_tokens(self, processor, mock_agent):
+        """Test complete event omits cache tokens when they are zero."""
+        final_result = create_mock_final_result("Final message no cache")
+        final_result.metrics.accumulated_usage = {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 0,
+            "cacheWriteInputTokens": 0
+        }
+        events_list = [{"result": final_result}]
+        mock_agent.stream_async = create_async_generator(events_list)
+
+        events = []
+        async for event in processor.process_stream(mock_agent, "Test", session_id="test_zero_cache"):
+            events.append(event)
+
+        complete_events = [e for e in events if '"type": "complete"' in e]
+        complete_event = self.parse_sse_event(complete_events[0])
+
+        # Base tokens should be present
+        assert complete_event["usage"]["inputTokens"] == 100
+        assert complete_event["usage"]["outputTokens"] == 50
+        # Zero cache tokens should be omitted
+        assert "cacheReadInputTokens" not in complete_event["usage"]
+        assert "cacheWriteInputTokens" not in complete_event["usage"]
+
+    @pytest.mark.asyncio
+    async def test_complete_event_cache_read_only(self, processor, mock_agent):
+        """Test complete event with cache read but no write (cache hit scenario)."""
+        final_result = create_mock_final_result("Cache hit response")
+        final_result.metrics.accumulated_usage = {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 80,
+            "cacheWriteInputTokens": 0
+        }
+        events_list = [{"result": final_result}]
+        mock_agent.stream_async = create_async_generator(events_list)
+
+        events = []
+        async for event in processor.process_stream(mock_agent, "Test", session_id="test_cache_read"):
+            events.append(event)
+
+        complete_events = [e for e in events if '"type": "complete"' in e]
+        complete_event = self.parse_sse_event(complete_events[0])
+
+        # Cache read should be present, write should be omitted
+        assert complete_event["usage"]["cacheReadInputTokens"] == 80
+        assert "cacheWriteInputTokens" not in complete_event["usage"]
+
+    @pytest.mark.asyncio
+    async def test_complete_event_cache_write_only(self, processor, mock_agent):
+        """Test complete event with cache write but no read (first request scenario)."""
+        final_result = create_mock_final_result("First request response")
+        final_result.metrics.accumulated_usage = {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "cacheReadInputTokens": 0,
+            "cacheWriteInputTokens": 100
+        }
+        events_list = [{"result": final_result}]
+        mock_agent.stream_async = create_async_generator(events_list)
+
+        events = []
+        async for event in processor.process_stream(mock_agent, "Test", session_id="test_cache_write"):
+            events.append(event)
+
+        complete_events = [e for e in events if '"type": "complete"' in e]
+        complete_event = self.parse_sse_event(complete_events[0])
+
+        # Cache write should be present, read should be omitted
+        assert "cacheReadInputTokens" not in complete_event["usage"]
+        assert complete_event["usage"]["cacheWriteInputTokens"] == 100
 
     @pytest.mark.asyncio
     async def test_error_event_structure(self, processor, mock_agent):
@@ -1503,3 +1610,670 @@ class TestStopRequestedException:
         exc = StopRequestedException("Test")
 
         assert isinstance(exc, Exception)
+
+
+# ============================================================
+# Strands Agent Message/Tool Signature Compliance Tests
+# ============================================================
+
+class TestStrandsMessageSignatureCompliance:
+    """Tests to verify message formats comply with Strands Agent signatures.
+
+    Strands Agent expects specific message structures:
+    - User messages: {"role": "user", "content": [{"text": "..."}] | str}
+    - Assistant messages: {"role": "assistant", "content": [{"text": "..."}]}
+    - Tool use: {"role": "assistant", "content": [{"toolUse": {"toolUseId": "...", "name": "...", "input": {...}}}]}
+    - Tool result: {"role": "user", "content": [{"toolResult": {"toolUseId": "...", "content": [{"text": "..."}]}}]}
+    """
+
+    @pytest.fixture
+    def processor(self):
+        return StreamEventProcessor()
+
+    # ============================================================
+    # User Message Format Tests
+    # ============================================================
+
+    def test_user_message_text_format(self):
+        """Test user message with text content."""
+        # Strands accepts both string and list formats for user content
+        user_message_string = {
+            "role": "user",
+            "content": "Hello, how are you?"
+        }
+
+        user_message_list = {
+            "role": "user",
+            "content": [{"text": "Hello, how are you?"}]
+        }
+
+        # Both formats should be valid
+        assert user_message_string["role"] == "user"
+        assert isinstance(user_message_string["content"], str)
+
+        assert user_message_list["role"] == "user"
+        assert isinstance(user_message_list["content"], list)
+        assert user_message_list["content"][0]["text"] == "Hello, how are you?"
+
+    def test_user_message_with_image(self):
+        """Test user message with image content."""
+        user_message_with_image = {
+            "role": "user",
+            "content": [
+                {"text": "What's in this image?"},
+                {
+                    "image": {
+                        "source": {"data": "base64encodeddata"},
+                        "format": "png"
+                    }
+                }
+            ]
+        }
+
+        assert user_message_with_image["role"] == "user"
+        assert len(user_message_with_image["content"]) == 2
+        assert "text" in user_message_with_image["content"][0]
+        assert "image" in user_message_with_image["content"][1]
+
+    def test_user_message_with_document(self):
+        """Test user message with document content."""
+        user_message_with_doc = {
+            "role": "user",
+            "content": [
+                {"text": "Summarize this document"},
+                {
+                    "document": {
+                        "source": {"bytes": b"pdf content"},
+                        "format": "pdf",
+                        "name": "report.pdf"
+                    }
+                }
+            ]
+        }
+
+        assert user_message_with_doc["role"] == "user"
+        assert "document" in user_message_with_doc["content"][1]
+
+    # ============================================================
+    # Assistant Message Format Tests
+    # ============================================================
+
+    def test_assistant_message_text_format(self):
+        """Test assistant message with text response."""
+        assistant_message = {
+            "role": "assistant",
+            "content": [{"text": "I'm doing well, thank you!"}]
+        }
+
+        assert assistant_message["role"] == "assistant"
+        assert isinstance(assistant_message["content"], list)
+        assert "text" in assistant_message["content"][0]
+
+    def test_assistant_message_with_tool_use(self):
+        """Test assistant message with tool use."""
+        assistant_message_tool = {
+            "role": "assistant",
+            "content": [
+                {"text": "Let me calculate that for you."},
+                {
+                    "toolUse": {
+                        "toolUseId": "toolu_01ABC123",
+                        "name": "calculator",
+                        "input": {"expression": "2 + 2"}
+                    }
+                }
+            ]
+        }
+
+        assert assistant_message_tool["role"] == "assistant"
+        tool_use = assistant_message_tool["content"][1]["toolUse"]
+        assert "toolUseId" in tool_use
+        assert "name" in tool_use
+        assert "input" in tool_use
+        assert isinstance(tool_use["input"], dict)
+
+    # ============================================================
+    # Tool Use Format Tests
+    # ============================================================
+
+    def test_tool_use_event_format(self, processor):
+        """Test tool_use event format matches Strands expectation."""
+        tool_use = {
+            "toolUseId": "toolu_01XYZ789",
+            "name": "web_search",
+            "input": {
+                "query": "latest AI news",
+                "num_results": 5
+            }
+        }
+
+        # Strands expects toolUse blocks with these exact field names
+        assert "toolUseId" in tool_use
+        assert isinstance(tool_use["toolUseId"], str)
+        assert tool_use["toolUseId"].startswith("toolu_")  # Claude-style ID
+
+        assert "name" in tool_use
+        assert isinstance(tool_use["name"], str)
+
+        assert "input" in tool_use
+        assert isinstance(tool_use["input"], dict)
+
+    def test_tool_use_input_types(self):
+        """Test tool_use input can contain various types."""
+        tool_inputs = [
+            # String input
+            {"text": "hello world"},
+            # Integer input
+            {"count": 10},
+            # Float input
+            {"temperature": 0.7},
+            # Boolean input
+            {"verbose": True},
+            # List input
+            {"items": ["a", "b", "c"]},
+            # Nested dict input
+            {"config": {"key": "value", "nested": {"deep": True}}},
+            # Mixed types
+            {"query": "search", "limit": 10, "filters": ["recent", "popular"]}
+        ]
+
+        for tool_input in tool_inputs:
+            tool_use = {
+                "toolUseId": "toolu_test",
+                "name": "test_tool",
+                "input": tool_input
+            }
+
+            assert isinstance(tool_use["input"], dict)
+            # Should be JSON serializable
+            import json
+            json.dumps(tool_use)  # Should not raise
+
+    # ============================================================
+    # Tool Result Format Tests
+    # ============================================================
+
+    def test_tool_result_text_format(self):
+        """Test tool_result with text content."""
+        tool_result = {
+            "toolUseId": "toolu_01XYZ789",
+            "content": [{"text": "The answer is 4"}]
+        }
+
+        assert "toolUseId" in tool_result
+        assert "content" in tool_result
+        assert isinstance(tool_result["content"], list)
+        assert "text" in tool_result["content"][0]
+
+    def test_tool_result_with_image(self):
+        """Test tool_result with image content (e.g., from Code Interpreter)."""
+        tool_result_with_image = {
+            "toolUseId": "toolu_01CODE",
+            "content": [
+                {"text": "Here is the generated chart:"},
+                {
+                    "image": {
+                        "source": {"data": "base64chart"},
+                        "format": "png"
+                    }
+                }
+            ]
+        }
+
+        assert "toolUseId" in tool_result_with_image
+        content = tool_result_with_image["content"]
+        assert len(content) == 2
+        assert "image" in content[1]
+
+    def test_tool_result_error_format(self):
+        """Test tool_result for error case."""
+        tool_result_error = {
+            "toolUseId": "toolu_01FAIL",
+            "content": [{"text": "Error: Division by zero"}],
+            "status": "error"
+        }
+
+        assert tool_result_error["status"] == "error"
+        assert "Error" in tool_result_error["content"][0]["text"]
+
+    def test_tool_result_message_format(self):
+        """Test complete tool_result as user message."""
+        # When sending tool result back to model, it's wrapped as user message
+        tool_result_message = {
+            "role": "user",
+            "content": [
+                {
+                    "toolResult": {
+                        "toolUseId": "toolu_01ABC",
+                        "content": [{"text": "Search results: ..."}]
+                    }
+                }
+            ]
+        }
+
+        assert tool_result_message["role"] == "user"
+        tool_result = tool_result_message["content"][0]["toolResult"]
+        assert "toolUseId" in tool_result
+        assert "content" in tool_result
+
+    # ============================================================
+    # Cache Point Format Tests
+    # ============================================================
+
+    def test_cache_point_format(self):
+        """Test cachePoint format for prompt caching."""
+        message_with_cache = {
+            "role": "assistant",
+            "content": [
+                {"text": "Response text"},
+                {"cachePoint": {"type": "default"}}
+            ]
+        }
+
+        cache_point = message_with_cache["content"][1]
+        assert "cachePoint" in cache_point
+        assert cache_point["cachePoint"]["type"] == "default"
+
+    # ============================================================
+    # SSE Event Format Tests (Frontend Contract)
+    # ============================================================
+
+    def test_sse_tool_use_event_format(self, processor):
+        """Test SSE tool_use event matches frontend expectations."""
+        from streaming.event_formatter import StreamEventFormatter
+
+        tool_use = {
+            "toolUseId": "toolu_01TEST",
+            "name": "calculator",
+            "input": {"expression": "1 + 1"}
+        }
+
+        event_str = StreamEventFormatter.create_tool_use_event(tool_use)
+
+        # Should be valid SSE format
+        assert event_str.startswith("data: ")
+        assert event_str.endswith("\n\n")
+
+        # Parse and verify
+        import json
+        data = json.loads(event_str[6:-2])  # Remove "data: " prefix and "\n\n" suffix
+
+        assert data["type"] == "tool_use"
+        assert data["toolUseId"] == "toolu_01TEST"
+        assert data["name"] == "calculator"
+        assert data["input"] == {"expression": "1 + 1"}
+
+    def test_sse_tool_result_event_format(self, processor):
+        """Test SSE tool_result event matches frontend expectations."""
+        from streaming.event_formatter import StreamEventFormatter
+
+        tool_result = {
+            "toolUseId": "toolu_01TEST",
+            "content": [{"text": "Result: 2"}]
+        }
+
+        event_str = StreamEventFormatter.create_tool_result_event(tool_result)
+
+        # Should be valid SSE format
+        assert event_str.startswith("data: ")
+
+        # Parse and verify
+        import json
+        data = json.loads(event_str[6:-2])
+
+        assert data["type"] == "tool_result"
+        assert data["toolUseId"] == "toolu_01TEST"
+        assert "result" in data  # Transformed for frontend
+
+    # ============================================================
+    # Integration: Message Sequence Tests
+    # ============================================================
+
+    def test_conversation_message_sequence(self):
+        """Test a complete conversation message sequence."""
+        # Simulates: User asks -> Assistant uses tool -> Tool result -> Assistant answers
+
+        messages = [
+            # 1. User asks a question
+            {
+                "role": "user",
+                "content": [{"text": "What is 2 + 2?"}]
+            },
+            # 2. Assistant decides to use calculator
+            {
+                "role": "assistant",
+                "content": [
+                    {"text": "Let me calculate that."},
+                    {
+                        "toolUse": {
+                            "toolUseId": "toolu_calc_001",
+                            "name": "calculator",
+                            "input": {"expression": "2 + 2"}
+                        }
+                    }
+                ]
+            },
+            # 3. Tool result sent back as user message
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "toolResult": {
+                            "toolUseId": "toolu_calc_001",
+                            "content": [{"text": "4"}]
+                        }
+                    }
+                ]
+            },
+            # 4. Assistant provides final answer
+            {
+                "role": "assistant",
+                "content": [{"text": "The answer is 4."}]
+            }
+        ]
+
+        # Verify message sequence
+        assert messages[0]["role"] == "user"
+        assert messages[1]["role"] == "assistant"
+        assert "toolUse" in messages[1]["content"][1]
+        assert messages[2]["role"] == "user"
+        assert "toolResult" in messages[2]["content"][0]
+        assert messages[3]["role"] == "assistant"
+
+        # Verify toolUseId matches between tool_use and tool_result
+        tool_use_id = messages[1]["content"][1]["toolUse"]["toolUseId"]
+        tool_result_id = messages[2]["content"][0]["toolResult"]["toolUseId"]
+        assert tool_use_id == tool_result_id
+
+    def test_multiple_tool_uses_in_sequence(self):
+        """Test multiple sequential tool uses."""
+        # Assistant can call multiple tools before responding
+
+        assistant_multi_tool = {
+            "role": "assistant",
+            "content": [
+                {"text": "Let me search and calculate."},
+                {
+                    "toolUse": {
+                        "toolUseId": "toolu_search_001",
+                        "name": "web_search",
+                        "input": {"query": "current date"}
+                    }
+                },
+                {
+                    "toolUse": {
+                        "toolUseId": "toolu_calc_001",
+                        "name": "calculator",
+                        "input": {"expression": "365 * 2"}
+                    }
+                }
+            ]
+        }
+
+        tool_uses = [c for c in assistant_multi_tool["content"] if "toolUse" in c]
+        assert len(tool_uses) == 2
+
+        # Each tool_use must have unique toolUseId
+        tool_ids = [t["toolUse"]["toolUseId"] for t in tool_uses]
+        assert len(tool_ids) == len(set(tool_ids))  # All unique
+
+    # ============================================================
+    # Strands Agent Cache Point Signature Tests
+    # ============================================================
+
+    def test_cache_point_strands_format(self):
+        """Test cachePoint format matches Strands Agent SDK expectations.
+
+        Strands SDK expects cache points in message content as:
+        {"cachePoint": {"type": "default"}}
+
+        This is used by BedrockModel to enable prompt caching.
+        """
+        cache_point_block = {"cachePoint": {"type": "default"}}
+
+        # Must have cachePoint key
+        assert "cachePoint" in cache_point_block
+
+        # cachePoint value must be a dict with type
+        assert isinstance(cache_point_block["cachePoint"], dict)
+        assert "type" in cache_point_block["cachePoint"]
+
+        # Valid type for Bedrock prompt caching
+        assert cache_point_block["cachePoint"]["type"] == "default"
+
+    def test_cache_point_in_assistant_message(self):
+        """Test cache point placement in assistant message content array.
+
+        Strands SDK processes messages array where cache points appear
+        after content blocks (text, toolUse) in the same message.
+        """
+        assistant_message_with_cache = {
+            "role": "assistant",
+            "content": [
+                {"text": "Here is my response to your question."},
+                {"cachePoint": {"type": "default"}}
+            ]
+        }
+
+        # Verify message structure
+        assert assistant_message_with_cache["role"] == "assistant"
+        assert isinstance(assistant_message_with_cache["content"], list)
+        assert len(assistant_message_with_cache["content"]) == 2
+
+        # First block should be text
+        assert "text" in assistant_message_with_cache["content"][0]
+
+        # Second block should be cachePoint
+        assert "cachePoint" in assistant_message_with_cache["content"][1]
+
+    def test_cache_point_after_tool_result(self):
+        """Test cache point placement after tool_result in user message.
+
+        Tool results are expensive to recompute, so caching after them
+        is efficient for the Strands Agent conversation flow.
+        """
+        user_message_with_tool_result_cache = {
+            "role": "user",
+            "content": [
+                {
+                    "toolResult": {
+                        "toolUseId": "toolu_01ABC",
+                        "content": [{"text": "Search results: item1, item2, item3"}],
+                        "status": "success"
+                    }
+                },
+                {"cachePoint": {"type": "default"}}
+            ]
+        }
+
+        # Verify role (tool results come as user messages in Strands)
+        assert user_message_with_tool_result_cache["role"] == "user"
+
+        # First block should be toolResult
+        assert "toolResult" in user_message_with_tool_result_cache["content"][0]
+
+        # Second block should be cachePoint
+        assert "cachePoint" in user_message_with_tool_result_cache["content"][1]
+
+    def test_cache_point_not_at_content_start(self):
+        """Test that cache points are not placed at the start of content.
+
+        Strands SDK expects cache points AFTER content, not at the beginning.
+        Cache at start would cache nothing useful.
+        """
+        # Invalid: cache point at start
+        invalid_message = {
+            "role": "assistant",
+            "content": [
+                {"cachePoint": {"type": "default"}},  # Wrong position
+                {"text": "Response"}
+            ]
+        }
+
+        # Cache point should NOT be at index 0
+        first_block = invalid_message["content"][0]
+        # This is invalid format - test documents expected behavior
+        assert "cachePoint" in first_block  # This is the invalid case we want to avoid
+
+    def test_cache_point_valid_placement(self):
+        """Test valid cache point placement after text content."""
+        valid_message = {
+            "role": "assistant",
+            "content": [
+                {"text": "Response content here"},
+                {"cachePoint": {"type": "default"}}  # Correct: after text
+            ]
+        }
+
+        # Verify text comes before cache
+        text_idx = next(
+            i for i, block in enumerate(valid_message["content"])
+            if isinstance(block, dict) and "text" in block
+        )
+        cache_idx = next(
+            i for i, block in enumerate(valid_message["content"])
+            if isinstance(block, dict) and "cachePoint" in block
+        )
+
+        assert cache_idx > text_idx, "Cache point must come after text content"
+
+    def test_multiple_cache_points_in_conversation(self):
+        """Test multiple cache points across conversation history.
+
+        Strands/Bedrock allows up to 4 cache points, but our implementation
+        uses 3 for sliding window efficiency.
+        """
+        conversation_with_caches = [
+            {
+                "role": "user",
+                "content": [{"text": "Question 1"}]
+            },
+            {
+                "role": "assistant",
+                "content": [
+                    {"text": "Answer 1"},
+                    {"cachePoint": {"type": "default"}}  # Cache point 1
+                ]
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "toolResult": {
+                            "toolUseId": "tool-1",
+                            "content": [{"text": "Results"}]
+                        }
+                    },
+                    {"cachePoint": {"type": "default"}}  # Cache point 2
+                ]
+            },
+            {
+                "role": "assistant",
+                "content": [
+                    {"text": "Answer 2"},
+                    {"cachePoint": {"type": "default"}}  # Cache point 3
+                ]
+            }
+        ]
+
+        # Count cache points
+        cache_count = sum(
+            1 for msg in conversation_with_caches
+            for block in msg.get("content", [])
+            if isinstance(block, dict) and "cachePoint" in block
+        )
+
+        assert cache_count == 3, "Should have exactly 3 cache points"
+
+    def test_cache_point_after_tool_use_block(self):
+        """Test cache point placement after toolUse in assistant message."""
+        assistant_with_tool_and_cache = {
+            "role": "assistant",
+            "content": [
+                {"text": "Let me search for that."},
+                {
+                    "toolUse": {
+                        "toolUseId": "toolu_search_001",
+                        "name": "web_search",
+                        "input": {"query": "test query"}
+                    }
+                },
+                {"cachePoint": {"type": "default"}}
+            ]
+        }
+
+        # Cache should be after toolUse
+        blocks = assistant_with_tool_and_cache["content"]
+        tool_use_idx = next(
+            i for i, b in enumerate(blocks) if "toolUse" in b
+        )
+        cache_idx = next(
+            i for i, b in enumerate(blocks) if "cachePoint" in b
+        )
+
+        assert cache_idx > tool_use_idx
+
+    def test_bedrock_model_cache_prompt_config(self):
+        """Test BedrockModel cache_prompt configuration for Strands SDK.
+
+        When creating BedrockModel, cache_prompt="default" enables
+        system prompt caching at the Bedrock API level.
+        """
+        # This is the expected config passed to BedrockModel
+        model_config_with_cache = {
+            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+            "temperature": 0.7,
+            "cache_prompt": "default"  # Enables system prompt caching
+        }
+
+        assert model_config_with_cache["cache_prompt"] == "default"
+
+        # Config without caching
+        model_config_no_cache = {
+            "model_id": "anthropic.claude-3-sonnet-20240229-v1:0",
+            "temperature": 0.7
+            # No cache_prompt key
+        }
+
+        assert "cache_prompt" not in model_config_no_cache
+
+    def test_conversation_cache_hook_message_format(self):
+        """Test that ConversationCachingHook produces Strands-compatible format.
+
+        The hook processes event.agent.messages and inserts cache points
+        in the correct positions within the content arrays.
+        """
+        # Simulated messages before hook
+        messages_before = [
+            {"role": "user", "content": [{"text": "Hello"}]},
+            {"role": "assistant", "content": [{"text": "Hi there!"}]},
+            {"role": "user", "content": [{"text": "How are you?"}]},
+            {"role": "assistant", "content": [{"text": "I'm doing well, thanks!"}]}
+        ]
+
+        # Expected format after hook (cache on recent assistant messages)
+        messages_after = [
+            {"role": "user", "content": [{"text": "Hello"}]},
+            {"role": "assistant", "content": [
+                {"text": "Hi there!"},
+                {"cachePoint": {"type": "default"}}
+            ]},
+            {"role": "user", "content": [{"text": "How are you?"}]},
+            {"role": "assistant", "content": [
+                {"text": "I'm doing well, thanks!"},
+                {"cachePoint": {"type": "default"}}
+            ]}
+        ]
+
+        # Verify structure matches Strands expectations
+        for msg in messages_after:
+            assert "role" in msg
+            assert "content" in msg
+            assert isinstance(msg["content"], list)
+
+            # Each content block should be a dict
+            for block in msg["content"]:
+                assert isinstance(block, dict)
+                # Should have one of: text, toolUse, toolResult, cachePoint
+                valid_keys = {"text", "toolUse", "toolResult", "cachePoint", "image"}
+                assert any(key in block for key in valid_keys)

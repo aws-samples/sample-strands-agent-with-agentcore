@@ -171,3 +171,8 @@ verify-build.sh
 sdk-python
 nova-act
 browser-use
+
+# Pytest cache
+.pytest_cache/
+**/.pytest_cache/
+**/pytest_cache/

@@ -176,6 +176,28 @@ class ConversationCachingHook(HookProvider):
 
         logger.info(f"🔍 Processing caching for {len(messages)} messages")
 
+        # Debug: Log message structure to diagnose tool_use/tool_result mismatch
+        for msg_idx, msg in enumerate(messages):
+            role = msg.get("role", "unknown")
+            content = msg.get("content", [])
+            block_types = []
+            if isinstance(content, list):
+                for block in content:
+                    if isinstance(block, dict):
+                        if "toolUse" in block:
+                            block_types.append(f"toolUse({block['toolUse'].get('name', '?')})")
+                        elif "toolResult" in block:
+                            block_types.append(f"toolResult({block['toolResult'].get('toolUseId', '?')[:8]}...)")
+                        elif "text" in block:
+                            block_types.append("text")
+                        elif "cachePoint" in block:
+                            block_types.append("cachePoint")
+                        else:
+                            block_types.append(f"other({list(block.keys())})")
+                    elif isinstance(block, str):
+                        block_types.append("str")
+            logger.info(f"  [msg {msg_idx}] role={role}, blocks={block_types}")
+
         # Count existing cache points across all content blocks
         existing_cache_count = 0
         cache_point_positions = []

@@ -9,7 +9,6 @@ import API_CONFIG from '@/config/api'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { apiPost } from '@/lib/api-client'
 
-
 interface UseChatProps {
   onSessionCreated?: () => void  // Callback when new session is created
 }
@@ -103,7 +102,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         setUIState(prev => ({ ...prev, isTyping: false }))
         if (data.message) {
           setMessages(prev => [...prev, {
-            id: Date.now(),
+            id: String(Date.now()),
             text: data.message,
             sender: 'bot',
             timestamp: new Date().toLocaleTimeString(),
@@ -114,7 +113,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       case 'error':
         setUIState(prev => ({ ...prev, isTyping: false }))
         setMessages(prev => [...prev, {
-          id: Date.now(),
+          id: String(Date.now()),
           text: data.message || 'An error occurred',
           sender: 'bot',
           timestamp: new Date().toLocaleTimeString()
@@ -465,27 +464,24 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       })
     }, 100)
 
-    // Merge saved preferences with defaults (field-by-field fallback)
-    // This handles cases where old sessions have partial or missing preferences
+    // Merge saved preferences with defaults
+    // Note: Use ?? for lastTemperature since 0 is a valid value
     const effectivePreferences: SessionPreferences = {
+      ...DEFAULT_PREFERENCES,
+      ...preferences,
       lastModel: preferences?.lastModel || DEFAULT_PREFERENCES.lastModel,
       lastTemperature: preferences?.lastTemperature ?? DEFAULT_PREFERENCES.lastTemperature,
-      enabledTools: preferences?.enabledTools || DEFAULT_PREFERENCES.enabledTools,
-      selectedPromptId: preferences?.selectedPromptId || DEFAULT_PREFERENCES.selectedPromptId,
-      customPromptText: preferences?.customPromptText,
     }
-    const isUsingDefaults = !preferences
 
-    console.log(`[useChat] ${isUsingDefaults ? 'Using default' : 'Restoring session'} preferences:`, effectivePreferences)
+    console.log(`[useChat] ${preferences ? 'Restoring session' : 'Using default'} preferences:`, effectivePreferences)
 
     // 1. Restore tool states based on enabledTools from session
-    // If enabledTools is empty array or undefined, disable all tools
-    setAvailableTools(prevTools => prevTools.map(tool => {
-      const enabledTools = effectivePreferences.enabledTools || []
-      const shouldBeEnabled = enabledTools.includes(tool.id)
-      return { ...tool, enabled: shouldBeEnabled }
-    }))
-    console.log(`[useChat] Tool states updated: ${effectivePreferences.enabledTools?.length || 0} enabled`)
+    const enabledTools = effectivePreferences.enabledTools || []
+    setAvailableTools(prevTools => prevTools.map(tool => ({
+      ...tool,
+      enabled: enabledTools.includes(tool.id)
+    })))
+    console.log(`[useChat] Tool states updated: ${enabledTools.length} enabled`)
 
     // 2. Restore model configuration by updating user preferences
     try {
@@ -500,15 +496,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       console.warn('[useChat] Failed to update model config:', error)
     }
 
-    // 3. Restore system prompt
-    try {
-      await apiPost(`model/prompts/${effectivePreferences.selectedPromptId || 'general'}/activate`, undefined, {
-        headers: newSessionId ? { 'X-Session-ID': newSessionId } : {},
-      })
-      console.log(`[useChat] Prompt activated: ${effectivePreferences.selectedPromptId || 'general'}`)
-    } catch (error) {
-      console.warn('[useChat] Failed to activate prompt:', error)
-    }
+    // Note: System prompt is always 'general' - prompt selection feature removed
   }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, startPollingForOngoingTools])
 
   // Function to clear stored progress events
@@ -745,7 +733,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     if (!inputMessage.trim() && (!files || files.length === 0)) return
 
     const userMessage: Message = {
-      id: Date.now(),
+      id: String(Date.now()),
       text: inputMessage,
       sender: 'user',
       timestamp: new Date().toLocaleTimeString(),
@@ -900,6 +888,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     browserSession: sessionState.browserSession,
     browserProgress: sessionState.browserProgress,
     respondToInterrupt,
-    currentInterrupt: sessionState.interrupt
+    currentInterrupt: sessionState.interrupt,
   }
 }

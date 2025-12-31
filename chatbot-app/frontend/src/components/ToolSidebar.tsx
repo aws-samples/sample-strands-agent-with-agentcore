@@ -60,10 +60,10 @@ export function ToolSidebar({
   // Custom tool grouping by purpose
   const groupedToolsByPurpose = useMemo(() => {
     const groups = {
-      analytics: [] as Tool[],    // 📊 분석 & 리포트
-      research: [] as Tool[],      // 🔍 리서치 & 검색
-      automation: [] as Tool[],    // 🌐 웹 & 자동화
-      location: [] as Tool[],      // 🗺️ 위치 & 실시간
+      analytics: [] as Tool[],    // Analytics & Reports
+      research: [] as Tool[],      // Research & Search
+      automation: [] as Tool[],    // Web & Automation
+      location: [] as Tool[],      // Location & Live Data
     };
 
     const analyticsIds = [
@@ -232,7 +232,7 @@ export function ToolSidebar({
           <SidebarContent>
             {availableTools.length > 0 && (
               <div className="animate-in fade-in-0 duration-300 space-y-1">
-                {/* 📊 분석 & 리포트 */}
+                {/* Analytics & Reports */}
                 {filteredGroupedTools['analytics'] && filteredGroupedTools['analytics'].length > 0 && (
                   <ToolSection
                     title="Analytics & Reports"
@@ -244,7 +244,7 @@ export function ToolSidebar({
                   />
                 )}
 
-                {/* 🔍 리서치 & 검색 */}
+                {/* Research & Search */}
                 {filteredGroupedTools['research'] && filteredGroupedTools['research'].length > 0 && (
                   <ToolSection
                     title="Research & Search"
@@ -256,7 +256,7 @@ export function ToolSidebar({
                   />
                 )}
 
-                {/* 🌐 웹 & 자동화 */}
+                {/* Web & Automation */}
                 {filteredGroupedTools['automation'] && filteredGroupedTools['automation'].length > 0 && (
                   <ToolSection
                     title="Web & Automation"
@@ -268,7 +268,7 @@ export function ToolSidebar({
                   />
                 )}
 
-                {/* 🗺️ 위치 & 실시간 */}
+                {/* Location & Live Data */}
                 {filteredGroupedTools['location'] && filteredGroupedTools['location'].length > 0 && (
                   <ToolSection
                     title="Location & Live Data"

@@ -1,5 +1,0 @@
-# Requirements for testing AgentCore Gateway
-strands-agents>=1.16.0
-boto3>=1.40.1
-mcp>=1.21.1
-httpx>=0.27.0

@@ -111,22 +111,34 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
   }
 
   // Handle document download
-  const handleDocumentDownload = async (filename: string, toolType: string, userId?: string) => {
+  const handleDocumentDownload = async (filename: string, toolType: string) => {
     if (!sessionId) {
       console.error('No session ID available for document download')
       return
     }
 
     try {
+      // Get auth token for BFF to extract userId
+      const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
+      try {
+        const session = await fetchAuthSession()
+        const token = session.tokens?.idToken?.toString()
+        if (token) {
+          authHeaders['Authorization'] = `Bearer ${token}`
+        }
+      } catch (error) {
+        console.log('[DocumentDownload] No auth session available')
+      }
+
       // Step 1: Get S3 key from documents/download API
+      // BFF extracts userId from Authorization header
       const s3KeyResponse = await fetch('/api/documents/download', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders,
         body: JSON.stringify({
           sessionId,
           filename,
-          toolType,
-          userId  // Pass userId from metadata for accurate S3 path reconstruction
+          toolType
         })
       })
 
@@ -164,11 +176,11 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
   }
 
   // Sort messages by timestamp to maintain chronological order
+  // All messages have timestamp set on creation, so no fallback needed
   const sortedMessages = useMemo(() => {
     return [...messages].sort((a, b) => {
-      // Extract timestamp for comparison - use id as fallback since it's based on Date.now()
-      const timeA = a.timestamp ? new Date(a.timestamp).getTime() : (typeof a.id === 'number' ? a.id : 0)
-      const timeB = b.timestamp ? new Date(b.timestamp).getTime() : (typeof b.id === 'number' ? b.id : 0)
+      const timeA = new Date(a.timestamp).getTime()
+      const timeB = new Date(b.timestamp).getTime()
       return timeA - timeB
     })
   }, [messages])
@@ -260,7 +272,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
   // Collect all documents from the turn (for rendering at the bottom)
   const turnDocuments = useMemo(() => {
-    const docs: Array<{ filename: string; tool_type: string; user_id?: string }> = []
+    const docs: Array<{ filename: string; tool_type: string }> = []
     sortedMessages.forEach(msg => {
       if (msg.documents && msg.documents.length > 0) {
         docs.push(...msg.documents)
@@ -482,7 +494,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                     <div
                       key={idx}
                       className="group relative flex items-center gap-2.5 px-3.5 py-2 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600 flex-shrink-0"
-                      onClick={() => handleDocumentDownload(doc.filename, doc.tool_type, doc.user_id)}
+                      onClick={() => handleDocumentDownload(doc.filename, doc.tool_type)}
                     >
                       <div className="flex items-center justify-center w-7 h-7 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
                         <Icon className={`h-3.5 w-3.5 ${color}`} />

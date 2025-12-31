@@ -6,7 +6,7 @@ import { NextRequest } from 'next/server'
 import { invokeAgentCoreRuntime } from '@/lib/agentcore-runtime-client'
 import { extractUserFromRequest, getSessionId } from '@/lib/auth-utils'
 import { createDefaultHookManager } from '@/lib/chat-hooks'
-import { getSystemPrompt, type PromptId } from '@/lib/system-prompts'
+import { getSystemPrompt } from '@/lib/system-prompts'
 // Note: browser-session-poller is dynamically imported when browser-use-agent is enabled
 
 // Check if running in local mode
@@ -154,13 +154,11 @@ export async function POST(request: NextRequest) {
 
     // Load model configuration from storage
     const defaultModelId = model_id || 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
-    let selectedPromptId: PromptId = 'general'
-    let customPromptText: string | undefined
 
     let modelConfig = {
       model_id: defaultModelId,
       temperature: 0.7,
-      system_prompt: getSystemPrompt('general'),
+      system_prompt: getSystemPrompt(),
       caching_enabled: defaultModelId.toLowerCase().includes('claude')
     }
 
@@ -179,13 +177,6 @@ export async function POST(request: NextRequest) {
           }
           if (config.temperature !== undefined) {
             modelConfig.temperature = config.temperature
-          }
-          // Load selectedPromptId
-          if (config.selectedPromptId) {
-            selectedPromptId = config.selectedPromptId as PromptId
-          }
-          if (config.customPromptText) {
-            customPromptText = config.customPromptText
           }
         } else {
           console.log(`[BFF] No saved config found for ${userId}, using defaults`)
@@ -207,22 +198,14 @@ export async function POST(request: NextRequest) {
           if (profile.preferences.defaultTemperature !== undefined) {
             modelConfig.temperature = profile.preferences.defaultTemperature
           }
-          // Load selectedPromptId (new way)
-          if (profile.preferences.selectedPromptId) {
-            selectedPromptId = profile.preferences.selectedPromptId as PromptId
-          }
-          // Load customPromptText for custom prompts
-          if (profile.preferences.customPromptText) {
-            customPromptText = profile.preferences.customPromptText
-          }
         }
       } catch (error) {
         // Use defaults
       }
     }
 
-    // Build system prompt based on selectedPromptId
-    const basePrompt = getSystemPrompt(selectedPromptId, customPromptText)
+    // Use default system prompt (prompt selection feature removed)
+    const basePrompt = getSystemPrompt()
 
     // Add current date to system prompt (at the end)
     const currentDate = getCurrentDatePacific()
@@ -406,8 +389,6 @@ export async function POST(request: NextRequest) {
                   lastModel: modelConfig.model_id,
                   lastTemperature: modelConfig.temperature,
                   enabledTools: enabledToolsList,
-                  selectedPromptId: selectedPromptId,
-                  ...(customPromptText && { customPromptText }),
                 },
               }
 

@@ -487,7 +487,7 @@ export const useChatAPI = ({
       
       const errorMessage = `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`
       setMessages(prev => [...prev, {
-        id: Date.now(),
+        id: String(Date.now()),
         text: errorMessage,
         sender: 'bot',
         timestamp: new Date().toLocaleTimeString()

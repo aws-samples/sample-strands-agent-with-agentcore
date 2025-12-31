@@ -9,7 +9,7 @@ export interface LatencyMetrics {
 
 interface SaveMetadataParams {
   sessionId: string
-  messageId: string | number
+  messageId: string
   ttft?: number
   e2e?: number
   tokenUsage?: TokenUsage
@@ -162,7 +162,7 @@ export const useLatencyTracking = () => {
  */
 async function saveMetadata(
   sessionId: string,
-  messageId: string | number,
+  messageId: string,
   ttft?: number,
   e2e?: number,
   tokenUsage?: TokenUsage,
@@ -177,14 +177,13 @@ async function saveMetadata(
     documents: documents?.length || 0,
   })
 
-  // Convert numeric messageId to persistent format by calculating index
-  // This ensures metadata can be retrieved after page refresh
-  let persistentMessageId = messageId.toString()
+  // Convert temporary messageId (timestamp-based) to persistent format
+  // Persistent IDs start with 'msg-' and are stored in conversation history
+  let persistentMessageId = messageId
 
-  if (typeof messageId === 'number' || !messageId.toString().startsWith('msg-')) {
-    // Calculate message index from current conversation history
+  if (!messageId.startsWith('msg-')) {
+    // Timestamp-based ID - need to look up the actual persistent ID from history
     try {
-      // Get auth token for conversation history request
       const historyAuthHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
       try {
         const session = await fetchAuthSession()
