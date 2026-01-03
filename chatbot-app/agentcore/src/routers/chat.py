@@ -70,7 +70,8 @@ def get_agent(
     model_id: Optional[str] = None,
     temperature: Optional[float] = None,
     system_prompt: Optional[str] = None,
-    caching_enabled: Optional[bool] = None
+    caching_enabled: Optional[bool] = None,
+    compaction_enabled: Optional[bool] = None
 ) -> ChatbotAgent:
     """
     Create agent instance with current configuration for session
@@ -82,6 +83,7 @@ def get_agent(
     logger.info(f"  Model: {model_id or 'default'}, Temperature: {temperature or 0.7}")
     logger.info(f"  System prompt: {system_prompt[:50] if system_prompt else 'default'}...")
     logger.info(f"  Caching: {caching_enabled if caching_enabled is not None else True}")
+    logger.info(f"  Compaction: {compaction_enabled if compaction_enabled is not None else True}")
     logger.info(f"  Tools: {enabled_tools or 'all'}")
 
     # Create agent with AgentCore Memory - messages and preferences automatically loaded/saved
@@ -92,7 +94,8 @@ def get_agent(
         model_id=model_id,
         temperature=temperature,
         system_prompt=system_prompt,
-        caching_enabled=caching_enabled
+        caching_enabled=caching_enabled,
+        compaction_enabled=compaction_enabled
     )
 
     return agent
@@ -154,7 +157,8 @@ async def invocations(request: InvocationRequest, http_request: Request):
             model_id=input_data.model_id,
             temperature=input_data.temperature,
             system_prompt=input_data.system_prompt,
-            caching_enabled=input_data.caching_enabled
+            caching_enabled=input_data.caching_enabled,
+            compaction_enabled=input_data.compaction_enabled
         )
 
         # Prepare stream parameters

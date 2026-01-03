@@ -30,6 +30,13 @@ class StreamEventProcessor:
         self.partial_response_text = ""  # Track partial response for graceful abort
         self.tool_use_started = False  # Track if tool_use has been emitted (to prevent duplicate assistant messages)
 
+        # Token usage from last completed stream (for metrics)
+        self.last_usage = None
+
+        # Last LLM call's input tokens (for context tracking - NOT accumulated)
+        # This captures inputTokens from the final metadata chunk of each LLM call
+        self.last_llm_input_tokens = 0
+
         # Stop signal provider (Strategy pattern - Local or DynamoDB)
         self.stop_signal_provider = get_stop_signal_provider()
         self.last_stop_check_time = 0
@@ -244,8 +251,8 @@ class StreamEventProcessor:
         self.current_user_id = self.invocation_state.get('user_id')
 
         # Log stop signal provider info for debugging
-        logger.info(f"[StopSignal] Stream started - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
-        logger.info(f"[StopSignal] Provider: {type(self.stop_signal_provider).__name__}")
+        logger.debug(f"[StopSignal] Stream started - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
+        logger.debug(f"[StopSignal] Provider: {type(self.stop_signal_provider).__name__}")
 
         # Reset stop signal check timer
         self.last_stop_check_time = 0
@@ -258,6 +265,9 @@ class StreamEventProcessor:
 
         # Reset tool_use tracking flag
         self.tool_use_started = False
+
+        # Reset last LLM input tokens for this stream
+        self.last_llm_input_tokens = 0
 
         # Add stream-level deduplication
         # Handle both string and list (multimodal) messages
@@ -320,7 +330,7 @@ class StreamEventProcessor:
 
                 # Handle final result
                 if "result" in event:
-                    logger.info("[Final Result] 🎯 Received final result event from agent")
+                    logger.debug("[Final Result] Received final result event from agent")
                     final_result = event["result"]
 
                     # Check for interrupt (HITL - Human-in-the-loop)
@@ -342,7 +352,7 @@ class StreamEventProcessor:
                             return
 
                     images, result_text = self.formatter.extract_final_result_data(final_result)
-                    logger.info(f"[Final Result] Extracted data - has images: {bool(images)}, text length: {len(result_text) if result_text else 0}")
+                    logger.debug(f"[Final Result] Extracted data - has images: {bool(images)}, text length: {len(result_text) if result_text else 0}")
 
                     # Extract token usage from Strands SDK metrics
                     usage = None
@@ -368,20 +378,20 @@ class StreamEventProcessor:
                                 cache_read = accumulated_usage.get("cacheReadInputTokens", 0)
                                 cache_write = accumulated_usage.get("cacheWriteInputTokens", 0)
                                 if cache_read > 0 or cache_write > 0:
-                                    logger.info(f"[Cache Usage] 🎯 Cache READ: {cache_read} tokens | Cache WRITE: {cache_write} tokens")
-                                    if cache_read > 0:
-                                        cache_savings = cache_read * 0.9  # 90% savings from cache
-                                        logger.info(f"[Cache Savings] 💰 Saved ~{cache_savings:.0f} tokens from cache hit!")
+                                    logger.debug(f"[Cache Usage] Cache READ: {cache_read} tokens | Cache WRITE: {cache_write} tokens")
 
-                                logger.info(f"[Token Usage] ✅ Total - Input: {usage['inputTokens']}, Output: {usage['outputTokens']}, Total: {usage['totalTokens']}")
+                                logger.debug(f"[Token Usage] Total - Input: {usage['inputTokens']}, Output: {usage['outputTokens']}, Total: {usage['totalTokens']}")
+
+                                # Store for metrics access
+                                self.last_usage = usage
                     except Exception as e:
                         logger.error(f"[Token Usage] Error extracting token usage: {e}")
                         # Continue without usage data
 
                     # Documents are fetched by frontend via S3 workspace API - no longer sent from backend
-                    logger.info(f"[Final Result] 📤 Emitting complete event and closing stream")
+                    logger.debug(f"[Final Result] Emitting complete event and closing stream")
                     yield self.formatter.create_complete_event(result_text, images, usage)
-                    logger.info(f"[Final Result] ✅ Complete event emitted, stream ended")
+                    logger.debug(f"[Final Result] Complete event emitted, stream ended")
                     stream_completed_normally = True
                     return
                 
@@ -457,7 +467,7 @@ class StreamEventProcessor:
                     if tool_input == "" or tool_input == "{}":
                         # Empty string or empty JSON object
                         # Emit to frontend so it can show "Preparing..." state
-                        logger.info(f"[Tool Use Event] 📋 Empty input for {tool_name} - emitting for frontend to show preparing state")
+                        logger.debug(f"[Tool Use Event] Empty input for {tool_name} - emitting for frontend to show preparing state")
                         should_process = True
                         processed_input = {}
                     else:
@@ -469,12 +479,12 @@ class StreamEventProcessor:
                                 parsed_input = json.loads(tool_input)
                                 should_process = True
                                 processed_input = parsed_input  # Use parsed input
-                                logger.info(f"[Tool Use Event] ✅ Parsed input for {tool_name} - keys: {list(parsed_input.keys()) if isinstance(parsed_input, dict) else 'not a dict'}")
+                                logger.debug(f"[Tool Use Event] Parsed input for {tool_name} - keys: {list(parsed_input.keys()) if isinstance(parsed_input, dict) else 'not a dict'}")
                             elif isinstance(tool_input, dict):
                                 # Already parsed
                                 should_process = True
                                 processed_input = tool_input
-                                logger.info(f"[Tool Use Event] ✅ Dict input received for {tool_name} - keys: {list(tool_input.keys())}")
+                                logger.debug(f"[Tool Use Event] Dict input received for {tool_name} - keys: {list(tool_input.keys())}")
                             else:
                                 should_process = False
                                 logger.debug(f"[Tool Use Event] Unexpected input type: {type(tool_input).__name__}")
@@ -494,7 +504,7 @@ class StreamEventProcessor:
                             # Mark as seen for new tools
                             if is_new_tool:
                                 self.seen_tool_uses.add(tool_use_id)
-                                logger.info(f"[Tool Use Event] 🆕 New tool use registered: {tool_name} ({tool_use_id})")
+                                logger.debug(f"[Tool Use Event] New tool use registered: {tool_name} ({tool_use_id})")
 
                             # Create a copy of tool_use with processed input (don't modify original)
                             tool_use_copy = {
@@ -521,7 +531,7 @@ class StreamEventProcessor:
                                 }
 
                             # Yield event (new tool or parameter update)
-                            logger.info(f"[Tool Use Event] 📤 Emitting tool_use event for {tool_name} with {len(processed_input)} parameter(s)")
+                            logger.debug(f"[Tool Use Event] Emitting tool_use event for {tool_name} with {len(processed_input)} parameter(s)")
                             yield self.formatter.create_tool_use_event(tool_use_copy)
                             self.tool_use_started = True  # Mark that tool_use was emitted
 
@@ -562,7 +572,7 @@ class StreamEventProcessor:
                         step_number = stream_data.get("stepNumber", 0)
 
                         if step_content:
-                            logger.info(f"[Browser Step] 🔴 Streaming browser_step_{step_number} to frontend")
+                            logger.debug(f"[Browser Step] Streaming browser_step_{step_number} to frontend")
                             # Send as browser_progress event (NOT response) to display in Browser Modal
                             yield self.formatter.create_browser_progress_event(step_content, step_number)
 
@@ -577,9 +587,24 @@ class StreamEventProcessor:
                 elif event.get("start_event_loop"):
                     yield self.formatter.create_thinking_event()
 
+                # Handle ModelStreamChunkEvent with metadata (captures per-LLM-call usage)
+                # This is yielded by SDK for each raw chunk from the model
+                # Format: {"event": {"metadata": {"usage": {"inputTokens": N, ...}, ...}}}
+                elif event.get("event") and isinstance(event.get("event"), dict):
+                    raw_chunk = event["event"]
+                    if "metadata" in raw_chunk:
+                        metadata = raw_chunk["metadata"]
+                        usage = metadata.get("usage", {})
+                        input_tokens = usage.get("inputTokens", 0)
+                        if input_tokens > 0:
+                            # Update last LLM input tokens (overwrite, not accumulate)
+                            # Each LLM call sends metadata at the end, so this captures the most recent call
+                            self.last_llm_input_tokens = input_tokens
+                            logger.debug(f"📊 [Metadata] Captured LLM inputTokens: {input_tokens:,}")
+
                 # Handle tool results from message events
                 elif event.get("message"):
-                    logger.info("[Message Event] 📨 Received message event (likely contains tool_result)")
+                    logger.debug("[Message Event] Received message event (likely contains tool_result)")
                     async for result in self._process_message_event(event):
                         yield result
 
@@ -640,13 +665,13 @@ class StreamEventProcessor:
             content = None
 
         if content:
-            logger.info(f"[Message Event] Processing message with {len(content)} content item(s)")
+            logger.debug(f"[Message Event] Processing message with {len(content)} content item(s)")
             for content_item in content:
                 if isinstance(content_item, dict) and "toolResult" in content_item:
                     tool_result = content_item["toolResult"]
                     tool_use_id = tool_result.get("toolUseId")
                     status = tool_result.get("status", "unknown")
-                    logger.info(f"[Tool Result] 🔧 Processing tool_result - toolUseId: {tool_use_id}, status: {status}")
+                    logger.debug(f"[Tool Result] Processing tool_result - toolUseId: {tool_use_id}, status: {status}")
 
                     # Wrap tool result processing in try-except for graceful error handling
                     # This ensures errors are returned as tool_result for agent self-recovery
@@ -684,7 +709,7 @@ class StreamEventProcessor:
                     self._collect_document_info(tool_result)
 
                     # Process the tool result
-                    logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id}")
+                    logger.debug(f"[Tool Result] Emitting tool_result event for {tool_use_id}")
                     yield self.formatter.create_tool_result_event(tool_result)
 
                     # Clean up context after processing
@@ -697,7 +722,7 @@ class StreamEventProcessor:
                     # Collect documents from tool result (for complete event)
                     self._collect_document_info(tool_result)
 
-                    logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (no context)")
+                    logger.debug(f"[Tool Result] Emitting tool_result event for {tool_use_id} (no context)")
                     yield self.formatter.create_tool_result_event(tool_result)
             except ImportError:
                 # Add browser session metadata even if import fails
@@ -706,13 +731,13 @@ class StreamEventProcessor:
                 # Collect documents from tool result (for complete event)
                 self._collect_document_info(tool_result)
 
-                logger.info(f"[Tool Result] 📤 Emitting tool_result event for {tool_use_id} (without tool_context_manager)")
+                logger.debug(f"[Tool Result] Emitting tool_result event for {tool_use_id} (without tool_context_manager)")
                 yield self.formatter.create_tool_result_event(tool_result)
         else:
             # Collect documents from tool result (for complete event)
             self._collect_document_info(tool_result)
 
-            logger.info(f"[Tool Result] 📤 Emitting tool_result event (no tool_use_id)")
+            logger.debug(f"[Tool Result] Emitting tool_result event (no tool_use_id)")
             yield self.formatter.create_tool_result_event(tool_result)
 
     def _add_browser_metadata(self, tool_result: Dict[str, Any]) -> None:
@@ -723,7 +748,7 @@ class StreamEventProcessor:
             tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
             if 'browser_id' in self.invocation_state:
                 tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
-            logger.info(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
+            logger.debug(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
 
     def _collect_document_info(self, tool_result: Dict[str, Any]) -> None:
         """Document collection is now handled by frontend via S3 workspace API.

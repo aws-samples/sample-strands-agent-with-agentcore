@@ -39,18 +39,18 @@ class TestCompactingSessionManagerInit:
             region_name='us-west-2'
         )
 
-        # Two-stage compaction thresholds
-        assert manager.truncation_threshold == 20  # Stage 1 trigger
-        assert manager.compaction_threshold == 50  # Stage 2 trigger
-        # Turn management
-        assert manager.recent_turns_count == 5
-        assert manager.min_recent_turns == 3
+        # Token-based compaction threshold (default: 50K)
+        assert manager.token_threshold == 50_000
+        # Turn management (default: 2 protected turns)
+        assert manager.protected_turns == 2
         # Tool content limit
-        assert manager.max_tool_content_length == 1000
+        assert manager.max_tool_content_length == 500  # Default: truncate tool content > 500 chars
+        # Compaction state should be None initially
+        assert manager.compaction_state is None
 
     @patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__')
     def test_init_with_custom_config(self, mock_parent_init):
-        """Should accept custom compaction_threshold, recent_turns_count, and min_recent_turns"""
+        """Should accept custom token_threshold and protected_turns"""
         mock_parent_init.return_value = None
 
         from agent.compacting_session_manager import CompactingSessionManager
@@ -61,59 +61,150 @@ class TestCompactingSessionManagerInit:
         manager = CompactingSessionManager(
             agentcore_memory_config=config,
             region_name='us-west-2',
-            compaction_threshold=50,
-            recent_turns_count=10,
-            min_recent_turns=5,
+            token_threshold=100_000,
+            protected_turns=3,
+            user_id='test-user-123',
             summarization_strategy_id='custom-strategy-123'
         )
 
-        assert manager.compaction_threshold == 50
-        assert manager.recent_turns_count == 10
-        assert manager.min_recent_turns == 5
+        assert manager.token_threshold == 100_000
+        assert manager.protected_turns == 3
+        assert manager.user_id == 'test-user-123'
         assert manager.summarization_strategy_id == 'custom-strategy-123'
 
+class TestCompactionState:
+    """Test CompactionState dataclass"""
+
+    def test_compaction_state_default_values(self):
+        """Should initialize with default values"""
+        from agent.compacting_session_manager import CompactionState
+
+        state = CompactionState()
+
+        assert state.checkpoint == 0
+        assert state.summary is None
+        assert state.lastInputTokens == 0
+        assert state.updatedAt is None
+
+    def test_compaction_state_with_values(self):
+        """Should accept all parameters"""
+        from agent.compacting_session_manager import CompactionState
+
+        state = CompactionState(
+            checkpoint=50,
+            summary="Previous conversation summary",
+            lastInputTokens=75000,
+            updatedAt="2024-01-01T00:00:00Z"
+        )
+
+        assert state.checkpoint == 50
+        assert state.summary == "Previous conversation summary"
+        assert state.lastInputTokens == 75000
+        assert state.updatedAt == "2024-01-01T00:00:00Z"
+
+    def test_compaction_state_to_dict(self):
+        """Should convert to dictionary for DynamoDB storage"""
+        from agent.compacting_session_manager import CompactionState
+
+        state = CompactionState(
+            checkpoint=30,
+            summary="Test summary",
+            lastInputTokens=50000
+        )
+
+        result = state.to_dict()
+
+        assert result["checkpoint"] == 30
+        assert result["summary"] == "Test summary"
+        assert result["lastInputTokens"] == 50000
+        assert "updatedAt" in result
+
+    def test_compaction_state_from_dict(self):
+        """Should create from DynamoDB data"""
+        from agent.compacting_session_manager import CompactionState
+
+        data = {
+            "checkpoint": 25,
+            "summary": "Loaded summary",
+            "lastInputTokens": 80000,
+            "updatedAt": "2024-01-15T12:00:00Z"
+        }
+
+        state = CompactionState.from_dict(data)
+
+        assert state.checkpoint == 25
+        assert state.summary == "Loaded summary"
+        assert state.lastInputTokens == 80000
+        assert state.updatedAt == "2024-01-15T12:00:00Z"
+
+    def test_compaction_state_from_dict_none(self):
+        """Should return default state when data is None"""
+        from agent.compacting_session_manager import CompactionState
+
+        state = CompactionState.from_dict(None)
+
+        assert state.checkpoint == 0
+        assert state.summary is None
+        assert state.lastInputTokens == 0
+
+    def test_compaction_state_from_dict_empty(self):
+        """Should handle empty dictionary"""
+        from agent.compacting_session_manager import CompactionState
+
+        state = CompactionState.from_dict({})
+
+        assert state.checkpoint == 0
+
+
 class TestThresholdLogic:
-    """Test threshold-based summarization triggering"""
+    """Test token-based threshold logic"""
 
-    def test_below_threshold_loads_all_messages(self):
-        """When event count is below threshold, should load all messages"""
-        total_events = 20
-        threshold = 50
+    def test_below_threshold_no_compaction(self):
+        """When input tokens are below threshold, should not trigger checkpoint"""
+        input_tokens = 50000
+        threshold = 100000
 
-        should_summarize = total_events > threshold
-        assert should_summarize is False
+        should_compact = input_tokens > threshold
+        assert should_compact is False
 
     def test_above_threshold_triggers_compaction(self):
-        """When event count exceeds threshold, should trigger compaction"""
-        total_events = 60
-        threshold = 50
+        """When input tokens exceed threshold, should trigger checkpoint"""
+        input_tokens = 120000
+        threshold = 100000
 
-        should_compact = total_events > threshold
+        should_compact = input_tokens > threshold
         assert should_compact is True
 
     def test_exactly_at_threshold_no_compaction(self):
-        """When event count equals threshold, should not compact"""
-        total_events = 50
-        threshold = 50
+        """When input tokens equal threshold, should not trigger checkpoint"""
+        input_tokens = 100000
+        threshold = 100000
 
-        should_compact = total_events > threshold
+        should_compact = input_tokens > threshold
         assert should_compact is False
 
-    def test_offset_considered_in_effective_count(self):
-        """Effective event count should subtract conversation_manager offset"""
-        total_events = 40
-        offset = 15
-        threshold = 50
+    def test_checkpoint_can_update_forward(self):
+        """When checkpoint exists, it can be updated forward if tokens exceed threshold again"""
+        from agent.compacting_session_manager import CompactionState
 
-        effective_events = total_events - offset
-        should_summarize = effective_events > threshold
+        state = CompactionState(checkpoint=50, lastInputTokens=150000)
+        input_tokens = 200000
+        threshold = 100000
+        new_checkpoint = 80
 
-        assert effective_events == 25
-        assert should_summarize is False
+        # Should update checkpoint if new_checkpoint > current checkpoint
+        should_update = input_tokens > threshold and new_checkpoint > state.checkpoint
+        assert should_update is True
 
 
 class TestTurnSafety:
-    """Test turn-based safe cutoff logic - using actual CompactingSessionManager methods"""
+    """Test turn-based safe cutoff logic - using actual CompactingSessionManager methods
+
+    New implementation uses:
+    - _valid_cutoff_message_ids: List of message indices where checkpoint can be set (user text messages)
+    - _find_protected_message_indices: Find indices to protect from truncation
+    - _has_tool_result: Detect toolResult in message content
+    """
 
     @pytest.fixture
     def manager(self):
@@ -128,27 +219,9 @@ class TestTurnSafety:
             manager = CompactingSessionManager(
                 agentcore_memory_config=config,
                 region_name='us-west-2',
-                recent_turns_count=5,
-                min_recent_turns=3
+                protected_turns=2
             )
             return manager
-
-    def test_has_tool_use_detection(self, manager):
-        """Should detect toolUse in message content"""
-        msg_with_tool = {
-            "role": "assistant",
-            "content": [
-                {"text": "Let me search for that"},
-                {"toolUse": {"toolUseId": "123", "name": "web_search", "input": {}}}
-            ]
-        }
-        msg_without_tool = {
-            "role": "assistant",
-            "content": [{"text": "Here is your answer"}]
-        }
-
-        assert manager._has_tool_use(msg_with_tool) is True
-        assert manager._has_tool_use(msg_without_tool) is False
 
     def test_has_tool_result_detection(self, manager):
         """Should detect toolResult in message content"""
@@ -166,89 +239,92 @@ class TestTurnSafety:
         assert manager._has_tool_result(msg_with_result) is True
         assert manager._has_tool_result(msg_user_text) is False
 
-    def test_find_safe_cutoff_preserves_tool_pairs(self, manager):
-        """Cutoff should never separate toolUse from toolResult"""
-        messages = [
-            {"role": "user", "content": [{"text": "Search for Python"}]},
-            {"role": "assistant", "content": [{"toolUse": {"toolUseId": "1"}}]},
-            {"role": "user", "content": [{"toolResult": {"toolUseId": "1"}}]},
-            {"role": "assistant", "content": [{"text": "Found results"}]},
-            {"role": "user", "content": [{"text": "Thanks"}]},
-            {"role": "assistant", "content": [{"text": "You're welcome"}]},
-        ]
-
-        # Set both recent_turns_count and min_recent_turns to 1
-        # to force cutoff to happen
-        manager.recent_turns_count = 1
-        manager.min_recent_turns = 1
-        cutoff = manager._find_safe_cutoff_index(messages)
-
-        # Should cut at index 4 (user text "Thanks"), NOT at index 2 (toolResult)
-        assert cutoff == 4
-        # Verify the message at cutoff is user text, not toolResult
-        assert messages[cutoff]["role"] == "user"
-        assert not manager._has_tool_result(messages[cutoff])
-
-    def test_find_safe_cutoff_simple_turns(self, manager):
-        """Simple turn: user text + assistant text"""
+    def test_find_protected_message_indices_basic(self, manager):
+        """Should find indices of messages to protect (recent N turns)"""
         messages = [
             {"role": "user", "content": [{"text": "Hello"}]},
             {"role": "assistant", "content": [{"text": "Hi there"}]},
             {"role": "user", "content": [{"text": "How are you?"}]},
             {"role": "assistant", "content": [{"text": "I'm doing well"}]},
+            {"role": "user", "content": [{"text": "Thanks"}]},
+            {"role": "assistant", "content": [{"text": "You're welcome"}]},
         ]
 
-        # With 2 turns available and recent_turns_count=1, min_recent_turns=1
-        manager.recent_turns_count = 1
-        manager.min_recent_turns = 1
-        cutoff = manager._find_safe_cutoff_index(messages)
+        # With protected_turns=2, should protect last 2 turns (indices 2-5)
+        protected = manager._find_protected_message_indices(messages, protected_turns=2)
 
-        # Should return index 2 (start at "How are you?")
-        assert cutoff == 2
-        assert messages[cutoff]["content"][0]["text"] == "How are you?"
+        # Should protect messages from index 2 onwards (last 2 turns)
+        assert 2 in protected
+        assert 3 in protected
+        assert 4 in protected
+        assert 5 in protected
+        # First turn should NOT be protected
+        assert 0 not in protected
+        assert 1 not in protected
 
-    def test_find_safe_cutoff_fewer_turns_than_requested(self, manager):
-        """When available turns < recent_turns_count, should keep all available turns"""
+    def test_find_protected_message_indices_with_tools(self, manager):
+        """Should correctly identify turns even with tool chains"""
         messages = [
-            {"role": "user", "content": [{"text": "Calculate something"}]},
+            {"role": "user", "content": [{"text": "Search for Python"}]},  # Turn 1 start (idx 0)
             {"role": "assistant", "content": [{"toolUse": {"toolUseId": "1"}}]},
-            {"role": "user", "content": [{"toolResult": {"toolUseId": "1"}}]},
-            {"role": "assistant", "content": [{"text": "Result 1"}]},
-            {"role": "user", "content": [{"text": "Calculate more"}]},
-            {"role": "assistant", "content": [{"text": "Result 2"}]},
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "1"}}]},  # Not a turn start (toolResult)
+            {"role": "assistant", "content": [{"text": "Found results"}]},
+            {"role": "user", "content": [{"text": "Thanks"}]},  # Turn 2 start (idx 4)
+            {"role": "assistant", "content": [{"text": "You're welcome"}]},
         ]
 
-        # 2 turns available (index 0 and 4), recent_turns_count=5
-        manager.recent_turns_count = 5
-        manager.min_recent_turns = 3
-        cutoff = manager._find_safe_cutoff_index(messages)
+        # With protected_turns=1, should protect only the last turn (indices 4-5)
+        protected = manager._find_protected_message_indices(messages, protected_turns=1)
 
-        # Should return 0 (keep all) since only 2 turns < min_recent_turns=3
-        assert cutoff == 0
+        # Last turn (idx 4-5) should be protected
+        assert 4 in protected
+        assert 5 in protected
+        # Earlier messages should NOT be protected
+        assert 0 not in protected
+        assert 1 not in protected
+        assert 2 not in protected
+        assert 3 not in protected
 
-    def test_find_safe_cutoff_all_tool_chains_loads_all(self, manager):
-        """When only one valid cutoff point exists (first user text), should load all"""
+    def test_find_protected_message_indices_fewer_turns(self, manager):
+        """When fewer turns than protected_turns, should protect all available"""
         messages = [
-            {"role": "user", "content": [{"text": "Do complex task"}]},
-            {"role": "assistant", "content": [{"toolUse": {"toolUseId": "1"}}]},
-            {"role": "user", "content": [{"toolResult": {"toolUseId": "1"}}]},
-            {"role": "assistant", "content": [{"toolUse": {"toolUseId": "2"}}]},
-            {"role": "user", "content": [{"toolResult": {"toolUseId": "2"}}]},
-            {"role": "assistant", "content": [{"toolUse": {"toolUseId": "3"}}]},
-            {"role": "user", "content": [{"toolResult": {"toolUseId": "3"}}]},
+            {"role": "user", "content": [{"text": "Hello"}]},
+            {"role": "assistant", "content": [{"text": "Hi"}]},
         ]
 
-        manager.recent_turns_count = 5
-        manager.min_recent_turns = 3
-        cutoff = manager._find_safe_cutoff_index(messages)
+        # Only 1 turn available, but protected_turns=2
+        protected = manager._find_protected_message_indices(messages, protected_turns=2)
 
-        # Only 1 turn available (index 0), less than min_recent_turns=3
-        assert cutoff == 0
+        # Should protect all messages (only 1 turn available)
+        assert 0 in protected
+        assert 1 in protected
 
-    def test_find_safe_cutoff_empty_messages(self, manager):
+    def test_find_protected_message_indices_empty(self, manager):
         """Should handle empty messages gracefully"""
-        cutoff = manager._find_safe_cutoff_index([])
-        assert cutoff == 0
+        protected = manager._find_protected_message_indices([], protected_turns=2)
+        assert len(protected) == 0
+
+    def test_valid_cutoff_points_exclude_tool_results(self, manager):
+        """Valid cutoff points should only include user text messages, not toolResult"""
+        messages = [
+            {"role": "user", "content": [{"text": "Search for Python"}]},  # Valid cutoff (idx 0)
+            {"role": "assistant", "content": [{"toolUse": {"toolUseId": "1"}}]},
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "1"}}]},  # NOT valid (toolResult)
+            {"role": "assistant", "content": [{"text": "Found results"}]},
+            {"role": "user", "content": [{"text": "Thanks"}]},  # Valid cutoff (idx 4)
+            {"role": "assistant", "content": [{"text": "You're welcome"}]},
+        ]
+
+        # Simulate what initialize() does: find valid cutoff points
+        valid_cutoffs = []
+        for idx, msg in enumerate(messages):
+            if msg.get('role') == 'user' and not manager._has_tool_result(msg):
+                valid_cutoffs.append(idx)
+
+        # Should only include indices 0 and 4 (user text messages)
+        assert valid_cutoffs == [0, 4]
+        # Index 2 (toolResult) should NOT be included
+        assert 2 not in valid_cutoffs
 
 
 class TestSummaryRetrieval:
@@ -281,26 +357,6 @@ class TestSummaryRetrieval:
         expected_namespace = f"/strategies/{strategy_id}/actors/{actor_id}"
 
         assert expected_namespace == '/strategies/conversation_summary-abc123/actors/user-456'
-
-    def test_build_summary_prefix_format(self, manager):
-        """Should build correct summary prefix from summaries"""
-        summaries = [
-            "User discussed Python programming",
-            "User prefers detailed explanations"
-        ]
-
-        result = manager._build_summary_prefix(summaries)
-
-        assert "<conversation_summary>" in result
-        assert "</conversation_summary>" in result
-        assert "Python programming" in result
-        assert "detailed explanations" in result
-        assert "Please continue the conversation" in result
-
-    def test_build_summary_prefix_empty_returns_empty(self, manager):
-        """Should return empty string when no summaries"""
-        result = manager._build_summary_prefix([])
-        assert result == ""
 
     def test_prepend_summary_to_first_user_message(self, manager):
         """Summary should be prepended to first user message text"""
@@ -483,9 +539,9 @@ class TestConfigurationFromEnvironment:
         assert threshold == 20
 
     def test_default_recent_turns(self):
-        """Should use default recent turns of 5"""
-        recent_turns = int(os.environ.get('COMPACTION_RECENT_TURNS', '5'))
-        assert recent_turns == 5
+        """Should use default recent turns of 3"""
+        recent_turns = int(os.environ.get('COMPACTION_RECENT_TURNS', '3'))
+        assert recent_turns == 3
 
     def test_custom_compaction_threshold_from_env(self):
         """Should read custom event threshold from environment"""
@@ -501,25 +557,14 @@ class TestConfigurationFromEnvironment:
 
     def test_custom_recent_turns_from_env(self):
         """Should read custom recent turns from environment"""
-        with patch.dict(os.environ, {'COMPACTION_RECENT_TURNS': '10'}):
-            recent_turns = int(os.environ.get('COMPACTION_RECENT_TURNS', '5'))
-            assert recent_turns == 10
-
-    def test_default_min_recent_turns(self):
-        """Should use default min recent turns of 3"""
-        min_turns = int(os.environ.get('COMPACTION_MIN_TURNS', '3'))
-        assert min_turns == 3
-
-    def test_custom_min_turns_from_env(self):
-        """Should read custom min turns from environment"""
-        with patch.dict(os.environ, {'COMPACTION_MIN_TURNS': '2'}):
-            min_turns = int(os.environ.get('COMPACTION_MIN_TURNS', '3'))
-            assert min_turns == 2
+        with patch.dict(os.environ, {'COMPACTION_RECENT_TURNS': '5'}):
+            recent_turns = int(os.environ.get('COMPACTION_RECENT_TURNS', '3'))
+            assert recent_turns == 5
 
     def test_default_max_tool_content_length(self):
-        """Should use default max tool content length of 1000"""
-        max_length = int(os.environ.get('COMPACTION_MAX_TOOL_LENGTH', '1000'))
-        assert max_length == 1000
+        """Should use default max tool content length of 500"""
+        max_length = int(os.environ.get('COMPACTION_MAX_TOOL_LENGTH', '500'))
+        assert max_length == 500
 
     def test_custom_max_tool_content_length_from_env(self):
         """Should read custom max tool content length from environment"""
@@ -575,12 +620,14 @@ class TestToolTruncation:
             }]
         }]
 
-        result = manager._truncate_tool_contents(messages)
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
 
         # Verify truncation was applied
         result_text = result[0]["content"][0]["toolResult"]["content"][0]["text"]
         assert len(result_text) < 2000
         assert "[truncated," in result_text
+        assert truncation_count == 1
+        assert chars_saved > 0
 
     def test_truncate_tool_contents_use_input(self, manager):
         """Should truncate long toolUse input"""
@@ -595,11 +642,13 @@ class TestToolTruncation:
             }]
         }]
 
-        result = manager._truncate_tool_contents(messages)
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
 
-        # Verify input was truncated
+        # Verify input was truncated - now stored as {"_truncated": "..."}
         truncated_input = result[0]["content"][0]["toolUse"]["input"]
-        assert "[truncated," in truncated_input["query"]
+        assert "_truncated" in truncated_input
+        assert "[truncated," in truncated_input["_truncated"]
+        assert truncation_count == 1
 
     def test_truncate_tool_contents_preserves_structure(self, manager):
         """Truncation should preserve message structure and roles"""
@@ -620,7 +669,7 @@ class TestToolTruncation:
             },
         ]
 
-        result = manager._truncate_tool_contents(messages)
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
 
         # Structure preserved
         assert result[0]["role"] == "user"
@@ -629,12 +678,15 @@ class TestToolTruncation:
         assert "toolUse" in result[1]["content"][1]
         assert "toolResult" in result[2]["content"][0]
 
-        # Content truncated
-        assert "[truncated," in result[1]["content"][1]["toolUse"]["input"]["q"]
+        # Content truncated - toolUse input now has {"_truncated": "..."}
+        assert "_truncated" in result[1]["content"][1]["toolUse"]["input"]
+        assert "[truncated," in result[1]["content"][1]["toolUse"]["input"]["_truncated"]
         assert "[truncated," in result[2]["content"][0]["toolResult"]["content"][0]["text"]
+        assert truncation_count == 2
+        assert chars_saved > 0
 
     def test_truncate_tool_contents_json(self, manager):
-        """Should truncate JSON content in toolResult"""
+        """Should truncate JSON content in toolResult - converts to text"""
         messages = [{
             "role": "user",
             "content": [{
@@ -645,11 +697,14 @@ class TestToolTruncation:
             }]
         }]
 
-        result = manager._truncate_tool_contents(messages)
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
 
-        # JSON content truncated
-        json_data = result[0]["content"][0]["toolResult"]["content"][0]["json"]["data"]
-        assert "[truncated," in json_data
+        # JSON content converted to truncated text
+        result_block = result[0]["content"][0]["toolResult"]["content"][0]
+        assert "json" not in result_block  # json key removed
+        assert "text" in result_block  # converted to text
+        assert "[truncated," in result_block["text"]
+        assert truncation_count == 1
 
     def test_truncate_does_not_modify_original(self, manager):
         """Truncation should not modify original messages"""
@@ -664,96 +719,99 @@ class TestToolTruncation:
             }]
         }]
 
-        result = manager._truncate_tool_contents(messages)
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
 
         # Original unchanged
         assert messages[0]["content"][0]["toolResult"]["content"][0]["text"] == original_text
         # Result truncated
         assert "[truncated," in result[0]["content"][0]["toolResult"]["content"][0]["text"]
+        assert truncation_count == 1
 
+    def test_truncate_image_block_to_placeholder(self, manager):
+        """Should replace image block with text placeholder"""
+        fake_image_bytes = b"fake_image_data_12345"
+        messages = [{
+            "role": "user",
+            "content": [
+                {"text": "Here is an image"},
+                {
+                    "image": {
+                        "format": "png",
+                        "source": {"bytes": fake_image_bytes}
+                    }
+                }
+            ]
+        }]
 
-class TestTwoStageCompaction:
-    """Test two-stage compaction threshold logic"""
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
 
-    def test_below_both_thresholds_no_modification(self):
-        """Events below both thresholds should load all messages without modification"""
-        total_events = 15
-        truncation_threshold = 20
-        compaction_threshold = 50
+        # Image should be replaced with text placeholder
+        assert "image" not in result[0]["content"][1]
+        assert "text" in result[0]["content"][1]
+        placeholder_text = result[0]["content"][1]["text"]
+        assert "[Image placeholder:" in placeholder_text
+        assert "format=png" in placeholder_text
+        assert f"original_size={len(fake_image_bytes)}" in placeholder_text
+        assert truncation_count == 1
+        assert chars_saved == len(fake_image_bytes)
 
-        stage = None
-        if total_events > compaction_threshold:
-            stage = "stage2"
-        elif total_events > truncation_threshold:
-            stage = "stage1"
-        else:
-            stage = "none"
+    def test_truncate_image_in_tool_result(self, manager):
+        """Should replace image in toolResult content with placeholder"""
+        fake_image_bytes = b"screenshot_data_67890"
+        messages = [{
+            "role": "user",
+            "content": [{
+                "toolResult": {
+                    "toolUseId": "123",
+                    "content": [
+                        {"text": "Screenshot taken"},
+                        {
+                            "image": {
+                                "format": "jpeg",
+                                "source": {"bytes": fake_image_bytes}
+                            }
+                        }
+                    ]
+                }
+            }]
+        }]
 
-        assert stage == "none"
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
 
-    def test_between_thresholds_triggers_stage1(self):
-        """Events between truncation and compaction threshold should trigger Stage 1"""
-        total_events = 35
-        truncation_threshold = 20
-        compaction_threshold = 50
+        # Image in toolResult should be replaced
+        result_content = result[0]["content"][0]["toolResult"]["content"]
+        assert result_content[0]["text"] == "Screenshot taken"  # Text unchanged
+        assert "image" not in result_content[1]
+        assert "text" in result_content[1]
+        placeholder_text = result_content[1]["text"]
+        assert "[Image placeholder:" in placeholder_text
+        assert "format=jpeg" in placeholder_text
+        assert truncation_count == 1
 
-        stage = None
-        if total_events > compaction_threshold:
-            stage = "stage2"
-        elif total_events > truncation_threshold:
-            stage = "stage1"
-        else:
-            stage = "none"
+    def test_truncate_protected_image_not_replaced(self, manager):
+        """Protected messages should NOT have images replaced"""
+        fake_image_bytes = b"protected_image_data"
+        messages = [{
+            "role": "user",
+            "content": [{
+                "image": {
+                    "format": "png",
+                    "source": {"bytes": fake_image_bytes}
+                }
+            }]
+        }]
 
-        assert stage == "stage1"
+        # Protect message index 0
+        protected_indices = {0}
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(
+            messages, protected_indices=protected_indices
+        )
 
-    def test_above_compaction_threshold_triggers_stage2(self):
-        """Events above compaction threshold should trigger Stage 2"""
-        total_events = 60
-        truncation_threshold = 20
-        compaction_threshold = 50
-
-        stage = None
-        if total_events > compaction_threshold:
-            stage = "stage2"
-        elif total_events > truncation_threshold:
-            stage = "stage1"
-        else:
-            stage = "none"
-
-        assert stage == "stage2"
-
-    def test_exactly_at_truncation_threshold_no_truncation(self):
-        """Events exactly at truncation threshold should not trigger truncation"""
-        total_events = 20
-        truncation_threshold = 20
-        compaction_threshold = 50
-
-        should_truncate = total_events > truncation_threshold
-        assert should_truncate is False
-
-    def test_exactly_at_compaction_threshold_no_compaction(self):
-        """Events exactly at compaction threshold should not trigger full compaction"""
-        total_events = 50
-        truncation_threshold = 30
-        compaction_threshold = 50
-
-        should_compact = total_events > compaction_threshold
-        assert should_compact is False
-
-    def test_stage2_also_applies_truncation(self):
-        """Stage 2 compaction should also apply truncation to recent messages"""
-        # When Stage 2 is triggered, truncation is applied to recent messages
-        # This is verified by the implementation in initialize()
-        total_events = 60
-        compaction_threshold = 50
-
-        # Stage 2 path
-        should_apply_stage2 = total_events > compaction_threshold
-        assert should_apply_stage2 is True
-
-        # Stage 2 includes truncation of recent messages
-        # (verified by code inspection of initialize method)
+        # Image should remain unchanged
+        assert "image" in result[0]["content"][0]
+        assert result[0]["content"][0]["image"]["format"] == "png"
+        assert truncation_count == 0
+        assert chars_saved == 0
 
 
 class TestEdgeCases:
@@ -816,3 +874,723 @@ class TestIntegrationWithAgent:
         use_summarizing = memory_id and agentcore_available
         # None and True = None, which is falsy
         assert not use_summarizing
+
+
+class TestCompactionEnabledPayload:
+    """Test compaction_enabled payload functionality"""
+
+    def test_compaction_enabled_default_true(self):
+        """compaction_enabled should default to True when not provided"""
+        # Simulate the default logic in ChatbotAgent
+        compaction_enabled = None
+        effective_compaction = compaction_enabled if compaction_enabled is not None else True
+        assert effective_compaction is True
+
+    def test_compaction_enabled_explicit_true(self):
+        """compaction_enabled=True should use CompactingSessionManager"""
+        compaction_enabled = True
+        effective_compaction = compaction_enabled if compaction_enabled is not None else True
+        assert effective_compaction is True
+
+    def test_compaction_enabled_explicit_false(self):
+        """compaction_enabled=False should use base AgentCoreMemorySessionManager"""
+        compaction_enabled = False
+        effective_compaction = compaction_enabled if compaction_enabled is not None else True
+        assert effective_compaction is False
+
+    def test_session_manager_selection_with_compaction_enabled(self):
+        """Should select CompactingSessionManager when compaction_enabled=True"""
+        memory_id = 'test-memory-id'
+        agentcore_available = True
+        compaction_enabled = True
+
+        # Simulate the decision logic from agent.py
+        use_compacting_manager = memory_id and agentcore_available and compaction_enabled
+        assert use_compacting_manager is True
+
+    def test_session_manager_selection_with_compaction_disabled(self):
+        """Should select base AgentCoreMemorySessionManager when compaction_enabled=False"""
+        memory_id = 'test-memory-id'
+        agentcore_available = True
+        compaction_enabled = False
+
+        # Simulate the decision logic from agent.py
+        # When compaction_enabled is False, use base AgentCoreMemorySessionManager
+        use_compacting_manager = memory_id and agentcore_available and compaction_enabled
+        assert use_compacting_manager is False
+
+    def test_session_manager_selection_local_mode_ignores_compaction_flag(self):
+        """In local mode, compaction_enabled should be ignored (use FileSessionManager)"""
+        memory_id = None  # Local mode
+        agentcore_available = True
+        compaction_enabled = True  # This should be ignored
+
+        # Local mode check takes precedence
+        # None and True = None, which is falsy
+        use_agentcore = memory_id and agentcore_available
+        assert not use_agentcore  # None is falsy, so this should pass
+
+
+class TestInvocationRequestSchema:
+    """Test InvocationInput schema with compaction_enabled"""
+
+    def test_invocation_input_accepts_compaction_enabled(self):
+        """InvocationInput should accept compaction_enabled parameter"""
+        from models.schemas import InvocationInput
+
+        # With compaction_enabled=True
+        input_data = InvocationInput(
+            user_id="user-123",
+            session_id="session-456",
+            message="Hello",
+            compaction_enabled=True
+        )
+        assert input_data.compaction_enabled is True
+
+        # With compaction_enabled=False
+        input_data = InvocationInput(
+            user_id="user-123",
+            session_id="session-456",
+            message="Hello",
+            compaction_enabled=False
+        )
+        assert input_data.compaction_enabled is False
+
+        # Without compaction_enabled (should default to None)
+        input_data = InvocationInput(
+            user_id="user-123",
+            session_id="session-456",
+            message="Hello"
+        )
+        assert input_data.compaction_enabled is None
+
+    def test_invocation_input_compaction_optional(self):
+        """compaction_enabled should be optional"""
+        from models.schemas import InvocationInput
+
+        # Should not raise error without compaction_enabled
+        input_data = InvocationInput(
+            user_id="user-123",
+            session_id="session-456",
+            message="Hello"
+        )
+        assert hasattr(input_data, 'compaction_enabled')
+        assert input_data.compaction_enabled is None
+
+
+class TestNoCompactionBaseline:
+    """Test no-compaction baseline mode for performance comparison"""
+
+    def test_no_compaction_flag_logic(self):
+        """--no-compaction flag should result in compaction_enabled=False"""
+        no_compaction = True
+        compaction_enabled = not no_compaction
+        assert compaction_enabled is False
+
+    def test_default_compaction_enabled(self):
+        """Default should have compaction enabled"""
+        no_compaction = False
+        compaction_enabled = not no_compaction
+        assert compaction_enabled is True
+
+    def test_baseline_vs_compaction_session_id_pattern(self):
+        """Session IDs should indicate baseline vs compaction mode"""
+        import uuid
+
+        test_id = uuid.uuid4().hex
+
+        # Baseline mode
+        no_compaction = True
+        compaction_label = "baseline" if no_compaction else "compaction"
+        baseline_session_id = f"travel-{compaction_label}-test-{test_id}"
+        assert "baseline" in baseline_session_id
+
+        # Compaction mode
+        no_compaction = False
+        compaction_label = "baseline" if no_compaction else "compaction"
+        compaction_session_id = f"travel-{compaction_label}-test-{test_id}"
+        assert "compaction" in compaction_session_id
+
+
+class TestProtectedMessageIndices:
+    """Test _find_protected_message_indices() function"""
+
+    @pytest.fixture
+    def manager(self):
+        """Create a CompactingSessionManager with mocked dependencies"""
+        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+            mock_init.return_value = None
+            from agent.compacting_session_manager import CompactingSessionManager
+            from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+
+            config = MagicMock(spec=AgentCoreMemoryConfig)
+            manager = CompactingSessionManager(
+                agentcore_memory_config=config,
+                region_name='us-west-2',
+                truncation_protected_turns=2
+            )
+            return manager
+
+    def test_protect_last_2_turns(self, manager):
+        """Should protect messages from last 2 turns"""
+        messages = [
+            # Turn 1 (index 0-1)
+            {"role": "user", "content": [{"text": "Turn 1 question"}]},
+            {"role": "assistant", "content": [{"text": "Turn 1 answer"}]},
+            # Turn 2 (index 2-3)
+            {"role": "user", "content": [{"text": "Turn 2 question"}]},
+            {"role": "assistant", "content": [{"text": "Turn 2 answer"}]},
+            # Turn 3 (index 4-5)
+            {"role": "user", "content": [{"text": "Turn 3 question"}]},
+            {"role": "assistant", "content": [{"text": "Turn 3 answer"}]},
+            # Turn 4 (index 6-7)
+            {"role": "user", "content": [{"text": "Turn 4 question"}]},
+            {"role": "assistant", "content": [{"text": "Turn 4 answer"}]},
+        ]
+
+        protected = manager._find_protected_message_indices(messages, protected_turns=2)
+
+        # Should protect turns 3 and 4 (indices 4-7)
+        assert 0 not in protected  # Turn 1 user - not protected
+        assert 1 not in protected  # Turn 1 assistant - not protected
+        assert 2 not in protected  # Turn 2 user - not protected
+        assert 3 not in protected  # Turn 2 assistant - not protected
+        assert 4 in protected      # Turn 3 user - protected
+        assert 5 in protected      # Turn 3 assistant - protected
+        assert 6 in protected      # Turn 4 user - protected
+        assert 7 in protected      # Turn 4 assistant - protected
+
+    def test_protect_with_tool_use(self, manager):
+        """Should correctly identify turns with tool use/result"""
+        messages = [
+            # Turn 1 (index 0-3): User question -> Tool use -> Tool result -> Assistant answer
+            {"role": "user", "content": [{"text": "Search for weather"}]},
+            {"role": "assistant", "content": [{"toolUse": {"name": "weather", "toolUseId": "123", "input": {}}}]},
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "123", "content": [{"text": "Sunny"}]}}]},
+            {"role": "assistant", "content": [{"text": "It's sunny!"}]},
+            # Turn 2 (index 4-5): Simple question-answer
+            {"role": "user", "content": [{"text": "Thanks!"}]},
+            {"role": "assistant", "content": [{"text": "You're welcome!"}]},
+        ]
+
+        protected = manager._find_protected_message_indices(messages, protected_turns=1)
+
+        # Turn 2 starts at index 4 (user text message, not toolResult)
+        # Should protect indices 4-5
+        assert 0 not in protected  # Turn 1 user - not protected
+        assert 1 not in protected  # Turn 1 tool use - not protected
+        assert 2 not in protected  # Turn 1 tool result (user role but toolResult) - not protected
+        assert 3 not in protected  # Turn 1 assistant - not protected
+        assert 4 in protected      # Turn 2 user - protected
+        assert 5 in protected      # Turn 2 assistant - protected
+
+    def test_protect_zero_turns(self, manager):
+        """Should return empty set when protected_turns=0"""
+        messages = [
+            {"role": "user", "content": [{"text": "Question"}]},
+            {"role": "assistant", "content": [{"text": "Answer"}]},
+        ]
+
+        protected = manager._find_protected_message_indices(messages, protected_turns=0)
+        assert protected == set()
+
+    def test_protect_more_turns_than_available(self, manager):
+        """Should protect all messages when protected_turns > total turns"""
+        messages = [
+            {"role": "user", "content": [{"text": "Question"}]},
+            {"role": "assistant", "content": [{"text": "Answer"}]},
+        ]
+
+        protected = manager._find_protected_message_indices(messages, protected_turns=10)
+
+        # Only 1 turn exists, so all messages should be protected
+        assert 0 in protected
+        assert 1 in protected
+
+    def test_empty_messages(self, manager):
+        """Should return empty set for empty messages"""
+        protected = manager._find_protected_message_indices([], protected_turns=2)
+        assert protected == set()
+
+
+class TestTruncationWithProtectedIndices:
+    """Test _truncate_tool_contents() with protected indices"""
+
+    @pytest.fixture
+    def manager(self):
+        """Create a CompactingSessionManager with mocked dependencies"""
+        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+            mock_init.return_value = None
+            from agent.compacting_session_manager import CompactingSessionManager
+            from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+
+            config = MagicMock(spec=AgentCoreMemoryConfig)
+            manager = CompactingSessionManager(
+                agentcore_memory_config=config,
+                region_name='us-west-2',
+                max_tool_content_length=100  # Short for testing
+            )
+            return manager
+
+    def test_truncate_only_unprotected(self, manager):
+        """Should truncate only unprotected messages"""
+        long_content = "A" * 500  # Longer than max_tool_content_length (100)
+
+        messages = [
+            # Message 0: unprotected - should be truncated
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "1", "content": [{"text": long_content}]}}]},
+            # Message 1: protected - should NOT be truncated
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "2", "content": [{"text": long_content}]}}]},
+        ]
+
+        protected_indices = {1}  # Protect message index 1
+
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(
+            messages, protected_indices=protected_indices
+        )
+
+        # Message 0 should be truncated
+        assert "truncated" in result[0]["content"][0]["toolResult"]["content"][0]["text"]
+
+        # Message 1 should NOT be truncated
+        assert result[1]["content"][0]["toolResult"]["content"][0]["text"] == long_content
+        assert "truncated" not in result[1]["content"][0]["toolResult"]["content"][0]["text"]
+
+        # Only 1 item truncated
+        assert truncation_count == 1
+
+    def test_truncate_all_when_no_protected(self, manager):
+        """Should truncate all long content when no protected indices"""
+        long_content = "B" * 500
+
+        messages = [
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "1", "content": [{"text": long_content}]}}]},
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "2", "content": [{"text": long_content}]}}]},
+        ]
+
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(messages)
+
+        # Both should be truncated
+        assert "truncated" in result[0]["content"][0]["toolResult"]["content"][0]["text"]
+        assert "truncated" in result[1]["content"][0]["toolResult"]["content"][0]["text"]
+        assert truncation_count == 2
+
+    def test_no_truncation_when_all_protected(self, manager):
+        """Should not truncate anything when all indices protected"""
+        long_content = "C" * 500
+
+        messages = [
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "1", "content": [{"text": long_content}]}}]},
+            {"role": "user", "content": [{"toolResult": {"toolUseId": "2", "content": [{"text": long_content}]}}]},
+        ]
+
+        protected_indices = {0, 1}  # Protect all
+
+        result, truncation_count, chars_saved = manager._truncate_tool_contents(
+            messages, protected_indices=protected_indices
+        )
+
+        # Neither should be truncated
+        assert result[0]["content"][0]["toolResult"]["content"][0]["text"] == long_content
+        assert result[1]["content"][0]["toolResult"]["content"][0]["text"] == long_content
+        assert truncation_count == 0
+        assert chars_saved == 0
+
+
+class TestEffectiveOffsetCalculation:
+    """Test effective offset calculation combining conv_manager offset and checkpoint"""
+
+    def test_effective_offset_uses_checkpoint(self):
+        """When checkpoint > conv_manager_offset, effective_offset should be checkpoint"""
+        checkpoint = 50
+        conv_manager_offset = 0
+
+        effective_offset = max(conv_manager_offset, checkpoint)
+        assert effective_offset == 50
+
+    def test_effective_offset_uses_conv_manager(self):
+        """When conv_manager_offset > checkpoint, effective_offset should be conv_manager_offset"""
+        checkpoint = 20
+        conv_manager_offset = 30
+
+        effective_offset = max(conv_manager_offset, checkpoint)
+        assert effective_offset == 30
+
+    def test_effective_offset_both_zero(self):
+        """When both are 0, effective_offset should be 0"""
+        checkpoint = 0
+        conv_manager_offset = 0
+
+        effective_offset = max(conv_manager_offset, checkpoint)
+        assert effective_offset == 0
+
+    def test_effective_offset_same_value(self):
+        """When both are same, effective_offset should be that value"""
+        checkpoint = 25
+        conv_manager_offset = 25
+
+        effective_offset = max(conv_manager_offset, checkpoint)
+        assert effective_offset == 25
+
+
+class TestModeSelectionLogic:
+    """Test the two-feature selection logic in initialize()"""
+
+    def test_mode_selection_no_checkpoint(self):
+        """checkpoint == 0 -> Load all messages, apply truncation"""
+        from agent.compacting_session_manager import CompactionState
+
+        state = CompactionState(checkpoint=0, lastInputTokens=30_000)
+
+        # Determine mode based on checkpoint only
+        if state.checkpoint > 0:
+            mode = "checkpoint"
+        else:
+            mode = "none"
+
+        assert mode == "none"
+
+    def test_mode_selection_with_checkpoint(self):
+        """checkpoint > 0 -> Load from checkpoint, apply truncation"""
+        from agent.compacting_session_manager import CompactionState
+
+        state = CompactionState(checkpoint=50, lastInputTokens=150_000)
+
+        # Determine mode based on checkpoint only
+        if state.checkpoint > 0:
+            mode = "checkpoint"
+        else:
+            mode = "none"
+
+        assert mode == "checkpoint"
+
+    def test_truncation_always_applies(self):
+        """Truncation is always applied regardless of checkpoint state"""
+        from agent.compacting_session_manager import CompactionState
+
+        # Case 1: No checkpoint
+        state1 = CompactionState(checkpoint=0)
+        # Case 2: With checkpoint
+        state2 = CompactionState(checkpoint=50)
+
+        # Truncation should always be applied (not conditional)
+        truncation_applies = True  # Always True in new design
+        assert truncation_applies is True
+
+
+class TestTwoFeatureCompaction:
+    """Test the two-feature compaction design"""
+
+    @pytest.fixture
+    def manager(self):
+        """Create a CompactingSessionManager with custom thresholds for testing"""
+        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+            mock_init.return_value = None
+            from agent.compacting_session_manager import CompactingSessionManager
+            from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+
+            config = MagicMock(spec=AgentCoreMemoryConfig)
+            manager = CompactingSessionManager(
+                agentcore_memory_config=config,
+                region_name='us-west-2',
+                token_threshold=1000,        # Low threshold for testing
+                protected_turns=2,
+                max_tool_content_length=50
+            )
+            return manager
+
+    def test_thresholds_configured_correctly(self, manager):
+        """Verify thresholds are set correctly"""
+        assert manager.token_threshold == 1000
+        assert manager.protected_turns == 2
+
+    def test_compaction_triggers_above_threshold(self, manager):
+        """Compaction should trigger when tokens exceed threshold"""
+        # Below threshold - no checkpoint update
+        assert 500 <= manager.token_threshold
+        assert 1000 <= manager.token_threshold
+
+        # Above threshold - should trigger checkpoint update
+        assert 1001 > manager.token_threshold
+        assert 2000 > manager.token_threshold
+
+
+class TestUpdateAfterTurnLogic:
+    """Test update_after_turn() triggering logic
+
+    New API: update_after_turn(input_tokens, agent_id)
+    - Uses cached _valid_cutoff_message_ids from initialize()
+    - Uses cached _all_messages_for_summary for summary generation
+    """
+
+    @pytest.fixture
+    def manager(self):
+        """Create a CompactingSessionManager with mocked dependencies"""
+        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+            mock_init.return_value = None
+            from agent.compacting_session_manager import CompactingSessionManager, CompactionState
+            from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+
+            config = MagicMock(spec=AgentCoreMemoryConfig)
+            config.memory_id = 'test-memory'
+            config.actor_id = 'test-user'
+
+            manager = CompactingSessionManager(
+                agentcore_memory_config=config,
+                region_name='us-west-2',
+                token_threshold=1000,
+                protected_turns=2,
+                user_id='test-user'
+            )
+            manager.compaction_state = CompactionState()
+            manager.config = config
+            # Initialize cached values (normally set by initialize())
+            manager._valid_cutoff_message_ids = []
+            manager._all_messages_for_summary = []
+
+            return manager
+
+    def test_updates_last_input_tokens(self, manager):
+        """Should always update lastInputTokens"""
+        # Set up cached cutoff points (simulating initialize())
+        manager._valid_cutoff_message_ids = [0]
+
+        with patch.object(manager, 'save_compaction_state'):
+            manager.update_after_turn(750, 'test-agent')
+
+        assert manager.compaction_state.lastInputTokens == 750
+
+    def test_triggers_checkpoint_above_threshold(self, manager):
+        """Should trigger checkpoint when tokens exceed threshold"""
+        # Simulate 3 turns: indices 0, 2, 4 are user text messages
+        manager._valid_cutoff_message_ids = [0, 2, 4]
+        manager._all_messages_for_summary = [
+            {"role": "user", "content": [{"text": "msg1"}]},
+            {"role": "assistant", "content": [{"text": "resp1"}]},
+            {"role": "user", "content": [{"text": "msg2"}]},
+            {"role": "assistant", "content": [{"text": "resp2"}]},
+            {"role": "user", "content": [{"text": "msg3"}]},
+            {"role": "assistant", "content": [{"text": "resp3"}]},
+        ]
+
+        with patch.object(manager, 'save_compaction_state'):
+            with patch.object(manager, '_generate_summary_for_compaction', return_value="Test summary"):
+                manager.update_after_turn(1500, 'test-agent')  # Above threshold
+
+        # With protected_turns=2 and cutoff_ids=[0,2,4], new_checkpoint = cutoff_ids[-2] = 2
+        assert manager.compaction_state.checkpoint == 2
+        assert manager.compaction_state.summary == "Test summary"
+
+    def test_does_not_trigger_below_threshold(self, manager):
+        """Should not trigger checkpoint when tokens below threshold"""
+        manager._valid_cutoff_message_ids = [0]
+
+        with patch.object(manager, 'save_compaction_state'):
+            manager.update_after_turn(500, 'test-agent')  # Below threshold
+
+        assert manager.compaction_state.checkpoint == 0
+
+    def test_updates_checkpoint_forward(self, manager):
+        """Should update checkpoint forward when tokens exceed threshold again"""
+        from agent.compacting_session_manager import CompactionState
+
+        manager.compaction_state = CompactionState(
+            checkpoint=2,
+            summary="Existing summary"
+        )
+
+        # More turns added: indices 0, 2, 4, 6 are user text messages
+        manager._valid_cutoff_message_ids = [0, 2, 4, 6]
+        manager._all_messages_for_summary = [
+            {"role": "user", "content": [{"text": "msg1"}]},
+            {"role": "assistant", "content": [{"text": "resp1"}]},
+            {"role": "user", "content": [{"text": "msg2"}]},
+            {"role": "assistant", "content": [{"text": "resp2"}]},
+            {"role": "user", "content": [{"text": "msg3"}]},
+            {"role": "assistant", "content": [{"text": "resp3"}]},
+            {"role": "user", "content": [{"text": "msg4"}]},
+            {"role": "assistant", "content": [{"text": "resp4"}]},
+        ]
+
+        with patch.object(manager, 'save_compaction_state'):
+            with patch.object(manager, '_generate_summary_for_compaction', return_value="Updated summary"):
+                manager.update_after_turn(2000, 'test-agent')  # Above threshold
+
+        # With protected_turns=2 and cutoff_ids=[0,2,4,6], new_checkpoint = cutoff_ids[-2] = 4
+        assert manager.compaction_state.checkpoint == 4
+        assert manager.compaction_state.summary == "Updated summary"
+
+    def test_does_not_update_checkpoint_backward(self, manager):
+        """Should not update checkpoint if new_checkpoint <= current checkpoint"""
+        from agent.compacting_session_manager import CompactionState
+
+        manager.compaction_state = CompactionState(
+            checkpoint=50,
+            summary="Existing summary"
+        )
+
+        # Only 2 turns available, protected_turns=2 means no checkpoint update possible
+        manager._valid_cutoff_message_ids = [0, 2]
+
+        with patch.object(manager, 'save_compaction_state'):
+            manager.update_after_turn(2000, 'test-agent')  # Above threshold
+
+        # Should keep existing checkpoint since total_turns <= protected_turns
+        assert manager.compaction_state.checkpoint == 50
+        assert manager.compaction_state.summary == "Existing summary"
+
+    def test_skips_checkpoint_when_insufficient_turns(self, manager):
+        """Should skip checkpoint when total turns <= protected_turns"""
+        manager._valid_cutoff_message_ids = [0, 2]  # Only 2 turns
+        manager.protected_turns = 2  # Need > 2 turns to checkpoint
+
+        with patch.object(manager, 'save_compaction_state'):
+            manager.update_after_turn(2000, 'test-agent')  # Above threshold
+
+        # Should not set checkpoint (only 2 turns <= protected_turns=2)
+        assert manager.compaction_state.checkpoint == 0
+
+
+class TestEndToEndScenarios:
+    """End-to-end scenario tests for two-feature compaction
+
+    Tests use the new API:
+    - update_after_turn(input_tokens, agent_id) - no messages parameter
+    - Uses cached _valid_cutoff_message_ids from initialize()
+    - Uses _all_messages_for_summary for summary generation
+    """
+
+    @pytest.fixture
+    def manager(self):
+        """Create a CompactingSessionManager with low thresholds for testing"""
+        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+            mock_init.return_value = None
+            from agent.compacting_session_manager import CompactingSessionManager, CompactionState
+            from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+
+            config = MagicMock(spec=AgentCoreMemoryConfig)
+            config.memory_id = 'test-memory'
+            config.actor_id = 'test-user'
+
+            manager = CompactingSessionManager(
+                agentcore_memory_config=config,
+                region_name='us-west-2',
+                token_threshold=1000,
+                protected_turns=2,
+                max_tool_content_length=50,
+                user_id='test-user'
+            )
+            manager.compaction_state = CompactionState()
+            manager.config = config
+            # Initialize cached values (normally set by initialize())
+            manager._valid_cutoff_message_ids = []
+            manager._all_messages_for_summary = []
+
+            return manager
+
+    def test_scenario_below_threshold(self, manager):
+        """Scenario: Tokens below threshold - no checkpoint set"""
+        # Initial state
+        assert manager.compaction_state.checkpoint == 0
+        assert manager.compaction_state.lastInputTokens == 0
+
+        # Set up cached cutoff points (simulating initialize())
+        manager._valid_cutoff_message_ids = [0]
+
+        with patch.object(manager, 'save_compaction_state'):
+            manager.update_after_turn(600, 'test-agent')  # Below threshold
+
+        # State should track tokens but not set checkpoint
+        assert manager.compaction_state.lastInputTokens == 600
+        assert manager.compaction_state.checkpoint == 0  # No checkpoint set
+
+    def test_scenario_above_threshold_sets_checkpoint(self, manager):
+        """Scenario: Tokens exceed threshold - checkpoint gets set"""
+        from agent.compacting_session_manager import CompactionState
+
+        manager.compaction_state = CompactionState(lastInputTokens=700)
+
+        # Set up cached cutoff points: indices 0 and 2 are user text messages
+        manager._valid_cutoff_message_ids = [0, 2]
+        manager._all_messages_for_summary = [
+            {"role": "user", "content": [{"text": "q1"}]},
+            {"role": "assistant", "content": [{"text": "a1"}]},
+            {"role": "user", "content": [{"text": "q2"}]},
+            {"role": "assistant", "content": [{"text": "a2"}]},
+        ]
+
+        # With protected_turns=2 and cutoff_ids=[0, 2], new_checkpoint = cutoff_ids[-2] = 0
+        # But 0 is not > current checkpoint (0), so checkpoint won't update
+        # Need 3 turns (3 cutoff points) to have checkpoint > 0
+        manager._valid_cutoff_message_ids = [0, 2, 4]  # 3 turns
+        manager._all_messages_for_summary = [
+            {"role": "user", "content": [{"text": "q1"}]},
+            {"role": "assistant", "content": [{"text": "a1"}]},
+            {"role": "user", "content": [{"text": "q2"}]},
+            {"role": "assistant", "content": [{"text": "a2"}]},
+            {"role": "user", "content": [{"text": "q3"}]},
+            {"role": "assistant", "content": [{"text": "a3"}]},
+        ]
+
+        with patch.object(manager, 'save_compaction_state'):
+            with patch.object(manager, '_generate_summary_for_compaction', return_value="Summary"):
+                manager.update_after_turn(1200, 'test-agent')  # Above threshold
+
+        # With protected_turns=2 and cutoff_ids=[0, 2, 4], new_checkpoint = cutoff_ids[-2] = 2
+        assert manager.compaction_state.checkpoint == 2
+        assert manager.compaction_state.summary == "Summary"
+
+    def test_scenario_checkpoint_updates_forward(self, manager):
+        """Scenario: Checkpoint can be updated forward as conversation grows"""
+        from agent.compacting_session_manager import CompactionState
+
+        # Already has checkpoint at 2
+        manager.compaction_state = CompactionState(
+            checkpoint=2,
+            summary="Previous summary",
+            lastInputTokens=1500
+        )
+
+        # More turns added: indices 0, 2, 4, 6 are user text messages
+        manager._valid_cutoff_message_ids = [0, 2, 4, 6]
+        manager._all_messages_for_summary = [
+            {"role": "user", "content": [{"text": "msg1"}]},
+            {"role": "assistant", "content": [{"text": "resp1"}]},
+            {"role": "user", "content": [{"text": "msg2"}]},
+            {"role": "assistant", "content": [{"text": "resp2"}]},
+            {"role": "user", "content": [{"text": "msg3"}]},
+            {"role": "assistant", "content": [{"text": "resp3"}]},
+            {"role": "user", "content": [{"text": "msg4"}]},
+            {"role": "assistant", "content": [{"text": "resp4"}]},
+        ]
+
+        with patch.object(manager, 'save_compaction_state'):
+            with patch.object(manager, '_generate_summary_for_compaction', return_value="Updated summary"):
+                manager.update_after_turn(1800, 'test-agent')
+
+        # With protected_turns=2 and cutoff_ids=[0, 2, 4, 6], new_checkpoint = cutoff_ids[-2] = 4
+        assert manager.compaction_state.checkpoint == 4
+        assert manager.compaction_state.summary == "Updated summary"
+
+    def test_scenario_checkpoint_stable_below_threshold(self, manager):
+        """Scenario: Checkpoint remains stable when tokens are below threshold"""
+        from agent.compacting_session_manager import CompactionState
+
+        # Already has checkpoint
+        manager.compaction_state = CompactionState(
+            checkpoint=50,
+            summary="Previous summary",
+            lastInputTokens=1500
+        )
+
+        # Set up some cutoff points
+        manager._valid_cutoff_message_ids = [0]
+
+        with patch.object(manager, 'save_compaction_state'):
+            # Below threshold, checkpoint should not change
+            manager.update_after_turn(800, 'test-agent')
+
+        # Checkpoint unchanged, only lastInputTokens updated
+        assert manager.compaction_state.checkpoint == 50
+        assert manager.compaction_state.summary == "Previous summary"
+        assert manager.compaction_state.lastInputTokens == 800

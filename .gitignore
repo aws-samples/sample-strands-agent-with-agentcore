@@ -176,3 +176,5 @@ browser-use
 .pytest_cache/
 **/.pytest_cache/
 **/pytest_cache/
+
+results

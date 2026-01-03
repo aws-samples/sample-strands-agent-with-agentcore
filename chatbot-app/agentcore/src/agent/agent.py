@@ -167,15 +167,15 @@ class ConversationCachingHook(HookProvider):
     def add_conversation_cache_point(self, event: BeforeModelCallEvent) -> None:
         """Add cache points to conversation history with sliding window (max 3, remove oldest when full)"""
         if not self.enabled:
-            logger.info("❌ Caching disabled")
+            logger.debug("Caching disabled")
             return
 
         messages = event.agent.messages
         if not messages:
-            logger.info("❌ No messages in history")
+            logger.debug("No messages in history")
             return
 
-        logger.info(f"🔍 Processing caching for {len(messages)} messages")
+        logger.debug(f"Processing caching for {len(messages)} messages")
 
         # Debug: Log message structure to diagnose tool_use/tool_result mismatch
         for msg_idx, msg in enumerate(messages):
@@ -197,7 +197,7 @@ class ConversationCachingHook(HookProvider):
                             block_types.append(f"other({list(block.keys())})")
                     elif isinstance(block, str):
                         block_types.append("str")
-            logger.info(f"  [msg {msg_idx}] role={role}, blocks={block_types}")
+            logger.debug(f"  [msg {msg_idx}] role={role}, blocks={block_types}")
 
         # Count existing cache points across all content blocks
         existing_cache_count = 0
@@ -213,7 +213,7 @@ class ConversationCachingHook(HookProvider):
 
         # If we already have 3 cache points, remove the oldest one (sliding window)
         if existing_cache_count >= 3:
-            logger.info(f"📊 Cache limit reached: {existing_cache_count}/3 cache points")
+            logger.debug(f"Cache limit reached: {existing_cache_count}/3 cache points")
             # Remove the oldest cache point to make room for new one
             if cache_point_positions:
                 oldest_msg_idx, oldest_block_idx = cache_point_positions[0]
@@ -224,7 +224,7 @@ class ConversationCachingHook(HookProvider):
                     del oldest_content[oldest_block_idx]
                     oldest_msg["content"] = oldest_content
                     existing_cache_count -= 1
-                    logger.info(f"♻️  Removed oldest cache point at message {oldest_msg_idx} block {oldest_block_idx}")
+                    logger.debug(f"Removed oldest cache point at message {oldest_msg_idx} block {oldest_block_idx}")
                     # Update positions for remaining cache points
                     cache_point_positions.pop(0)
 
@@ -255,7 +255,7 @@ class ConversationCachingHook(HookProvider):
                                 tool_result_candidates.append((msg_idx, block_idx, "tool_result"))
 
         remaining_slots = 3 - existing_cache_count
-        logger.info(f"📊 Cache status: {existing_cache_count}/3 existing, {len(assistant_candidates)} assistant + {len(tool_result_candidates)} tool_result candidates, {remaining_slots} slots available")
+        logger.debug(f"Cache status: {existing_cache_count}/3 existing, {len(assistant_candidates)} assistant + {len(tool_result_candidates)} tool_result candidates, {remaining_slots} slots available")
 
         # Prioritize assistant messages: take most recent assistants first, then tool_results
         candidates_to_cache = []
@@ -303,7 +303,7 @@ class ConversationCachingHook(HookProvider):
                     content.insert(insert_position, cache_block)
                     msg["content"] = content
                     existing_cache_count += 1
-                    logger.info(f"✅ Added cache point after {block_type} at message {msg_idx} block {block_idx} (total: {existing_cache_count}/3)")
+                    logger.debug(f"Added cache point after {block_type} at message {msg_idx} block {block_idx} (total: {existing_cache_count}/3)")
 
                 elif isinstance(block, str):
                     # Convert string to structured format with cache
@@ -312,7 +312,7 @@ class ConversationCachingHook(HookProvider):
                         {"cachePoint": {"type": "default"}}
                     ]
                     existing_cache_count += 1
-                    logger.info(f"✅ Added cache point after text at message {msg_idx} (total: {existing_cache_count}/3)")
+                    logger.debug(f"Added cache point after text at message {msg_idx} (total: {existing_cache_count}/3)")
 
                 if existing_cache_count >= 3:
                     break
@@ -336,14 +336,14 @@ TOOL_REGISTRY = {
 for tool_name in local_tools.__all__:
     tool_obj = getattr(local_tools, tool_name)
     TOOL_REGISTRY[tool_name] = tool_obj
-    logger.info(f"Registered local tool: {tool_name}")
+    logger.debug(f"Registered local tool: {tool_name}")
 
 # Dynamically load all builtin tools from builtin_tools.__all__
 # This ensures we only need to maintain the list in one place (__init__.py)
 for tool_name in builtin_tools.__all__:
     tool_obj = getattr(builtin_tools, tool_name)
     TOOL_REGISTRY[tool_name] = tool_obj
-    logger.info(f"Registered builtin tool: {tool_name}")
+    logger.debug(f"Registered builtin tool: {tool_name}")
 
 
 class ChatbotAgent:
@@ -357,7 +357,9 @@ class ChatbotAgent:
         model_id: Optional[str] = None,
         temperature: Optional[float] = None,
         system_prompt: Optional[str] = None,
-        caching_enabled: Optional[bool] = None
+        caching_enabled: Optional[bool] = None,
+        compaction_enabled: Optional[bool] = None,
+        use_null_conversation_manager: Optional[bool] = None
     ):
         """
         Initialize agent with specific configuration and AgentCore Memory
@@ -370,6 +372,8 @@ class ChatbotAgent:
             temperature: Model temperature (0.0 - 1.0)
             system_prompt: System prompt text
             caching_enabled: Whether to enable prompt caching
+            compaction_enabled: Whether to enable context compaction (default: True)
+            use_null_conversation_manager: Use NullConversationManager instead of default SlidingWindow (default: False)
         """
         global _global_stream_processor
         self.stream_processor = StreamEventProcessor()
@@ -410,7 +414,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         # Add tool-specific guidance sections
         if tool_guidance_list:
             prompt_sections.extend(tool_guidance_list)
-            logger.info(f"System prompt constructed with {len(tool_guidance_list)} tool guidance sections")
+            logger.debug(f"System prompt constructed with {len(tool_guidance_list)} tool guidance sections")
 
         # Add date as final section
         prompt_sections.append(f"Current date: {current_date}")
@@ -418,11 +422,13 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         # Combine all sections with double newline separator
         self.system_prompt = "\n\n".join(prompt_sections)
 
-        logger.info(f"Using system prompt with {len(prompt_sections)} sections (base + {len(tool_guidance_list)} tool guidance + date)")
-        logger.info(f"System prompt length: {len(self.system_prompt)} characters")
-        logger.info(f"System prompt preview (first 200 chars): {self.system_prompt[:200]}")
+        logger.debug(f"Using system prompt with {len(prompt_sections)} sections (base + {len(tool_guidance_list)} tool guidance + date)")
+        logger.debug(f"System prompt length: {len(self.system_prompt)} characters")
+        logger.debug(f"System prompt preview (first 200 chars): {self.system_prompt[:200]}")
 
         self.caching_enabled = caching_enabled if caching_enabled is not None else True
+        self.compaction_enabled = compaction_enabled if compaction_enabled is not None else True
+        self.use_null_conversation_manager = use_null_conversation_manager if use_null_conversation_manager is not None else False
 
         # Session Manager Selection: AgentCore Memory (cloud) vs File-based (local)
         memory_id = os.environ.get('MEMORY_ID')
@@ -430,7 +436,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
         if memory_id and AGENTCORE_MEMORY_AVAILABLE:
             # Cloud deployment: Use AgentCore Memory
-            logger.info(f"🚀 Cloud mode: Using AgentCore Memory (memory_id={memory_id})")
+            logger.debug(f"🚀 Cloud mode: Using AgentCore Memory (memory_id={memory_id})")
 
             # Get strategy IDs dynamically from Memory configuration
             strategy_ids = self._get_memory_strategy_ids(memory_id, aws_region)
@@ -443,13 +449,13 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             if 'USER_PREFERENCE' in strategy_ids:
                 pref_namespace = f"/strategies/{strategy_ids['USER_PREFERENCE']}/actors/{self.user_id}"
                 retrieval_config[pref_namespace] = RetrievalConfig(top_k=5, relevance_score=0.7)
-                logger.info(f"📝 User preferences namespace: {pref_namespace}")
+                logger.debug(f"📝 User preferences namespace: {pref_namespace}")
 
             # Semantic facts (learned information about user)
             if 'SEMANTIC' in strategy_ids:
                 facts_namespace = f"/strategies/{strategy_ids['SEMANTIC']}/actors/{self.user_id}"
                 retrieval_config[facts_namespace] = RetrievalConfig(top_k=10, relevance_score=0.3)
-                logger.info(f"📚 Semantic facts namespace: {facts_namespace}")
+                logger.debug(f"📚 Semantic facts namespace: {facts_namespace}")
 
             # Session summaries (previous conversation summaries)
             # Note: Summary namespace includes sessionId, so we use a broader pattern for cross-session retrieval
@@ -457,7 +463,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 # For summaries, we retrieve from the actor-level to get summaries across sessions
                 summary_namespace = f"/strategies/{strategy_ids['SUMMARIZATION']}/actors/{self.user_id}"
                 retrieval_config[summary_namespace] = RetrievalConfig(top_k=3, relevance_score=0.5)
-                logger.info(f"📋 Session summaries namespace: {summary_namespace}")
+                logger.debug(f"📋 Session summaries namespace: {summary_namespace}")
 
             if not retrieval_config:
                 logger.warning("⚠️ No retrieval_config configured - LTM retrieval disabled")
@@ -471,38 +477,50 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 retrieval_config=retrieval_config
             )
 
-            # Use CompactingSessionManager for threshold-based context optimization
-            # Two-stage compaction:
-            #   Stage 1 (truncation_threshold): Truncate long tool inputs/results
-            #   Stage 2 (compaction_threshold): Load [LTM Summary] + [Recent N turns]
-            # Configuration via environment variables (with sensible defaults)
-            compaction_threshold = int(os.environ.get('COMPACTION_THRESHOLD', '50'))
-            truncation_threshold = int(os.environ.get('COMPACTION_TRUNCATION_THRESHOLD', '20'))
-            recent_turns_count = int(os.environ.get('COMPACTION_RECENT_TURNS', '5'))
-            min_recent_turns = int(os.environ.get('COMPACTION_MIN_TURNS', '3'))
-            max_tool_content_length = int(os.environ.get('COMPACTION_MAX_TOOL_LENGTH', '1000'))
+            # Session Manager selection based on compaction_enabled flag
+            if self.compaction_enabled:
+                # Use CompactingSessionManager for token-based context compaction
+                # Two-feature compaction:
+                # - Feature 1: Truncation (always applied) - truncate old tool contents
+                # - Feature 2: Checkpoint (token_threshold 50K) - skip old messages + summary
+                # Configuration via environment variables (with sensible defaults)
+                token_threshold = int(os.environ.get('COMPACTION_TOKEN_THRESHOLD', '50000'))
+                protected_turns = int(os.environ.get('COMPACTION_PROTECTED_TURNS', '2'))
+                max_tool_content_length = int(os.environ.get('COMPACTION_MAX_TOOL_LENGTH', '500'))
 
-            # Get SUMMARIZATION strategy ID for summary retrieval
-            summarization_strategy_id = strategy_ids.get('SUMMARIZATION')
+                # Get SUMMARIZATION strategy ID for summary retrieval
+                summarization_strategy_id = strategy_ids.get('SUMMARIZATION')
 
-            self.session_manager = CompactingSessionManager(
-                agentcore_memory_config=agentcore_memory_config,
-                region_name=aws_region,
-                compaction_threshold=compaction_threshold,
-                truncation_threshold=truncation_threshold,
-                recent_turns_count=recent_turns_count,
-                min_recent_turns=min_recent_turns,
-                max_tool_content_length=max_tool_content_length,
-                summarization_strategy_id=summarization_strategy_id
-            )
+                self.session_manager = CompactingSessionManager(
+                    agentcore_memory_config=agentcore_memory_config,
+                    region_name=aws_region,
+                    token_threshold=token_threshold,
+                    protected_turns=protected_turns,
+                    max_tool_content_length=max_tool_content_length,
+                    user_id=self.user_id,
+                    summarization_strategy_id=summarization_strategy_id
+                )
 
-            logger.info(f"✅ AgentCore Memory initialized (with compaction): user_id={self.user_id}")
-            logger.info(f"   LTM retrieval: {len(retrieval_config)} namespace(s) configured")
-            logger.info(f"   Stage 1 (truncation): threshold={truncation_threshold}, max_tool_length={max_tool_content_length}")
-            logger.info(f"   Stage 2 (compaction): threshold={compaction_threshold}, recent_turns={recent_turns_count}, min_turns={min_recent_turns}")
+                logger.debug(f"✅ AgentCore Memory initialized (with compaction): user_id={self.user_id}")
+                logger.debug(f"   LTM retrieval: {len(retrieval_config)} namespace(s) configured")
+                logger.debug(f"   Compaction: threshold={token_threshold:,}, protected_turns={protected_turns}")
+            else:
+                # Use CompactingSessionManager with metrics_only=True for baseline mode
+                # This enables context token tracking without applying compaction
+                self.session_manager = CompactingSessionManager(
+                    agentcore_memory_config=agentcore_memory_config,
+                    region_name=aws_region,
+                    user_id=self.user_id,
+                    metrics_only=True  # Track metrics but don't apply compaction
+                )
+
+                logger.debug(f"✅ AgentCore Memory initialized (metrics_only - baseline): user_id={self.user_id}")
+                logger.debug(f"   LTM retrieval: {len(retrieval_config)} namespace(s) configured")
+                logger.debug(f"   ⚠️  Compaction DISABLED - all messages loaded without truncation or summarization")
+                logger.debug(f"   📊 Context token tracking ENABLED for baseline comparison")
         else:
             # Local development: Use file-based session manager with buffering wrapper
-            logger.info(f"💻 Local mode: Using FileSessionManager with buffering")
+            logger.debug(f"💻 Local mode: Using FileSessionManager with buffering")
             sessions_dir = Path(__file__).parent.parent.parent / "sessions"
             sessions_dir.mkdir(exist_ok=True)
 
@@ -518,7 +536,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 session_id=session_id
             )
 
-            logger.info(f"✅ FileSessionManager with buffering initialized: {sessions_dir}")
+            logger.debug(f"✅ FileSessionManager with buffering initialized: {sessions_dir}")
 
         self.create_agent()
 
@@ -564,7 +582,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 strategy_id = s.get('strategyId', s.get('memoryStrategyId', ''))
                 if strategy_type and strategy_id:
                     strategy_map[strategy_type] = strategy_id
-                    logger.info(f"Found strategy: {strategy_type} -> {strategy_id}")
+                    logger.debug(f"Found strategy: {strategy_type} -> {strategy_id}")
 
             return strategy_map
         except Exception as e:
@@ -596,7 +614,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         if is_local:
             import json
             config_path = Path(__file__).parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
-            logger.info(f"Loading tool guidance from local: {config_path}")
+            logger.debug(f"Loading tool guidance from local: {config_path}")
 
             if not config_path.exists():
                 logger.error(f"❌ TOOL CONFIG NOT FOUND: {config_path}")
@@ -616,12 +634,12 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                             guidance = tool_group.get('systemPromptGuidance')
                             if guidance:
                                 guidance_sections.append(guidance)
-                                logger.info(f"Added guidance for tool group: {tool_id}")
+                                logger.debug(f"Added guidance for tool group: {tool_id}")
 
         # Cloud mode: load from DynamoDB (required)
         else:
             dynamodb_table = self._get_dynamodb_table_name()
-            logger.info(f"Loading tool guidance from DynamoDB table: {dynamodb_table}")
+            logger.debug(f"Loading tool guidance from DynamoDB table: {dynamodb_table}")
 
             dynamodb = boto3.resource('dynamodb', region_name=aws_region)
             table = dynamodb.Table(dynamodb_table)
@@ -639,7 +657,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 return []
 
             tool_registry = response['Item']['toolRegistry']
-            logger.info(f"✅ Loaded tool registry from DynamoDB: {dynamodb_table}")
+            logger.debug(f"✅ Loaded tool registry from DynamoDB: {dynamodb_table}")
 
             # Check all tool categories
             for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
@@ -652,9 +670,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                             guidance = tool_group.get('systemPromptGuidance')
                             if guidance:
                                 guidance_sections.append(guidance)
-                                logger.info(f"Added guidance for tool group: {tool_id}")
+                                logger.debug(f"Added guidance for tool group: {tool_id}")
 
-        logger.info(f"✅ Tool guidance loaded: {len(guidance_sections)} sections")
+        logger.debug(f"✅ Tool guidance loaded: {len(guidance_sections)} sections")
         return guidance_sections
 
     def _is_tool_group_enabled(self, tool_group_id: str, tool_group: Dict) -> bool:
@@ -686,7 +704,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         """
         # If no enabled_tools specified (None or empty), return NO tools
         if self.enabled_tools is None or len(self.enabled_tools) == 0:
-            logger.info("No enabled_tools specified - Agent will run WITHOUT any tools")
+            logger.debug("No enabled_tools specified - Agent will run WITHOUT any tools")
             return []
 
         # Filter local tools based on enabled_tools
@@ -707,9 +725,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             else:
                 logger.warning(f"Tool '{tool_id}' not found in registry, skipping")
 
-        logger.info(f"Local tools enabled: {len(filtered_tools)}")
-        logger.info(f"Gateway tools enabled: {len(gateway_tool_ids)}")
-        logger.info(f"A2A agents enabled: {len(a2a_agent_ids)}")
+        logger.debug(f"Local tools enabled: {len(filtered_tools)}")
+        logger.debug(f"Gateway tools enabled: {len(gateway_tool_ids)}")
+        logger.debug(f"A2A agents enabled: {len(a2a_agent_ids)}")
 
         # Add Gateway MCP client if Gateway tools are enabled
         # Store as instance variable to keep session alive during Agent lifecycle
@@ -719,8 +737,8 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 # Using Managed Integration (Strands 1.16+) - pass MCPClient directly to Agent
                 # Agent will automatically manage lifecycle and filter tools
                 filtered_tools.append(self.gateway_client)
-                logger.info(f"✅ Gateway MCP client added (Managed Integration with Strands 1.16+)")
-                logger.info(f"   Enabled Gateway tool IDs: {gateway_tool_ids}")
+                logger.debug(f"✅ Gateway MCP client added (Managed Integration with Strands 1.16+)")
+                logger.debug(f"   Enabled Gateway tool IDs: {gateway_tool_ids}")
 
                 # Note: _tool_name_map will be created when Agent calls list_tools_sync()
                 # during initialization via Managed Integration.
@@ -736,11 +754,11 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                     a2a_tool = self._create_a2a_tool(agent_id)
                     if a2a_tool:
                         filtered_tools.append(a2a_tool)
-                        logger.info(f"✅ A2A Agent added: {agent_id}")
+                        logger.debug(f"✅ A2A Agent added: {agent_id}")
                 except Exception as e:
                     logger.error(f"Failed to create A2A tool {agent_id}: {e}")
 
-        logger.info(f"Total enabled tools: {len(filtered_tools)} (local + gateway + a2a)")
+        logger.debug(f"Total enabled tools: {len(filtered_tools)} (local + gateway + a2a)")
         return filtered_tools
 
     def _create_a2a_tool(self, agent_id: str):
@@ -775,9 +793,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             # Add cache_prompt if caching is enabled (BedrockModel handles SystemContentBlock formatting)
             if self.caching_enabled:
                 model_config["cache_prompt"] = "default"
-                logger.info("✅ System prompt caching enabled (cache_prompt=default)")
+                logger.debug("✅ System prompt caching enabled (cache_prompt=default)")
 
-            logger.info("✅ Bedrock retry config: max_attempts=10, mode=adaptive")
+            logger.debug("✅ Bedrock retry config: max_attempts=10, mode=adaptive")
             model = BedrockModel(**model_config)
 
             # Get filtered tools based on user preferences
@@ -789,34 +807,49 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             # Add research approval hook (always enabled)
             research_approval_hook = ResearchApprovalHook(app_name="chatbot")
             hooks.append(research_approval_hook)
-            logger.info("✅ Research approval hook enabled (BeforeToolCallEvent)")
+            logger.debug("✅ Research approval hook enabled (BeforeToolCallEvent)")
 
             # Add conversation caching hook if enabled
             if self.caching_enabled:
                 conversation_hook = ConversationCachingHook(enabled=True)
                 hooks.append(conversation_hook)
-                logger.info("✅ Conversation caching hook enabled")
+                logger.debug("✅ Conversation caching hook enabled")
+
+            # Add context token tracking hook if using CompactingSessionManager
+            # This MUST be added before Agent creation (not after) for hooks to fire
+            if hasattr(self.session_manager, 'get_context_token_hook'):
+                context_token_hook = self.session_manager.get_context_token_hook()
+                hooks.append(context_token_hook)
+                logger.info("✅ Context token tracking hook registered")
 
             # Create agent with session manager, hooks, and system prompt (as string)
-            self.agent = Agent(
-                model=model,
-                system_prompt=self.system_prompt,  # String system prompt (Strands 1.14.0)
-                tools=tools,
-                session_manager=self.session_manager,
-                hooks=hooks if hooks else None
-            )
+            agent_kwargs = {
+                "model": model,
+                "system_prompt": self.system_prompt,  # String system prompt (Strands 1.14.0)
+                "tools": tools,
+                "session_manager": self.session_manager,
+                "hooks": hooks if hooks else None
+            }
 
-            logger.info(f"✅ Agent created with {len(tools)} tools")
-            logger.info(f"✅ System prompt: {len(self.system_prompt)} characters")
-            logger.info(f"✅ Session Manager: {type(self.session_manager).__name__}")
+            # Use NullConversationManager if requested (disables Strands' default sliding window)
+            if self.use_null_conversation_manager:
+                from strands.agent.conversation_manager import NullConversationManager
+                agent_kwargs["conversation_manager"] = NullConversationManager()
+                logger.debug("✅ Using NullConversationManager (no context manipulation by Strands)")
+
+            self.agent = Agent(**agent_kwargs)
+
+            logger.debug(f"✅ Agent created with {len(tools)} tools")
+            logger.debug(f"✅ System prompt: {len(self.system_prompt)} characters")
+            logger.debug(f"✅ Session Manager: {type(self.session_manager).__name__}")
 
             if AGENTCORE_MEMORY_AVAILABLE and os.environ.get('MEMORY_ID'):
-                logger.info(f"   • Session: {self.session_id}, User: {self.user_id}")
-                logger.info(f"   • Short-term memory: Conversation history (90 days retention)")
-                logger.info(f"   • Long-term memory: User preferences and facts across sessions")
+                logger.debug(f"   • Session: {self.session_id}, User: {self.user_id}")
+                logger.debug(f"   • Short-term memory: Conversation history (90 days retention)")
+                logger.debug(f"   • Long-term memory: User preferences and facts across sessions")
             else:
-                logger.info(f"   • Session: {self.session_id}")
-                logger.info(f"   • File-based persistence: {self.session_manager.storage_dir}")
+                logger.debug(f"   • Session: {self.session_id}")
+                logger.debug(f"   • File-based persistence: {self.session_manager.storage_dir}")
 
         except Exception as e:
             logger.error(f"Error creating agent: {e}")
@@ -831,7 +864,6 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             session_id: Session identifier
             files: Optional list of FileContent objects (with base64 bytes)
         """
-
         if not self.agent:
             self.create_agent()
 
@@ -841,18 +873,22 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         os.environ['USER_ID'] = self.user_id or self.session_id
 
         try:
-            logger.info(f"Streaming message: {message[:50]}...")
+            # Reset context token tracking for new turn
+            if hasattr(self.session_manager, 'reset_context_token_tracking'):
+                self.session_manager.reset_context_token_tracking()
+
+            logger.debug(f"Streaming message: {message[:50]}...")
             if files:
-                logger.info(f"Processing {len(files)} file(s)")
+                logger.debug(f"Processing {len(files)} file(s)")
 
             # Convert files to Strands ContentBlock format and prepare uploaded_files for tools
             prompt, uploaded_files = self._build_prompt(message, files)
 
             # Log prompt type for debugging (without printing bytes)
             if isinstance(prompt, list):
-                logger.info(f"Prompt is list with {len(prompt)} content blocks")
+                logger.debug(f"Prompt is list with {len(prompt)} content blocks")
             else:
-                logger.info(f"Prompt is string: {prompt[:100]}")
+                logger.debug(f"Prompt is string: {prompt[:100]}")
 
             # Prepare invocation_state with model_id, user_id, session_id, and uploaded files
             invocation_state = {
@@ -864,7 +900,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             # Add uploaded files to invocation_state (for tool access)
             if uploaded_files:
                 invocation_state['uploaded_files'] = uploaded_files
-                logger.info(f"Added {len(uploaded_files)} file(s) to invocation_state")
+                logger.debug(f"Added {len(uploaded_files)} file(s) to invocation_state")
 
             # Use stream processor to handle Strands agent streaming
             async for event in self.stream_processor.process_stream(
@@ -876,14 +912,13 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             ):
                 yield event
 
-            # No flush needed - messages are saved immediately by AgentCoreMemorySessionManager
+            # Update compaction state after turn completion
+            self._update_compaction_state()
 
         except Exception as e:
             import traceback
             logger.error(f"Error in stream_async: {e}")
             logger.error(f"Traceback: {traceback.format_exc()}")
-
-            # No flush needed - messages are already saved immediately
 
             # Send error event
             import json
@@ -892,6 +927,38 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 "message": str(e)
             }
             yield f"data: {json.dumps(error_event)}\n\n"
+
+    def _update_compaction_state(self):
+        """Update compaction state after turn completion (if using CompactingSessionManager).
+
+        Uses last_llm_input_tokens from stream_processor, which captures the inputTokens
+        from the LAST LLM call's metadata (not accumulated across all calls in the turn).
+
+        This is the actual context size for compaction threshold decisions.
+        """
+        if not hasattr(self.session_manager, 'update_after_turn'):
+            return
+
+        try:
+            # Get last LLM call's input tokens from stream processor
+            # This is the actual context size (not accumulated across multiple LLM calls)
+            context_tokens = self.stream_processor.last_llm_input_tokens
+            logger.info(f"📊 _update_compaction_state: context_tokens={context_tokens:,} (from last LLM call)")
+
+            if context_tokens > 0:
+                self.session_manager.update_after_turn(context_tokens, self.agent.agent_id)
+                logger.info(f"✅ Compaction updated: context={context_tokens:,} tokens")
+            else:
+                # Fallback to hook-based tracking if stream processor didn't capture
+                hook_tokens = self.session_manager.get_last_context_tokens()
+                if hook_tokens > 0:
+                    logger.info(f"📊 Using hook fallback: context_tokens={hook_tokens:,}")
+                    self.session_manager.update_after_turn(hook_tokens, self.agent.agent_id)
+                    logger.info(f"✅ Compaction updated (fallback): context={hook_tokens:,} tokens")
+                else:
+                    logger.info(f"⚠️ Skipping compaction: context_tokens=0")
+        except Exception as e:
+            logger.error(f"Compaction update failed: {e}")
 
     def _sanitize_filename(self, filename: str) -> str:
         """
@@ -944,7 +1011,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         # Check environment variable first
         code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
         if code_interpreter_id:
-            logger.info(f"Found CODE_INTERPRETER_ID in environment: {code_interpreter_id}")
+            logger.debug(f"Found CODE_INTERPRETER_ID in environment: {code_interpreter_id}")
             return code_interpreter_id
 
         # Try Parameter Store
@@ -955,11 +1022,11 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             region = os.getenv('AWS_REGION', 'us-west-2')
             param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
 
-            logger.info(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
+            logger.debug(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
             ssm = boto3.client('ssm', region_name=region)
             response = ssm.get_parameter(Name=param_name)
             code_interpreter_id = response['Parameter']['Value']
-            logger.info(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
+            logger.debug(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
             return code_interpreter_id
         except Exception as e:
             logger.warning(f"CODE_INTERPRETER_ID not found in env or Parameter Store: {e}")
@@ -983,9 +1050,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             document_type: Type name for logging (e.g., 'Word', 'Excel', 'image')
         """
         # Debug: log what we're filtering
-        logger.info(f"🔍 Filtering {len(uploaded_files)} files for {document_type} (extensions: {extensions})")
+        logger.debug(f"🔍 Filtering {len(uploaded_files)} files for {document_type} (extensions: {extensions})")
         for f in uploaded_files:
-            logger.info(f"   - {f['filename']} (matches: {any(f['filename'].lower().endswith(ext) for ext in extensions)})")
+            logger.debug(f"   - {f['filename']} (matches: {any(f['filename'].lower().endswith(ext) for ext in extensions)})")
 
         # Filter files by extensions
         filtered_files = [
@@ -993,7 +1060,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             if any(f['filename'].lower().endswith(ext) for ext in extensions)
         ]
 
-        logger.info(f"✅ Filtered {len(filtered_files)} {document_type} file(s)")
+        logger.debug(f"✅ Filtered {len(filtered_files)} {document_type} file(s)")
 
         if not filtered_files:
             return
@@ -1014,7 +1081,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                     file_bytes,
                     metadata={'auto_stored': 'true'}
                 )
-                logger.info(f"✅ Auto-stored {document_type}: {filename}")
+                logger.debug(f"✅ Auto-stored {document_type}: {filename}")
             except Exception as e:
                 logger.error(f"Failed to auto-store {document_type} file {filename}: {e}")
 
@@ -1033,9 +1100,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             uploaded_files: List of uploaded file info dicts with 'filename' and 'bytes'
         """
         # Debug: log what files we're processing
-        logger.info(f"📦 Auto-store called with {len(uploaded_files)} file(s):")
+        logger.debug(f"📦 Auto-store called with {len(uploaded_files)} file(s):")
         for f in uploaded_files:
-            logger.info(f"   - {f['filename']} ({f['content_type']})")
+            logger.debug(f"   - {f['filename']} ({f['content_type']})")
 
         try:
             from workspace import (
@@ -1172,18 +1239,18 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                         }
                     }
                 })
-                logger.info(f"Added image: {filename} (format: {image_format})")
+                logger.debug(f"Added image: {filename} (format: {image_format})")
 
             elif filename.endswith(".pptx"):
                 # PowerPoint - always use workspace (never sent as ContentBlock)
                 workspace_only_files.append(sanitized_full_name)
-                logger.info(f"PowerPoint presentation uploaded: {sanitized_full_name} (will be stored in workspace, not sent to model)")
+                logger.debug(f"PowerPoint presentation uploaded: {sanitized_full_name} (will be stored in workspace, not sent to model)")
 
             elif filename.endswith((".docx", ".xlsx")):
                 # Word/Excel documents - use workspace in cloud mode to avoid bytes serialization error
                 if is_cloud_mode:
                     workspace_only_files.append(sanitized_full_name)
-                    logger.info(f"📁 [Cloud Mode] {sanitized_full_name} stored in workspace (skipping document ContentBlock to avoid AgentCore Memory serialization error)")
+                    logger.debug(f"📁 [Cloud Mode] {sanitized_full_name} stored in workspace (skipping document ContentBlock to avoid AgentCore Memory serialization error)")
                 else:
                     # Local mode - can send as document ContentBlock
                     doc_format = self._get_document_format(filename)
@@ -1201,7 +1268,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                             }
                         }
                     })
-                    logger.info(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
+                    logger.debug(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
 
             elif filename.endswith((".pdf", ".csv", ".doc", ".xls", ".html", ".txt", ".md")):
                 # Other documents - send as ContentBlock (PDF, CSV, etc. are usually smaller and work better)
@@ -1213,7 +1280,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 else:
                     name_without_ext = sanitized_full_name
 
-                logger.info(f"🔍 [DEBUG] About to add document ContentBlock: name='{name_without_ext}', format={doc_format}, original='{file.filename}'")
+                logger.debug(f"🔍 [DEBUG] About to add document ContentBlock: name='{name_without_ext}', format={doc_format}, original='{file.filename}'")
                 content_blocks.append({
                     "document": {
                         "format": doc_format,
@@ -1286,7 +1353,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
             file_hints = "\n".join(file_hints_lines)
             text_block_content = f"{text_block_content}\n\n<uploaded_files>\n{file_hints}\n</uploaded_files>"
-            logger.info(f"Added file hints to prompt: {sanitized_filenames}")
+            logger.debug(f"Added file hints to prompt: {sanitized_filenames}")
 
         # Insert text block at the beginning of content_blocks
         content_blocks.insert(0, {"text": text_block_content})

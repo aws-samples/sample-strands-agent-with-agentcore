@@ -32,6 +32,7 @@ class InvocationInput(BaseModel):
     caching_enabled: Optional[bool] = None
     enabled_tools: Optional[List[str]] = None  # User-specific tool preferences
     files: Optional[List[FileContent]] = None  # Multimodal file attachments
+    compaction_enabled: Optional[bool] = None  # Enable/disable context compaction (default: True)
 
 
 class InvocationRequest(BaseModel):
