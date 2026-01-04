@@ -2,6 +2,7 @@ import { useCallback, useRef, startTransition } from 'react'
 import { Message, ToolExecution } from '@/types/chat'
 import { StreamEvent, ChatSessionState, ChatUIState, WorkspaceFile } from '@/types/events'
 import { useLatencyTracking } from './useLatencyTracking'
+import { A2A_TOOLS_REQUIRING_POLLING, isA2ATool, getAgentStatusForTool } from './usePolling'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { updateLastActivity } from '@/config/session'
 import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, DocumentType } from '@/config/document-tools'
@@ -117,16 +118,8 @@ export const useStreamEvents = ({
 
   const handleToolUseEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_use') {
-      // Tool execution started - update agent status
-      const isResearchAgent = data.name === 'research_agent'
-      const isBrowserUseAgent = data.name === 'browser_use_agent'
-
-      let agentStatus: 'responding' | 'researching' | 'browser_automation' = 'responding'
-      if (isResearchAgent) {
-        agentStatus = 'researching'
-      } else if (isBrowserUseAgent) {
-        agentStatus = 'browser_automation'
-      }
+      // Tool execution started - update agent status using shared utility
+      const agentStatus = getAgentStatusForTool(data.name)
 
       setUIState(prev => ({
         ...prev,
@@ -135,9 +128,11 @@ export const useStreamEvents = ({
       }))
 
       // Start polling for tool execution progress updates
-      // Tool progress is saved to backend and needs polling to be reflected in UI
-      if (sessionId && startPollingRef.current) {
-        console.log(`[useChat] Tool execution started, starting polling for progress updates`)
+      // Only for long-running A2A agents that save progress to backend and need polling
+      // Regular tools don't need polling - SSE stream handles their updates directly
+      const needsPolling = isA2ATool(data.name)
+      if (needsPolling && sessionId && startPollingRef.current) {
+        console.log(`[useStreamEvents] A2A agent (${data.name}) started, starting polling for progress updates`)
         startPollingRef.current(sessionId)
       }
 
@@ -209,25 +204,24 @@ export const useStreamEvents = ({
         const updatedExecutions = [...currentToolExecutionsRef.current, newToolExecution]
         currentToolExecutionsRef.current = updatedExecutions
 
-        // Use startTransition to batch state updates and prevent flickering
-        startTransition(() => {
-          setSessionState(prev => ({
-            ...prev,
-            toolExecutions: updatedExecutions
-          }))
+        // Update session state
+        setSessionState(prev => ({
+          ...prev,
+          toolExecutions: updatedExecutions
+        }))
 
-          // Create new tool message
-          const toolMessageId = String(Date.now())
-          setMessages(prevMessages => [...prevMessages, {
-            id: toolMessageId,
-            text: '',
-            sender: 'bot',
-            timestamp: new Date().toISOString(),
-            toolExecutions: [newToolExecution],
-            isToolMessage: true,
-            turnId: currentTurnIdRef.current || undefined
-          }])
-        })
+        // Create new tool message immediately (not in startTransition)
+        // Tool container should appear right away with "Loading parameters..." state
+        const toolMessageId = String(Date.now())
+        setMessages(prevMessages => [...prevMessages, {
+          id: toolMessageId,
+          text: '',
+          sender: 'bot',
+          timestamp: new Date().toISOString(),
+          toolExecutions: [newToolExecution],
+          isToolMessage: true,
+          turnId: currentTurnIdRef.current || undefined
+        }])
       }
     }
   }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages, setUIState, uiState])

@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useRef, useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 interface LazyImageProps {
   src: string
@@ -18,48 +18,29 @@ export const LazyImage: React.FC<LazyImageProps> = ({
   onClick
 }) => {
   const [isLoaded, setIsLoaded] = useState(false)
-  const [isInView, setIsInView] = useState(false)
-  const imgRef = useRef<HTMLDivElement>(null)
+  const [hasError, setHasError] = useState(false)
 
+  // Reset loading state when src changes
   useEffect(() => {
-    if (!imgRef.current) return
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            setIsInView(true)
-            observer.disconnect()
-          }
-        })
-      },
-      {
-        rootMargin: '50px', // Load 50px before image enters viewport
-      }
-    )
-
-    observer.observe(imgRef.current)
-
-    return () => {
-      observer.disconnect()
-    }
-  }, [])
+    setIsLoaded(false)
+    setHasError(false)
+  }, [src])
 
   return (
-    <div ref={imgRef} className={`relative ${className}`} style={style}>
-      {!isLoaded && (
+    <div className={`relative ${className}`} style={style}>
+      {!isLoaded && !hasError && (
         <div className="absolute inset-0 bg-gray-200 animate-pulse rounded" />
       )}
-      {isInView && (
-        <img
-          src={src}
-          alt={alt}
-          className={`${className} ${!isLoaded ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
-          style={style}
-          onLoad={() => setIsLoaded(true)}
-          onClick={onClick}
-        />
-      )}
+      <img
+        src={src}
+        alt={alt}
+        loading="lazy"
+        className={`${className} ${!isLoaded ? 'opacity-0' : 'opacity-100'} transition-opacity duration-300`}
+        style={style}
+        onLoad={() => setIsLoaded(true)}
+        onError={() => setHasError(true)}
+        onClick={onClick}
+      />
     </div>
   )
 }
