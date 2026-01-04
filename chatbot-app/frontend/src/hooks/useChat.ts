@@ -4,13 +4,13 @@ import { ReasoningState, ChatSessionState, ChatUIState, InterruptState, AgentSta
 import { detectBackendUrl } from '@/utils/chat'
 import { useStreamEvents } from './useStreamEvents'
 import { useChatAPI, SessionPreferences } from './useChatAPI'
+import { usePolling, hasOngoingA2ATools, A2A_TOOLS_REQUIRING_POLLING } from './usePolling'
 import { getApiUrl } from '@/config/environment'
-import API_CONFIG from '@/config/api'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { apiPost } from '@/lib/api-client'
 
 interface UseChatProps {
-  onSessionCreated?: () => void  // Callback when new session is created
+  onSessionCreated?: () => void
 }
 
 interface UseChatReturn {
@@ -44,12 +44,21 @@ interface UseChatReturn {
   currentInterrupt: InterruptState | null
 }
 
+// Default preferences when session has no saved preferences
+const DEFAULT_PREFERENCES: SessionPreferences = {
+  lastModel: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+  lastTemperature: 0.7,
+  enabledTools: [],
+  selectedPromptId: 'general',
+}
+
 export const useChat = (props?: UseChatProps): UseChatReturn => {
+  // ==================== STATE ====================
   const [messages, setMessages] = useState<Message[]>([])
   const [inputMessage, setInputMessage] = useState('')
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000')
   const [availableTools, setAvailableTools] = useState<Tool[]>([])
-  const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])  // Gateway tool IDs from frontend
+  const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
 
   const [sessionState, setSessionState] = useState<ChatSessionState>({
@@ -59,7 +68,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     browserSession: null,
     interrupt: null
   })
-  
+
   const [uiState, setUIState] = useState<ChatUIState>({
     isConnected: true,
     isTyping: false,
@@ -71,18 +80,22 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       endToEndLatency: null
     }
   })
-  
+
+  // ==================== REFS ====================
   const currentToolExecutionsRef = useRef<ToolExecution[]>([])
   const currentTurnIdRef = useRef<string | null>(null)
   const currentSessionIdRef = useRef<string | null>(null)
-  const staleSessionLoadRef = useRef<string | null>(null) // Track stale session loads to ignore in useEffect
-  const startPollingRef = useRef<((sessionId: string) => void) | null>(null)
 
+  // Keep refs in sync with state
   useEffect(() => {
     currentToolExecutionsRef.current = sessionState.toolExecutions
   }, [sessionState.toolExecutions])
 
-  // Auto-detect backend URL
+  useEffect(() => {
+    currentSessionIdRef.current = sessionId
+  }, [sessionId])
+
+  // ==================== BACKEND DETECTION ====================
   useEffect(() => {
     const initBackend = async () => {
       const { url, connected } = await detectBackendUrl()
@@ -92,6 +105,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     initBackend()
   }, [])
 
+  // ==================== LEGACY EVENT HANDLER ====================
   const handleLegacyEvent = useCallback((data: any) => {
     switch (data.type) {
       case 'init':
@@ -122,7 +136,19 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   }, [])
 
-  // Initialize stream events hook
+  // ==================== SESSION CREATED CALLBACK ====================
+  const handleSessionCreated = useCallback(() => {
+    if (typeof (window as any).__refreshSessionList === 'function') {
+      (window as any).__refreshSessionList()
+    }
+    props?.onSessionCreated?.()
+  }, [props])
+
+  // ==================== POLLING HOOK ====================
+  // Note: Initialize polling first, then pass startPolling to useStreamEvents
+  const startPollingRef = useRef<((sessionId: string) => void) | null>(null)
+
+  // ==================== STREAM EVENTS HOOK ====================
   const { handleStreamEvent, resetStreamingState } = useStreamEvents({
     sessionState,
     setSessionState,
@@ -136,18 +162,16 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     availableTools
   })
 
-  // Callback when new session is created
-  const handleSessionCreated = useCallback(() => {
-    // Call window refresh function if available
-    if (typeof (window as any).__refreshSessionList === 'function') {
-      (window as any).__refreshSessionList();
-    }
-    // Also call prop callback if provided
-    props?.onSessionCreated?.();
-  }, [props]);
-
-  // Initialize chat API hook
-  const { loadTools, toggleTool: apiToggleTool, newChat: apiNewChat, sendMessage: apiSendMessage, cleanup, sendStopSignal, loadSession: apiLoadSession } = useChatAPI({
+  // ==================== CHAT API HOOK ====================
+  const {
+    loadTools,
+    toggleTool: apiToggleTool,
+    newChat: apiNewChat,
+    sendMessage: apiSendMessage,
+    cleanup,
+    sendStopSignal,
+    loadSession: apiLoadSession
+  } = useChatAPI({
     backendUrl,
     setUIState,
     setMessages,
@@ -161,269 +185,65 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     onSessionCreated: handleSessionCreated
   })
 
-  // Track current active session in ref for polling checks
+  // Initialize polling with apiLoadSession (now available)
+  const { startPolling, stopPolling, checkAndStartPollingForA2ATools } = usePolling({
+    sessionId,
+    loadSession: apiLoadSession
+  })
+
+  // Update startPollingRef so useStreamEvents can use it
   useEffect(() => {
-    currentSessionIdRef.current = sessionId
-  }, [sessionId])
+    startPollingRef.current = startPolling
+  }, [startPolling])
 
-  // Default preferences when session has no saved preferences
-  const DEFAULT_PREFERENCES: SessionPreferences = {
-    lastModel: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-    lastTemperature: 0.7,
-    enabledTools: [], // All tools disabled by default
-    selectedPromptId: 'general',
-  }
-
-  // Polling for ongoing tool executions
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null)
-  const isPollingActiveRef = useRef(false)
-  const pollingSessionIdRef = useRef<string | null>(null) // Track which session is being polled
-
-  const startPollingForOngoingTools = useCallback((targetSessionId: string) => {
-    // Clear any existing polling
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-    }
-
-    console.log(`[useChat] Starting polling for session: ${targetSessionId}`)
-    isPollingActiveRef.current = true
-    pollingSessionIdRef.current = targetSessionId // Store the session being polled
-
-    const poll = async () => {
-      try {
-        // Check if we're still polling the same session
-        if (pollingSessionIdRef.current !== targetSessionId) {
-          console.log(`[useChat] Polling session mismatch, stopping poll (expected: ${pollingSessionIdRef.current}, got: ${targetSessionId})`)
-          return
-        }
-
-        // CRITICAL: Check if the target session is still the current active session
-        // This prevents Session A's polling from interfering with Session B
-        if (currentSessionIdRef.current !== targetSessionId) {
-          console.log(`[useChat] Target session ${targetSessionId} is no longer active (current: ${currentSessionIdRef.current}), stopping poll`)
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current)
-            pollingIntervalRef.current = null
-          }
-          isPollingActiveRef.current = false
-          pollingSessionIdRef.current = null
-          return
-        }
-
-        console.log(`[useChat] Polling: reloading session ${targetSessionId}...`)
-        await apiLoadSession(targetSessionId)
-
-        // Double-check after async operation: session might have changed during the load
-        if (currentSessionIdRef.current !== targetSessionId) {
-          console.log(`[useChat] Session changed during polling load (${targetSessionId} → ${currentSessionIdRef.current}), marking as stale`)
-          // Mark this session load as stale so useEffect will ignore its messages
-          staleSessionLoadRef.current = targetSessionId
-          // Stop polling since we loaded stale data for wrong session
-          if (pollingIntervalRef.current) {
-            clearInterval(pollingIntervalRef.current)
-            pollingIntervalRef.current = null
-          }
-          isPollingActiveRef.current = false
-          pollingSessionIdRef.current = null
-          return
-        }
-
-        // CRITICAL: Check if polling should stop after loading messages
-        // This check must be done INSIDE poll() because React state updates may not trigger useEffect
-        setMessages(currentMessages => {
-          const hasOngoingTools = currentMessages.some(msg =>
-            msg.toolExecutions &&
-            msg.toolExecutions.some(te => !te.isComplete)
-          )
-
-          // Check if there's a completed tool but missing final assistant response
-          let hasCompletedToolAwaitingResponse = false
-          for (let i = currentMessages.length - 1; i >= 0; i--) {
-            const msg = currentMessages[i]
-            if (msg.toolExecutions && msg.toolExecutions.some(te => te.isComplete)) {
-              const hasFollowupResponse = currentMessages.slice(i + 1).some(
-                laterMsg => laterMsg.sender === 'bot' && laterMsg.text && laterMsg.text.trim()
-              )
-              if (!hasFollowupResponse) {
-                hasCompletedToolAwaitingResponse = true
-              }
-              break
-            }
-          }
-
-          // Stop polling if no ongoing tools and agent has responded
-          if (!hasOngoingTools && !hasCompletedToolAwaitingResponse) {
-            console.log('[useChat] Polling: No ongoing tools detected, stopping polling')
-            if (pollingIntervalRef.current) {
-              clearInterval(pollingIntervalRef.current)
-              pollingIntervalRef.current = null
-            }
-            isPollingActiveRef.current = false
-            pollingSessionIdRef.current = null
-
-            // Reset UI state
-            setUIState(prev => ({
-              ...prev,
-              isTyping: false,
-              agentStatus: 'idle'
-            }))
-          }
-
-          return currentMessages  // No change to messages
-        })
-      } catch (error) {
-        console.error('[useChat] Polling error:', error)
-      }
-    }
-
-    // Don't poll immediately - wait for first interval
-    // This prevents overwriting messages during active streaming
-    // Poll every 5 seconds
-    pollingIntervalRef.current = setInterval(poll, 5000)
-  }, [apiLoadSession])
-
-  // Update ref with the actual function
-  startPollingRef.current = startPollingForOngoingTools
-
-  // Monitor messages for ongoing tools (separate effect)
+  // ==================== A2A AGENT UI STATE MANAGEMENT ====================
+  // Update UI status based on ongoing A2A agents (research/browser)
+  // This is the ONLY place that sets researching/browser_automation status from messages
   useEffect(() => {
-    // Only process if we have a valid sessionId
-    if (!sessionId) {
-      return
-    }
+    if (!sessionId || currentSessionIdRef.current !== sessionId) return
 
-    // CRITICAL 1: Ignore messages from stale session loads marked by polling
-    // This prevents Session A's ongoing browser automation from affecting Session B's UI
-    // when polling loads Session A's data after user switched to Session B
-    if (staleSessionLoadRef.current === sessionId) {
-      console.log(`[useChat] Ignoring stale session data for ${sessionId}`)
-      staleSessionLoadRef.current = null // Clear the flag
-      return
-    }
-
-    // CRITICAL 2: Only process if this sessionId matches the current active session
-    // This prevents Session B's data from affecting Session C's UI during rapid session switches
-    if (currentSessionIdRef.current !== sessionId) {
-      console.log(`[useChat] Ignoring messages from inactive session ${sessionId} (current: ${currentSessionIdRef.current})`)
-      return
-    }
-
-    const hasOngoingTools = messages.some(msg =>
-      msg.toolExecutions &&
-      msg.toolExecutions.some(te => !te.isComplete)
-    )
-
-    // Check for ongoing A2A agents (research_agent or browser_use_agent)
+    // Check for ongoing A2A agents
     const hasOngoingResearch = messages.some(msg =>
-      msg.toolExecutions &&
-      msg.toolExecutions.some(te => !te.isComplete && !te.isCancelled && te.toolName === 'research_agent')
+      msg.toolExecutions?.some(te =>
+        !te.isComplete && !te.isCancelled && te.toolName === 'research_agent'
+      )
     )
 
-    const hasOngoingBrowserAutomation = messages.some(msg =>
-      msg.toolExecutions &&
-      msg.toolExecutions.some(te => !te.isComplete && !te.isCancelled && te.toolName === 'browser_use_agent')
+    const hasOngoingBrowser = messages.some(msg =>
+      msg.toolExecutions?.some(te =>
+        !te.isComplete && !te.isCancelled && te.toolName === 'browser_use_agent'
+      )
     )
 
-    // Check if there's a completed tool but missing final assistant response
-    // This happens when tool_result is saved but agent hasn't generated final text response yet
-    let hasCompletedToolAwaitingResponse = false
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const msg = messages[i]
-
-      // If we find a tool execution that's complete
-      if (msg.toolExecutions && msg.toolExecutions.some(te => te.isComplete)) {
-        // Check if there's any assistant message with text after this
-        const hasFollowupResponse = messages.slice(i + 1).some(
-          laterMsg => laterMsg.sender === 'bot' && laterMsg.text && laterMsg.text.trim()
-        )
-
-        if (!hasFollowupResponse) {
-          hasCompletedToolAwaitingResponse = true
-          console.log('[useChat] Found completed tool without followup assistant response')
-        }
-        break
-      }
-    }
-
-    // === POLLING MANAGEMENT ===
-    // Stop polling if all tools complete AND agent has responded
-    if (isPollingActiveRef.current && !hasOngoingTools && !hasCompletedToolAwaitingResponse) {
-      console.log('[useChat] All tool executions complete and agent responded, stopping polling')
-
-      if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current)
-        pollingIntervalRef.current = null
-      }
-
-      isPollingActiveRef.current = false
-
-      // Reset UI state when complete
-      setUIState(prev => ({
-        ...prev,
-        isTyping: false,
-        agentStatus: 'idle'
-      }))
-    }
-
-    // === UI STATE MANAGEMENT ===
-    // Update UI status based on agent type
     if (hasOngoingResearch) {
       setUIState(prev => {
         if (prev.agentStatus !== 'researching') {
           console.log('[useChat] Setting status to researching')
-          return {
-            ...prev,
-            isTyping: true,
-            agentStatus: 'researching'
-          }
+          return { ...prev, isTyping: true, agentStatus: 'researching' }
         }
         return prev
       })
-    } else if (hasOngoingBrowserAutomation) {
+    } else if (hasOngoingBrowser) {
       setUIState(prev => {
         if (prev.agentStatus !== 'browser_automation') {
           console.log('[useChat] Setting status to browser_automation')
-          return {
-            ...prev,
-            isTyping: true,
-            agentStatus: 'browser_automation'
-          }
+          return { ...prev, isTyping: true, agentStatus: 'browser_automation' }
         }
         return prev
       })
     }
-  }, [messages, sessionId, setUIState])
+    // Note: We do NOT set idle here. Only stream event handlers (complete/error) set idle.
+  }, [messages, sessionId])
 
-  const stopPolling = useCallback(() => {
-    if (pollingIntervalRef.current) {
-      clearInterval(pollingIntervalRef.current)
-      pollingIntervalRef.current = null
-      isPollingActiveRef.current = false
-      pollingSessionIdRef.current = null // Clear the polling session ID
-      console.log('[useChat] Polling stopped')
-    }
-  }, [])
-
-  // Cleanup polling on unmount
-  useEffect(() => {
-    return () => {
-      stopPolling()
-    }
-  }, [stopPolling])
-
-  // Wrapper for loadSession that restores session preferences (model, tools)
+  // ==================== SESSION LOADING ====================
   const loadSessionWithPreferences = useCallback(async (newSessionId: string) => {
-    // CRITICAL: Immediately update the current session ref to prevent race conditions
-    // This ensures any in-flight polling operations will detect the session change
+    // Immediately update session ref to prevent race conditions
     currentSessionIdRef.current = newSessionId
 
-    // Clear any stale session flags from previous loads
-    staleSessionLoadRef.current = null
-
-    // Stop any existing polling from previous session
+    // Stop any existing polling
     stopPolling()
 
-    // Reset UI and session state when loading a different session
+    // Reset UI and session state
     setUIState(prev => ({
       ...prev,
       isTyping: false,
@@ -441,31 +261,22 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     const preferences = await apiLoadSession(newSessionId)
 
-    // Verify the session hasn't changed during the async load operation
+    // Verify session hasn't changed during async load
     if (currentSessionIdRef.current !== newSessionId) {
-      console.log(`[useChat] Session changed during load (${newSessionId} → ${currentSessionIdRef.current}), aborting setup`)
+      console.log(`[useChat] Session changed during load, aborting setup`)
       return
     }
 
-    // Check if there are ongoing tool executions after loading
+    // Check for ongoing A2A tools and start polling if needed
+    // Use setTimeout to ensure messages state is updated
     setTimeout(() => {
       setMessages(currentMessages => {
-        const hasOngoingTools = currentMessages.some(msg =>
-          msg.toolExecutions &&
-          msg.toolExecutions.some(te => !te.isComplete)
-        )
-
-        if (hasOngoingTools) {
-          console.log('[useChat] Detected ongoing tool executions, starting polling')
-          startPollingForOngoingTools(newSessionId)
-        }
-
+        checkAndStartPollingForA2ATools(currentMessages, newSessionId)
         return currentMessages
       })
     }, 100)
 
     // Merge saved preferences with defaults
-    // Note: Use ?? for lastTemperature since 0 is a valid value
     const effectivePreferences: SessionPreferences = {
       ...DEFAULT_PREFERENCES,
       ...preferences,
@@ -475,7 +286,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     console.log(`[useChat] ${preferences ? 'Restoring session' : 'Using default'} preferences:`, effectivePreferences)
 
-    // 1. Restore tool states based on enabledTools from session
+    // Restore tool states
     const enabledTools = effectivePreferences.enabledTools || []
     setAvailableTools(prevTools => prevTools.map(tool => ({
       ...tool,
@@ -483,7 +294,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     })))
     console.log(`[useChat] Tool states updated: ${enabledTools.length} enabled`)
 
-    // 2. Restore model configuration by updating user preferences
+    // Restore model configuration
     try {
       await apiPost('model/config/update', {
         model_id: effectivePreferences.lastModel,
@@ -495,13 +306,10 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     } catch (error) {
       console.warn('[useChat] Failed to update model config:', error)
     }
+  }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
-    // Note: System prompt is always 'general' - prompt selection feature removed
-  }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, startPollingForOngoingTools])
-
-  // Function to clear stored progress events
+  // ==================== PROGRESS EVENTS ====================
   const clearProgressEvents = useCallback(async () => {
-    // Get current sessionId from sessionStorage to avoid stale closure
     const currentSessionId = sessionStorage.getItem('chat-session-id')
     if (!currentSessionId) return
 
@@ -509,7 +317,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       const response = await fetch(getApiUrl(`stream/tools/clear?session_id=${currentSessionId}`), {
         method: 'POST',
       })
-
       if (response.ok) {
         console.log('Progress events cleared for session:', currentSessionId)
       }
@@ -518,37 +325,34 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   }, [])
 
-  // Load tools when backend is ready (only clear progress events on initial load)
+  // ==================== INITIALIZATION EFFECTS ====================
+  // Load tools when backend is ready
   useEffect(() => {
     if (uiState.isConnected) {
       const timeoutId = setTimeout(async () => {
-        // Only clear progress events on the very first connection
         const isFirstLoad = sessionStorage.getItem('chat-first-load') !== 'false'
         if (isFirstLoad) {
           await clearProgressEvents()
           sessionStorage.setItem('chat-first-load', 'false')
         }
-        // Always load tools
         await loadTools()
       }, 1000)
       return () => clearTimeout(timeoutId)
     }
-  }, [uiState.isConnected, clearProgressEvents])
+  }, [uiState.isConnected, clearProgressEvents, loadTools])
 
   // Restore last session on page load
   useEffect(() => {
     const lastSessionId = sessionStorage.getItem('chat-session-id')
-
     if (lastSessionId) {
-      loadSessionWithPreferences(lastSessionId).catch(error => {
-        // Load failed, clear sessionStorage
+      loadSessionWithPreferences(lastSessionId).catch(() => {
         sessionStorage.removeItem('chat-session-id')
         setMessages([])
       })
     } else {
       setMessages([])
     }
-  }, []) // Empty dependency - run once on mount
+  }, [])
 
   // Restore browserSession from DynamoDB when chat session loads
   useEffect(() => {
@@ -556,19 +360,15 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     async function loadBrowserSession() {
       try {
-        // First try sessionStorage cache
+        // Try sessionStorage cache first
         const cachedBrowserSession = sessionStorage.getItem(`browser-session-${sessionId}`)
         if (cachedBrowserSession) {
           const browserSession = JSON.parse(cachedBrowserSession)
           console.log('[useChat] Restoring browser session from cache:', browserSession)
-          setSessionState(prev => ({
-            ...prev,
-            browserSession
-          }))
+          setSessionState(prev => ({ ...prev, browserSession }))
           return
         }
 
-        // Load from DynamoDB
         // Get auth headers
         const authHeaders: Record<string, string> = {}
         try {
@@ -577,27 +377,19 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           if (token) {
             authHeaders['Authorization'] = `Bearer ${token}`
           } else {
-            // No token available - skip this request
             console.log('[useChat] No auth token available, skipping browser session restore')
             return
           }
-        } catch (error) {
+        } catch {
           console.log('[useChat] No auth session available, skipping browser session restore')
           return
         }
 
-        const response = await fetch(`/api/session/${sessionId}`, {
-          headers: authHeaders
-        })
+        const response = await fetch(`/api/session/${sessionId}`, { headers: authHeaders })
 
-        // 404 is expected for new sessions not yet saved to DynamoDB
         if (response.status === 404) {
           console.log('[useChat] Session not yet created in DynamoDB (new session)')
-          // Clear browser session from previous session
-          setSessionState(prev => ({
-            ...prev,
-            browserSession: null
-          }))
+          setSessionState(prev => ({ ...prev, browserSession: null }))
           return
         }
 
@@ -606,77 +398,59 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           if (data.success && data.session?.metadata?.browserSession) {
             const browserSession = data.session.metadata.browserSession
             console.log('[useChat] Restoring browser session from DynamoDB:', browserSession)
-
-            // Update state
-            setSessionState(prev => ({
-              ...prev,
-              browserSession
-            }))
-
-            // Cache in sessionStorage
+            setSessionState(prev => ({ ...prev, browserSession }))
             sessionStorage.setItem(`browser-session-${sessionId}`, JSON.stringify(browserSession))
           } else {
-            // Clear browser session if no data
             console.log('[useChat] No browser session found for this session')
-            setSessionState(prev => ({
-              ...prev,
-              browserSession: null
-            }))
+            setSessionState(prev => ({ ...prev, browserSession: null }))
           }
         }
       } catch (e) {
-        // Silently ignore errors - browserSession is optional
         console.log('[useChat] Could not load browser session:', e)
       }
     }
 
     loadBrowserSession()
-  }, [sessionId]) // Run when sessionId changes
+  }, [sessionId])
 
-  // Wrapper functions to maintain the same interface
+  // ==================== ACTIONS ====================
   const toggleTool = useCallback(async (toolId: string) => {
     await apiToggleTool(toolId)
   }, [apiToggleTool])
 
   const refreshTools = useCallback(async () => {
     await loadTools()
-  }, [])
+  }, [loadTools])
 
   const newChat = useCallback(async () => {
-    // Save current sessionId to clean up its browser session
     const oldSessionId = sessionId
 
-    // CRITICAL: Immediately invalidate current session to prevent old session's polling
-    // from affecting the new session during the async newChat operation
-    const tempSessionId = `temp_${Date.now()}`
-    currentSessionIdRef.current = tempSessionId
-
-    // Stop any existing polling from old session
+    // Invalidate current session
+    currentSessionIdRef.current = `temp_${Date.now()}`
     stopPolling()
-
-    // Clear stale session flags
-    staleSessionLoadRef.current = null
 
     const success = await apiNewChat()
     if (success) {
-      setSessionState({ reasoning: null, streaming: null, toolExecutions: [], browserSession: null, interrupt: null })
+      setSessionState({
+        reasoning: null,
+        streaming: null,
+        toolExecutions: [],
+        browserSession: null,
+        interrupt: null
+      })
       setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
-      // Clear messages to start fresh
       setMessages([])
-      // Clear browser session for old chat session
       if (oldSessionId) {
         sessionStorage.removeItem(`browser-session-${oldSessionId}`)
       }
     }
-  }, [apiNewChat, setMessages, sessionId, stopPolling])
+  }, [apiNewChat, sessionId, stopPolling])
 
   const respondToInterrupt = useCallback(async (interruptId: string, response: string) => {
     if (!sessionState.interrupt) return
 
-    // Clear interrupt state
     setSessionState(prev => ({ ...prev, interrupt: null }))
 
-    // Determine if this is research agent or browser use agent interrupt
     const isResearchInterrupt = sessionState.interrupt.interrupts.some(
       int => int.reason?.tool_name === 'research_agent'
     )
@@ -684,22 +458,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       int => int.reason?.tool_name === 'browser_use_agent'
     )
 
-    // Set appropriate status: 'researching' for research agent, 'browser_automation' for browser use, 'thinking' for others
     let agentStatus: 'thinking' | 'researching' | 'browser_automation' = 'thinking'
-    if (isResearchInterrupt) {
-      agentStatus = 'researching'
-    } else if (isBrowserUseInterrupt) {
-      agentStatus = 'browser_automation'
-    }
+    if (isResearchInterrupt) agentStatus = 'researching'
+    else if (isBrowserUseInterrupt) agentStatus = 'browser_automation'
 
-    setUIState(prev => ({
-      ...prev,
-      isTyping: true,
-      agentStatus
-    }))
+    setUIState(prev => ({ ...prev, isTyping: true, agentStatus }))
 
-    // Send interrupt response to backend (similar to sendMessage but with interruptResponse)
-    // For Research Agent or Browser Use Agent, override enabled tools to only include that agent
     const overrideTools = isResearchInterrupt
       ? ['agentcore_research-agent']
       : isBrowserUseInterrupt
@@ -708,25 +472,17 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     try {
       await apiSendMessage(
-        JSON.stringify([{
-          interruptResponse: {
-            interruptId,
-            response
-          }
-        }]),
-        undefined, // no files
-        undefined, // onSuccess
-        (error) => {
-          console.error('[Interrupt] Error sending interrupt response:', error)
-          setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
-        },
-        overrideTools // Override enabled tools for Research/Browser agents
+        JSON.stringify([{ interruptResponse: { interruptId, response } }]),
+        undefined,
+        undefined,
+        () => setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' })),
+        overrideTools
       )
     } catch (error) {
       console.error('[Interrupt] Failed to respond to interrupt:', error)
       setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
     }
-  }, [sessionState.interrupt, apiSendMessage, setSessionState, setUIState])
+  }, [sessionState.interrupt, apiSendMessage])
 
   const sendMessage = useCallback(async (e: React.FormEvent, files?: File[]) => {
     e.preventDefault()
@@ -746,17 +502,13 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       } : {})
     }
 
-    // Generate new turn ID for this conversation turn
-    const newTurnId = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
-    currentTurnIdRef.current = newTurnId
-
-    // Record request start time for latency metrics
+    currentTurnIdRef.current = `turn_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
     const requestStartTime = Date.now()
 
     setMessages(prev => [...prev, userMessage])
     setUIState(prev => ({
       ...prev,
-      isTyping: true,  // Set to true when sending message to prevent premature polling
+      isTyping: true,
       agentStatus: 'thinking',
       latencyMetrics: {
         requestStartTime,
@@ -764,15 +516,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         endToEndLatency: null
       }
     }))
-    // Keep browserSession from previous state - don't reset it
     setSessionState(prev => ({
       ...prev,
       reasoning: null,
       streaming: null,
       toolExecutions: []
     }))
-
-    // Reset ref as well
     currentToolExecutionsRef.current = []
 
     const messageToSend = inputMessage || (files && files.length > 0 ? "Please analyze the uploaded file(s)." : "")
@@ -781,36 +530,37 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     await apiSendMessage(
       messageToSend,
       files,
+      () => {},
       () => {
-        // Success callback - handled by streaming events
-      },
-      (error) => {
-        // Error callback - preserve browserSession to keep Live View button available
         setSessionState(prev => ({
           reasoning: null,
           streaming: null,
           toolExecutions: [],
-          browserSession: prev.browserSession,  // Preserve browser session on error
-          browserProgress: undefined,  // Clear browser progress on error
+          browserSession: prev.browserSession,
+          browserProgress: undefined,
           interrupt: null
         }))
       }
     )
   }, [inputMessage, apiSendMessage])
 
-  // Group messages into turns for better UI
+  const stopGeneration = useCallback(() => {
+    setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
+    sendStopSignal()
+  }, [sendStopSignal])
+
+  // ==================== DERIVED STATE ====================
   const groupedMessages = useMemo(() => {
     const grouped: Array<{
       type: 'user' | 'assistant_turn'
       messages: Message[]
       id: string
     }> = []
-    
+
     let currentAssistantTurn: Message[] = []
-    
+
     for (const message of messages) {
       if (message.sender === 'user') {
-        // Finish current assistant turn if exists
         if (currentAssistantTurn.length > 0) {
           grouped.push({
             type: 'assistant_turn',
@@ -819,20 +569,16 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           })
           currentAssistantTurn = []
         }
-        
-        // Add user message
         grouped.push({
           type: 'user',
           messages: [message],
           id: `user_${message.id}`
         })
       } else {
-        // Add to current assistant turn
         currentAssistantTurn.push(message)
       }
     }
-    
-    // Finish final assistant turn if exists
+
     if (currentAssistantTurn.length > 0) {
       grouped.push({
         type: 'assistant_turn',
@@ -840,30 +586,24 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         id: `turn_${currentAssistantTurn[0].id}`
       })
     }
-    
+
     return grouped
   }, [messages])
 
-  // Progress panel toggle function
   const toggleProgressPanel = useCallback(() => {
     setUIState(prev => ({ ...prev, showProgressPanel: !prev.showProgressPanel }))
   }, [])
 
-  // Handler for Gateway tool changes
   const handleGatewayToolsChange = useCallback((enabledToolIds: string[]) => {
-    setGatewayToolIds(enabledToolIds);
-  }, []);
+    setGatewayToolIds(enabledToolIds)
+  }, [])
 
-  const stopGeneration = useCallback(() => {
-    setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
-    sendStopSignal()
-  }, [sendStopSignal, setUIState])
-
-  // Cleanup on unmount
+  // ==================== CLEANUP ====================
   useEffect(() => {
     return cleanup
   }, [cleanup])
 
+  // ==================== RETURN ====================
   return {
     messages,
     groupedMessages,
