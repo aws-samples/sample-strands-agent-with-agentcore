@@ -1,7 +1,8 @@
 import { useCallback, useRef, startTransition } from 'react'
 import { Message, ToolExecution } from '@/types/chat'
 import { StreamEvent, ChatSessionState, ChatUIState, WorkspaceFile } from '@/types/events'
-import { useLatencyTracking } from './useLatencyTracking'
+import { useMetadataTracking } from './useMetadataTracking'
+import { useTextBuffer } from './useTextBuffer'
 import { A2A_TOOLS_REQUIRING_POLLING, isA2ATool, getAgentStatusForTool } from './usePolling'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { updateLastActivity } from '@/config/session'
@@ -42,7 +43,12 @@ export const useStreamEvents = ({
   const completeProcessedRef = useRef(false)
 
   // Latency tracking hook (encapsulates all latency-related refs and logic)
-  const latencyTracking = useLatencyTracking()
+  const metadataTracking = useMetadataTracking()
+
+  // Text buffer for smooth streaming (reduces re-renders by batching updates)
+  // Note: onFlush callback is passed to startFlushing() when streaming starts,
+  // not at initialization, to avoid stale closure issues with streamingIdRef
+  const textBuffer = useTextBuffer({ flushInterval: 50 })
 
   const handleReasoningEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'reasoning') {
@@ -70,9 +76,10 @@ export const useStreamEvents = ({
         const newId = String(Date.now())
         streamingIdRef.current = newId
 
+        // Create message with empty text - buffer will populate it
         setMessages(prevMsgs => [...prevMsgs, {
           id: newId,
-          text: data.text,
+          text: '', // Start empty, buffer will fill
           sender: 'bot',
           timestamp: new Date().toISOString(),
           isStreaming: true,
@@ -81,15 +88,38 @@ export const useStreamEvents = ({
 
         setSessionState(prev => ({
           ...prev,
-          streaming: { text: data.text, id: Number(newId) }  // StreamingState.id is still number
+          streaming: { text: '', id: Number(newId) }  // Start empty
         }))
+
+        // Start buffering with flush callback that captures current streamingIdRef
+        // This callback is created fresh here, so streamingIdRef.current is valid
+        textBuffer.startFlushing((bufferedText) => {
+          const streamingId = streamingIdRef.current
+          if (!streamingId) return
+
+          // Update message with buffered text
+          setMessages(prevMsgs => prevMsgs.map(msg =>
+            msg.id === streamingId
+              ? { ...msg, text: bufferedText }
+              : msg
+          ))
+
+          // Update session state
+          setSessionState(prev => ({
+            ...prev,
+            streaming: prev.streaming ? { ...prev.streaming, text: bufferedText } : null
+          }))
+        })
+
+        // Add first chunk to buffer
+        textBuffer.appendChunk(data.text)
 
         setUIState(prevUI => {
           if (prevUI.agentStatus === 'stopping') {
             return prevUI
           }
           if (prevUI.agentStatus === 'thinking') {
-            const ttft = latencyTracking.recordTTFT()
+            const ttft = metadataTracking.recordTTFT()
             return {
               ...prevUI,
               agentStatus: 'responding',
@@ -99,22 +129,11 @@ export const useStreamEvents = ({
           return { ...prevUI, agentStatus: 'responding' }
         })
       } else {
-        const streamingId = streamingIdRef.current
-        if (streamingId) {
-          setMessages(prevMsgs => prevMsgs.map(msg =>
-            msg.id === streamingId
-              ? { ...msg, text: msg.text + data.text }
-              : msg
-          ))
-
-          setSessionState(prev => ({
-            ...prev,
-            streaming: prev.streaming ? { ...prev.streaming, text: prev.streaming.text + data.text } : null
-          }))
-        }
+        // Append subsequent chunks to buffer (not directly to state)
+        textBuffer.appendChunk(data.text)
       }
     }
-  }, [sessionState, setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, latencyTracking])
+  }, [sessionState, setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, metadataTracking, textBuffer])
 
   const handleToolUseEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_use') {
@@ -132,9 +151,11 @@ export const useStreamEvents = ({
       // Regular tools don't need polling - SSE stream handles their updates directly
       const needsPolling = isA2ATool(data.name)
       if (needsPolling && sessionId && startPollingRef.current) {
-        console.log(`[useStreamEvents] A2A agent (${data.name}) started, starting polling for progress updates`)
         startPollingRef.current(sessionId)
       }
+
+      // Flush buffer before tool execution to ensure all text is rendered
+      textBuffer.reset()
 
       // Finalize current streaming message before adding tool
       if (streamingStartedRef.current && streamingIdRef.current) {
@@ -224,22 +245,13 @@ export const useStreamEvents = ({
         }])
       }
     }
-  }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages, setUIState, uiState])
+  }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages, setUIState, uiState, textBuffer])
 
   const handleToolResultEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_result') {
       // Find the tool name from current executions
       const toolExecution = currentToolExecutionsRef.current.find(tool => tool.id === data.toolUseId)
       const toolName = toolExecution?.toolName
-
-      // Debug: Log tool result
-      console.log('[ToolResult] 🔧 tool_result event received:', {
-        toolUseId: data.toolUseId,
-        toolName,
-        status: data.status,
-        hasResult: !!data.result,
-        hasImages: !!data.images
-      })
 
       // Update tool execution with result
       const isCancelled = data.status === 'error'
@@ -255,11 +267,6 @@ export const useStreamEvents = ({
       // Only set on first browser tool use to prevent unnecessary DCV reconnections
       const browserSessionUpdate: any = {}
       if (!sessionState.browserSession && data.metadata?.browserSessionId) {
-        console.log('[Live View] Browser session detected (first time):', {
-          sessionId: data.metadata.browserSessionId,
-          browserId: data.metadata.browserId
-        })
-
         const browserSession = {
           sessionId: data.metadata.browserSessionId,
           browserId: data.metadata.browserId || null
@@ -281,7 +288,7 @@ export const useStreamEvents = ({
                 authHeaders['Authorization'] = `Bearer ${token}`
               }
             } catch (error) {
-              console.log('[useStreamEvents] No auth session available')
+              // No auth session available - continue without auth header
             }
 
             fetch('/api/session/update-browser-session', {
@@ -291,27 +298,19 @@ export const useStreamEvents = ({
                 sessionId: currentSessionId,
                 browserSession
               })
-            }).catch(err => {
-              console.warn('[Live View] Failed to save browserSession to DynamoDB:', err)
+            }).catch(() => {
+              // Failed to save browserSession to DynamoDB - non-critical
             })
-
-            console.log('[Live View] Saved browserSession for session:', currentSessionId)
           })()
         }
       }
 
       // Update state immediately to prevent race conditions with subsequent response events
-      setSessionState(prev => {
-        const newState = {
-          ...prev,
-          toolExecutions: updatedExecutions,
-          ...browserSessionUpdate
-        }
-        if (browserSessionUpdate.browserSession) {
-          console.log('[Live View] State updated with browser session:', newState.browserSession)
-        }
-        return newState
-      })
+      setSessionState(prev => ({
+        ...prev,
+        toolExecutions: updatedExecutions,
+        ...browserSessionUpdate
+      }))
 
       setMessages(prev => prev.map(msg => {
         if (msg.isToolMessage && msg.toolExecutions) {
@@ -336,6 +335,9 @@ export const useStreamEvents = ({
 
       if (completeProcessedRef.current) return
       completeProcessedRef.current = true
+
+      // Flush any remaining buffered text before completing
+      textBuffer.reset()
 
       const messageId = streamingIdRef.current
 
@@ -377,7 +379,7 @@ export const useStreamEvents = ({
         streamingStartedRef.current = false
         streamingIdRef.current = null
         completeProcessedRef.current = false
-        latencyTracking.reset()
+        metadataTracking.reset()
         return
       }
 
@@ -412,8 +414,8 @@ export const useStreamEvents = ({
               if (token) {
                 workspaceHeaders['Authorization'] = `Bearer ${token}`
               }
-            } catch (error) {
-              console.log('[Complete] No auth session for workspace request')
+            } catch {
+              // No auth session available - continue without auth header
             }
 
             const fetchPromises = Array.from(usedDocTypes).map(async (docType) => {
@@ -434,9 +436,8 @@ export const useStreamEvents = ({
 
             const results = await Promise.all(fetchPromises)
             workspaceDocuments = results.flat()
-            console.log('[Complete] Fetched workspace documents:', workspaceDocuments)
           } catch (error) {
-            console.warn('[Complete] Failed to fetch workspace files:', error)
+            // Failed to fetch workspace files - non-critical, will use backend-provided documents
           }
         }
 
@@ -446,13 +447,13 @@ export const useStreamEvents = ({
           : (data.documents || [])
 
         const metrics = currentSessionId
-          ? latencyTracking.recordE2E({
+          ? metadataTracking.recordE2E({
               sessionId: currentSessionId,
               messageId,
               tokenUsage: data.usage,
               documents: finalDocuments
             })
-          : latencyTracking.getMetrics()
+          : metadataTracking.getMetrics()
 
         const ttftValue = 'ttft' in metrics ? metrics.ttft : metrics.timeToFirstToken
         const e2eValue = 'e2e' in metrics ? metrics.e2e : metrics.endToEndLatency
@@ -516,14 +517,14 @@ export const useStreamEvents = ({
       streamingStartedRef.current = false
       streamingIdRef.current = null
       completeProcessedRef.current = false
-      latencyTracking.reset()
+      metadataTracking.reset()
     }
-  }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, latencyTracking, currentToolExecutionsRef])
+  }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, currentToolExecutionsRef, textBuffer])
 
   const handleInitEvent = useCallback(() => {
     setUIState(prev => {
       if (prev.latencyMetrics.requestStartTime) {
-        latencyTracking.startTracking(prev.latencyMetrics.requestStartTime)
+        metadataTracking.startTracking(prev.latencyMetrics.requestStartTime)
       }
       if (prev.agentStatus !== 'idle') {
         return prev
@@ -532,24 +533,19 @@ export const useStreamEvents = ({
       // Only transition to 'thinking' if starting a new turn (idle -> thinking)
       return { ...prev, isTyping: true, agentStatus: 'thinking' }
     })
-  }, [setUIState, latencyTracking])
+  }, [setUIState, metadataTracking])
 
   const handleErrorEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'error') {
+      // Reset buffer on error
+      textBuffer.reset()
+
       setMessages(prev => [...prev, {
         id: String(Date.now()),
         text: data.message,
         sender: 'bot',
         timestamp: new Date().toISOString()
       }])
-
-      // Calculate End-to-End Latency (even on error)
-      const requestStartTime = uiState.latencyMetrics.requestStartTime
-      if (requestStartTime) {
-        const e2eLatency = Date.now() - requestStartTime
-        const ttft = uiState.latencyMetrics.timeToFirstToken || 0
-        console.log(`[Latency] End-to-End Latency (Error): ${e2eLatency}ms (TTFT: ${ttft}ms)`)
-      }
 
       setUIState(prev => {
         const requestStartTime = prev.latencyMetrics.requestStartTime
@@ -579,14 +575,12 @@ export const useStreamEvents = ({
       streamingStartedRef.current = false
       streamingIdRef.current = null
       completeProcessedRef.current = false
-      latencyTracking.reset()
+      metadataTracking.reset()
     }
-  }, [uiState, setMessages, setUIState, setSessionState, streamingStartedRef, streamingIdRef, completeProcessedRef, latencyTracking])
+  }, [uiState, setMessages, setUIState, setSessionState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, textBuffer])
 
   const handleInterruptEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'interrupt') {
-      console.log('[Interrupt] Received interrupt event:', data)
-
       setSessionState(prev => ({
         ...prev,
         interrupt: {
@@ -605,8 +599,6 @@ export const useStreamEvents = ({
 
   const handleBrowserProgressEvent = useCallback((event: StreamEvent) => {
     if (event.type === 'browser_progress') {
-      console.log('[Browser Progress] Received step:', event.stepNumber)
-
       // Append browser step to sessionState
       setSessionState(prev => ({
         ...prev,
@@ -633,8 +625,7 @@ export const useStreamEvents = ({
         handleToolUseEvent(event)
         break
       case 'progress':
-        // Handle progress events from streaming tools
-        console.log('[Tool Progress]', event)
+        // Handle progress events from streaming tools (no-op for now)
         break
       case 'tool_result':
         handleToolResultEvent(event)
@@ -665,11 +656,6 @@ export const useStreamEvents = ({
               return prev
             }
 
-            console.log('[Live View] Received metadata event (first time):', {
-              browserSessionId: metadata.browserSessionId,
-              browserId: metadata.browserId || 'not provided'
-            })
-
             const browserSession = {
               sessionId: metadata.browserSessionId,
               browserId: metadata.browserId || null
@@ -679,10 +665,7 @@ export const useStreamEvents = ({
             const currentSessionId = sessionStorage.getItem('chat-session-id')
             if (currentSessionId) {
               sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
-              console.log('[Live View] Saved browserSession to sessionStorage:', currentSessionId)
             }
-
-            console.log('[Live View] ✅ Browser session set - Live View now available!', browserSession)
 
             return {
               ...prev,
@@ -707,11 +690,13 @@ export const useStreamEvents = ({
 
   // Reset streaming state (called when user stops generation)
   const resetStreamingState = useCallback(() => {
-    console.log('[StreamEvents] Resetting streaming state')
+    // Flush any remaining buffered text before resetting
+    textBuffer.reset()
+
     streamingStartedRef.current = false
     streamingIdRef.current = null
     completeProcessedRef.current = false
-    latencyTracking.reset()
+    metadataTracking.reset()
 
     // Mark current streaming message as stopped (not streaming)
     setMessages(prev => prev.map(msg =>
@@ -723,7 +708,7 @@ export const useStreamEvents = ({
       reasoning: null,
       streaming: null
     }))
-  }, [setMessages, setSessionState, latencyTracking])
+  }, [setMessages, setSessionState, metadataTracking, textBuffer])
 
   return { handleStreamEvent, resetStreamingState }
 }

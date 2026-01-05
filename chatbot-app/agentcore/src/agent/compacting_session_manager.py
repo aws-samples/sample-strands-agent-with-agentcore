@@ -25,13 +25,13 @@ Feature 1: Truncation (Always Applied)
 - Applied every turn, no threshold
 - Cache-friendly: message structure preserved
 
-Feature 2: Checkpoint (50K+ tokens)
-- When input_tokens > token_threshold (50K):
+Feature 2: Checkpoint (100K+ tokens)
+- When input_tokens > token_threshold (100K):
   - Set checkpoint to safe cutoff index
   - Generate summary of messages before checkpoint
   - Save both to DynamoDB
 - Next turn: Load messages[checkpoint:] + prepend summary
-- If tokens exceed 50K again: Move checkpoint forward, update summary
+- If tokens exceed 100K again: Move checkpoint forward, update summary
 
 ## Flow
 
@@ -45,14 +45,14 @@ Feature 2: Checkpoint (50K+ tokens)
 
 2. Turn End (update_after_turn):
    - Update lastInputTokens
-   - If input_tokens > 50K:
+   - If input_tokens > 100K:
      - Use cached valid cutoff points (no Session Memory query)
      - Find checkpoint (keeps recent N turns)
      - Generate summary from cached messages + save to DynamoDB
 
 ## Configuration
 
-- token_threshold: Trigger checkpoint when input tokens exceed this (default: 50,000)
+- token_threshold: Trigger checkpoint when input tokens exceed this (default: 100,000)
 - protected_turns: Number of recent turns to protect from truncation and keep after checkpoint (default: 2)
 - max_tool_content_length: Max chars for tool content truncation (default: 500)
 """
@@ -187,7 +187,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         self,
         agentcore_memory_config: AgentCoreMemoryConfig,
         region_name: str = "us-west-2",
-        token_threshold: int = 50_000,
+        token_threshold: int = 100_000,
         protected_turns: int = 2,
         max_tool_content_length: int = 500,
         user_id: Optional[str] = None,
@@ -201,7 +201,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         Args:
             agentcore_memory_config: AgentCore Memory configuration
             region_name: AWS region
-            token_threshold: Trigger checkpoint when input tokens exceed this (default: 50,000)
+            token_threshold: Trigger checkpoint when input tokens exceed this (default: 100,000)
             protected_turns: Number of recent turns to protect from truncation and keep after checkpoint (default: 2)
             max_tool_content_length: Max chars for tool content before truncation (default: 500)
             user_id: User ID for DynamoDB operations

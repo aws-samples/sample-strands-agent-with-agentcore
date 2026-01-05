@@ -20,7 +20,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain, Maximize2, Minimize2, Moon, Sun, FlaskConical, Loader2 } from "lucide-react"
+import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain, Maximize2, Minimize2, Moon, Sun, FlaskConical, Loader2, ArrowDown } from "lucide-react"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
 import { apiGet } from "@/lib/api-client"
 import { useTheme } from "next-themes"
@@ -78,6 +78,11 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   const sidebarContext = useSidebar()
   const { setOpen, setOpenMobile, open } = sidebarContext
   const { theme, setTheme } = useTheme()
+
+  // Scroll control state
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+  const [isUserScrolledUp, setIsUserScrolledUp] = useState(false)
+  const isAutoScrollingRef = useRef(false)
 
   const {
     groupedMessages,
@@ -433,29 +438,72 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     }
   }, [currentInterrupt, respondToInterrupt])
 
+  // Scroll to bottom using scrollTop (container-based scrolling)
   const scrollToBottomImmediate = useCallback(() => {
-    if (!messagesEndRef.current) return
+    const container = messagesContainerRef.current
+    if (!container) return
 
-    if (isEmbedded) {
-      // In embedded mode, scroll within the container without affecting parent
-      messagesEndRef.current.scrollIntoView({
-        behavior: "smooth",
-        block: "nearest",
-        inline: "nearest"
-      })
-    } else {
-      messagesEndRef.current.scrollIntoView({ behavior: "smooth" })
-    }
-  }, [isEmbedded])
+    // Skip if user has scrolled up
+    if (isUserScrolledUp) return
 
-  const scrollToBottom = useThrottle(scrollToBottomImmediate, 200)
+    // Mark as programmatic scroll to avoid triggering user scroll detection
+    isAutoScrollingRef.current = true
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth'
+    })
 
+    // Reset flag after scroll animation
+    setTimeout(() => {
+      isAutoScrollingRef.current = false
+    }, 100)
+  }, [isUserScrolledUp])
+
+  const scrollToBottom = useThrottle(scrollToBottomImmediate, 100)
+
+  // Force scroll to bottom (for button click)
+  const forceScrollToBottom = useCallback(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    setIsUserScrolledUp(false)
+    isAutoScrollingRef.current = true
+    container.scrollTo({
+      top: container.scrollHeight,
+      behavior: 'smooth'
+    })
+    setTimeout(() => {
+      isAutoScrollingRef.current = false
+    }, 100)
+  }, [])
+
+  // Handle scroll event to detect user scroll-up
+  const handleScroll = useCallback(() => {
+    const container = messagesContainerRef.current
+    if (!container) return
+
+    // Ignore programmatic scrolls
+    if (isAutoScrollingRef.current) return
+
+    const { scrollTop, scrollHeight, clientHeight } = container
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight
+
+    // User is scrolled up if more than 100px from bottom
+    const scrolledUp = distanceFromBottom > 100
+    setIsUserScrolledUp(scrolledUp)
+  }, [])
+
+  // Auto-scroll on new messages (both modes now use container scroll)
   useEffect(() => {
-    // Only auto-scroll in standalone mode, not in embedded mode
-    if (!isEmbedded) {
-      scrollToBottom()
+    scrollToBottom()
+  }, [groupedMessages, isTyping, scrollToBottom])
+
+  // Reset scroll state when starting new chat
+  useEffect(() => {
+    if (groupedMessages.length === 0) {
+      setIsUserScrolledUp(false)
     }
-  }, [groupedMessages, isTyping, isEmbedded, scrollToBottom])
+  }, [groupedMessages.length])
 
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
@@ -530,8 +578,8 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
         loadSession={loadSession}
       />
 
-      {/* Main Chat Area */}
-      <SidebarInset className={`${isEmbedded ? "h-screen" : ""} flex flex-col ${groupedMessages.length === 0 ? 'justify-center items-center' : ''} transition-all duration-700 ease-in-out relative`}>
+      {/* Main Chat Area - unified layout for both modes */}
+      <SidebarInset className={`h-screen flex flex-col overflow-hidden ${groupedMessages.length === 0 ? 'justify-center items-center' : ''} transition-all duration-700 ease-in-out relative`}>
         {/* Sidebar trigger - Always visible in top-left */}
         {groupedMessages.length === 0 && (
           <div className={`absolute top-4 left-4 z-20`}>
@@ -579,11 +627,12 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           </div>
         )}
 
-        {/* Messages Area */}
-        <div className={`${isEmbedded
-          ? `flex flex-col min-w-0 gap-6 ${groupedMessages.length > 0 ? 'flex-1' : ''} overflow-y-auto relative min-h-0 max-h-full`
-          : `flex flex-col min-w-0 gap-6 ${groupedMessages.length > 0 ? 'flex-1' : ''} overflow-y-scroll relative`
-        } ${groupedMessages.length > 0 ? 'pt-4' : ''}`}>
+        {/* Messages Area - unified container scroll for both modes */}
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          className={`flex flex-col min-w-0 gap-6 ${groupedMessages.length > 0 ? 'flex-1' : ''} overflow-y-auto relative min-h-0 ${groupedMessages.length > 0 ? 'pt-4' : ''}`}
+        >
           {groupedMessages.map((group) => (
             <div key={group.id} className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0`}>
               {group.type === "user" ? (
@@ -624,6 +673,20 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           {/* Scroll target */}
           <div ref={messagesEndRef} className="h-4" />
         </div>
+
+        {/* Scroll to bottom button - show when user scrolled up */}
+        {isUserScrolledUp && groupedMessages.length > 0 && (
+          <div className="absolute bottom-32 left-1/2 transform -translate-x-1/2 z-10">
+            <Button
+              onClick={forceScrollToBottom}
+              size="sm"
+              className="rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground px-4 py-2 flex items-center gap-2"
+            >
+              <ArrowDown className="w-4 h-4" />
+              <span className="text-sm">Scroll to bottom</span>
+            </Button>
+          </div>
+        )}
 
         {/* Suggested Questions - Show only for embedded mode or when explicitly enabled */}
         {isEmbedded && groupedMessages.length === 0 && availableTools.length > 0 && (

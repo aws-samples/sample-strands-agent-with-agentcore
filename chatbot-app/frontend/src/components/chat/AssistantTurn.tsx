@@ -6,6 +6,7 @@ import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Do
 import { Message } from '@/types/chat'
 import { ReasoningState } from '@/types/events'
 import { Markdown } from '@/components/ui/Markdown'
+import { StreamingText } from './StreamingText'
 import { ToolExecutionContainer } from './ToolExecutionContainer'
 import { ResearchContainer } from '@/components/ResearchContainer'
 import { LazyImage } from '@/components/ui/LazyImage'
@@ -193,6 +194,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
       images?: any[]
       key: string
       toolUseId?: string
+      isStreaming?: boolean
     }> = []
 
     let currentTextGroup = ''
@@ -200,6 +202,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
     let textGroupStartId: string | number = 0
     let currentToolUseId: string | undefined = undefined
     let textGroupCounter = 0 // Counter for unique keys
+    let currentIsStreaming = false // Track if any message in group is streaming
 
     const flushTextGroup = () => {
       if (currentTextGroup.trim()) {
@@ -208,11 +211,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
           content: currentTextGroup,
           images: currentTextImages,
           key: `text-group-${textGroupCounter}-${textGroupStartId}`, // Use counter + id for uniqueness
-          toolUseId: currentToolUseId
+          toolUseId: currentToolUseId,
+          isStreaming: currentIsStreaming
         })
         currentTextGroup = ''
         currentTextImages = []
         currentToolUseId = undefined
+        currentIsStreaming = false
         textGroupCounter++ // Increment counter
       }
     }
@@ -232,6 +237,10 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
           currentTextGroup += message.text
           if (message.images && message.images.length > 0) {
             currentTextImages.push(...message.images)
+          }
+          // Track streaming state
+          if (message.isStreaming) {
+            currentIsStreaming = true
           }
         }
 
@@ -256,6 +265,10 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
         // Track toolUseId for this text message
         if (message.toolUseId && !currentToolUseId) {
           currentToolUseId = message.toolUseId
+        }
+        // Track streaming state
+        if (message.isStreaming) {
+          currentIsStreaming = true
         }
       }
     })
@@ -436,7 +449,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
             return (
               <div key={item.key} className="animate-fade-in">
                 <div className="chat-chart-content w-full overflow-hidden">
-                  <Markdown sessionId={sessionId} toolUseId={item.toolUseId} preserveLineBreaks>{item.content as string}</Markdown>
+                  {/* Use StreamingText for smooth typing animation during streaming */}
+                  <StreamingText
+                    text={item.content as string}
+                    isStreaming={item.isStreaming || false}
+                    sessionId={sessionId}
+                    toolUseId={item.toolUseId}
+                  />
 
                   {/* Generated Images for this text group */}
                   {item.images && item.images.length > 0 && (

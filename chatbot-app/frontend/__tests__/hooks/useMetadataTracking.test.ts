@@ -1,5 +1,5 @@
 /**
- * Tests for useLatencyTracking hook
+ * Tests for useMetadataTracking hook
  *
  * Tests cover:
  * - TTFT (Time to First Token) measurement
@@ -10,7 +10,7 @@
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { renderHook, act } from '@testing-library/react'
-import { useLatencyTracking } from '@/hooks/useLatencyTracking'
+import { useMetadataTracking } from '@/hooks/useMetadataTracking'
 
 // Mock fetchAuthSession
 vi.mock('aws-amplify/auth', () => ({
@@ -23,7 +23,7 @@ vi.mock('aws-amplify/auth', () => ({
 const mockFetch = vi.fn()
 global.fetch = mockFetch
 
-describe('useLatencyTracking', () => {
+describe('useMetadataTracking', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers()
@@ -39,7 +39,7 @@ describe('useLatencyTracking', () => {
 
   describe('startTracking', () => {
     it('should initialize tracking state', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -51,7 +51,7 @@ describe('useLatencyTracking', () => {
     })
 
     it('should accept custom start time', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
       const customStartTime = Date.now() - 1000
 
       act(() => {
@@ -69,24 +69,38 @@ describe('useLatencyTracking', () => {
     })
 
     it('should prevent duplicate tracking calls', () => {
-      const { result } = renderHook(() => useLatencyTracking())
-      const consoleSpy = vi.spyOn(console, 'log')
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
       })
 
+      vi.advanceTimersByTime(500)
+
+      act(() => {
+        result.current.recordTTFT()
+      })
+
+      const firstTTFT = result.current.getMetrics().timeToFirstToken
+
       act(() => {
         result.current.startTracking() // Second call should be ignored
       })
 
-      expect(consoleSpy).toHaveBeenCalledWith('[Latency] Already tracking, skipping startTracking')
+      vi.advanceTimersByTime(500)
+
+      act(() => {
+        result.current.recordTTFT()
+      })
+
+      // TTFT should remain unchanged (second startTracking was ignored)
+      expect(result.current.getMetrics().timeToFirstToken).toBe(firstTTFT)
     })
   })
 
   describe('recordTTFT', () => {
     it('should calculate TTFT from start time', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -105,7 +119,7 @@ describe('useLatencyTracking', () => {
     })
 
     it('should only record TTFT once', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -131,7 +145,7 @@ describe('useLatencyTracking', () => {
     })
 
     it('should return undefined if tracking not started', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       let ttft: number | undefined
       act(() => {
@@ -144,7 +158,7 @@ describe('useLatencyTracking', () => {
 
   describe('recordE2E', () => {
     it('should calculate E2E latency', async () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -171,7 +185,7 @@ describe('useLatencyTracking', () => {
     })
 
     it('should include token usage in metadata', async () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -216,7 +230,7 @@ describe('useLatencyTracking', () => {
     })
 
     it('should include documents in metadata', async () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -253,7 +267,7 @@ describe('useLatencyTracking', () => {
     })
 
     it('should only save metadata once', async () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -293,7 +307,7 @@ describe('useLatencyTracking', () => {
 
   describe('reset', () => {
     it('should clear all tracking state', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()
@@ -315,7 +329,7 @@ describe('useLatencyTracking', () => {
     })
 
     it('should allow new tracking after reset', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       // First tracking session
       act(() => {
@@ -350,7 +364,7 @@ describe('useLatencyTracking', () => {
 
   describe('getMetrics', () => {
     it('should return current metrics', () => {
-      const { result } = renderHook(() => useLatencyTracking())
+      const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
         result.current.startTracking()

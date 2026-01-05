@@ -482,9 +482,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 # Use CompactingSessionManager for token-based context compaction
                 # Two-feature compaction:
                 # - Feature 1: Truncation (always applied) - truncate old tool contents
-                # - Feature 2: Checkpoint (token_threshold 50K) - skip old messages + summary
+                # - Feature 2: Checkpoint (token_threshold 100K) - skip old messages + summary
                 # Configuration via environment variables (with sensible defaults)
-                token_threshold = int(os.environ.get('COMPACTION_TOKEN_THRESHOLD', '50000'))
+                token_threshold = int(os.environ.get('COMPACTION_TOKEN_THRESHOLD', '100000'))
                 protected_turns = int(os.environ.get('COMPACTION_PROTECTED_TURNS', '2'))
                 max_tool_content_length = int(os.environ.get('COMPACTION_MAX_TOOL_LENGTH', '500'))
 
