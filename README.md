@@ -1,12 +1,42 @@
-# Strands Agent Chatbot with AgentCore
+# Strands Agent Chatbot with Amazon Bedrock AgentCore
 
-Multi-agent conversational AI system powered by AWS Bedrock AgentCore and Strands Agents. Features pre-built tools and specialized agents, fully managed GenAI services reducing operational overhead, multimodal input/output support, and dynamic agent configuration through tool selection and filtering for diverse business scenarios. Deploy the entire stack with a single CDK command.
+An end-to-end reference architecture for building **agentic workflows** using  
+**Strands Agents** and **Amazon Bedrock AgentCore**.
 
-**Quick Links:** [🏗️ Architecture](#architecture) | [⚙️ Key Features](#key-features)
+This repository demonstrates how to design and deploy a multi-agent chatbot that combines
+tool execution, memory, browser automation, and agent-to-agent collaboration.
+It is intended as a realistic, extensible sample for teams exploring advanced agent architectures on AWS.
 
-## Demo Videos
+---
 
-*All agents run on **AgentCore Runtime** with orchestration powered by **Strands Agents***
+## What this repository demonstrates
+
+- Multi-agent orchestration with **Strands Agents**
+- Integration with **Amazon Bedrock AgentCore**
+- Tool-enabled agents (search, finance, weather, browser, code interpreter)
+- Autonomous browser, documentation, and analysis workflows
+- Modular architecture adaptable to real customer use cases
+- Infrastructure-as-Code (CDK) for repeatable deployment
+
+If you are building **agentic AI applications on AWS** and want a concrete, end-to-end example,
+this repository is designed to be read, run, and extended.
+
+**Quick links:**  
+[Architecture](#architecture-overview) · [Key Features](#key-features) · [Quick Start](#quick-start)
+
+---
+
+## Demo Scenarios
+
+This sample includes multiple real-world agent workflows:
+
+- Financial research and analysis
+- Travel planning with external data sources
+- Autonomous web browsing and information extraction
+- Tool-augmented reasoning with structured outputs
+- Multi-agent research with human approval loops
+
+(See the demo videos below for each scenario.)
 
 <table>
 <tr>
@@ -19,9 +49,15 @@ Multi-agent conversational AI system powered by AWS Bedrock AgentCore and Strand
 
 ### 0. UI Overview
 
-**Scenario:** Interactive demonstration of the chatbot interface, dynamic tool filtering, multi-model selection, and conversation flow with real-time streaming responses
+Interactive demonstration of the chatbot interface, dynamic tool filtering,
+multi-model selection, and real-time streaming responses.
 
-**Features:** Tool selection sidebar • Multi-model support (20+ models) • SSE streaming • Session management • File upload for multimodal input
+**Highlights**
+- Tool selection sidebar  
+- Multi-model support (20+ models)  
+- SSE streaming  
+- Session management  
+- Multimodal file upload  
 
 </td>
 </tr>
@@ -36,9 +72,13 @@ Multi-agent conversational AI system powered by AWS Bedrock AgentCore and Strand
 
 ### 1. Finance Assistant
 
-**Scenario:** Analyzes FAANG stocks with real-time quotes and 3-month performance data, performs statistical analysis with visualizations, and generates comprehensive Excel reports
+Analyzes FAANG stocks using real-time quotes and historical performance data,
+performs statistical analysis, and generates Excel reports with visualizations.
 
-**Features:** Yahoo Finance API via MCP Gateway • Code Interpreter sandbox for secure execution • Chart generation and Excel document creation
+**Highlights**
+- Yahoo Finance via MCP Gateway  
+- Secure code execution with AgentCore Code Interpreter  
+- Chart generation and document creation  
 
 </td>
 </tr>
@@ -53,9 +93,13 @@ Multi-agent conversational AI system powered by AWS Bedrock AgentCore and Strand
 
 ### 2. Travel Planning
 
-**Scenario:** Plans a Honolulu trip by gathering travel articles, place details, route information, and weather data through interactive dialogue to help build comprehensive travel itineraries
+Plans a Honolulu trip by gathering articles, location data, routes,
+and weather information through interactive dialogue.
 
-**Features:** Google Search/Maps/Places APIs via MCP Gateway • Open-Meteo Weather API • Rich content embedding with iframe for maps and location details
+**Highlights**
+- Google Search, Maps, and Places via MCP Gateway  
+- Open-Meteo Weather API  
+- Embedded maps and rich content  
 
 </td>
 </tr>
@@ -70,9 +114,13 @@ Multi-agent conversational AI system powered by AWS Bedrock AgentCore and Strand
 
 ### 3. Agentic Web Browsing
 
-**Scenario:** Searches for Michelin seafood restaurants in NYC, checks reservation availability, and compiles findings into a Word document with browser screenshots and key information
+Searches Michelin seafood restaurants in NYC, checks reservation availability,
+and compiles results into a Word document with screenshots.
 
-**Features:** AgentCore Browser with Nova Act for autonomous web automation • Live view streaming for real-time monitoring and human intervention • Word document generation via Code Interpreter
+**Highlights**
+- AgentCore Browser with Amazon Nova Act  
+- Live view streaming for monitoring and intervention  
+- Word document generation via Code Interpreter  
 
 </td>
 </tr>
@@ -87,9 +135,13 @@ Multi-agent conversational AI system powered by AWS Bedrock AgentCore and Strand
 
 ### 4. Web UI Analysis
 
-**Scenario:** Automatically inspects website UI components and functionality, analyzes service design patterns and technical implementations, captures key UI elements, and generates a comprehensive analysis report in PowerPoint
+Inspects website UI components and service design patterns,
+then generates a structured PowerPoint analysis report.
 
-**Features:** AgentCore Browser with Nova Act for autonomous UI inspection • Live view streaming for monitoring • PowerPoint report generation via Code Interpreter
+**Highlights**
+- Autonomous UI inspection with AgentCore Browser  
+- Live monitoring  
+- PowerPoint generation via Code Interpreter  
 
 </td>
 </tr>
@@ -104,327 +156,210 @@ Multi-agent conversational AI system powered by AWS Bedrock AgentCore and Strand
 
 ### 5. Deep Research (Multi-Agent)
 
-**Scenario:** Investigates Denver's real-estate market through multi-agent collaboration. Human-in-the-Loop approval for research plan and scope, then delegates to remote Research Agent via A2A protocol to gather web information with citations and visualizations
+Investigates Denver’s real-estate market using a multi-agent workflow.
+A supervisor agent requests human approval, then delegates work to a remote research agent via A2A.
 
-**Features:** A2A protocol for agent-to-agent communication • Remote AgentCore Runtime with Strands Research Agent • Human-in-the-Loop approval workflow • Web search with citation tracking and visualization
+**Highlights**
+- Agent-to-Agent (A2A) protocol  
+- Human-in-the-loop approval  
+- Web research with citations and visualizations  
 
 </td>
 </tr>
 </table>
 
+---
+
 ## Overview
 
-Combines Strands Agent orchestration with AWS Bedrock AgentCore services:
-- **Strands Agent**: Multi-turn conversation orchestration with tool execution
-- **AgentCore Runtime**: Containerized agent deployment as managed AWS service
-- **AgentCore Memory**: Persistent conversation storage with user preference retrieval
-- **AgentCore Gateway**: MCP tool integration with SigV4 authentication
-- **AgentCore Code Interpreter**: Built-in code execution for data analysis, visualization, and chart generation
-- **AgentCore Browser**: Web automation via headless browser with live view streaming
-- **Amazon Nova Act**: Agentic foundation model for browser automation with visual reasoning
-- **A2A Protocol**: Agent-to-Agent communication enabling Chat Agent and Research Agent to collaborate seamlessly
+This sample combines **Strands Agent orchestration** with **Amazon Bedrock AgentCore services**:
 
-## Architecture
+- **Strands Agents** – Multi-turn reasoning and tool orchestration  
+- **AgentCore Runtime** – Managed, containerized agent execution  
+- **AgentCore Memory** – Persistent conversation state and summarization  
+- **AgentCore Gateway** – MCP-based tool integration with SigV4 authentication  
+- **AgentCore Code Interpreter** – Secure execution for analysis and document generation  
+- **AgentCore Browser** – Headless browser automation with live view  
+- **Amazon Nova Act** – Visual reasoning model for browser automation  
+
+---
+
+## Architecture Overview
+
+The system is composed of the following layers:
+
+- **Frontend / UI** – User interaction  
+- **Backend (BFF)** – Request routing and streaming  
+- **AgentCore Runtime** – Agent execution  
+- **AgentCore Gateway** – Tool access  
+- **Strands Agents** – Multi-agent coordination  
+- **Tools & Memory** – External APIs and state  
+
+This design emphasizes **extensibility, observability, and clear separation of concerns**.
 
 <img src="docs/images/architecture-overview.svg"
      alt="Architecture Overview"
      width="1200">
 
-### Core Components
-
-1. **Frontend + BFF** (Next.js)
-   - Server-side API routes as Backend-for-Frontend
-   - Cognito authentication with JWT validation
-   - SSE streaming from AgentCore Runtime
-   - Session management and file upload handling
-
-2. **AgentCore Runtime**
-   - Strands Agent with Bedrock Models
-   - Uses AgentCore Memory for conversation persistence
-   - Integrates with AgentCore Gateway via SigV4
-   - Calls Built-in Tools via AWS API
-   - Communicates with other agents via A2A protocol
-
-3. **AgentCore Gateway**
-   - MCP tool endpoints with SigV4 authentication
-   - Routes requests to Lambda functions via MCP protocol
-   - Tools: Google Search, Google Maps, Google Places, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo Weather
-
-4. **AgentCore Memory**
-   - Persistent conversation storage
-   - Automatic history management across sessions
-
-5. **Tool Ecosystem**
-   - **Local Tools**: Web search, visualization, URL fetcher (embedded in Runtime)
-   - **Built-in Tools**: AgentCore Code Interpreter for diagrams/charts/document creation (Word, Excel, PowerPoint), AgentCore Browser for automation (AWS SDK + WebSocket)
-   - **Gateway Tools**: Google Search/Maps/Places, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo Weather (via AgentCore Gateway + MCP)
-   - **A2A Tools**: Research Agent for comprehensive web research with markdown reports (via A2A protocol)
+---
 
 ## Key Features
 
-- Amazon Bedrock AgentCore Runtime
-- Strands Agent Orchestration
-- MCP Gateway Tools (Google Search/Maps/Places, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo)
-- A2A Agent-to-Agent Protocol
-- Built-in Code Interpreter for diagrams, charts, and document creation
-- Multimodal I/O (Vision, Charts, Documents, Screenshots)
+- Strands-based agent orchestration  
+- Amazon Bedrock AgentCore Runtime, Gateway, and Memory  
+- MCP Gateway tools (Google, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo)  
+- Agent-to-Agent (A2A) collaboration  
+- Built-in Code Interpreter for charts and documents  
+- Multimodal input and output (vision, charts, documents, screenshots)  
+
+---
 
 ## Use Cases
-- Financial research agent with stock analysis & SEC ingestion
-- Technical research assistant using multi-agent architecture
-- Web automation agent via AgentCore Browser + Nova Act
-- RAG-enabled chatbot using AgentCore Memory
-- Multi-protocol research assistant (MCP, A2A, AWS SDK)
 
-## Key Technical Features
+- Financial research agents  
+- Technical research assistants using multi-agent patterns  
+- Autonomous web automation agents  
+- Memory-backed conversational assistants  
+- Hybrid research workflows using MCP, A2A, and AWS SDK tools  
 
-**1. Full-stack Web-based Chatbot Application**
+---
 
-- **Frontend**: Next.js with React, TypeScript, Tailwind CSS, shadcn/ui
-- **Backend (BFF)**: Next.js API routes for SSE streaming, authentication, session management
-- **Agent Runtime**: Strands Agent orchestration on AgentCore Runtime (containerized)
-- **Persistence**: AgentCore Memory for conversation history and user context
-- **Authentication**: AWS Cognito with JWT validation
-- **Deployment**: CloudFront → ALB → Fargate (Frontend+BFF) + AgentCore Runtime
+## Multi-Agent Architecture
 
-**2. Multi-Protocol Tool Architecture**
+This sample demonstrates a **Supervisor–Worker multi-agent pattern** using the
+**Agent-to-Agent (A2A) protocol**.
 
-Tools communicate via different protocols based on their characteristics:
+<img src="docs/images/multi-agent-architecture.svg"
+     alt="Multi-agent Architecture"
+     width="900">
 
-| Tool Type | Protocol | Tool Sets | Total Tools | Examples | Authentication |
-|-----------|----------|-----------|-------------|----------|----------------|
-| **Local Tools** | Direct function calls | 3 | 3 | Web Search, Visualization, URL Fetcher | N/A |
-| **Built-in Tools** | AWS SDK + WebSocket | 5 | 25 | AgentCore Code Interpreter (Diagram, Word, Excel, PowerPoint), Browser (Nova Act) | IAM |
-| **Gateway Tools** | MCP | 8+ | 20+ | Google Search/Maps/Places, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo | AWS SigV4 |
-| **A2A Tools** | A2A protocol | 2 | 2 | Research Agent, Browser-Use Agent | AWS SigV4 |
+### Key Components
 
-Status: **50+ tools across 18+ tool sets** ✅. See [Implementation Details](#multi-protocol-tool-architecture) for complete tool list.
+- **Supervisor Agent** – Plans tasks, requests user approval, delegates work  
+- **Research Agent (A2A)** – Autonomous research with structured reports  
+- **Human-in-the-Loop** – Implemented via Strands Interrupts  
+- **A2A Protocol** – Secure runtime-to-runtime collaboration (SigV4)
 
-**3. Multi-Model Selection**
+---
 
-Supports 20+ foundation models from multiple providers (Anthropic, Amazon, Google, Qwen, NVIDIA, Mistral).
+## Multi-Protocol Tool Architecture
 
-<img src="docs/images/model-selection.png" alt="Model Selection" width="800">
+| Tool Category | Protocol | Examples | Authentication |
+|--------------|----------|----------|----------------|
+| Local Tools | Direct Python | Web Search, URL Fetcher, Visualization | None |
+| Built-in Tools | AWS SDK / WebSocket | Code Interpreter, Browser (Nova Act) | IAM |
+| Gateway Tools | MCP | Google Search, Maps, Wikipedia, ArXiv, Finance | SigV4 |
+| A2A Tools | A2A | Research Agent, Browser-Use Agent | SigV4 |
 
-**4. Dynamic Tool Filtering**
+Total: **50+ tools across 18+ tool sets**  
+See [docs/TOOLS.md](docs/TOOLS.md) for full details.
 
-Users can enable/disable specific tools via UI sidebar, and the agent dynamically filters tool definitions before each invocation, sending only selected tools to the model to reduce prompt token count and optimize costs.
+---
 
-**5. Token Optimization via Prompt Caching**
+## Dynamic Tool Filtering
 
-Implements hooks-based caching strategy with system prompt and conversation history caching to reduce input token costs. See [detailed blog post](https://medium.com/@revoir07/agent-loop-caching-the-missing-optimization-for-agent-workflows-230cc530eb72) for implementation details.
+<img src="docs/images/tool-filtering-flow.svg"
+     alt="Tool Filtering Flow"
+     width="900">
 
-**6. Multimodal Input/Output**
+Only user-selected tools are included in each model invocation,
+reducing prompt size and execution cost.
 
-Native support for visual and document content:
-- **Input**: Images (PNG, JPEG, GIF, WebP), Documents (PDF, CSV, DOCX, etc.)
-- **Output**: Charts from AgentCore Code Interpreter, screenshots from AgentCore Browser
+---
 
-**7. Two-tier Memory System**
+## Memory Architecture and Long-Context Management
 
-Uses AgentCore Memory for session-based conversation history (short-term) and summarization (long-term). Implements [compaction algorithm](https://medium.com/@revoir07/long-context-compaction-for-ai-agents-part-1-design-principles-2bf4a5748154) for context retention in long conversations.
+The system uses **AgentCore Memory** with:
+- Short-term session memory
+- Long-term summarized memory
 
-**8. Multi-agent Architecture**
+Long conversations are compacted using a context summarization strategy to
+retain key information while controlling token growth.
 
-The system implements a **Supervisor-Worker pattern** using A2A (Agent-to-Agent) protocol, enabling specialized agents to handle complex tasks independently while maintaining human oversight.
+Related design notes:
+- https://medium.com/@revoir07/long-context-compaction-for-ai-agents-part-1-design-principles-2bf4a5748154
 
-### Example: Research Agent Workflow
+---
 
-<img src="docs/images/multi-agent-architecture.svg" alt="Multi-agent Architecture" width="800">
+## Token Optimization via Prompt Caching
 
-**Key Components:**
+Prompt caching is implemented via Strands hooks to reuse:
+- System prompts
+- Stable instruction blocks
+- Repeated conversation context
 
-- **Supervisor Agent**: Main conversational interface that plans tasks, requests user approval, and delegates to specialized agents
-- **Research Agent (A2A)**: Autonomous research specialist that executes approved plans using web search, Wikipedia, and generates markdown reports with charts
-- **Human-in-the-Loop**: Strands Interrupt mechanism for user approval before delegating tasks
-- **A2A Protocol**: AgentCore-managed communication enabling seamless cross-agent collaboration
+This reduces input token usage while preserving agent behavior.
 
-**Benefits:**
-- **Modularity**: Add specialized agents without modifying the supervisor
-- **Human Control**: Approval workflow ensures oversight of autonomous operations
-- **Scalability**: Each agent runs on independent AgentCore Runtime
-- **Flexibility**: Agents can be updated, scaled, or replaced independently
+Related article:
+- https://medium.com/@revoir07/agent-loop-caching-the-missing-optimization-for-agent-workflows-230cc530eb72
 
-## Implementation Details
-
-### Multi-Protocol Tool Architecture
-
-See [docs/TOOLS.md](docs/TOOLS.md) for detailed tool specifications.
-
-| Tool Name | Protocol | API Key | Status | Description |
-|-----------|----------|---------|--------|-------------|
-| **Local Tools** | | | | |
-| Web Search | Direct call | No | ✅ | DuckDuckGo search |
-| Visualization Creator | Direct call | No | ✅ | Interactive charts (Plotly) |
-| URL Fetcher | Direct call | No | ✅ | Web content extraction |
-| **Built-in Tools** | | | | |
-| Diagram Generator | AWS SDK | No | ✅ | Charts/diagrams via AgentCore Code Interpreter |
-| Browser Automation (6 tools) | AWS SDK + WebSocket | Yes | ✅ | Navigate, action, extract, screenshot via AgentCore Browser (Nova Act) |
-| Word Document Tools (4 tools) | AWS SDK | No | ✅ | Create, modify, list, read Word documents via Code Interpreter |
-| PowerPoint Tools (10 tools) | AWS SDK | No | ✅ | Create, modify, list, read, add/edit slides in PowerPoint presentations via Code Interpreter |
-| Excel Spreadsheet Tools (4 tools) | AWS SDK | No | ✅ | Create, modify, list, read Excel spreadsheets via Code Interpreter |
-| **Gateway Tools** | | | | |
-| Google Search (2 tools) | MCP | Yes | ✅ | Web and image search |
-| Google Maps (incl. Map Viewer) | MCP | Yes | ✅ | Location, route information, interactive map display with markers and directions |
-| Google Places | MCP | Yes | ✅ | Place details and recommendations |
-| Wikipedia (2 tools) | MCP | No | ✅ | Article search and retrieval |
-| ArXiv (2 tools) | MCP | No | ✅ | Scientific paper search |
-| Yahoo Finance (4 tools) | MCP | No | ✅ | Stock quotes, history, news, analysis |
-| Tavily AI (2 tools) | MCP | Yes | ✅ | AI-powered search and extraction |
-| Open-Meteo Weather | MCP | No | ✅ | Current weather and forecast data |
-| **A2A Tools** | | | | |
-| Research Agent | A2A protocol | No | ✅ | Comprehensive web research with markdown reports and citations |
-| Browser-Use Agent | A2A protocol | No | ✅ | Autonomous browser automation with AI-driven adaptive navigation |
-
-**Protocol Details:**
-- **Direct call**: Python function with `@tool` decorator, executed in runtime container
-- **AWS SDK**: Bedrock client API calls (AgentCore Code Interpreter, AgentCore Browser)
-- **WebSocket**: Real-time bidirectional communication for browser automation
-- **MCP**: Model Context Protocol (via AgentCore Gateway with SigV4 authentication)
-- **A2A protocol**: Agent-to-Agent communication with AWS SigV4 authentication for runtime-to-runtime collaboration
-
-**Total: 50+ tools across 18+ tool sets** (50+ ✅)
-
-### Dynamic Tool Filtering
-
-**Implementation:** `agent.py:590-652`
-
-```python
-# User-selected tools from UI sidebar
-enabled_tools = ["web_search", "gateway_wikipedia-search___wikipedia_search"]
-
-# Filters applied before agent creation
-agent = Agent(
-    model=model,
-    tools=get_filtered_tools(enabled_tools),  # Dynamic filtering
-    session_manager=session_manager
-)
-```
-
-<img src="docs/images/tool-filtering-flow.svg" alt="Tool Filtering Flow" width="800">
-
-**Flow:**
-1. **User Toggle**: User selects tools via UI sidebar
-2. **Enabled Tools**: Frontend sends enabled tool list to AgentCore Runtime
-3. **Tool Filtering**: Strands Agent filters tools before model invocation
-4. **Invoke**: Model receives only enabled tool definitions
-5. **ToolCall**: Agent executes local or remote tools as needed
-
-**Benefits:**
-- Reduced token usage (only selected tool definitions sent to model)
-- Per-user customization
-- Real-time tool updates without redeployment
-
-### Token Optimization: Prompt Caching
-
-Implements prompt caching via Strands hooks. See [blog post](https://medium.com/@revoir07/agent-loop-caching-the-missing-optimization-for-agent-workflows-230cc530eb72) for details.
+---
 
 ## Quick Start
 
 ### Prerequisites
 
-- **AWS Account** with Bedrock access
-- **AWS CLI** configured with credentials
-- **Docker** installed and running
-- **Node.js** 18+ and **Python** 3.13+
-- **AgentCore** enabled in your AWS account region
+- AWS account with Bedrock access  
+- AWS CLI configured  
+- Docker installed  
+- Node.js 18+ and Python 3.13+  
+
+---
 
 ### Local Development
 
-Run the application locally with Docker Compose:
-
 ```bash
-# 1. Clone repository
 git clone https://github.com/aws-samples/sample-strands-agent-with-agentcore.git
 cd sample-strands-agent-with-agentcore
 
-# 2. Setup dependencies
 cd chatbot-app
 ./setup.sh
 
-# 3. Configure AWS credentials
 cd ../agent-blueprint
 cp .env.example .env
-# Edit .env with your AWS credentials and region
+# configure credentials
 
-# 4. Start all services
 cd ../chatbot-app
 ./start.sh
 ```
 
-**Services started:**
-- Frontend + BFF: http://localhost:3000
-- Agent Backend: http://localhost:8000
-- Local file-based session storage
+Frontend will be available at http://localhost:3000.
 
-**What runs locally:**
-- ✅ Frontend (Next.js)
-- ✅ AgentCore Runtime (Strands Agent)
-- ✅ Local Tools (3 tools)
-- ✅ Built-in Tools (Code Interpreter, Browser via AWS API)
-- ❌ AgentCore Gateway (requires cloud deployment)
-- ❌ AgentCore Memory (uses local file storage instead)
+---
 
 ### Cloud Deployment
 
-Deploy the full-stack application to AWS using the interactive deployment script:
-
-```bash
-# Navigate to deployment directory
+The interactive deployment script supports:
+	1.	AgentCore Runtime
+	2.	Frontend + BFF
+	3.	MCP Gateway tools
+	4.	A2A runtimes
+	5.	Full stack deployment
+```
 cd agent-blueprint
-
-# Run deployment script
 ./deploy.sh
 ```
 
-The deployment script provides the following options:
-
-1. **AgentCore Runtime** - Agent container on Bedrock AgentCore with Strands Agent orchestration
-2. **Frontend + BFF** - Next.js application with CloudFront CDN, ALB, and Cognito authentication
-3. **MCP Tools** - AgentCore Gateway with Lambda functions (Google, Wikipedia, ArXiv, Finance, etc.)
-4. **AgentCore Runtime A2A** - Research Agent and Browser-Use Agent with A2A protocol
-5. **Runtime + Frontend** - Combined deployment of options 1 + 2
-6. **Full Stack** - Complete deployment of all components (Runtime + Frontend + Gateway + A2A)
-
-The script will guide you through:
-- AWS region selection
-- Component selection
-- Automatic dependency installation and deployment
-
-## Project Structure
-
+### Project Structure
 ```
 sample-strands-agent-chatbot/
 ├── chatbot-app/
-│   ├── frontend/              # Next.js (Frontend + BFF)
-│   │   └── src/
-│   │       ├── app/api/       # API routes (BFF layer)
-│   │       ├── components/    # React components
-│   │       └── config/        # Tool configuration
-│   └── agentcore/             # AgentCore Runtime
-│       └── src/
-│           ├── agent/         # ChatbotAgent + session management
-│           ├── local_tools/   # Web search, visualization, URL fetcher
-│           ├── builtin_tools/ # Code Interpreter and Browser tools
-│           └── routers/       # FastAPI routes
-│
+│   ├── frontend/
+│   └── agentcore/
 └── agent-blueprint/
-    ├── chatbot-deployment/    # Main app stack (Frontend+Runtime)
-    ├── agentcore-gateway-stack/   # Gateway + Lambda functions
-    ├── agentcore-runtime-stack/   # Runtime deployment (shared)
-    └── agentcore-runtime-a2a-stack/   # Research Agent (A2A)
+    ├── chatbot-deployment/
+    ├── agentcore-gateway-stack/
+    ├── agentcore-runtime-stack/
+    └── agentcore-runtime-a2a-stack/
 ```
 
 ## Documentation
 
-- [DEPLOYMENT.md](DEPLOYMENT.md): Detailed deployment instructions
+- DEPLOYMENT.md
+- docs/guides/TROUBLESHOOTING.md
 
-## Support
-
-- **Issues**: [GitHub Issues](https://github.com/aws-samples/sample-strands-agent-with-agentcore/issues)
-- **Troubleshooting**: [docs/guides/TROUBLESHOOTING.md](docs/guides/TROUBLESHOOTING.md)
+---
 
 ## License
 
-MIT License - see LICENSE file for details.
-
+MIT License. See LICENSE for details.
