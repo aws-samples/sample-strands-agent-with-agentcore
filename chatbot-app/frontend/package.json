@@ -63,7 +63,8 @@
     "uuid": "^13.0.0"
   },
   "overrides": {
-    "mdast-util-to-hast": "^13.2.1"
+    "mdast-util-to-hast": "^13.2.1",
+    "jspdf": "^4.0.0"
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^16.0.5",

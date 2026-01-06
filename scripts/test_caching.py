@@ -551,11 +551,11 @@ IMPORTANT: Execute EVERY search and URL read listed above. Do not skip any steps
     overall_total = total_input + total_cache_read + total_cache_write
     hit_rate = (total_cache_read / overall_total * 100) if overall_total > 0 else 0
 
-    # Cost calculation (Haiku pricing)
-    INPUT_PRICE = 0.80 / 1_000_000
-    OUTPUT_PRICE = 4.00 / 1_000_000
-    CACHE_WRITE_PRICE = 1.00 / 1_000_000
-    CACHE_READ_PRICE = 0.08 / 1_000_000
+    # Cost calculation (Claude Haiku 4.5 pricing, as of January 2025)
+    INPUT_PRICE = 1.00 / 1_000_000
+    OUTPUT_PRICE = 5.00 / 1_000_000
+    CACHE_WRITE_PRICE = 1.25 / 1_000_000
+    CACHE_READ_PRICE = 0.10 / 1_000_000
 
     cost = total_input * INPUT_PRICE + total_output * OUTPUT_PRICE + total_cache_write * CACHE_WRITE_PRICE + total_cache_read * CACHE_READ_PRICE
     no_cache_cost = overall_total * INPUT_PRICE + total_output * OUTPUT_PRICE
@@ -614,7 +614,7 @@ async def run_latency_test(cache_enabled: bool = True, context_sizes: List[int] 
     from strands.hooks import HookProvider, HookRegistry, BeforeModelCallEvent
 
     if context_sizes is None:
-        context_sizes = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+        context_sizes = [8, 16, 24, 32, 40, 48, 56, 64, 72, 80]
 
     strategy_name = f"Latency Test (Cache {'ON' if cache_enabled else 'OFF'})"
 
@@ -802,6 +802,188 @@ Keep your response under 50 words."""
     }
 
 
+# =============================================================================
+# MODE 4: Cache Write Overhead Test
+# =============================================================================
+
+async def run_write_overhead_test(context_sizes: List[int] = None) -> Dict:
+    """
+    Cache Write Overhead Test.
+
+    For each context size, compare:
+    - Cache OFF (2nd call): baseline without cache point
+    - Cache ON (2nd call): with cache write happening
+
+    This isolates the pure write overhead.
+    """
+    from strands import Agent
+    from strands.models import BedrockModel
+    from strands.hooks import HookProvider, HookRegistry, BeforeModelCallEvent
+
+    if context_sizes is None:
+        context_sizes = [10, 20, 30, 40, 50, 60, 70, 80]
+
+    print(f"\n{CYAN}{'='*70}{RESET}")
+    print(f"{BOLD}Cache Write Overhead Test{RESET}")
+    print(f"Comparing 2nd call: Cache OFF (baseline) vs Cache ON (write)")
+    print(f"Context sizes: {', '.join(f'{s}K' for s in context_sizes)}")
+    print(f"{CYAN}{'='*70}{RESET}")
+
+    call_state = {
+        "call_start": None,
+        "first_token_time": None,
+        "call_ttft_captured": False,
+    }
+
+    class TimingHookProvider(HookProvider):
+        def register_hooks(self, registry: HookRegistry, **kwargs) -> None:
+            registry.add_callback(BeforeModelCallEvent, self.on_before_model)
+
+        def on_before_model(self, event: BeforeModelCallEvent) -> None:
+            call_state["call_start"] = time.time()
+            call_state["first_token_time"] = None
+            call_state["call_ttft_captured"] = False
+
+    all_results = []
+
+    for size_k in context_sizes:
+        print(f"\n{YELLOW}--- Context Size: {size_k}K tokens ---{RESET}")
+
+        target_tokens = size_k * 1000
+        context_content = generate_context_content(target_tokens)
+
+        system_prompt = f"""You are a helpful assistant. You have been given the following reference document.
+
+<reference_document>
+{context_content}
+</reference_document>
+
+When asked a question, respond with EXACTLY: "The answer is: [brief answer]"
+Keep response under 50 words."""
+
+        prompt1 = "What is the main topic of the reference document?"
+        prompt2 = "List the key service models mentioned."
+
+        async def run_two_calls(cache_enabled: bool) -> Dict:
+            """Run 2 calls and return 2nd call metrics."""
+            model = BedrockModel(
+                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                temperature=0.0,
+                max_tokens=100
+            )
+
+            if cache_enabled:
+                hooks = [ConversationCachingHook(enabled=True), TimingHookProvider()]
+            else:
+                hooks = [NoCacheHook(), TimingHookProvider()]
+
+            agent = Agent(
+                model=model,
+                system_prompt=system_prompt,
+                tools=[],
+                hooks=hooks
+            )
+
+            # Call 1: Setup (creates assistant message)
+            call_state["call_start"] = time.time()
+            async for event in agent.stream_async(prompt1):
+                pass
+
+            await asyncio.sleep(0.2)
+
+            # Call 2: Measure this one (write happens here for cache ON)
+            result = {
+                'ttft_ms': 0, 'latency_ms': 0,
+                'cache_write': 0, 'cache_read': 0, 'input_tokens': 0
+            }
+
+            call_state["call_start"] = time.time()
+            call_state["first_token_time"] = None
+            call_state["call_ttft_captured"] = False
+
+            async for event in agent.stream_async(prompt2):
+                if not call_state["call_ttft_captured"]:
+                    if isinstance(event, dict) and "event" in event:
+                        raw = event.get("event", {})
+                        if "contentBlockDelta" in raw or "contentBlockStart" in raw:
+                            call_state["first_token_time"] = time.time()
+                            call_state["call_ttft_captured"] = True
+
+                if isinstance(event, dict) and "event" in event:
+                    raw = event.get("event", {})
+                    if "metadata" in raw:
+                        usage = raw["metadata"].get("usage", {})
+                        if usage.get("inputTokens", 0) > 0:
+                            call_end = time.time()
+                            result['input_tokens'] = usage.get('inputTokens', 0)
+                            result['cache_write'] = usage.get('cacheWriteInputTokens', 0)
+                            result['cache_read'] = usage.get('cacheReadInputTokens', 0)
+                            result['ttft_ms'] = (call_state["first_token_time"] - call_state["call_start"]) * 1000 if call_state["first_token_time"] else 0
+                            result['latency_ms'] = (call_end - call_state["call_start"]) * 1000
+
+            return result
+
+        # Run Cache OFF (baseline)
+        print(f"  Cache OFF (baseline)...", end=" ", flush=True)
+        off_result = await run_two_calls(cache_enabled=False)
+        print(f"TTFT={off_result['ttft_ms']:.0f}ms, Lat={off_result['latency_ms']:.0f}ms")
+
+        await asyncio.sleep(0.5)
+
+        # Run Cache ON (write)
+        print(f"  Cache ON  (write)...", end=" ", flush=True)
+        on_result = await run_two_calls(cache_enabled=True)
+        print(f"TTFT={on_result['ttft_ms']:.0f}ms, Lat={on_result['latency_ms']:.0f}ms, Write={on_result['cache_write']:,}")
+
+        # Calculate overhead
+        ttft_overhead = on_result['ttft_ms'] - off_result['ttft_ms']
+        lat_overhead = on_result['latency_ms'] - off_result['latency_ms']
+
+        color = RED if ttft_overhead > 0 else GREEN
+        print(f"  {color}Write Overhead: TTFT={ttft_overhead:+.0f}ms, Lat={lat_overhead:+.0f}ms{RESET}")
+
+        all_results.append({
+            'context_size_k': size_k,
+            'off_ttft_ms': off_result['ttft_ms'],
+            'off_latency_ms': off_result['latency_ms'],
+            'on_ttft_ms': on_result['ttft_ms'],
+            'on_latency_ms': on_result['latency_ms'],
+            'cache_write': on_result['cache_write'],
+            'ttft_overhead_ms': ttft_overhead,
+            'latency_overhead_ms': lat_overhead,
+        })
+
+    # Summary table
+    print(f"\n{CYAN}{'='*90}{RESET}")
+    print(f"{BOLD}Write Overhead Summary{RESET}")
+    print(f"{CYAN}{'='*90}{RESET}")
+    print(f"{'Context':<10} {'OFF TTFT':<12} {'ON TTFT':<12} {'TTFT Ovhd':<14} {'OFF Lat':<12} {'ON Lat':<12} {'Lat Ovhd':<14}")
+    print("-" * 90)
+
+    for r in all_results:
+        ttft_color = RED if r['ttft_overhead_ms'] > 0 else GREEN
+        lat_color = RED if r['latency_overhead_ms'] > 0 else GREEN
+        print(f"{r['context_size_k']}K{'':<7} {r['off_ttft_ms']:.0f}ms{'':<6} {r['on_ttft_ms']:.0f}ms{'':<6} "
+              f"{ttft_color}{r['ttft_overhead_ms']:+.0f}ms{RESET:<8} "
+              f"{r['off_latency_ms']:.0f}ms{'':<6} {r['on_latency_ms']:.0f}ms{'':<6} "
+              f"{lat_color}{r['latency_overhead_ms']:+.0f}ms{RESET}")
+
+    # Average overhead
+    avg_ttft_overhead = sum(r['ttft_overhead_ms'] for r in all_results) / len(all_results)
+    avg_lat_overhead = sum(r['latency_overhead_ms'] for r in all_results) / len(all_results)
+
+    print("-" * 90)
+    print(f"{'AVERAGE':<10} {'':<12} {'':<12} {avg_ttft_overhead:+.0f}ms{'':<8} {'':<12} {'':<12} {avg_lat_overhead:+.0f}ms")
+
+    return {
+        'strategy': 'Write Overhead Test',
+        'context_sizes': context_sizes,
+        'results': all_results,
+        'avg_ttft_overhead_ms': avg_ttft_overhead,
+        'avg_latency_overhead_ms': avg_lat_overhead,
+    }
+
+
 def print_latency_comparison(r_on: Dict, r_off: Dict):
     """Print side-by-side comparison of cache ON vs OFF latency results."""
     print(f"\n{CYAN}{'='*100}{RESET}")
@@ -939,12 +1121,12 @@ def print_aggregate_summary(all_runs: List[tuple], mode: str):
 
 async def main():
     parser = argparse.ArgumentParser(description='Test agent loop caching')
-    parser.add_argument('--mode', choices=['quick', 'deep-research', 'latency'],
+    parser.add_argument('--mode', choices=['quick', 'deep-research', 'latency', 'write-overhead'],
                         default='quick', help='Test mode')
     parser.add_argument('--repeat', type=int, default=1, help='Number of times to repeat the test')
     parser.add_argument('--compare', action='store_true', help='Compare cache ON vs OFF')
     parser.add_argument('--save', action='store_true', help='Save results to JSON files')
-    parser.add_argument('--sizes', type=str, default='10,20,30,40,50,60,70,80,90,100',
+    parser.add_argument('--sizes', type=str, default='8,16,24,32,40,48,56,64,72,80',
                         help='Context sizes in K for latency mode (comma-separated)')
     args = parser.parse_args()
 
@@ -1047,6 +1229,20 @@ async def main():
 
         if args.save:
             save_test_results(all_results, "latency_test")
+
+    elif args.mode == 'write-overhead':
+        context_sizes = [int(s.strip()) for s in args.sizes.split(',')]
+
+        print(f"\n{BOLD}{'='*60}{RESET}")
+        print(f"{BOLD}Cache Write Overhead Test{RESET}")
+        print(f"Measuring pure write overhead by comparing 2nd call")
+        print(f"{BOLD}{'='*60}{RESET}")
+
+        result = await run_write_overhead_test(context_sizes=context_sizes)
+        all_results.append(result)
+
+        if args.save:
+            save_test_results(all_results, "write_overhead")
 
 
 if __name__ == "__main__":
