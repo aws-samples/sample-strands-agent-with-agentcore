@@ -1,0 +1,372 @@
+{
+  "Python programming language history": {
+    "success": true,
+    "query": "Python programming language history",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "History of Python - Wikipedia",
+        "snippet": "The programming language Python was conceived in the late 1980s, [1] and its implementation was started in December 1989 [2] by Guido van Rossum at CWI in the Netherlands as a successor to ABC capable of exception handling and interfacing with the Amoeba operating system. [3]",
+        "link": "https://en.wikipedia.org/wiki/History_of_Python"
+      },
+      {
+        "index": 2,
+        "title": "Python | Definition, Language, History, & Facts | Britannica",
+        "snippet": "Nov 27, 2025 · Dutch programmer Guido van Rossum developed Python in 1991 after expressing frustration with the limitations of the programming language ABC. Python , which he named after the British television series Monty Python ’s Flying Circus, was publicly released in 1994.",
+        "link": "https://www.britannica.com/technology/Python-computer-language"
+      },
+      {
+        "index": 3,
+        "title": "History of Python - GeeksforGeeks",
+        "snippet": "Oct 4, 2025 · Python is one of the most popular, high-level, general-purpose programming languages. It was created with a focus on code readability and allows developers to write concepts in fewer lines compared to C++ or Java.",
+        "link": "https://www.geeksforgeeks.org/python/history-of-python/"
+      },
+      {
+        "index": 4,
+        "title": "The History of the Python Language: A Journey Through Time",
+        "snippet": "Apr 22, 2025 · In this blog post, we'll take a deep dive into the history of the Python language , exploring its origins, evolution, and the impact it has had on the programming landscape.",
+        "link": "https://coderivers.org/blog/history-of-python-language/"
+      },
+      {
+        "index": 5,
+        "title": "Python - History and Versions - Online Tutorials Library",
+        "snippet": "Python was developed by Guido van Rossum (a Dutch programmer) in the late 1980s and early nineties at the National Research Institute for Mathematics and Computer Science in the Netherlands.",
+        "link": "https://www.tutorialspoint.com/python/python_history.htm"
+      }
+    ]
+  },
+  "Machine learning basics tutorial": {
+    "success": true,
+    "query": "Machine learning basics tutorial",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "Machine Learning Tutorial - GeeksforGeeks",
+        "snippet": "Machine Learning Tutorial . Last Updated : 26 Dec, 2025.Module 1: Machine Learning Pipeline. This section covers preprocessing, exploratory data analysis and model evaluation to prepare data, uncover insights and build reliable models.",
+        "link": "https://www.geeksforgeeks.org/machine-learning/machine-learning/"
+      },
+      {
+        "index": 2,
+        "title": "Learn Intro to Machine Learning Tutorials | Kaggle",
+        "snippet": "Learn the core ideas in machine learning , and build your first models.",
+        "link": "https://www.kaggle.com/learn/intro-to-machine-learning"
+      },
+      {
+        "index": 3,
+        "title": "Machine Learning Tutorial for Beginners: What is, Basics of ML",
+        "snippet": "Now in this Machine learning basics for beginners tutorial , we will learn how Machine Learning (ML) works: Machine learning is the brain where all the learning takes place.",
+        "link": "https://www.guru99.com/machine-learning-tutorial.html"
+      },
+      {
+        "index": 4,
+        "title": "Understanding Machine Learning : A Basic Look",
+        "snippet": "1. About Machine Learning Basics Machine learning (ML) is a subset of artificial intelligence (AI) that enables systems to learn from data and improve over time without being explicitly programmed.",
+        "link": "https://www.linkedin.com/pulse/understanding-machine-learning-basic-look-sugumar-kandasamy-gz4yc"
+      },
+      {
+        "index": 5,
+        "title": "W3Schools Online Web Tutorials",
+        "snippet": "Learn Machine Learning Tutorial . Learn the basics of HTML in a fun and engaging video tutorial . Templates.",
+        "link": "https://www.w3schools.com/"
+      }
+    ]
+  },
+  "Cloud computing AWS overview": {
+    "success": true,
+    "query": "Cloud computing AWS overview",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "Amazon Web Services - Wikipedia",
+        "snippet": "4 days ago - As of 2025 AWS comprises over 200 products and services including computing, storage, networking, database, analytics, application services, deployment, management, machine learning, mobile, developer tools, RobOps and tools for the Internet of Things. The most popular include Amazon Elastic Compute Cloud (EC2), Amazon Simple Storage Service (Amazon S3), Amazon Connect, and AWS Lambda (a serverless function that can perform arbitrary code written in any language that can be configured to be triggered by hundreds of events, including HTTP calls).",
+        "link": "https://en.wikipedia.org/wiki/Amazon_Web_Services"
+      },
+      {
+        "index": 2,
+        "title": "What is Cloud Computing? - Cloud Computing Services, Benefits, and Types - AWS",
+        "snippet": "5 days ago - Cloud computing is the on-demand delivery of IT resources over the Internet with pay-as-you-go pricing . Instead of buying, owning, and maintaining physical data centers and servers, you can access technology services, such as computing power, storage, and databases, on an as-needed basis from ...",
+        "link": "https://aws.amazon.com/what-is-cloud-computing/"
+      },
+      {
+        "index": 3,
+        "title": "Cloud Computing Services - Amazon Web Services (AWS)",
+        "snippet": "The AWS Cloud in North America has 31 Availability Zones within 9 Geographic Regions, with 31 Edge Network Locations and 3 Edge Cache Locations.",
+        "link": "https://aws.amazon.com/"
+      },
+      {
+        "index": 4,
+        "title": "What is cloud computing? - Overview of Amazon Web Services",
+        "snippet": "Instead, you can provision exactly ... instantly, and only pay for what you use. Cloud computing provides a simple way to access servers, storage, databases and a broad set of application services over the internet ....",
+        "link": "https://docs.aws.amazon.com/whitepapers/latest/aws-overview/what-is-cloud-computing.html"
+      },
+      {
+        "index": 5,
+        "title": "Why Choose AWS? The World's Leading Cloud | Amazon Web Services",
+        "snippet": "5 days ago - AWS is committed to delivering industry-first cloud capabilities for our customers. The scale and scope at which we operate enable us to look around corners and think years ahead—to innovate on your behalf. We have delivered the first cloud-native services for compute, serverless, storage, and relational databases, and the first fully managed, end-to-end machine learning suite.",
+        "link": "https://aws.amazon.com/what-is-aws/"
+      }
+    ]
+  },
+  "Kubernetes container orchestration": {
+    "success": true,
+    "query": "Kubernetes container orchestration",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "Kubernetes - Wikipedia",
+        "snippet": "Kubernetes , also known as K8s, is an open-source container orchestration system for automating software deployment, scaling, and management.",
+        "link": "https://en.wikipedia.org/wiki/Kubernetes"
+      },
+      {
+        "index": 2,
+        "title": "Container orchestration with Kubernetes - Docker Video Tutorial",
+        "snippet": "In production environments, containers are run using a container orchestration tool. In this video, learn how to enable Kubernetes as the container orchestrator on your Windows desktop.",
+        "link": "https://www.linkedin.com/learning/docker-for-windows/container-orchestration-with-kubernetes"
+      },
+      {
+        "index": 3,
+        "title": "Day 002 Kubernetes Zero to Hero | Understanding Containers and...",
+        "snippet": "Kubernetes , or K8s, is an open-source container orchestration platform developed by Google. It automates tasks like deployment, scaling, and management of containerized applications.",
+        "link": "https://medium.com/@techmahato/day-002-kubernetes-zero-to-hero-understanding-containers-and-container-orchestration-a-deep-dive-b0a038673b87"
+      },
+      {
+        "index": 4,
+        "title": "Containers Orchestration and Kubernetes - DEV Community",
+        "snippet": "Container Networking: Container networking enables containers to communicate with hosts or other containers . Pod: it’s the smallest unit Kubernetes allows to interact with.",
+        "link": "https://practicaldev-herokuapp-com.freetls.fastly.net/niemet0502/containers-orchestration-and-kubernetes-35ib"
+      },
+      {
+        "index": 5,
+        "title": "Container Orchestration in Kubernetes | Nivelics",
+        "snippet": "Benefits of container orchestration on Kubernetes Simplified management: Kubernetes container orchestration makes it easy to manage your applications.",
+        "link": "https://www.nivelics.com/en/services/kubernetes-container-orchestration"
+      }
+    ]
+  },
+  "React JavaScript framework features": {
+    "success": true,
+    "query": "React JavaScript framework features",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "React (software) - Wikipedia",
+        "snippet": "5 days ago - For example, Facebook has dynamic charts that render to tags, and Netflix and PayPal use universal loading to render identical HTML on both the server and client. React can also be used to develop native apps for Android and iOS using React Native. Server-side rendering (SSR) refers to the process of rendering a client-side JavaScript application on the server, rather than in the browser.",
+        "link": "https://en.wikipedia.org/wiki/React_(software)"
+      },
+      {
+        "index": 2,
+        "title": "React",
+        "snippet": "Build user interfaces out of individual pieces called components written in JavaScript . React is designed to let you seamlessly combine components written by independent people, teams, and organizations.",
+        "link": "https://react.dev/"
+      },
+      {
+        "index": 3,
+        "title": "Next.js by Vercel - The React Framework",
+        "snippet": "ReactThe library for web and native user interfaces. Next.js is built on the latest React features, including Server Components and Actions. TurbopackAn incremental bundler optimized for JavaScript and TypeScript, written in Rust , and built into Next.js.",
+        "link": "https://nextjs.org/"
+      },
+      {
+        "index": 4,
+        "title": "React – A JavaScript library for building user interfaces",
+        "snippet": "Since component logic is written in JavaScript instead of templates, you can easily pass rich data through your app and keep state out of the DOM. We don’t make assumptions about the rest of your technology stack, so you can develop new features in React without rewriting existing code.",
+        "link": "https://legacy.reactjs.org/"
+      },
+      {
+        "index": 5,
+        "title": "Top 9 React JS Frameworks Developers Are Using in 2025 | by Brilworks Software | Medium",
+        "snippet": "April 15, 2025 - Automatic code splitting: Next.js only loads the JavaScript needed for the page being viewed, which significantly reduces load times and improves performance. Web applications that require a combination of static and dynamic content, quick load times, and SEO optimisation. Blogs, SaaS platforms, eCommerce websites, and pretty much anything else you would build for the web are all perfect for it. This might be the most popular among the React frameworks.",
+        "link": "https://medium.com/@Brilworks/top-9-react-js-frameworks-developers-are-using-in-2025-8ae52efd24a1"
+      }
+    ]
+  },
+  "Database SQL vs NoSQL comparison": {
+    "success": true,
+    "query": "Database SQL vs NoSQL comparison",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "SQL vs . NoSQL Databases : What’s the Difference? | Medium",
+        "snippet": "SQL is a programming language used by database architects to design relational databases . In an SQL database like MySQL, Sybase, Oracle, or IBM DM2, SQL executes queries , retrieves data , and edits data by updating, deleting, or creating new records.",
+        "link": "https://medium.com/@itIsMadhavan/sql-vs-nosql-databases-whats-the-difference-a05492b48d99"
+      },
+      {
+        "index": 2,
+        "title": "SQL vs NoSQL : when to use?",
+        "snippet": "Database transactions: ACID vs BASE . SQL databases typically follow ACID properties regarding transactions.This article explains when to use SQL or NoSQL databases and further provides a detailed comparison between both.",
+        "link": "https://www.imaginarycloud.com/blog/sql-vs-nosql"
+      },
+      {
+        "index": 3,
+        "title": "SQL Versus NoSQL Databases : Which to Use, When, and Why",
+        "snippet": "By contrast, NoSQL databases are schemaless. As such, NoSQL databases provide flexibility when storing user data . We don't need to keep the data structurally consistent, as in SQL databases .",
+        "link": "https://practicaldev-herokuapp-com.global.ssl.fastly.net/amplication/sql-versus-nosql-databases-which-to-use-when-and-why-2ln2"
+      },
+      {
+        "index": 4,
+        "title": "Difference between SQL and NoSQL - GeeksforGeeks",
+        "snippet": "SQL vs NoSQL : Which is Faster? SQL Databases : Generally, SQL databases perform well for complex queries , structured data , and systems requiring data consistency and integrity.",
+        "link": "https://www.geeksforgeeks.org/sql/difference-between-sql-and-nosql/"
+      },
+      {
+        "index": 5,
+        "title": "Database Systems: SQL vs NoSQL Comparison - Hostragons",
+        "snippet": "Query Language : While SQL has a standard query language , NoSQL databases use different query methods. Flexibility: NoSQL adapts more easily to changing data requirements. Database selection should be carefully considered based on the specific needs of the project.",
+        "link": "https://www.hostragons.com/en/blog/comparison-of-database-systems-sql-and-nosql/"
+      }
+    ]
+  },
+  "API REST design best practices": {
+    "success": true,
+    "query": "API REST design best practices",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "Best Practices for Designing a Pragmatic RESTful API | Vinay",
+        "snippet": "Best Practices for Designing a ... My goal with this post is to describe best practices for a pragmatic API designed for today's web applications.",
+        "link": "https://www.vinaysahni.com/best-practices-for-a-pragmatic-restful-api"
+      },
+      {
+        "index": 2,
+        "title": "Web API Design Best Practices - Azure Architecture Center |",
+        "snippet": "This article describes best practices for designing RESTful web APIs . ... Uniform Resource Identifier (URI): REST APIs are designed around resources ...",
+        "link": "https://learn.microsoft.com/en-us/azure/architecture/best-practices/api-design"
+      },
+      {
+        "index": 3,
+        "title": "REST API Design Best Practices Handbook – How to Build a REST",
+        "snippet": "REST API Design Best Practices Handbook – How to Build a REST API with JavaScript, Node.js, and Express.js ... API with the following best ...",
+        "link": "https://www.freecodecamp.org/news/rest-api-design-best-practices-build-a-rest-api/"
+      },
+      {
+        "index": 4,
+        "title": "What is REST?: REST API Tutorial",
+        "snippet": "During the development phase, API developers can implement REST in a variety of ways. ... A Web API (or Web Service) conforming to the REST ...",
+        "link": "https://restfulapi.net/"
+      },
+      {
+        "index": 5,
+        "title": "RESTful API Design. Best Practices in a Nutshell.",
+        "snippet": "Designing HTTP and RESTful APIs can be tricky as there is no official and ... This post covers best practices for building HTTP and RESTful APIs .",
+        "link": "https://phauer.com/2015/restful-api-design-best-practices/"
+      }
+    ]
+  },
+  "DevOps CI CD pipeline explanation": {
+    "success": true,
+    "query": "DevOps CI CD pipeline explanation",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "CI / CD - Wikipedia",
+        "snippet": "In software engineering, CI / CD or CICD is the combined practices of continuous integration (CI) and continuous delivery (CD) or, less often, continuous deployment. They are sometimes referred to collectively as continuous development or continuous software development.",
+        "link": "https://en.wikipedia.org/wiki/CI/CD"
+      },
+      {
+        "index": 2,
+        "title": "This Is How You Explain a Real DevOps CI / CD Project in... | Medium",
+        "snippet": "DevOps CICD Pipeline Folder Structure. Deployment and Approval Approach: We follow a progressive promotion model using the same pipeline and the same Helm chart version across environments.",
+        "link": "https://medium.com/@bhavukm_87684/this-is-how-you-explain-a-real-devops-ci-cd-project-in-interviews-gitlab-aws-eks-part-2-17f87991e010"
+      },
+      {
+        "index": 3,
+        "title": "How to Explain Your CI / CD Pipeline in a DevOps ... - ThinkCloudly",
+        "snippet": "Practicing your CI / CD pipeline explanation in advance will help you sound confident and professional.Step-by-Step CI / CD Pipeline Explanation . Let’s go through a practical way to explain your CI / CD pipeline in a DevOps interview.",
+        "link": "https://thinkcloudly.com/blog/how-to-explain-your-ci-cd-pipeline-in-a-devops-interview/"
+      },
+      {
+        "index": 4,
+        "title": "What is CICD Pipeline ? Explanation of CICD Pipeline ... | Razorops",
+        "snippet": "Explanation of CICD Pipeline along with Examples. WHAT IS CI / CD ? CI / CD pipeline is a series of steps that include all the stages from the beginning of the CI / CD process and it is responsible for creating an automated and seamless software delivery process.",
+        "link": "https://razorops.com/blog/what-is-cicd-pipeline-explanation-of-cicd-pipeline-along-with-examples"
+      },
+      {
+        "index": 5,
+        "title": "Build a CI / CD pipeline by using Oracle Cloud Infrastructure DevOps ...",
+        "snippet": "cicd - pipe - devops -functions-arch-oracle.zip.A logical grouping of DevOps resources needed to implement a CI / CD workflow. DevOps resources can be artifacts, build pipelines , deployment pipelines , external connections, triggers, and environments.",
+        "link": "https://docs.oracle.com/en/solutions/build-cicd-pipelines-devops-function/index.html"
+      }
+    ]
+  },
+  "Microservices architecture benefits": {
+    "success": true,
+    "query": "Microservices architecture benefits",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "5 Advantages of Microservices [+ Disadvantages] | Atlassian",
+        "snippet": "Using microservices frameworks results in more scalable, flexible, and easier-to-maintain systems . Applications built using this architecture consist of small, independently deployable services that communicate with each other through APIs.",
+        "link": "https://www.atlassian.com/microservices/cloud-computing/advantages-of-microservices"
+      },
+      {
+        "index": 2,
+        "title": "What are the Advantages and Disadvantages of Microservices Architecture? - GeeksforGeeks",
+        "snippet": "July 23, 2025 - This article highlights the key advantages of microservices, including enhanced scalability, flexibility, and resilience , and how these benefits drive more efficient development and deployment in modern software environments.",
+        "link": "https://www.geeksforgeeks.org/system-design/what-are-the-advantages-and-disadvantages-of-microservices-architecture/"
+      },
+      {
+        "index": 3,
+        "title": "Discuss the pros and cons of using microservices architecture compared to a monolithic architecture.",
+        "snippet": "June 24, 2024 - Choosing between microservices and a monolithic architecture depends on various factors, including the size and complexity of the application, the team's expertise, and the business's specific needs. Microservices offer advantages in scalability, flexibility, and resilience , making them suitable ...",
+        "link": "https://learn.redhat.com/t5/General/Discuss-the-pros-and-cons-of-using-microservices-architecture/td-p/43569"
+      },
+      {
+        "index": 4,
+        "title": "What are the benefits of a microservices architecture?",
+        "snippet": "September 29, 2022 - However, businesses need to be careful, because large volumes of traffic can still be overwhelming in some cases. The benefit of a microservice architecture is that developers can deploy features that prevent cascading failures .",
+        "link": "https://about.gitlab.com/blog/what-are-the-benefits-of-a-microservices-architecture/"
+      },
+      {
+        "index": 5,
+        "title": "Exploring the Potential Benefits of Microservices Architecture",
+        "snippet": "January 2, 2025 - The main benefits of a microservice architecture are its singular responsibility, and that every part is unique, so neither code nor functionality is repeated . In a monolithic system, code had to be copied for each customer, but with microservices; ...",
+        "link": "https://softjourn.com/insights/microservices-potential-benefits-and-their-effective-design"
+      }
+    ]
+  },
+  "Cybersecurity best practices 2024": {
+    "success": true,
+    "query": "Cybersecurity best practices 2024",
+    "result_count": 5,
+    "results": [
+      {
+        "index": 1,
+        "title": "Cybersecurity Best Practices for Companies in 2024 - Yaabot",
+        "snippet": "... article, we will explore the cybersecurity best practices for individuals and companies to protect their digital assets, data, and privacy in 2024 ...",
+        "link": "https://yaabot.com/36012/cybersecurity-best-practices-for-companies/"
+      },
+      {
+        "index": 2,
+        "title": "Top 5 Cybersecurity Best Practices For 2024 | Sea Change",
+        "snippet": "... cybersecurity technologies, watching what ’ s happening in the global cybersecurity landscape is essential.This post will help you to understand ...",
+        "link": "https://itcoverage.com/cybersecurity-best-practices-for-2024-a-comprehensive-guide/"
+      },
+      {
+        "index": 3,
+        "title": "10 cybersecurity best practices to prevent cyber attacks in",
+        "snippet": "Below is a round-up of top 10 best cybersecurity practices of 2024 . ... By adopting these cybersecurity best practices , businesses can effectively ...",
+        "link": "https://www.techradar.com/pro/10-cybersecurity-best-practices-to-prevent-cyber-attacks-in-2024"
+      },
+      {
+        "index": 4,
+        "title": "Cybersecurity Best Practices To Adopt in 2024 | GrapesTech",
+        "snippet": "6 Cybersecurity Best Practices to Adopt in 2024 – Training your Employees – Using Multi-factor Authentication – Regular Software ...",
+        "link": "https://www.grapestechsolutions.com/blog/cybersecurity-best-practices/"
+      },
+      {
+        "index": 5,
+        "title": "Cybersecurity Best Practices To Prevent Cyberattacks In 2024",
+        "snippet": "Implementing strong authentication measures stands as a cornerstone in the arsenal of cybersecurity best practices for 2024 .",
+        "link": "https://thecyberexpress.com/8-cybersecurity-best-practices-in-2024/"
+      }
+    ]
+  }
+}
