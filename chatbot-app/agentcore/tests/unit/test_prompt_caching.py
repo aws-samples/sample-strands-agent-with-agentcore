@@ -34,7 +34,7 @@ class TestConversationCachingHook:
 
     def test_hook_disabled_does_nothing(self, mock_event):
         """Test that disabled hook does not modify messages."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=False)
         mock_event.agent.messages = [
@@ -49,7 +49,7 @@ class TestConversationCachingHook:
 
     def test_hook_enabled_adds_cache_points(self, mock_event):
         """Test that enabled hook adds cache points."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
         mock_event.agent.messages = [
@@ -69,7 +69,7 @@ class TestConversationCachingHook:
 
     def test_max_three_cache_points(self, mock_event):
         """Test that maximum 3 cache points are maintained (sliding window)."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 
@@ -95,7 +95,7 @@ class TestConversationCachingHook:
 
     def test_does_not_duplicate_cache_points(self, mock_event):
         """Test that existing cache points are not duplicated."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 
@@ -127,7 +127,7 @@ class TestConversationCachingHook:
 
     def test_prioritizes_assistant_messages(self, mock_event):
         """Test that assistant messages are prioritized for caching."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 
@@ -156,7 +156,7 @@ class TestConversationCachingHook:
 
     def test_handles_tool_result_caching(self, mock_event):
         """Test caching after tool_result blocks."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 
@@ -179,7 +179,7 @@ class TestConversationCachingHook:
 
     def test_handles_empty_messages(self, mock_event):
         """Test handling of empty message list."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
         mock_event.agent.messages = []
@@ -191,7 +191,7 @@ class TestConversationCachingHook:
 
     def test_handles_string_content(self, mock_event):
         """Test handling of string content (not list)."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 
@@ -300,21 +300,21 @@ class TestAgentCachingIntegration:
 
     def test_caching_hook_initialization_enabled(self):
         """Test ConversationCachingHook initialization with enabled=True."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
         assert hook.enabled is True
 
     def test_caching_hook_initialization_disabled(self):
         """Test ConversationCachingHook initialization with enabled=False."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=False)
         assert hook.enabled is False
 
     def test_caching_hook_default_enabled(self):
         """Test that caching defaults to True when not specified."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook()
         assert hook.enabled is True
@@ -349,7 +349,7 @@ class TestSlidingWindowCacheManagement:
 
     def test_removes_oldest_cache_when_exceeds_limit(self, mock_event):
         """Test that oldest cache point is removed when limit exceeded."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 
@@ -395,7 +395,7 @@ class TestSlidingWindowCacheManagement:
 
     def test_cache_points_at_recent_messages(self, mock_event):
         """Test that cache points are placed at recent messages."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 
@@ -499,7 +499,7 @@ class TestHookProviderIntegration:
 
     def test_register_hooks_method_exists(self):
         """Test that register_hooks method is implemented."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
         assert hasattr(hook, 'register_hooks')
@@ -507,7 +507,7 @@ class TestHookProviderIntegration:
 
     def test_add_conversation_cache_point_method_exists(self):
         """Test that add_conversation_cache_point method is implemented."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
         assert hasattr(hook, 'add_conversation_cache_point')
@@ -515,7 +515,7 @@ class TestHookProviderIntegration:
 
     def test_hook_registers_for_before_model_call_event(self):
         """Test that hook registers for BeforeModelCallEvent."""
-        from agent.agent import ConversationCachingHook
+        from agent.hooks import ConversationCachingHook
 
         hook = ConversationCachingHook(enabled=True)
 

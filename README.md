@@ -36,7 +36,7 @@ This sample includes multiple real-world agent workflows:
 - Tool-augmented reasoning with structured outputs
 - Multi-agent research with human approval loops
 
-(See the demo videos below for each scenario.)
+> **▶️ Click any thumbnail to watch the demo video**
 
 <table>
 <tr>

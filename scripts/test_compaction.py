@@ -182,11 +182,6 @@ class MetricsCollector:
         # This is the actual context size used for compaction threshold decisions
         if agent.stream_processor and agent.stream_processor.last_llm_input_tokens > 0:
             tm.context_size = agent.stream_processor.last_llm_input_tokens
-        else:
-            # Fallback to hook-based tracking
-            session_manager = getattr(agent, 'session_manager', None)
-            if session_manager and hasattr(session_manager, 'get_last_context_tokens'):
-                tm.context_size = session_manager.get_last_context_tokens()
 
         tm.accumulated_input_tokens = accumulated_input
         tm.total_tokens = tm.accumulated_input_tokens + tm.output_tokens

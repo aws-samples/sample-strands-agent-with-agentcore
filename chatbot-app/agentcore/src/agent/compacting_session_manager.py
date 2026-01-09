@@ -112,59 +112,6 @@ class CompactionState:
         )
 
 
-class ContextTokenHook:
-    """
-    HookProvider to track last turn's input tokens (context size).
-
-    This captures the actual context size sent to LLM at the END of the turn,
-    using AfterInvocationEvent to ensure accumulated_usage has been updated.
-
-    SDK timing issue:
-    - AfterModelCallEvent fires BEFORE update_usage() is called
-    - AfterInvocationEvent fires AFTER all processing is complete
-    - We use AfterInvocationEvent to get the final accumulated inputTokens
-    - Context = final_accumulated - prev_accumulated
-    """
-
-    def __init__(self, session_manager: "CompactingSessionManager"):
-        self.session_manager = session_manager
-
-    def register_hooks(self, registry, **kwargs) -> None:
-        """Register the AfterInvocationEvent callback."""
-        from strands.hooks import AfterInvocationEvent
-
-        registry.add_callback(AfterInvocationEvent, self._capture_context_tokens)
-        logger.info("✅ Context token tracking hook registered via HookProvider")
-
-    def _capture_context_tokens(self, event) -> None:
-        """Capture input tokens at the END of the turn (after all processing).
-
-        AfterInvocationEvent fires after:
-        - All model calls complete
-        - All tool executions complete
-        - update_usage() has been called
-
-        Context tokens = current accumulated - previous accumulated
-        This works for both tool-using and tool-less turns.
-        """
-        try:
-            current = event.agent.event_loop_metrics.accumulated_usage.get("inputTokens", 0)
-
-            # Calculate context tokens for this turn
-            context_tokens = current - self.session_manager._prev_accumulated_tokens
-
-            logger.debug(f"📊 AfterInvocation: current={current:,}, prev={self.session_manager._prev_accumulated_tokens:,}, delta={context_tokens:,}")
-
-            if context_tokens > 0:
-                self.session_manager._last_context_tokens = context_tokens
-                logger.debug(f"📊 Context captured: {context_tokens:,} tokens")
-
-            # Update prev for next turn
-            self.session_manager._prev_accumulated_tokens = current
-        except Exception as e:
-            logger.error(f"Hook error: {e}")
-
-
 class CompactingSessionManager(AgentCoreMemorySessionManager):
     """
     Session manager with token-based context compaction.
@@ -237,10 +184,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         # All messages loaded at initialize (for summary generation)
         self._all_messages_for_summary: List[Dict] = []
 
-        # Context token tracking (last API call's input tokens, not accumulated)
-        self._last_context_tokens: int = 0
-        self._prev_accumulated_tokens: int = 0
-
         mode_str = "metrics_only" if metrics_only else "full_compaction"
         logger.debug(
             f"✅ CompactingSessionManager initialized: "
@@ -249,35 +192,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
             f"protected_turns={protected_turns}, "
             f"max_tool_content={max_tool_content_length}"
         )
-
-    # ============================================
-    # Context Token Tracking
-    # ============================================
-
-    def get_context_token_hook(self) -> "ContextTokenHook":
-        """
-        Get a HookProvider for tracking last API call's input tokens (context size).
-
-        Returns a HookProvider that should be passed to Agent's hooks parameter.
-
-        Returns:
-            ContextTokenHook instance
-        """
-        return ContextTokenHook(self)
-
-    def reset_context_token_tracking(self) -> None:
-        """Reset context token tracking for new turn.
-
-        Only resets _last_context_tokens (the value to be captured this turn).
-        _prev_accumulated_tokens is managed by the hook and should NOT be reset,
-        as it tracks the accumulated total across the Agent's lifetime.
-        """
-        # Don't reset _prev_accumulated_tokens - it's managed by AfterInvocationEvent hook
-        self._last_context_tokens = 0
-
-    def get_last_context_tokens(self) -> int:
-        """Get last API call's input tokens (actual context size)."""
-        return self._last_context_tokens
 
     # ============================================
     # DynamoDB Compaction State Operations

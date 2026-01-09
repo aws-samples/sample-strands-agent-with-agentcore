@@ -14,9 +14,9 @@ from datetime import datetime
 from strands import Agent
 from strands.models import BedrockModel
 from strands.session.file_session_manager import FileSessionManager
-from strands.hooks import HookProvider, HookRegistry, BeforeModelCallEvent, BeforeToolCallEvent
 from strands.tools.executors import SequentialToolExecutor
 from streaming.event_processor import StreamEventProcessor
+from agent.hooks import ResearchApprovalHook, ConversationCachingHook
 
 # Import timezone support (zoneinfo for Python 3.9+, fallback to pytz)
 try:
@@ -87,174 +87,6 @@ def get_current_date_pacific() -> str:
         return now.strftime("%Y-%m-%d (%A) %H:00 UTC")
 
 
-class ResearchApprovalHook(HookProvider):
-    """Hook to request user approval before executing research agent or browser-use agent"""
-
-    def __init__(self, app_name: str = "chatbot"):
-        self.app_name = app_name
-
-    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
-        registry.add_callback(BeforeToolCallEvent, self.request_approval)
-
-    def request_approval(self, event: BeforeToolCallEvent) -> None:
-        """Request user approval before executing research_agent or browser_use_agent tool"""
-        tool_name = event.tool_use.get("name", "")
-
-        # Only interrupt for research_agent or browser_use_agent tools
-        if tool_name not in ["research_agent", "browser_use_agent"]:
-            return
-
-        # Extract tool input
-        tool_input = event.tool_use.get("input", {})
-
-        # Prepare approval details based on tool type
-        if tool_name == "research_agent":
-            # Research Agent: show plan
-            plan = tool_input.get("plan", "No plan provided")
-            logger.info(f"🔍 Requesting approval for research_agent with plan: {plan[:100]}...")
-
-            approval = event.interrupt(
-                f"{self.app_name}-research-approval",
-                reason={
-                    "tool_name": tool_name,
-                    "plan": plan,
-                    "plan_preview": plan[:200] + "..." if len(plan) > 200 else plan
-                }
-            )
-            action = "research"
-
-        elif tool_name == "browser_use_agent":
-            # Browser-Use Agent: show task only
-            task = tool_input.get("task", "No task provided")
-            logger.info(f"🌐 Requesting approval for browser_use_agent with task: {task[:100]}...")
-
-            approval = event.interrupt(
-                f"{self.app_name}-browser-approval",
-                reason={
-                    "tool_name": tool_name,
-                    "task": task,
-                    "task_preview": task[:200] + "..." if len(task) > 200 else task,
-                }
-            )
-            action = "browser automation"
-
-        # Check user response
-        if approval and approval.lower() in ["y", "yes", "approve"]:
-            logger.info(f"✅ {action.capitalize()} approved by user, proceeding with execution")
-            return
-        else:
-            logger.info(f"❌ {action.capitalize()} rejected by user, cancelling tool execution")
-            event.cancel_tool = f"User declined to proceed with {action}"
-
-
-class ConversationCachingHook(HookProvider):
-    """Hook to add a single cache point at the end of the last Assistant message
-
-    Strategy: Position B - Cache Point after Assistant Message (Universal)
-
-    Key insight: A cache point means "cache everything up to this point".
-    Placing the CP at the end of the last Assistant message works for:
-    - Pure conversation (no tools) ✓
-    - Agent loops with tool calls ✓
-    - Mixed scenarios ✓
-
-    Why Position B instead of Position C (after ToolResult)?
-    - Position C only works when tools are called
-    - Position B works universally - with or without tools
-    - In agent loops, Assistant message comes after ToolResult anyway,
-      so both positions cache similar content
-
-    Why only 1 cache point?
-    - Multiple cache points cause DUPLICATE write premiums (25% each)
-    - Cache point N includes everything that cache point N-1 already cached
-    - Testing showed 1 CP performs equally to 3 CPs but avoids redundant costs
-    - No need for separate system prompt caching (cache_prompt="default") - it's included
-
-    Cache efficiency:
-    - Cache WRITE: 25% premium on first write
-    - Cache READ: 90% discount on subsequent reads
-    - With 1 CP: Pay write premium once, get full read benefits
-
-    Cross-session behavior:
-    - Cache is SESSION-BOUND (not content-based)
-    - Each session maintains isolated cache
-    - Long-running sessions maximize cache benefits
-
-    Example flow (pure conversation):
-    Turn 1: User → LLM → Assistant[CP] (WRITE)
-    Turn 2: User → LLM → Assistant[CP moved] (READ from Turn 1's prefix)
-    Turn 3: User → LLM → Assistant[CP moved] (READ)
-
-    Example flow (with tools):
-    Call 1: User → LLM → Assistant (no CP yet - first response)
-    Call 2: ToolResult → LLM → Assistant[CP] (WRITE)
-    Call 3: ToolResult → LLM → Assistant[CP moved] (READ)
-    """
-
-    def __init__(self, enabled: bool = True):
-        self.enabled = enabled
-
-    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
-        registry.add_callback(BeforeModelCallEvent, self.add_conversation_cache_point)
-
-    def add_conversation_cache_point(self, event: BeforeModelCallEvent) -> None:
-        """Add single cache point at the end of the last Assistant message"""
-        if not self.enabled:
-            return
-
-        messages = event.agent.messages
-        if not messages:
-            return
-
-        # Step 1: Find all existing cache points and the last assistant message
-        cache_point_positions = []  # [(msg_idx, block_idx), ...]
-        last_assistant_idx = None
-
-        for msg_idx, msg in enumerate(messages):
-            # Track last assistant message
-            if msg.get("role") == "assistant":
-                last_assistant_idx = msg_idx
-
-            content = msg.get("content", [])
-            if not isinstance(content, list):
-                continue
-
-            for block_idx, block in enumerate(content):
-                if isinstance(block, dict) and "cachePoint" in block:
-                    cache_point_positions.append((msg_idx, block_idx))
-
-        # Step 2: If no assistant message yet, nothing to cache
-        if last_assistant_idx is None:
-            logger.debug("No assistant message in conversation - skipping cache point")
-            return
-
-        last_assistant_content = messages[last_assistant_idx].get("content", [])
-        if not isinstance(last_assistant_content, list) or len(last_assistant_content) == 0:
-            logger.debug("Last assistant message has no content - skipping cache point")
-            return
-
-        # Step 3: Check if cache point already exists at the end of last assistant message
-        last_block = last_assistant_content[-1]
-        if isinstance(last_block, dict) and "cachePoint" in last_block:
-            logger.debug("Cache point already exists at end of last assistant message")
-            return
-
-        # Step 4: Remove ALL existing cache points (we only want 1 at the end)
-        # Process in reverse order to avoid index shifting issues
-        for msg_idx, block_idx in reversed(cache_point_positions):
-            msg_content = messages[msg_idx].get("content", [])
-            if isinstance(msg_content, list) and block_idx < len(msg_content):
-                del msg_content[block_idx]
-                logger.debug(f"Removed old cache point at msg {msg_idx} block {block_idx}")
-
-        # Step 5: Add single cache point at the end of the last assistant message
-        cache_block = {"cachePoint": {"type": "default"}}
-
-        # Re-fetch content in case it was modified by deletion
-        last_assistant_content = messages[last_assistant_idx].get("content", [])
-        if isinstance(last_assistant_content, list):
-            last_assistant_content.append(cache_block)
-            logger.debug(f"Added cache point at end of assistant message {last_assistant_idx}")
 
 # Global stream processor instance
 _global_stream_processor = None
@@ -756,13 +588,6 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 hooks.append(conversation_hook)
                 logger.debug("✅ Conversation caching hook enabled")
 
-            # Add context token tracking hook if using CompactingSessionManager
-            # This MUST be added before Agent creation (not after) for hooks to fire
-            if hasattr(self.session_manager, 'get_context_token_hook'):
-                context_token_hook = self.session_manager.get_context_token_hook()
-                hooks.append(context_token_hook)
-                logger.info("✅ Context token tracking hook registered")
-
             # Create agent with session manager, hooks, and system prompt (as string)
             agent_kwargs = {
                 "model": model,
@@ -890,14 +715,8 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                 self.session_manager.update_after_turn(context_tokens, self.agent.agent_id)
                 logger.info(f"✅ Compaction updated: context={context_tokens:,} tokens")
             else:
-                # Fallback to hook-based tracking if stream processor didn't capture
-                hook_tokens = self.session_manager.get_last_context_tokens()
-                if hook_tokens > 0:
-                    logger.info(f"📊 Using hook fallback: context_tokens={hook_tokens:,}")
-                    self.session_manager.update_after_turn(hook_tokens, self.agent.agent_id)
-                    logger.info(f"✅ Compaction updated (fallback): context={hook_tokens:,} tokens")
-                else:
-                    logger.info(f"⚠️ Skipping compaction: context_tokens=0")
+                # Skip compaction if no token data available
+                logger.info(f"⚠️ Skipping compaction: context_tokens=0 (no token data from stream processor)")
         except Exception as e:
             logger.error(f"Compaction update failed: {e}")
 
