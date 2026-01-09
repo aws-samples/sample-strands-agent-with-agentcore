@@ -174,7 +174,9 @@ Key guidelines:
 Your goal is to be helpful, accurate, and efficient in completing user requests using the available tools."""
 
         # Load tool-specific guidance dynamically based on enabled tools
+        logger.info(f"[Citation Debug] Loading tool guidance for enabled_tools: {self.enabled_tools}")
         tool_guidance_list = self._load_tool_guidance()
+        logger.info(f"[Citation Debug] Loaded {len(tool_guidance_list)} guidance sections")
 
         current_date = get_current_date_pacific()
 
@@ -185,7 +187,7 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         # Add tool-specific guidance sections
         if tool_guidance_list:
             prompt_sections.extend(tool_guidance_list)
-            logger.debug(f"System prompt constructed with {len(tool_guidance_list)} tool guidance sections")
+            logger.info(f"System prompt constructed with {len(tool_guidance_list)} tool guidance sections")
 
         # Add date as final section
         prompt_sections.append(f"Current date: {current_date}")
@@ -368,6 +370,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         - Local mode: Load from tools-config.json (required)
         - Cloud mode: Load from DynamoDB {PROJECT_NAME}-users-v2 table (required)
 
+        Also loads shared guidance (e.g., citation instructions) when any tool
+        with usesCitation=true is enabled.
+
         No fallback - errors are logged clearly for debugging.
         """
         if not self.enabled_tools or len(self.enabled_tools) == 0:
@@ -381,12 +386,14 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
         is_local = os.environ.get('NEXT_PUBLIC_AGENTCORE_LOCAL', 'false').lower() == 'true'
 
         guidance_sections = []
+        needs_citation = False  # Track if any citation-enabled tool is active
+        shared_guidance = {}  # Store shared guidance for later use
 
         # Local mode: load from tools-config.json (required)
         if is_local:
             import json
             config_path = Path(__file__).parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
-            logger.debug(f"Loading tool guidance from local: {config_path}")
+            logger.info(f"[Citation Debug] Loading from local config: {config_path}")
 
             if not config_path.exists():
                 logger.error(f"❌ TOOL CONFIG NOT FOUND: {config_path}")
@@ -394,6 +401,9 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
 
             with open(config_path, 'r') as f:
                 tools_config = json.load(f)
+
+            # Load shared guidance
+            shared_guidance = tools_config.get('shared_guidance', {})
 
             # Check all tool categories for systemPromptGuidance
             for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
@@ -407,6 +417,11 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                             if guidance:
                                 guidance_sections.append(guidance)
                                 logger.debug(f"Added guidance for tool group: {tool_id}")
+
+                            # Check if this tool needs citation
+                            if tool_group.get('usesCitation'):
+                                needs_citation = True
+                                logger.info(f"[Citation Debug] Tool {tool_id} requires citation")
 
         # Cloud mode: load from DynamoDB (required)
         else:
@@ -431,6 +446,10 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
             tool_registry = response['Item']['toolRegistry']
             logger.debug(f"✅ Loaded tool registry from DynamoDB: {dynamodb_table}")
 
+            # Load shared guidance
+            shared_guidance = tool_registry.get('shared_guidance', {})
+            logger.info(f"[Citation Debug] Cloud mode - shared_guidance keys: {list(shared_guidance.keys())}")
+
             # Check all tool categories
             for category in ['local_tools', 'builtin_tools', 'browser_automation', 'gateway_targets', 'agentcore_runtime_a2a']:
                 if category in tool_registry:
@@ -443,6 +462,20 @@ Your goal is to be helpful, accurate, and efficient in completing user requests 
                             if guidance:
                                 guidance_sections.append(guidance)
                                 logger.debug(f"Added guidance for tool group: {tool_id}")
+
+                            # Check if this tool needs citation
+                            if tool_group.get('usesCitation'):
+                                needs_citation = True
+                                logger.info(f"[Citation Debug] Tool {tool_id} requires citation")
+
+        # Add citation instructions if any citation-enabled tool is active
+        if needs_citation and 'citation_instructions' in shared_guidance:
+            guidance_sections.append(shared_guidance['citation_instructions'])
+            logger.info("✅ Added citation instructions (web search tool enabled)")
+        elif needs_citation:
+            logger.warning("⚠️ Citation needed but citation_instructions not found in shared_guidance")
+        else:
+            logger.debug("No citation-enabled tools active")
 
         logger.debug(f"✅ Tool guidance loaded: {len(guidance_sections)} sections")
         return guidance_sections

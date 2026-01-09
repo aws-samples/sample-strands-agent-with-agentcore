@@ -7,6 +7,7 @@ Writes sections directly to markdown file without initialization step.
 import json
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Optional
 from strands import tool
@@ -14,6 +15,49 @@ from strands.types.tools import ToolContext
 from report_manager import get_report_manager
 
 logger = logging.getLogger(__name__)
+
+
+def ensure_heading_linebreaks(content: str) -> str:
+    """
+    Ensure markdown headings have proper linebreaks before them.
+
+    Markdown requires a blank line before headings for proper parsing.
+    This function adds linebreaks where needed without affecting:
+    - Headings inside code blocks (``` ... ```)
+    - Headings that already have proper linebreaks
+
+    Args:
+        content: Markdown content to process
+
+    Returns:
+        Content with proper linebreaks before headings
+    """
+    if not content:
+        return content
+
+    # Split content to identify code blocks
+    # We'll process only parts outside of code blocks
+    code_block_pattern = r'(```[\s\S]*?```)'
+    parts = re.split(code_block_pattern, content)
+
+    processed_parts = []
+    for i, part in enumerate(parts):
+        # Odd indices are code blocks (captured groups), skip them
+        if i % 2 == 1:
+            processed_parts.append(part)
+            continue
+
+        # For non-code-block parts, ensure headings have linebreaks
+        # Pattern: non-newline character followed by optional single newline, then heading
+        # Replace with: original char + double newline + heading
+        processed = re.sub(
+            r'([^\n])(\n?)(#{1,6}\s+\S)',
+            r'\1\n\n\3',
+            part
+        )
+        processed_parts.append(processed)
+
+    return ''.join(processed_parts)
 
 
 @tool(context=True)
@@ -79,8 +123,21 @@ async def write_markdown_section(
         # Construct full file path in session workspace
         file_path = os.path.join(manager.workspace, filename)
 
+        # Check if existing file ends with proper spacing for new heading
+        # This ensures markdown headings are parsed correctly after images/captions
+        prefix = ""
+        if os.path.exists(file_path):
+            with open(file_path, 'r', encoding='utf-8') as f:
+                existing_content = f.read()
+            if existing_content and not existing_content.endswith('\n\n'):
+                # Add extra newline if file doesn't end with blank line
+                if existing_content.endswith('\n'):
+                    prefix = "\n"
+                else:
+                    prefix = "\n\n"
+
         # Prepare section content
-        section_content = f"{heading}\n\n{content}\n\n"
+        section_content = f"{prefix}{heading}\n\n{content}\n\n"
 
         # Add citations if provided (simple icon links only)
         if citations and len(citations) > 0:

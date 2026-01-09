@@ -649,3 +649,294 @@ class TestDynamicPromptErrorHandling:
 
         assert "<code>" in final_prompt
         assert "\"double quotes\"" in final_prompt
+
+
+# ============================================================
+# Citation Guidance Loading Tests
+# ============================================================
+
+class TestCitationGuidanceLoading:
+    """Tests for citation guidance loading based on usesCitation flag."""
+
+    @pytest.fixture
+    def mock_tools_config_with_citation(self):
+        """Sample tools-config.json with shared_guidance and usesCitation flags."""
+        return {
+            "shared_guidance": {
+                "citation_instructions": "Citation Instructions for Web Search Results:\n\nWhen your response is based on content returned by web search tools, you MUST appropriately cite your response using <cite> tags."
+            },
+            "local_tools": [
+                {
+                    "id": "ddg_web_search",
+                    "name": "Web Search",
+                    "description": "Search the web using DuckDuckGo",
+                    "usesCitation": True,
+                    "systemPromptGuidance": None
+                },
+                {
+                    "id": "fetch_url_content",
+                    "name": "URL Fetcher",
+                    "description": "Fetch and extract content from web URLs",
+                    "usesCitation": True,
+                    "systemPromptGuidance": None
+                },
+                {
+                    "id": "calculator",
+                    "name": "Calculator",
+                    "description": "Basic math operations",
+                    "usesCitation": False,
+                    "systemPromptGuidance": "Use calculator for math."
+                }
+            ],
+            "gateway_targets": [
+                {
+                    "id": "gateway_google-web-search",
+                    "name": "Google Search",
+                    "usesCitation": True,
+                    "systemPromptGuidance": None
+                },
+                {
+                    "id": "gateway_arxiv-search",
+                    "name": "ArXiv",
+                    "usesCitation": True,
+                    "systemPromptGuidance": None
+                },
+                {
+                    "id": "gateway_weather",
+                    "name": "Weather",
+                    "usesCitation": False,
+                    "systemPromptGuidance": None
+                }
+            ]
+        }
+
+    def test_citation_guidance_added_when_web_search_enabled(self, mock_tools_config_with_citation):
+        """Test that citation guidance is added when a usesCitation tool is enabled."""
+        enabled_tools = ["ddg_web_search", "calculator"]
+        config = mock_tools_config_with_citation
+
+        guidance_sections = []
+        needs_citation = False
+        shared_guidance = config.get("shared_guidance", {})
+
+        # Check all tool categories
+        for category in ["local_tools", "gateway_targets"]:
+            if category in config:
+                for tool_group in config[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        guidance = tool_group.get("systemPromptGuidance")
+                        if guidance:
+                            guidance_sections.append(guidance)
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        # Add citation instructions if needed
+        if needs_citation and "citation_instructions" in shared_guidance:
+            guidance_sections.append(shared_guidance["citation_instructions"])
+
+        assert needs_citation is True
+        assert any("Citation Instructions" in g for g in guidance_sections)
+        assert any("calculator" in g.lower() for g in guidance_sections)
+
+    def test_citation_guidance_not_added_when_no_web_search(self, mock_tools_config_with_citation):
+        """Test that citation guidance is NOT added when no usesCitation tools are enabled."""
+        enabled_tools = ["calculator"]  # Only non-citation tool
+        config = mock_tools_config_with_citation
+
+        guidance_sections = []
+        needs_citation = False
+        shared_guidance = config.get("shared_guidance", {})
+
+        for category in ["local_tools", "gateway_targets"]:
+            if category in config:
+                for tool_group in config[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        guidance = tool_group.get("systemPromptGuidance")
+                        if guidance:
+                            guidance_sections.append(guidance)
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        if needs_citation and "citation_instructions" in shared_guidance:
+            guidance_sections.append(shared_guidance["citation_instructions"])
+
+        assert needs_citation is False
+        assert not any("Citation Instructions" in g for g in guidance_sections)
+
+    def test_citation_guidance_added_for_gateway_web_search(self, mock_tools_config_with_citation):
+        """Test citation guidance is added when gateway web search tool is enabled."""
+        enabled_tools = ["gateway_google-web-search"]
+        config = mock_tools_config_with_citation
+
+        guidance_sections = []
+        needs_citation = False
+        shared_guidance = config.get("shared_guidance", {})
+
+        for category in ["local_tools", "gateway_targets"]:
+            if category in config:
+                for tool_group in config[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        guidance = tool_group.get("systemPromptGuidance")
+                        if guidance:
+                            guidance_sections.append(guidance)
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        if needs_citation and "citation_instructions" in shared_guidance:
+            guidance_sections.append(shared_guidance["citation_instructions"])
+
+        assert needs_citation is True
+        assert any("Citation Instructions" in g for g in guidance_sections)
+
+    def test_citation_guidance_added_for_arxiv(self, mock_tools_config_with_citation):
+        """Test citation guidance is added when ArXiv tool is enabled."""
+        enabled_tools = ["gateway_arxiv-search"]
+        config = mock_tools_config_with_citation
+
+        needs_citation = False
+
+        for category in ["local_tools", "gateway_targets"]:
+            if category in config:
+                for tool_group in config[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        assert needs_citation is True
+
+    def test_citation_guidance_not_added_for_weather(self, mock_tools_config_with_citation):
+        """Test citation guidance is NOT added when only weather (non-citation) tool is enabled."""
+        enabled_tools = ["gateway_weather"]
+        config = mock_tools_config_with_citation
+
+        needs_citation = False
+
+        for category in ["local_tools", "gateway_targets"]:
+            if category in config:
+                for tool_group in config[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        assert needs_citation is False
+
+    def test_multiple_citation_tools_only_add_guidance_once(self, mock_tools_config_with_citation):
+        """Test that citation guidance is added only once even with multiple citation tools."""
+        enabled_tools = ["ddg_web_search", "fetch_url_content", "gateway_google-web-search", "gateway_arxiv-search"]
+        config = mock_tools_config_with_citation
+
+        guidance_sections = []
+        needs_citation = False
+        shared_guidance = config.get("shared_guidance", {})
+
+        for category in ["local_tools", "gateway_targets"]:
+            if category in config:
+                for tool_group in config[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        guidance = tool_group.get("systemPromptGuidance")
+                        if guidance:
+                            guidance_sections.append(guidance)
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        # Add citation instructions only once
+        if needs_citation and "citation_instructions" in shared_guidance:
+            guidance_sections.append(shared_guidance["citation_instructions"])
+
+        # Count citation instructions
+        citation_count = sum(1 for g in guidance_sections if "Citation Instructions" in g)
+        assert citation_count == 1
+
+    def test_missing_shared_guidance_handled_gracefully(self):
+        """Test that missing shared_guidance section is handled gracefully."""
+        config_without_shared = {
+            "local_tools": [
+                {
+                    "id": "ddg_web_search",
+                    "name": "Web Search",
+                    "usesCitation": True
+                }
+            ]
+        }
+
+        enabled_tools = ["ddg_web_search"]
+        guidance_sections = []
+        needs_citation = False
+        shared_guidance = config_without_shared.get("shared_guidance", {})
+
+        for category in ["local_tools"]:
+            if category in config_without_shared:
+                for tool_group in config_without_shared[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        if needs_citation and "citation_instructions" in shared_guidance:
+            guidance_sections.append(shared_guidance["citation_instructions"])
+
+        # Should not crash, just no citation instructions added
+        assert needs_citation is True
+        assert len(guidance_sections) == 0  # No citation_instructions in shared_guidance
+
+    def test_uses_citation_false_vs_missing(self, mock_tools_config_with_citation):
+        """Test distinction between usesCitation=False and missing usesCitation."""
+        # Tool with usesCitation: False explicitly set
+        config = mock_tools_config_with_citation
+        weather_tool = next(
+            (t for t in config["gateway_targets"] if t["id"] == "gateway_weather"),
+            None
+        )
+        assert weather_tool is not None
+        assert weather_tool.get("usesCitation") is False
+
+        # Tool with usesCitation: True
+        search_tool = next(
+            (t for t in config["local_tools"] if t["id"] == "ddg_web_search"),
+            None
+        )
+        assert search_tool is not None
+        assert search_tool.get("usesCitation") is True
+
+    def test_citation_guidance_content_format(self, mock_tools_config_with_citation):
+        """Test that citation guidance has expected content format."""
+        shared_guidance = mock_tools_config_with_citation.get("shared_guidance", {})
+        citation_instructions = shared_guidance.get("citation_instructions", "")
+
+        # Should contain key citation-related terms
+        assert "cite" in citation_instructions.lower()
+        assert "web search" in citation_instructions.lower()
+
+    def test_integration_with_tool_specific_guidance(self, mock_tools_config_with_citation):
+        """Test that citation guidance works alongside tool-specific guidance."""
+        enabled_tools = ["ddg_web_search", "calculator"]
+        config = mock_tools_config_with_citation
+
+        guidance_sections = []
+        needs_citation = False
+        shared_guidance = config.get("shared_guidance", {})
+
+        for category in ["local_tools", "gateway_targets"]:
+            if category in config:
+                for tool_group in config[category]:
+                    tool_id = tool_group.get("id")
+                    if tool_id and tool_id in enabled_tools:
+                        guidance = tool_group.get("systemPromptGuidance")
+                        if guidance:
+                            guidance_sections.append(guidance)
+                        if tool_group.get("usesCitation"):
+                            needs_citation = True
+
+        if needs_citation and "citation_instructions" in shared_guidance:
+            guidance_sections.append(shared_guidance["citation_instructions"])
+
+        # Should have both calculator guidance and citation instructions
+        assert len(guidance_sections) == 2
+        assert any("calculator" in g.lower() for g in guidance_sections)
+        assert any("Citation Instructions" in g for g in guidance_sections)

@@ -255,11 +255,12 @@ def generate_chart_tool(
                     })
 
                 # Create chart markdown with S3 key (required)
+                # Note: Include trailing blank line to ensure next section heading parses correctly
                 chart_title = chart_id.replace('_', ' ').title()
                 if not s3_key:
                     raise ValueError(f"S3 key is missing for chart {chart_id}. S3 upload is required.")
 
-                chart_markdown = f"\n![{chart_title}]({s3_key})\n*Figure: {chart_title}*"
+                chart_markdown = f"\n![{chart_title}]({s3_key})\n*Figure: {chart_title}*\n"
                 logger.info(f"[generate_chart] Using S3 key for chart: {s3_key}")
 
                 # Insert after specified line (convert to 0-indexed)

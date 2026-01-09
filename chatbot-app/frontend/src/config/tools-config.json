@@ -1,5 +1,8 @@
 {
   "_comment": "⚠️  IMPORTANT: After modifying this file, you MUST sync to DynamoDB! POST http://localhost:3000/api/tools/sync-registry (or production URL). Without syncing, changes will NOT take effect. See chatbot-app/agentcore/src/builtin_tools/__init__.py for full instructions.",
+  "shared_guidance": {
+    "citation_instructions": "Citation Instructions for Web Search Results:\n\nWhen your response is based on content returned by web search tools (web_search, url_fetcher, google_search, arxiv, wikipedia, tavily), you MUST appropriately cite your response.\n\n**Citation Rules:**\n- EVERY specific claim from search results should be wrapped in <cite> tags: <cite source=\"SOURCE_TITLE\" url=\"URL\">claim text</cite>\n- The source attribute should contain the title or name of the source\n- The url attribute should contain the source URL when available\n- Use citations for factual claims, statistics, quotes, and specific information from search results\n- Do NOT cite your own reasoning or general knowledge\n- If search results don't contain relevant information, inform the user that the answer cannot be found in the search results\n\n**Example:**\n<cite source=\"Wikipedia\" url=\"https://en.wikipedia.org/wiki/Example\">The population of Tokyo is approximately 14 million.</cite>\n\n**Important:**\n- Only cite information actually present in the search results\n- Use the minimum number of citations necessary to support claims\n- For multiple sources supporting the same claim, include all relevant sources"
+  },
   "local_tools": [
     {
       "id": "calculator",
@@ -30,6 +33,7 @@
       "icon": "🔍",
       "enabled": true,
       "isDynamic": false,
+      "usesCitation": true,
       "tags": ["research", "information", "learning", "knowledge"]
     },
     {
@@ -40,6 +44,7 @@
       "icon": "🌐",
       "enabled": true,
       "isDynamic": false,
+      "usesCitation": true,
       "tags": ["scraping", "research", "data"]
     }
   ],
@@ -316,6 +321,7 @@
       "icon": "🔬",
       "enabled": false,
       "isDynamic": true,
+      "usesCitation": true,
       "tags": ["research", "academic", "science", "paper", "study"],
       "tools": [
         {
@@ -338,6 +344,7 @@
       "icon": "🔍",
       "enabled": false,
       "isDynamic": true,
+      "usesCitation": true,
       "tags": ["research", "information", "learning", "shopping", "knowledge"],
       "tools": [
         {
@@ -403,6 +410,7 @@
       "icon": "📚",
       "enabled": false,
       "isDynamic": true,
+      "usesCitation": true,
       "tags": ["research", "knowledge", "learning", "education", "information"],
       "tools": [
         {
@@ -425,6 +433,7 @@
       "icon": "🤖",
       "enabled": false,
       "isDynamic": true,
+      "usesCitation": true,
       "tags": ["research", "information", "learning", "analysis"],
       "tools": [
         {

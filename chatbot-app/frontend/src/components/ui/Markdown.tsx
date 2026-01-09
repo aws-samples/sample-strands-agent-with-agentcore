@@ -7,7 +7,43 @@ import { CodeBlock } from './CodeBlock';
 import { ChartRenderer } from '../ChartRenderer';
 import { ImageRenderer } from '../ImageRenderer';
 
+// Helper function to extract domain from URL
+const getDomain = (url: string): string => {
+  try {
+    const hostname = new URL(url).hostname;
+    return hostname.replace(/^www\./, '');
+  } catch {
+    return url;
+  }
+};
+
 const components: Partial<Components> = {
+  // Citation renderer - displays claim text with a clickable source chip
+  cite: ({ node, children, ...props }: any) => {
+    const source = props.source || '';
+    const url = props.url || '';
+    const domain = url ? getDomain(url) : '';
+
+    return (
+      <span className="citation-inline">
+        {children}
+        {url && (
+          <a
+            href={url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1 px-1.5 py-0.5 ml-1 text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 no-underline transition-colors align-middle"
+            title={source || url}
+          >
+            <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+            <span className="truncate max-w-[100px]">{domain}</span>
+          </a>
+        )}
+      </span>
+    );
+  },
   code: ({ node, className, children, ...props }: any) => {
     // Check if this is a code block by looking for language class
     // Code blocks typically have className like "language-javascript"
@@ -56,6 +92,18 @@ const components: Partial<Components> = {
       {children}
     </td>
   ),
+  // Links open in new tab by default
+  a: ({ href, children, ...props }: any) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="text-blue-600 dark:text-blue-400 hover:underline"
+      {...props}
+    >
+      {children}
+    </a>
+  ),
 };
 
 const getRemarkPlugins = (preserveLineBreaks?: boolean) => {
@@ -75,7 +123,45 @@ const CHART_REF_PATTERN = /\[CHART:([^\]]+)\]/g;
 // Image pattern: [IMAGE:filename:alt_text]
 const IMAGE_PATTERN = /\[IMAGE:([^:]+):([^\]]+)\]/g;
 
-const parseContentWithCharts = (content: string) => {
+/**
+ * Process incomplete cite tags during streaming.
+ * Instead of hiding them, we close incomplete tags so they render as chips immediately.
+ * Links become active once the tag is complete with url attribute.
+ */
+const processIncompleteCiteTags = (content: string): string => {
+  // Quick check: if no <cite at all, return as-is
+  const lastCiteOpen = content.lastIndexOf('<cite');
+  if (lastCiteOpen === -1) {
+    return content;
+  }
+
+  // Check if there's a </cite> after the last <cite
+  const lastCiteClose = content.lastIndexOf('</cite>');
+
+  // If closing tag exists and comes after opening tag, content is complete
+  if (lastCiteClose > lastCiteOpen) {
+    return content;
+  }
+
+  // There's an incomplete cite tag - check if we have the opening > yet
+  const tagContent = content.slice(lastCiteOpen);
+  const hasOpeningComplete = tagContent.includes('>');
+
+  if (!hasOpeningComplete) {
+    // Tag attributes still being typed (e.g., "<cite source="Wiki)
+    // Truncate to hide the incomplete tag
+    return content.slice(0, lastCiteOpen);
+  }
+
+  // Tag opening is complete but no closing tag yet
+  // Close it so the partial content renders as a chip
+  return content + '</cite>';
+};
+
+const parseContentWithCharts = (rawContent: string) => {
+  // Process incomplete cite tags - close them so they render as chips during streaming
+  const content = processIncompleteCiteTags(rawContent);
+
   const parts: Array<{ type: 'text' | 'chart' | 'chartRef' | 'image'; content: string; chartData?: any; chartName?: string; imageId?: string; altText?: string }> = [];
   const patterns = [
     { regex: CHART_CODE_BLOCK_PATTERN, type: 'chart' as const },

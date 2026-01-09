@@ -565,7 +565,7 @@ TASK:
             model_id = metadata.get('model_id', DEFAULT_MODEL_ID) if metadata else DEFAULT_MODEL_ID
             session_id = metadata.get('session_id', 'unknown') if metadata else 'unknown'
             user_id = metadata.get('user_id', 'unknown') if metadata else 'unknown'
-            max_steps = metadata.get('max_steps', 30) if metadata else 30  # Default 30 steps for browser automation
+            max_steps = metadata.get('max_steps', 100) if metadata else 100  # Default 100 steps for browser automation
 
             logger.info(f"Metadata - model_id: {model_id}, session_id: {session_id}, user_id: {user_id}, max_steps: {max_steps}")
 
