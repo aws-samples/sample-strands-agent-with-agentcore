@@ -64,7 +64,8 @@
   },
   "overrides": {
     "mdast-util-to-hast": "^13.2.1",
-    "jspdf": "^4.0.0"
+    "jspdf": "^4.0.0",
+    "@smithy/config-resolver": "^4.4.0"
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^16.0.5",
