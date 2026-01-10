@@ -33,6 +33,7 @@ class InvocationInput(BaseModel):
     enabled_tools: Optional[List[str]] = None  # User-specific tool preferences
     files: Optional[List[FileContent]] = None  # Multimodal file attachments
     compaction_enabled: Optional[bool] = None  # Enable/disable context compaction (default: True)
+    autopilot: Optional[bool] = None  # Enable autopilot mode (Mission Control orchestration)
 
 
 class InvocationRequest(BaseModel):

@@ -14,6 +14,7 @@ import { BrowserLiveViewButton } from "@/components/BrowserLiveViewButton"
 import { ResearchModal } from "@/components/ResearchModal"
 import { BrowserResultModal } from "@/components/BrowserResultModal"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
+import { AutopilotProgress } from "@/components/AutopilotProgress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -106,6 +107,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     researchProgress,
     respondToInterrupt,
     currentInterrupt,
+    autopilotEnabled,
+    toggleAutopilot: toggleAutopilotHook,
+    autopilotProgress,
   } = useChat()
 
   // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
@@ -149,7 +153,6 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   const [isWideMode, setIsWideMode] = useState<boolean>(false)
   const [currentModelName, setCurrentModelName] = useState<string>("")
   const [isResearchEnabled, setIsResearchEnabled] = useState<boolean>(false)
-  const [isAutopilotEnabled, setIsAutopilotEnabled] = useState<boolean>(false)
   const [isResearchModalOpen, setIsResearchModalOpen] = useState<boolean>(false)
   const [activeResearchId, setActiveResearchId] = useState<string | null>(null)
   // Track each research execution independently
@@ -198,7 +201,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
       // If enabling research, disable all other tools and autopilot
       if (willBeEnabled) {
         // Disable autopilot
-        setIsAutopilotEnabled(false)
+        toggleAutopilotHook(false)
 
         // Disable all tools except research agent
         const enabledTools = availableTools.filter(tool =>
@@ -226,12 +229,12 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
       await toggleTool(researchTool.id)
       setIsResearchEnabled(willBeEnabled)
     }
-  }, [availableTools, toggleTool])
+  }, [availableTools, toggleTool, toggleAutopilotHook])
 
-  // Toggle Autopilot
+  // Toggle Autopilot (using hook from useChat)
   const toggleAutopilot = useCallback(() => {
-    setIsAutopilotEnabled(prev => !prev)
-  }, [])
+    toggleAutopilotHook(!autopilotEnabled)
+  }, [toggleAutopilotHook, autopilotEnabled])
 
   // Monitor messages for research_agent and browser_use_agent tool executions separately
   useEffect(() => {
@@ -718,6 +721,13 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           </div>
         )}
 
+        {/* Autopilot Progress - Show when autopilot is active */}
+        {autopilotProgress && autopilotProgress.state !== 'off' && (
+          <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 pt-4`}>
+            <AutopilotProgress progress={autopilotProgress} />
+          </div>
+        )}
+
         {/* Messages Area - unified container scroll for both modes */}
         <div
           ref={messagesContainerRef}
@@ -863,7 +873,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 placeholder={
                   isResearchEnabled
                     ? "Ask me anything... (Research Agent active)"
-                    : isAutopilotEnabled
+                    : autopilotEnabled
                     ? "Ask me anything... (Autopilot active)"
                     : "Ask me anything..."
                 }
@@ -908,7 +918,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 <ToolsDropdown
                   availableTools={availableTools}
                   onToggleTool={toggleTool}
-                  disabled={isResearchEnabled || isAutopilotEnabled}
+                  disabled={isResearchEnabled || autopilotEnabled}
                 />
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -919,7 +929,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                       onClick={toggleAutopilot}
                       disabled={isResearchEnabled}
                       className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
-                        isAutopilotEnabled
+                        autopilotEnabled
                           ? 'bg-purple-500/20 text-purple-500 hover:bg-purple-500/30'
                           : isResearchEnabled
                           ? 'opacity-40 cursor-not-allowed'
@@ -931,7 +941,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{isAutopilotEnabled ? 'Autopilot mode active (Coming soon)' : 'AI selects tools automatically (Coming soon)'}</p>
+                    <p>{autopilotEnabled ? 'Autopilot mode active' : 'AI selects tools automatically'}</p>
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>

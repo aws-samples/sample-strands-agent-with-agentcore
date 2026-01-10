@@ -159,33 +159,37 @@ class ChatbotAgent:
         self.model_id = model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
         self.temperature = temperature if temperature is not None else 0.7
 
-        # Always build system prompt dynamically with tool-specific guidance
-        # Ignore any system_prompt parameter - always construct from scratch
+        # Check if this is an autopilot directive (system_prompt starts with "You are executing Step")
+        is_autopilot_directive = system_prompt and system_prompt.startswith("You are executing Step")
+
+        # Base system prompt (used in both normal and autopilot modes)
         base_system_prompt = """You are an intelligent AI agent with dynamic tool capabilities. You can perform various tasks based on the combination of tools available to you.
 
 Key guidelines:
-- Use available tools whenever they can enhance your response with visualizations, data, or interactive elements
-- You can ONLY use tools that are explicitly provided to you - available tools may change based on user preferences
-- When multiple tools are available, select the most appropriate combination and use them in the optimal order to fulfill the request
-- Break down complex tasks into steps and use multiple tools sequentially or in parallel as needed
-- Always explain your reasoning when using tools
-- If you don't have the right tool for a task, clearly inform the user about the limitation
+- Use available tools when they genuinely enhance your response
+- You can ONLY use tools that are explicitly provided to you
+- Select the most appropriate tool for the task - avoid redundant tool calls
+- If you don't have the right tool for a task, clearly inform the user
 
-Your goal is to be helpful, accurate, and efficient in completing user requests using the available tools."""
+Your goal is to be helpful, accurate, and efficient."""
 
         # Load tool-specific guidance dynamically based on enabled tools
         tool_guidance_list = self._load_tool_guidance()
+        logger.info(f"Loaded {len(tool_guidance_list)} tool guidance sections")
 
         current_date = get_current_date_pacific()
 
-        # Construct system prompt as string by combining all sections
-        # Note: System prompt caching is handled by ConversationCachingHook (single CP at end)
+        # Construct system prompt
         prompt_sections = [base_system_prompt]
+
+        # Add autopilot task section if in autopilot mode
+        if is_autopilot_directive:
+            logger.info(f"[Autopilot] Adding directive to system prompt")
+            prompt_sections.append(system_prompt)
 
         # Add tool-specific guidance sections
         if tool_guidance_list:
             prompt_sections.extend(tool_guidance_list)
-            logger.debug(f"System prompt constructed with {len(tool_guidance_list)} tool guidance sections")
 
         # Add date as final section
         prompt_sections.append(f"Current date: {current_date}")

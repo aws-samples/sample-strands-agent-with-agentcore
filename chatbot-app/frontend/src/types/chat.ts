@@ -50,6 +50,11 @@ export interface Message {
     cacheWriteInputTokens?: number
   }
   feedback?: 'up' | 'down' | null
+  // Autopilot message markers (from Mission Control)
+  isDirective?: boolean
+  directiveStep?: number
+  // Autopilot type: 'directive' (step N), 'summary', or 'direct' (no tools needed)
+  autopilotType?: 'directive' | 'summary' | 'direct'
 }
 
 export interface Tool {

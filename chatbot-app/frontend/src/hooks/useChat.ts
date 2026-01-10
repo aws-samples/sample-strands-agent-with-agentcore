@@ -43,6 +43,16 @@ interface UseChatReturn {
   researchProgress?: { stepNumber: number; content: string }
   respondToInterrupt: (interruptId: string, response: string) => Promise<void>
   currentInterrupt: InterruptState | null
+  // Autopilot mode
+  autopilotEnabled: boolean
+  toggleAutopilot: (enabled: boolean) => void
+  autopilotProgress?: {
+    missionId: string
+    state: 'off' | 'init' | 'executing' | 'finishing'
+    step: number
+    currentTask: string
+    activeTools: string[]
+  }
 }
 
 // Default preferences when session has no saved preferences
@@ -51,6 +61,7 @@ const DEFAULT_PREFERENCES: SessionPreferences = {
   lastTemperature: 0.7,
   enabledTools: [],
   selectedPromptId: 'general',
+  autopilotEnabled: false,
 }
 
 export const useChat = (props?: UseChatProps): UseChatReturn => {
@@ -61,6 +72,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [availableTools, setAvailableTools] = useState<Tool[]>([])
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
+  const [autopilotEnabled, setAutopilotEnabled] = useState(false)
 
   const [sessionState, setSessionState] = useState<ChatSessionState>({
     reasoning: null,
@@ -309,6 +321,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     } catch (error) {
       console.warn('[useChat] Failed to update model config:', error)
     }
+
+    // Restore autopilot state
+    const restoredAutopilot = effectivePreferences.autopilotEnabled ?? false
+    setAutopilotEnabled(restoredAutopilot)
+    console.log(`[useChat] Autopilot state restored: ${restoredAutopilot}`)
   }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
   // ==================== PROGRESS EVENTS ====================
@@ -547,9 +564,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           researchProgress: undefined,
           interrupt: null
         }))
-      }
+      },
+      undefined, // overrideEnabledTools
+      autopilotEnabled // Pass autopilot flag to backend
     )
-  }, [inputMessage, apiSendMessage])
+  }, [inputMessage, apiSendMessage, autopilotEnabled])
 
   const stopGeneration = useCallback(() => {
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
@@ -605,6 +624,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setGatewayToolIds(enabledToolIds)
   }, [])
 
+  const toggleAutopilot = useCallback((enabled: boolean) => {
+    setAutopilotEnabled(enabled)
+    console.log(`[useChat] Autopilot ${enabled ? 'enabled' : 'disabled'}`)
+  }, [])
+
   // ==================== CLEANUP ====================
   useEffect(() => {
     return cleanup
@@ -637,5 +661,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     researchProgress: sessionState.researchProgress,
     respondToInterrupt,
     currentInterrupt: sessionState.interrupt,
+    // Autopilot mode
+    autopilotEnabled,
+    toggleAutopilot,
+    autopilotProgress: sessionState.autopilotProgress,
   }
 }
