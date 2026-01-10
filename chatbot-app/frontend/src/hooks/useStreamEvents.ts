@@ -42,6 +42,13 @@ export const useStreamEvents = ({
   const streamingIdRef = useRef<string | null>(null)
   const completeProcessedRef = useRef(false)
 
+  // Autopilot mode state: tracks single turn for entire mission
+  // When active, all events are part of one assistant turn until mission_complete
+  const autopilotModeRef = useRef<{
+    isActive: boolean
+    turnMessageId: string | null
+  }>({ isActive: false, turnMessageId: null })
+
   // Latency tracking hook (encapsulates all latency-related refs and logic)
   const metadataTracking = useMetadataTracking()
 
@@ -585,7 +592,8 @@ export const useStreamEvents = ({
         browserSession: prev.browserSession,  // Preserve browser session on error
         browserProgress: undefined,  // Clear browser progress on error
         researchProgress: undefined,  // Clear research progress on error
-        interrupt: null
+        interrupt: null,
+        autopilotProgress: undefined  // Clear autopilot progress on error
       }))
 
       // Reset refs on error
@@ -593,6 +601,12 @@ export const useStreamEvents = ({
       streamingIdRef.current = null
       completeProcessedRef.current = false
       metadataTracking.reset()
+
+      // Reset autopilot mode state on error
+      if (autopilotModeRef.current.isActive) {
+        console.log('[Autopilot] Reset due to error')
+        autopilotModeRef.current = { isActive: false, turnMessageId: null }
+      }
     }
   }, [uiState, setMessages, setUIState, setSessionState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, textBuffer])
 
@@ -643,6 +657,165 @@ export const useStreamEvents = ({
     }
   }, [setSessionState])
 
+  // Mission Control events (new Application-Level Orchestration)
+  const handleMissionProgressEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'mission_progress') {
+      // Initialize autopilot mode on first mission_progress event
+      // All subsequent events until mission_complete are part of this single turn
+      if (!autopilotModeRef.current.isActive) {
+        autopilotModeRef.current.isActive = true
+        // The turn message ID will be set when the first response creates a message
+        // Or we can create a placeholder message now
+        console.log('[Autopilot] Mission started - all steps will be in single turn')
+      }
+
+      // For step 2+, finalize previous streaming message before adding new badge
+      if (event.step > 1) {
+        // Flush any remaining buffered text
+        textBuffer.reset()
+
+        // Finalize current streaming message
+        if (streamingStartedRef.current && streamingIdRef.current) {
+          setMessages(prevMsgs => prevMsgs.map(msg =>
+            msg.id === streamingIdRef.current
+              ? { ...msg, isStreaming: false }
+              : msg
+          ))
+        }
+
+        // Reset streaming refs so next response creates a new message
+        streamingStartedRef.current = false
+        streamingIdRef.current = null
+      }
+
+      // Add directive message for consistent UI with session restore
+      // This creates the same visual as [DIRECTIVE:N] markers in restored sessions
+      const directiveMessageId = `directive-${event.step}-${Date.now()}`
+      setMessages(prev => [...prev, {
+        id: directiveMessageId,
+        text: event.directive_prompt,
+        sender: 'user',
+        timestamp: new Date().toISOString(),
+        isDirective: true,
+        directiveStep: event.step,
+        autopilotType: 'directive'
+      }])
+
+      // Update autopilot progress in sessionState using mission event data
+      setSessionState(prev => ({
+        ...prev,
+        autopilotProgress: {
+          missionId: 'current-mission',
+          state: 'executing',
+          step: event.step,
+          currentTask: event.directive_prompt,
+          activeTools: event.active_tools
+        }
+      }))
+
+      // Update agent status to autopilot if not already
+      setUIState(prev => {
+        if (prev.agentStatus !== 'autopilot' && prev.agentStatus !== 'stopping') {
+          return { ...prev, isTyping: true, agentStatus: 'autopilot' }
+        }
+        return prev
+      })
+    }
+  }, [setSessionState, setUIState, setMessages, textBuffer])
+
+  const handleMissionCompleteEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'mission_complete') {
+      const totalSteps = event.total_steps || 0
+      const isDirect = totalSteps === 0
+      console.log('[Autopilot] Mission complete:', totalSteps, 'steps', isDirect ? '(direct)' : '(summary)')
+
+      // Flush any remaining buffered text and finalize current streaming message
+      textBuffer.reset()
+
+      // Finalize current streaming message before adding badge
+      if (streamingStartedRef.current && streamingIdRef.current) {
+        setMessages(prevMsgs => prevMsgs.map(msg =>
+          msg.id === streamingIdRef.current
+            ? { ...msg, isStreaming: false }
+            : msg
+        ))
+      }
+
+      // Reset streaming refs so next response creates a new message
+      streamingStartedRef.current = false
+      streamingIdRef.current = null
+
+      // Add badge message for consistent UI with session restore
+      // total_steps=0 means direct response (no tools), otherwise it's a summary
+      const messageId = `${isDirect ? 'direct' : 'summary'}-${Date.now()}`
+      setMessages(prev => [...prev, {
+        id: messageId,
+        text: isDirect ? 'Responding directly...' : 'Generating final response...',
+        sender: 'user',
+        timestamp: new Date().toISOString(),
+        isDirective: true,
+        autopilotType: isDirect ? 'direct' : 'summary'
+      }])
+
+      // Reset autopilot mode state
+      autopilotModeRef.current = { isActive: false, turnMessageId: null }
+
+      // Clear autopilot progress on completion
+      setSessionState(prev => ({
+        ...prev,
+        autopilotProgress: undefined
+      }))
+    }
+  }, [setSessionState, setMessages, textBuffer])
+
+  // Legacy autopilot events (keep for compatibility)
+  const handleAutopilotProgressEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'autopilot_progress') {
+      // Update autopilot progress in sessionState
+      setSessionState(prev => ({
+        ...prev,
+        autopilotProgress: {
+          missionId: event.missionId,
+          state: event.state,
+          step: event.step,
+          currentTask: event.currentTask,
+          activeTools: event.activeTools
+        }
+      }))
+
+      // Update agent status to autopilot if not already
+      setUIState(prev => {
+        if (prev.agentStatus !== 'autopilot' && prev.agentStatus !== 'stopping') {
+          return { ...prev, isTyping: true, agentStatus: 'autopilot' }
+        }
+        return prev
+      })
+    }
+  }, [setSessionState, setUIState])
+
+  const handleAutopilotCompleteEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'autopilot_complete') {
+      // Clear autopilot progress on completion
+      setSessionState(prev => ({
+        ...prev,
+        autopilotProgress: undefined
+      }))
+    }
+  }, [setSessionState])
+
+  const handleAutopilotErrorEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'autopilot_error') {
+      console.error('[Autopilot] Error:', event.error)
+      // Keep progress for display but could update state to show error
+      if (!event.recoverable) {
+        setSessionState(prev => ({
+          ...prev,
+          autopilotProgress: undefined
+        }))
+      }
+    }
+  }, [setSessionState])
+
   const handleStreamEvent = useCallback((event: StreamEvent) => {
     switch (event.type) {
       case 'reasoning':
@@ -678,6 +851,21 @@ export const useStreamEvents = ({
         break
       case 'research_progress':
         handleResearchProgressEvent(event)
+        break
+      case 'mission_progress':
+        handleMissionProgressEvent(event)
+        break
+      case 'mission_complete':
+        handleMissionCompleteEvent(event)
+        break
+      case 'autopilot_progress':
+        handleAutopilotProgressEvent(event)
+        break
+      case 'autopilot_complete':
+        handleAutopilotCompleteEvent(event)
+        break
+      case 'autopilot_error':
+        handleAutopilotErrorEvent(event)
         break
       case 'metadata':
         // Handle metadata updates (e.g., browser session during tool execution)
@@ -719,6 +907,11 @@ export const useStreamEvents = ({
     handleInterruptEvent,
     handleBrowserProgressEvent,
     handleResearchProgressEvent,
+    handleMissionProgressEvent,
+    handleMissionCompleteEvent,
+    handleAutopilotProgressEvent,
+    handleAutopilotCompleteEvent,
+    handleAutopilotErrorEvent,
     setSessionState
   ])
 
@@ -732,6 +925,12 @@ export const useStreamEvents = ({
     completeProcessedRef.current = false
     metadataTracking.reset()
 
+    // Reset autopilot mode state if active
+    if (autopilotModeRef.current.isActive) {
+      console.log('[Autopilot] Reset during streaming stop')
+      autopilotModeRef.current = { isActive: false, turnMessageId: null }
+    }
+
     // Mark current streaming message as stopped (not streaming)
     setMessages(prev => prev.map(msg =>
       msg.isStreaming ? { ...msg, isStreaming: false } : msg
@@ -740,7 +939,8 @@ export const useStreamEvents = ({
     setSessionState(prev => ({
       ...prev,
       reasoning: null,
-      streaming: null
+      streaming: null,
+      autopilotProgress: undefined // Clear autopilot progress on reset
     }))
   }, [setMessages, setSessionState, metadataTracking, textBuffer])
 

@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Bot, User, FileText, Image, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+import { Bot, User, FileText, Image, ChevronDown, ChevronUp, Copy, Check, Rocket } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { Markdown } from '@/components/ui/Markdown'
 import { ToolExecutionContainer } from './ToolExecutionContainer'
 import { LazyImage } from '@/components/ui/LazyImage'
+import { getAutopilotBadgeLabel } from '@/utils/autopilotParser'
 
 interface ChatMessageProps {
   message: Message
@@ -73,6 +74,23 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
   }, [message.text])
+
+  // Autopilot message from Mission Control (directive step, summary, or direct response)
+  if (message.sender === 'user' && message.isDirective) {
+    return (
+      <div className="flex justify-center mb-4">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700">
+          <Rocket className="w-3.5 h-3.5 text-indigo-500" />
+          <span className="text-xs font-medium text-indigo-600 dark:text-indigo-400">
+            {getAutopilotBadgeLabel(message.autopilotType, message.directiveStep)}
+          </span>
+          <span className="text-xs text-indigo-500/80 dark:text-indigo-400/80 max-w-[400px] truncate">
+            {message.text}
+          </span>
+        </div>
+      </div>
+    )
+  }
 
   if (message.sender === 'user') {
     return (

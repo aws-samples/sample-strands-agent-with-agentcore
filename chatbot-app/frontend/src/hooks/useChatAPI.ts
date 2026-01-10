@@ -7,6 +7,7 @@ import { fetchAuthSession } from 'aws-amplify/auth'
 import { apiGet, apiPost } from '@/lib/api-client'
 import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
 import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData } from '@/config/session'
+import { parseAutopilotMessage } from '@/utils/autopilotParser'
 
 interface UseChatAPIProps {
   backendUrl: string
@@ -29,13 +30,14 @@ export interface SessionPreferences {
   enabledTools?: string[]
   selectedPromptId?: string
   customPromptText?: string
+  autopilotEnabled?: boolean
 }
 
 interface UseChatAPIReturn {
   loadTools: () => Promise<void>
   toggleTool: (toolId: string) => Promise<void>
   newChat: () => Promise<boolean>
-  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[]) => Promise<void>
+  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[], autopilot?: boolean) => Promise<void>
   cleanup: () => void
   isLoadingTools: boolean
   loadSession: (sessionId: string) => Promise<SessionPreferences | null>
@@ -288,7 +290,8 @@ export const useChatAPI = ({
     files?: File[],
     onSuccess?: () => void,
     onError?: (error: string) => void,
-    overrideEnabledTools?: string[] // Override enabled tools (for Research Agent interrupt)
+    overrideEnabledTools?: string[], // Override enabled tools (for Research Agent interrupt)
+    autopilot?: boolean // Enable autopilot mode (Mission Control orchestration)
   ) => {
     // Update last activity timestamp (for session timeout tracking)
     updateLastActivity()
@@ -383,7 +386,8 @@ export const useChatAPI = ({
           },
           body: JSON.stringify({
             message: messageToSend,
-            enabled_tools: allEnabledToolIds
+            enabled_tools: allEnabledToolIds,
+            ...(autopilot !== undefined && { autopilot })
           }),
           signal: abortControllerRef.current.signal
         })
@@ -440,7 +444,7 @@ export const useChatAPI = ({
 
               // Handle new simplified events
               if (eventData.type && [
-                'text', 'reasoning', 'response', 'tool_use', 'tool_result', 'tool_progress', 'complete', 'init', 'thinking', 'error', 'interrupt', 'metadata', 'browser_progress', 'research_progress'
+                'text', 'reasoning', 'response', 'tool_use', 'tool_result', 'tool_progress', 'complete', 'init', 'thinking', 'error', 'interrupt', 'metadata', 'browser_progress', 'research_progress', 'mission_progress', 'mission_complete', 'autopilot_progress', 'autopilot_complete', 'autopilot_error'
               ].includes(eventData.type)) {
                 handleStreamEvent(eventData as StreamEvent)
               } else {
@@ -641,9 +645,31 @@ export const useChatAPI = ({
           }
 
           // Clean user message text by removing file hints (these are for agent's context only)
-          const cleanedText = msg.role === 'user' ? removeFileHints(text) : text
+          let cleanedText = msg.role === 'user' ? removeFileHints(text) : text
 
-          return {
+          // Parse autopilot markers from user messages
+          let isDirective = false
+          let directiveStep: number | undefined
+          let autopilotType: 'directive' | 'summary' | 'direct' | undefined
+          let originalUserQuery: string | undefined
+
+          if (msg.role === 'user') {
+            const autopilotResult = parseAutopilotMessage(cleanedText)
+            cleanedText = autopilotResult.cleanedText
+            isDirective = autopilotResult.isAutopilot
+            directiveStep = autopilotResult.directiveStep
+            autopilotType = autopilotResult.autopilotType
+            originalUserQuery = autopilotResult.originalUserQuery
+
+            if (autopilotResult.isAutopilot) {
+              logger.debug(`Detected autopilot message: type=${autopilotType}, step=${directiveStep}`)
+            }
+            if (originalUserQuery) {
+              logger.debug(`Extracted original user query: ${originalUserQuery.substring(0, 50)}...`)
+            }
+          }
+
+          const currentMessage: Message = {
             id: msg.id || `${newSessionId}-${index}`,
             text: cleanedText,
             sender: msg.role === 'user' ? 'user' : 'bot',
@@ -666,9 +692,27 @@ export const useChatAPI = ({
             }),
             ...(msg.documents && {
               documents: msg.documents
+            }),
+            ...(isDirective && {
+              isDirective: true,
+              directiveStep: directiveStep,
+              autopilotType: autopilotType
             })
           }
-        })
+
+          // If this has embedded user query (directive step 1 or direct response), prepend user message
+          if (originalUserQuery && (directiveStep === 1 || autopilotType === 'direct')) {
+            const userMessage: Message = {
+              id: `${newSessionId}-user-query-${index}`,
+              text: originalUserQuery,
+              sender: 'user',
+              timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString()
+            }
+            return [userMessage, currentMessage]
+          }
+
+          return [currentMessage]
+        }).flat()
         // Filter out user messages that only contain toolResults (no actual text content)
         // These are intermediate messages that shouldn't be displayed
         .filter((msg: Message) => {

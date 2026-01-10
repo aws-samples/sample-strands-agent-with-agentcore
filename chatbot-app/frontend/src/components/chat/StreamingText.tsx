@@ -13,12 +13,13 @@ interface StreamingTextProps {
 }
 
 /**
- * StreamingText component that renders text with a smooth typing animation.
+ * StreamingText component that renders text with smooth animation.
  *
- * Uses Markdown rendering throughout (both during and after streaming)
- * with smooth character-by-character animation via local state.
- *
- * Animation happens within each buffer flush interval (~50ms) to avoid delay.
+ * Uses a lightweight animation approach:
+ * - Receives buffered text from useTextBuffer (50ms intervals)
+ * - Animates between buffer updates at 60fps using requestAnimationFrame
+ * - Only updates state when there's meaningful progress (16ms throttle)
+ * - No citation processing overhead during animation (handled by Markdown)
  */
 export const StreamingText = React.memo<StreamingTextProps>(({
   text,
@@ -26,100 +27,83 @@ export const StreamingText = React.memo<StreamingTextProps>(({
   sessionId,
   toolUseId
 }) => {
-  // Displayed text (animated) - only used during streaming
-  const [displayedText, setDisplayedText] = useState(text)
-  // Track animation state
-  const animationFrameRef = useRef<number | null>(null)
-  const displayedLengthRef = useRef(text.length)
-  const lastAnimationTimeRef = useRef(0)
+  const [displayedLength, setDisplayedLength] = useState(text.length)
+  const targetLengthRef = useRef(text.length)
+  const animationRef = useRef<number | null>(null)
+  const lastUpdateRef = useRef(0)
 
-  // Animate new text appearing character by character
-  const animateText = useCallback(() => {
-    const currentLength = displayedLengthRef.current
-    const targetLength = text.length
-
-    // Nothing to animate
-    if (currentLength >= targetLength) {
-      animationFrameRef.current = null
-      return
-    }
-
-    const now = performance.now()
-    const elapsed = now - lastAnimationTimeRef.current
-
-    // Calculate characters to add based on elapsed time
-    // Target: animate all new text within ~50ms (match buffer flush interval)
-    const charsRemaining = targetLength - currentLength
-    const msPerChar = Math.max(2, Math.min(8, 50 / Math.max(charsRemaining, 1)))
-
-    if (elapsed >= msPerChar) {
-      // Add characters (batch 2-5 at a time for smoother feel)
-      const charsToAdd = Math.min(
-        Math.ceil(elapsed / msPerChar),
-        5, // Max 5 chars per frame
-        charsRemaining
-      )
-
-      const newLength = currentLength + charsToAdd
-      displayedLengthRef.current = newLength
-      lastAnimationTimeRef.current = now
-
-      // Update state to trigger Markdown re-render
-      setDisplayedText(text.slice(0, newLength))
-    }
-
-    // Continue animation
-    animationFrameRef.current = requestAnimationFrame(animateText)
-  }, [text])
-
-  // Start/continue animation when text changes during streaming
+  // Update target when text changes
   useEffect(() => {
+    targetLengthRef.current = text.length
+
+    // If not streaming, show full text immediately
     if (!isStreaming) {
-      // Streaming ended - ensure full text is displayed
-      displayedLengthRef.current = text.length
-      setDisplayedText(text)
+      setDisplayedLength(text.length)
       return
     }
 
-    // Start animation if we have new text to display
-    if (text.length > displayedLengthRef.current) {
-      if (animationFrameRef.current === null) {
-        lastAnimationTimeRef.current = performance.now()
-        animationFrameRef.current = requestAnimationFrame(animateText)
-      }
+    // Start animation if not already running
+    if (animationRef.current === null && displayedLength < text.length) {
+      lastUpdateRef.current = performance.now()
+      animationRef.current = requestAnimationFrame(animate)
     }
+  }, [text, isStreaming])
 
-    return () => {
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current)
-        animationFrameRef.current = null
+  const animate = useCallback(() => {
+    const now = performance.now()
+    const elapsed = now - lastUpdateRef.current
+    const target = targetLengthRef.current
+
+    setDisplayedLength(current => {
+      if (current >= target) {
+        animationRef.current = null
+        return current
       }
-    }
-  }, [text, isStreaming, animateText])
 
-  // Reset when component unmounts
+      // Throttle state updates to ~60fps (16ms)
+      if (elapsed < 16) {
+        animationRef.current = requestAnimationFrame(animate)
+        return current
+      }
+
+      lastUpdateRef.current = now
+
+      // Calculate chars to add: faster when more text is pending
+      const remaining = target - current
+      const speed = Math.max(1, Math.min(remaining, Math.ceil(elapsed / 8)))
+      const newLength = Math.min(current + speed, target)
+
+      // Continue animation if not done
+      if (newLength < target) {
+        animationRef.current = requestAnimationFrame(animate)
+      } else {
+        animationRef.current = null
+      }
+
+      return newLength
+    })
+  }, [])
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      displayedLengthRef.current = 0
-      if (animationFrameRef.current !== null) {
-        cancelAnimationFrame(animationFrameRef.current)
-        animationFrameRef.current = null
+      if (animationRef.current !== null) {
+        cancelAnimationFrame(animationRef.current)
       }
     }
   }, [])
 
-  // Always render with Markdown - use displayedText during streaming, full text after
-  const textToRender = isStreaming ? displayedText : text
+  // Slice text to displayed length during streaming
+  const displayedText = isStreaming ? text.slice(0, displayedLength) : text
 
   return (
     <Markdown sessionId={sessionId} toolUseId={toolUseId} preserveLineBreaks>
-      {textToRender}
+      {displayedText}
     </Markdown>
   )
 }, (prevProps, nextProps) => {
-  // Custom comparison for memo
-  if (prevProps.isStreaming !== nextProps.isStreaming) return false
   if (prevProps.text !== nextProps.text) return false
+  if (prevProps.isStreaming !== nextProps.isStreaming) return false
   if (prevProps.sessionId !== nextProps.sessionId) return false
   if (prevProps.toolUseId !== nextProps.toolUseId) return false
   return true

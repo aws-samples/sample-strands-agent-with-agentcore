@@ -75,7 +75,48 @@ const CHART_REF_PATTERN = /\[CHART:([^\]]+)\]/g;
 // Image pattern: [IMAGE:filename:alt_text]
 const IMAGE_PATTERN = /\[IMAGE:([^:]+):([^\]]+)\]/g;
 
-const parseContentWithCharts = (content: string) => {
+/**
+ * Process incomplete cite tags during streaming.
+ * Instead of hiding them, we close incomplete tags so they render as chips immediately.
+ * Links become active once the tag is complete with url attribute.
+ *
+ * Performance optimized: uses indexOf for fast early return when no citations present.
+ */
+const processIncompleteCiteTags = (content: string): string => {
+  // Fast early return: indexOf is faster than lastIndexOf for checking existence
+  // Most streaming chunks don't contain citations, so this is the common path
+  const firstCiteIndex = content.indexOf('<cite');
+  if (firstCiteIndex === -1) {
+    return content;
+  }
+
+  // Only use lastIndexOf when we know citations exist
+  const lastCiteOpen = content.lastIndexOf('<cite');
+  const lastCiteClose = content.lastIndexOf('</cite>');
+
+  // If closing tag exists and comes after opening tag, content is complete
+  if (lastCiteClose > lastCiteOpen) {
+    return content;
+  }
+
+  // There's an incomplete cite tag - check if we have the opening > yet
+  const tagContent = content.slice(lastCiteOpen);
+  const hasOpeningComplete = tagContent.includes('>');
+
+  if (!hasOpeningComplete) {
+    // Tag attributes still being typed (e.g., "<cite source="Wiki)
+    // Truncate to hide the incomplete tag
+    return content.slice(0, lastCiteOpen);
+  }
+
+  // Tag opening is complete but no closing tag yet
+  // Close it so the partial content renders as a chip
+  return content + '</cite>';
+};
+
+const parseContentWithCharts = (rawContent: string) => {
+  // Process incomplete cite tags - close them so they render as chips during streaming
+  const content = processIncompleteCiteTags(rawContent);
   const parts: Array<{ type: 'text' | 'chart' | 'chartRef' | 'image'; content: string; chartData?: any; chartName?: string; imageId?: string; altText?: string }> = [];
   const patterns = [
     { regex: CHART_CODE_BLOCK_PATTERN, type: 'chart' as const },
@@ -157,14 +198,14 @@ const parseContentWithCharts = (content: string) => {
   return parts;
 };
 
-const NonMemoizedMarkdown = ({ 
-  children, 
-  size = 'sm', 
+const NonMemoizedMarkdown = ({
+  children,
+  size = 'sm',
   preserveLineBreaks = false,
   sessionId,
   toolUseId
-}: { 
-  children: string; 
+}: {
+  children: string;
   size?: 'sm' | 'base' | 'lg' | 'xl';
   preserveLineBreaks?: boolean;
   sessionId?: string;

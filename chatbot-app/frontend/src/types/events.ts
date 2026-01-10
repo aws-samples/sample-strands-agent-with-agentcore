@@ -109,6 +109,52 @@ export interface ResearchProgressEvent {
   stepNumber: number;
 }
 
+// Autopilot Mode Events (Mission Control Orchestration)
+export type AutopilotState = 'off' | 'init' | 'executing' | 'finishing';
+
+export interface MissionProgressEvent {
+  type: 'mission_progress';
+  step: number;
+  directive_prompt: string;
+  active_tools: string[];
+}
+
+export interface MissionCompleteEvent {
+  type: 'mission_complete';
+  total_steps: number;
+}
+
+// Autopilot mode flag for tracking multi-step missions as single turn
+export interface AutopilotModeState {
+  isActive: boolean;
+  turnMessageId: string | null;  // The single message ID for entire autopilot turn
+}
+
+// Legacy autopilot events (keep for compatibility)
+export interface AutopilotProgressEvent {
+  type: 'autopilot_progress';
+  missionId: string;
+  state: AutopilotState;
+  step: number;
+  currentTask: string;
+  activeTools: string[];
+}
+
+export interface AutopilotCompleteEvent {
+  type: 'autopilot_complete';
+  missionId: string;
+  totalSteps: number;
+  summary: string;
+}
+
+export interface AutopilotErrorEvent {
+  type: 'autopilot_error';
+  missionId: string;
+  step: number;
+  error: string;
+  recoverable: boolean;
+}
+
 export type StreamEvent =
   | ReasoningEvent
   | ResponseEvent
@@ -122,7 +168,12 @@ export type StreamEvent =
   | ProgressEvent
   | MetadataEvent
   | BrowserProgressEvent
-  | ResearchProgressEvent;
+  | ResearchProgressEvent
+  | MissionProgressEvent
+  | MissionCompleteEvent
+  | AutopilotProgressEvent
+  | AutopilotCompleteEvent
+  | AutopilotErrorEvent;
 
 // Chat state interfaces
 export interface ReasoningState {
@@ -147,6 +198,14 @@ export interface InterruptState {
   }>;
 }
 
+export interface AutopilotProgress {
+  missionId: string;
+  state: AutopilotState;
+  step: number;
+  currentTask: string;
+  activeTools: string[];
+}
+
 export interface ChatSessionState {
   reasoning: ReasoningState | null;
   streaming: StreamingState | null;
@@ -164,9 +223,10 @@ export interface ChatSessionState {
     content: string;
   };
   interrupt: InterruptState | null;
+  autopilotProgress?: AutopilotProgress;
 }
 
-export type AgentStatus = 'idle' | 'thinking' | 'responding' | 'researching' | 'browser_automation' | 'stopping';
+export type AgentStatus = 'idle' | 'thinking' | 'responding' | 'researching' | 'browser_automation' | 'stopping' | 'autopilot';
 
 export interface LatencyMetrics {
   requestStartTime: number | null;

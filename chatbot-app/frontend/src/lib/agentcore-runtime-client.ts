@@ -93,7 +93,8 @@ async function invokeLocalAgentCore(
   temperature?: number,
   systemPrompt?: string,
   cachingEnabled?: boolean,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  autopilot?: boolean
 ): Promise<ReadableStream> {
   console.log('[AgentCore] 🚀 Invoking LOCAL AgentCore via HTTP POST')
   console.log(`[AgentCore]    URL: ${AGENTCORE_URL}/invocations`)
@@ -130,6 +131,11 @@ async function invokeLocalAgentCore(
   if (files && files.length > 0) {
     inputData.files = files
     console.log(`[AgentCore]    Files (${files.length}):`, files.map((f: any) => f.filename))
+  }
+
+  if (autopilot !== undefined) {
+    inputData.autopilot = autopilot
+    console.log(`[AgentCore]    Autopilot: ${autopilot}`)
   }
 
   const payload = { input: inputData }
@@ -185,7 +191,8 @@ async function invokeAwsAgentCore(
   temperature?: number,
   systemPrompt?: string,
   cachingEnabled?: boolean,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  autopilot?: boolean
 ): Promise<ReadableStream> {
   await initializeAwsClients()
   const runtimeArn = await getAgentCoreRuntimeArn()
@@ -225,6 +232,11 @@ async function invokeAwsAgentCore(
   if (files && files.length > 0) {
     inputData.files = files
     console.log(`[AgentCore]    Files (${files.length}):`, files.map((f: any) => f.filename))
+  }
+
+  if (autopilot !== undefined) {
+    inputData.autopilot = autopilot
+    console.log(`[AgentCore]    Autopilot: ${autopilot}`)
   }
 
   const payload = { input: inputData }
@@ -367,13 +379,14 @@ export async function invokeAgentCoreRuntime(
   temperature?: number,
   systemPrompt?: string,
   cachingEnabled?: boolean,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  autopilot?: boolean
 ): Promise<ReadableStream> {
   try {
     if (IS_LOCAL) {
-      return await invokeLocalAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal)
+      return await invokeLocalAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal, autopilot)
     } else {
-      return await invokeAwsAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal)
+      return await invokeAwsAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal, autopilot)
     }
   } catch (error) {
     console.error('[AgentCore] ❌ Failed to invoke Runtime:', error)
