@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
-import { Bot, User, FileText, Image, ChevronDown, ChevronUp, Copy, Check, Rocket } from 'lucide-react'
+import { Bot, User, FileText, Image, ChevronDown, ChevronUp, Copy, Check, Rocket, Mic } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { Markdown } from '@/components/ui/Markdown'
 import { ToolExecutionContainer } from './ToolExecutionContainer'
@@ -118,14 +118,28 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
               >
                 {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
               </button>
-              <div className="bg-blue-600 text-white rounded-2xl rounded-tr-md px-5 py-3.5 shadow-sm">
+              <div className={`text-white rounded-2xl rounded-tr-md px-5 py-3.5 shadow-sm ${
+                message.isVoiceMessage
+                  ? 'bg-gradient-to-r from-fuchsia-500 to-purple-600'
+                  : 'bg-blue-600'
+              }`}>
+                {message.isVoiceMessage && (
+                  <div className="flex items-center gap-1.5 mb-1 text-white/80">
+                    <Mic className="w-3 h-3" />
+                    <span className="text-[10px] font-medium">Voice</span>
+                  </div>
+                )}
                 <CollapsibleUserMessage text={message.text} />
               </div>
             </div>
           </div>
           <Avatar className="h-9 w-9 flex-shrink-0 mt-1">
-            <AvatarFallback className="bg-blue-100 text-blue-600">
-              <User className="h-4 w-4" />
+            <AvatarFallback className={`${
+              message.isVoiceMessage
+                ? 'bg-gradient-to-br from-fuchsia-100 to-purple-100 text-fuchsia-600'
+                : 'bg-blue-100 text-blue-600'
+            }`}>
+              {message.isVoiceMessage ? <Mic className="h-4 w-4" /> : <User className="h-4 w-4" />}
             </AvatarFallback>
           </Avatar>
         </div>

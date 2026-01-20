@@ -226,7 +226,19 @@ export interface ChatSessionState {
   autopilotProgress?: AutopilotProgress;
 }
 
-export type AgentStatus = 'idle' | 'thinking' | 'responding' | 'researching' | 'browser_automation' | 'stopping' | 'autopilot';
+export type AgentStatus =
+  | 'idle'
+  | 'thinking'
+  | 'responding'
+  | 'researching'
+  | 'browser_automation'
+  | 'stopping'
+  | 'autopilot'
+  // Voice mode states
+  | 'voice_connecting'
+  | 'voice_listening'
+  | 'voice_processing'
+  | 'voice_speaking';
 
 export interface LatencyMetrics {
   requestStartTime: number | null;

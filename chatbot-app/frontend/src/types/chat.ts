@@ -55,6 +55,8 @@ export interface Message {
   directiveStep?: number
   // Autopilot type: 'directive' (step N), 'summary', or 'direct' (no tools needed)
   autopilotType?: 'directive' | 'summary' | 'direct'
+  // Voice mode marker
+  isVoiceMessage?: boolean
 }
 
 export interface Tool {

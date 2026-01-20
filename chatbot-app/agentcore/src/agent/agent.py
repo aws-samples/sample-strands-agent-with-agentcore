@@ -120,6 +120,9 @@ for tool_name in builtin_tools.__all__:
 class ChatbotAgent:
     """Main ChatbotAgent for Agent Core with user-specific configuration"""
 
+    # Voice agent's agent_id for loading conversation history
+    VOICE_AGENT_ID = "voice"
+
     def __init__(
         self,
         session_id: str,
@@ -382,12 +385,14 @@ Your goal is to be helpful, accurate, and efficient."""
 
         # Get environment variables
         aws_region = os.environ.get('AWS_REGION', 'us-west-2')
-        is_local = os.environ.get('NEXT_PUBLIC_AGENTCORE_LOCAL', 'false').lower() == 'true'
+        # Determine mode by MEMORY_ID presence (local = no MEMORY_ID)
+        memory_id = os.environ.get('MEMORY_ID')
+        is_cloud = memory_id is not None
 
         guidance_sections = []
 
         # Local mode: load from tools-config.json (required)
-        if is_local:
+        if not is_cloud:
             import json
             config_path = Path(__file__).parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
             logger.debug(f"Loading tool guidance from local: {config_path}")
@@ -542,6 +547,44 @@ Your goal is to be helpful, accurate, and efficient."""
         # Delegate to a2a_tools module
         return a2a_tools.create_a2a_tool(agent_id)
 
+    def _load_voice_history(self) -> List[Dict[str, Any]]:
+        """
+        Load conversation history from voice mode (agent_id="voice").
+
+        This enables text mode to have context from previous voice interactions
+        within the same session. The messages are loaded read-only and passed
+        to Agent as initial context.
+
+        Returns:
+            List of messages from voice agent, or empty list if none found
+        """
+        try:
+            # Get the underlying session repository from session manager
+            if hasattr(self.session_manager, 'session_repository'):
+                repo = self.session_manager.session_repository
+
+                # Try to read messages from voice agent (agent_id="voice")
+                session_messages = repo.list_messages(
+                    session_id=self.session_id,
+                    agent_id=self.VOICE_AGENT_ID,
+                    offset=0
+                )
+
+                if session_messages:
+                    messages = [msg.to_message() for msg in session_messages]
+                    logger.info(f"[ChatbotAgent] Loaded {len(messages)} messages from voice mode history")
+                    return messages
+                else:
+                    logger.debug("[ChatbotAgent] No voice mode history found for this session")
+                    return []
+            else:
+                logger.debug("[ChatbotAgent] Session manager does not support history loading")
+                return []
+
+        except Exception as e:
+            logger.warning(f"[ChatbotAgent] Failed to load voice history: {e}")
+            return []
+
     def create_agent(self):
         """Create Strands agent with filtered tools and session management"""
         try:
@@ -592,6 +635,9 @@ Your goal is to be helpful, accurate, and efficient."""
                 hooks.append(conversation_hook)
                 logger.debug("✅ Conversation caching hook enabled")
 
+            # Load voice history for conversation continuity
+            voice_history = self._load_voice_history()
+
             # Create agent with session manager, hooks, and system prompt (as string)
             agent_kwargs = {
                 "model": model,
@@ -600,6 +646,11 @@ Your goal is to be helpful, accurate, and efficient."""
                 "session_manager": self.session_manager,
                 "hooks": hooks if hooks else None
             }
+
+            # Add voice history as initial messages if available
+            if voice_history:
+                agent_kwargs["messages"] = voice_history
+                logger.debug(f"✅ Added {len(voice_history)} messages from voice mode history")
 
             # Use NullConversationManager if requested (disables Strands' default sliding window)
             if self.use_null_conversation_manager:

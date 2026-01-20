@@ -30,6 +30,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress verbose DEBUG logging from Strands SDK bidi components
+logging.getLogger("strands.experimental.bidi").setLevel(logging.WARNING)
+
 # Lifespan event handler (replaces on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -75,7 +78,7 @@ if os.getenv('ENVIRONMENT', 'development') == 'development':
     )
 
 # Import routers
-from routers import health, chat, gateway_tools, tools, browser_live_view, stop
+from routers import health, chat, gateway_tools, tools, browser_live_view, stop, voice
 
 # Include routers
 app.include_router(health.router)
@@ -84,6 +87,7 @@ app.include_router(gateway_tools.router)
 app.include_router(tools.router)
 app.include_router(browser_live_view.router)
 app.include_router(stop.router)
+app.include_router(voice.router)  # Voice chat WebSocket
 
 if __name__ == "__main__":
     import uvicorn

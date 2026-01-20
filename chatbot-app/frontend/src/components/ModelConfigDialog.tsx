@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, AudioWaveform } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/api-client';
 import {
   Select,
@@ -10,6 +10,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
+import type { AgentStatus } from '@/types/events';
 
 interface ModelConfig {
   model_id: string;
@@ -27,11 +28,14 @@ interface ModelConfigDialogProps {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   trigger?: React.ReactNode;
+  agentStatus?: AgentStatus;
 }
 
-export function ModelConfigDialog({ sessionId, trigger }: ModelConfigDialogProps) {
+export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConfigDialogProps) {
   const [loading, setLoading] = useState(false);
   const [currentConfig, setCurrentConfig] = useState<ModelConfig | null>(null);
+
+  const isVoiceActive = agentStatus?.startsWith('voice_');
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
   const [selectedModelId, setSelectedModelId] = useState('');
 
@@ -126,6 +130,25 @@ export function ModelConfigDialog({ sessionId, trigger }: ModelConfigDialogProps
     return (
       <div className="h-7 px-3 flex items-center text-xs text-muted-foreground">
         Loading...
+      </div>
+    );
+  }
+
+  // Voice mode active - show special Nova Sonic 2 badge
+  if (isVoiceActive) {
+    return (
+      <div className="relative group">
+        {/* Animated gradient border */}
+        <div className="absolute -inset-[1px] rounded-lg bg-gradient-to-r from-violet-500 via-fuchsia-500 via-pink-500 via-rose-500 via-orange-500 via-amber-500 via-yellow-500 via-lime-500 via-green-500 via-emerald-500 via-teal-500 via-cyan-500 via-sky-500 via-blue-500 via-indigo-500 to-violet-500 opacity-75 blur-[2px] animate-gradient-x" />
+        <div className="absolute -inset-[1px] rounded-lg bg-gradient-to-r from-violet-500 via-fuchsia-500 via-pink-500 via-rose-500 via-orange-500 via-amber-500 via-yellow-500 via-lime-500 via-green-500 via-emerald-500 via-teal-500 via-cyan-500 via-sky-500 via-blue-500 via-indigo-500 to-violet-500 opacity-50 animate-gradient-x" />
+
+        {/* Content */}
+        <div className="relative h-7 px-3 flex items-center gap-2 text-xs font-semibold bg-background rounded-lg cursor-default">
+          <AudioWaveform className="w-3.5 h-3.5 text-fuchsia-500 animate-pulse" />
+          <span className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500 bg-clip-text text-transparent">
+            Nova Sonic 2
+          </span>
+        </div>
       </div>
     );
   }

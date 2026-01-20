@@ -21,10 +21,11 @@ import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain, Maximize2, Minimize2, Moon, Sun, FlaskConical, Loader2, ArrowDown, Download } from "lucide-react"
+import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain, Maximize2, Minimize2, Moon, Sun, FlaskConical, Loader2, ArrowDown, Download, Mic } from "lucide-react"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
 import { apiGet } from "@/lib/api-client"
 import { useTheme } from "next-themes"
+import { useVoiceChat } from "@/hooks/useVoiceChat"
 
 interface ChatInterfaceProps {
   mode: 'standalone' | 'embedded'
@@ -110,6 +111,10 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     autopilotEnabled,
     toggleAutopilot: toggleAutopilotHook,
     autopilotProgress,
+    addVoiceToolExecution,
+    updateVoiceMessage,
+    setVoiceStatus,
+    finalizeVoiceMessage,
   } = useChat()
 
   // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
@@ -175,6 +180,75 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isComposingRef = useRef(false)
+
+
+  // Get enabled tool IDs for voice chat (including nested tools from dynamic groups)
+  const enabledToolIds = useMemo(() => {
+    const ids: string[] = []
+    availableTools.forEach(tool => {
+      // Check if this is a grouped tool with nested tools (isDynamic)
+      if ((tool as any).isDynamic && (tool as any).tools) {
+        // Add enabled nested tools
+        const nestedTools = (tool as any).tools || []
+        nestedTools.forEach((nestedTool: any) => {
+          if (nestedTool.enabled) {
+            ids.push(nestedTool.id)
+          }
+        })
+      } else if (tool.enabled) {
+        // Add regular enabled tools
+        ids.push(tool.id)
+      }
+    })
+    return ids
+  }, [availableTools])
+
+  // Voice chat hook - delegates state management to useChat via callbacks
+  const {
+    isSupported: isVoiceSupported,
+    currentToolExecution: voiceToolExecution,
+    pendingTranscript,
+    error: voiceError,
+    connect: connectVoice,
+    disconnect: disconnectVoice,
+  } = useVoiceChat({
+    sessionId,
+    enabledTools: enabledToolIds,
+    onStatusChange: setVoiceStatus,  // Unified state management
+    onTranscript: (entry) => {
+      // Stream all transcripts to chat (both intermediate and final)
+      if (entry.text.trim()) {
+        updateVoiceMessage(entry.role, entry.text, entry.isFinal)
+      }
+    },
+    onToolExecution: (execution) => {
+      console.log('[ChatInterface] onToolExecution called:', execution)
+      // Add tool execution as separate tool message (mirrors text mode pattern)
+      const toolExec = {
+        id: execution.toolUseId,
+        toolName: execution.toolName,
+        toolInput: execution.input,
+        toolResult: execution.result,
+        isComplete: execution.status !== 'running',
+        isCancelled: execution.status === 'error',
+        reasoning: [],  // Voice mode doesn't have reasoning
+        isExpanded: true,  // Default to expanded (like text mode)
+      }
+      console.log('[ChatInterface] Created toolExec for addVoiceToolExecution:', toolExec)
+      addVoiceToolExecution(toolExec)
+    },
+    onResponseComplete: () => {
+      // Called when assistant finishes speaking (bidi_response_complete)
+      // Finalize the current streaming assistant message
+      finalizeVoiceMessage()
+    },
+    onError: (error) => {
+      console.error('[Voice] Error:', error)
+    },
+  })
+
+  // Helper to check if voice mode is active (derived from unified agentStatus)
+  const isVoiceActive = agentStatus.startsWith('voice_')
 
   // Load wide mode preference from localStorage
   useEffect(() => {
@@ -593,6 +667,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
       }
 
       e.preventDefault()
+      // Don't submit if voice mode is active (uses unified agentStatus)
       if (agentStatus === 'idle' && (inputMessage.trim() || selectedFiles.length > 0)) {
         const syntheticEvent = {
           preventDefault: () => {},
@@ -728,6 +803,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           </div>
         )}
 
+
         {/* Messages Area - unified container scroll for both modes */}
         <div
           ref={messagesContainerRef}
@@ -836,6 +912,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
 
           <form
             onSubmit={async (e) => {
+              e.preventDefault()
+              // Don't submit if voice mode is active (uses unified agentStatus)
+              if (isVoiceActive) return
               await handleSendMessage(e, selectedFiles)
               setSelectedFiles([])
             }}
@@ -854,7 +933,8 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 variant="ghost"
                 size="sm"
                 onClick={() => document.getElementById("file-upload")?.click()}
-                className="flex items-center justify-center h-10 w-10 hover:bg-muted-foreground/10 transition-all duration-200"
+                disabled={isVoiceActive}
+                className="flex items-center justify-center h-10 w-10 hover:bg-muted-foreground/10 transition-all duration-200 disabled:opacity-50"
               >
                 <Upload className="w-5 h-5" />
               </Button>
@@ -871,7 +951,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                   isComposingRef.current = false
                 }}
                 placeholder={
-                  isResearchEnabled
+                  isVoiceActive
+                    ? "Voice mode active - click mic to stop"
+                    : isResearchEnabled
                     ? "Ask me anything... (Research Agent active)"
                     : autopilotEnabled
                     ? "Ask me anything... (Autopilot active)"
@@ -882,7 +964,54 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 rows={1}
                 style={{ minHeight: "48px" }}
               />
-              {agentStatus !== 'idle' ? (
+              {/* Voice Mode Button - Show mic button next to send */}
+              {isVoiceSupported && (agentStatus === 'idle' || isVoiceActive) && (
+                <TooltipProvider delayDuration={300}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={async () => {
+                          if (!isVoiceActive) {
+                            await connectVoice()
+                          } else {
+                            disconnectVoice()
+                          }
+                        }}
+                        className={`h-10 w-10 transition-all duration-200 ${
+                          agentStatus === 'voice_listening'
+                            ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse'
+                            : agentStatus === 'voice_speaking'
+                            ? 'bg-green-500 hover:bg-green-600 text-white'
+                            : agentStatus === 'voice_connecting' || agentStatus === 'voice_processing'
+                            ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
+                            : 'hover:bg-muted-foreground/10'
+                        }`}
+                      >
+                        {agentStatus === 'voice_connecting' ? (
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                        ) : (
+                          <Mic className="w-5 h-5" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      {!isVoiceActive
+                        ? 'Start voice chat'
+                        : agentStatus === 'voice_connecting'
+                        ? 'Connecting...'
+                        : agentStatus === 'voice_listening'
+                        ? 'Listening... (click to stop)'
+                        : agentStatus === 'voice_speaking'
+                        ? 'Assistant speaking... (click to stop)'
+                        : 'Voice active (click to stop)'}
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              )}
+
+              {agentStatus !== 'idle' && !isVoiceActive ? (
                 <Button
                   type="button"
                   onClick={stopGeneration}
@@ -897,7 +1026,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                     <Square className="w-5 h-5" />
                   )}
                 </Button>
-              ) : (
+              ) : !isVoiceActive ? (
                 <Button
                   type="submit"
                   disabled={agentStatus !== 'idle' || (!inputMessage.trim() && selectedFiles.length === 0)}
@@ -905,7 +1034,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 >
                   <Send className="w-5 h-5" />
                 </Button>
-              )}
+              ) : null}
             </div>
           </form>
 
@@ -914,11 +1043,11 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
             {/* Left: Model Selector, Tools, and Research Agent */}
             <TooltipProvider delayDuration={300}>
               <div className="flex items-center gap-0.5">
-                <ModelConfigDialog sessionId={sessionId} />
+                <ModelConfigDialog sessionId={sessionId} agentStatus={agentStatus} />
                 <ToolsDropdown
                   availableTools={availableTools}
                   onToggleTool={toggleTool}
-                  disabled={isResearchEnabled || autopilotEnabled}
+                  disabled={isResearchEnabled || autopilotEnabled || isVoiceActive}
                 />
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -927,11 +1056,11 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                       variant="ghost"
                       size="sm"
                       onClick={toggleAutopilot}
-                      disabled={isResearchEnabled}
+                      disabled={isResearchEnabled || isVoiceActive}
                       className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
                         autopilotEnabled
                           ? 'bg-purple-500/20 text-purple-500 hover:bg-purple-500/30'
-                          : isResearchEnabled
+                          : isResearchEnabled || isVoiceActive
                           ? 'opacity-40 cursor-not-allowed'
                           : 'hover:bg-muted-foreground/10'
                       }`}
@@ -951,9 +1080,12 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                       variant="ghost"
                       size="sm"
                       onClick={toggleResearchAgent}
+                      disabled={isVoiceActive}
                       className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
                         isResearchEnabled
                           ? 'bg-blue-500/20 text-blue-500 hover:bg-blue-500/30'
+                          : isVoiceActive
+                          ? 'opacity-40 cursor-not-allowed'
                           : 'hover:bg-muted-foreground/10'
                       }`}
                     >
@@ -1084,6 +1216,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           interrupts={currentInterrupt.interrupts}
         />
       )}
+
 
     </>
   )

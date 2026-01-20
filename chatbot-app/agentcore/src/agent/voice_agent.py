@@ -1,0 +1,689 @@
+"""
+VoiceChatbotAgent for Agent Core
+- Uses Strands BidiAgent for real-time speech-to-speech interaction
+- Nova Sonic model for bidirectional audio streaming
+- Shared tool registry with ChatbotAgent
+- Session management integration for seamless voice-text conversation continuity
+- WebRTC VAD for improved speech endpoint detection
+"""
+
+import logging
+import os
+import sys
+import asyncio
+import base64
+import time
+from typing import AsyncGenerator, Dict, Any, List, Optional
+from pathlib import Path
+
+# Voice Activity Detection
+try:
+    import webrtcvad
+    VAD_AVAILABLE = True
+except ImportError:
+    VAD_AVAILABLE = False
+
+# Mock pyaudio to avoid dependency (we use browser Web Audio API, not local audio)
+if 'pyaudio' not in sys.modules:
+    import types
+    fake_pyaudio = types.ModuleType('pyaudio')
+    fake_pyaudio.PyAudio = type('PyAudio', (), {})
+    fake_pyaudio.paInt16 = 8
+    fake_pyaudio.paContinue = 0
+    sys.modules['pyaudio'] = fake_pyaudio
+from strands.experimental.bidi.agent.agent import BidiAgent
+from strands.experimental.bidi.types.events import (
+    BidiOutputEvent,
+    BidiAudioStreamEvent,
+    BidiTranscriptStreamEvent,
+    BidiInterruptionEvent,
+    BidiResponseCompleteEvent,
+    BidiConnectionStartEvent,
+    BidiConnectionCloseEvent,
+    BidiErrorEvent,
+)
+from strands.types._events import ToolUseStreamEvent, ToolResultEvent
+from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
+from strands.session.file_session_manager import FileSessionManager
+
+# Import shared tool registry from ChatbotAgent
+from agent.agent import TOOL_REGISTRY
+# Import tool guidance for dynamic system prompt
+from agent.tool_guidance import build_voice_system_prompt
+# Import Gateway MCP client (shared with ChatbotAgent)
+from agent.gateway_mcp_client import get_gateway_client_if_enabled
+# Import A2A tools module
+import a2a_tools
+
+# AgentCore Memory integration (optional, only for cloud deployment)
+try:
+    from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+    from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
+    AGENTCORE_MEMORY_AVAILABLE = True
+except ImportError:
+    AGENTCORE_MEMORY_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
+
+
+class VoiceChatbotAgent:
+    """Voice-enabled agent using BidiAgent and Nova Sonic for speech-to-speech"""
+
+    # Use separate agent_id from text mode to avoid session state conflicts
+    #
+    # Why separate agent_id is required:
+    # - Agent (text) stores conversation_manager_state with __name__, removed_message_count, etc.
+    # - BidiAgent (voice) stores conversation_manager_state = {} (empty dict)
+    # - If same agent_id is used, when Agent tries to restore after BidiAgent:
+    #   restore_from_session({}) raises ValueError("Invalid conversation manager state")
+    #   because state.get("__name__") returns None
+    #
+    # Messages are stored separately per agent_id, so voice and text histories don't mix.
+    # This is the intended SDK behavior for different agent types.
+    VOICE_AGENT_ID = "voice"
+
+    # VAD Configuration
+    # VAD is DISABLED by default because:
+    # 1. Browser already handles echo cancellation via getUserMedia constraints
+    # 2. Server-side VAD adds latency and may drop quiet speech
+    # 3. Nova Sonic handles audio processing well without pre-filtering
+    # Set ENABLE_VAD=true environment variable to enable VAD if needed
+    VAD_ENABLED_DEFAULT = False
+    VAD_AGGRESSIVENESS = 2  # 0-3, higher = more aggressive filtering (2 is balanced)
+    VAD_FRAME_DURATION_MS = 30  # webrtcvad supports 10, 20, or 30 ms frames
+    SILENCE_THRESHOLD_MS = 500  # Silence duration to consider speech ended
+    MIN_SPEECH_FRAMES = 3  # Minimum speech frames before considering it valid speech
+
+    def __init__(
+        self,
+        session_id: str,
+        user_id: Optional[str] = None,
+        enabled_tools: Optional[List[str]] = None,
+        system_prompt: Optional[str] = None,
+    ):
+        """
+        Initialize voice agent with BidiAgent
+
+        Args:
+            session_id: Session identifier (shared with text chat for seamless continuity)
+            user_id: User identifier (defaults to session_id)
+            enabled_tools: List of tool IDs to enable
+            system_prompt: Optional system prompt override
+        """
+        self.session_id = session_id
+        self.user_id = user_id or session_id
+        self.enabled_tools = enabled_tools or []
+        self.gateway_client = None  # Store Gateway MCP client for lifecycle management
+
+        logger.info(f"[VoiceAgent] Initializing with enabled_tools: {self.enabled_tools}")
+
+        # Build system prompt for voice mode (dynamic based on enabled tools)
+        self.system_prompt = system_prompt or build_voice_system_prompt(self.enabled_tools)
+
+        # Get filtered tools (shared with ChatbotAgent)
+        self.tools = self._get_filtered_tools()
+        logger.info(f"[VoiceAgent] Filtered tools count: {len(self.tools)}")
+
+        # Initialize session manager (same as ChatbotAgent for seamless voice-text continuity)
+        self.session_manager = self._create_session_manager()
+
+        # Load existing conversation history from text mode (agent_id="default")
+        # This enables voice mode to have context from previous text interactions
+        initial_messages = self._load_text_history()
+
+        # Initialize VAD (Voice Activity Detection)
+        self._init_vad()
+
+        # Initialize Nova Sonic 2 model
+        aws_region = os.environ.get('AWS_REGION', 'us-west-2')
+        model_id = os.environ.get('NOVA_SONIC_MODEL_ID', 'amazon.nova-2-sonic-v1:0')
+        self.model = BidiNovaSonicModel(
+            model_id=model_id,
+            region=aws_region,
+        )
+
+        # Create BidiAgent with session manager for conversation persistence
+        # Use separate agent_id ("voice") from text mode to avoid state conflicts
+        # Pass initial_messages from text mode for conversation continuity
+        self.agent = BidiAgent(
+            model=self.model,
+            tools=self.tools,
+            system_prompt=self.system_prompt,
+            agent_id=self.VOICE_AGENT_ID,  # "voice" - separate from text ChatbotAgent
+            name="Voice Assistant",
+            description="Real-time voice assistant powered by Nova Sonic",
+            session_manager=self.session_manager,
+            messages=initial_messages,  # Load text history for continuity
+        )
+
+        self._started = False
+
+        logger.info(f"[VoiceAgent] Initialized with session_id={session_id}, "
+                   f"session_manager={type(self.session_manager).__name__}, "
+                   f"VAD={'enabled' if self.vad else 'disabled'}")
+
+    def _init_vad(self):
+        """Initialize Voice Activity Detection
+
+        VAD is disabled by default to reduce latency and avoid dropping quiet speech.
+        Browser handles echo cancellation. Set ENABLE_VAD=true to enable.
+        """
+        # Check if VAD should be enabled (default: disabled)
+        enable_vad = os.environ.get('ENABLE_VAD', '').lower() in ('true', '1', 'yes')
+
+        if not enable_vad:
+            self.vad = None
+            logger.info("[VoiceAgent] VAD disabled (set ENABLE_VAD=true to enable)")
+            return
+
+        if VAD_AVAILABLE:
+            try:
+                self.vad = webrtcvad.Vad(self.VAD_AGGRESSIVENESS)
+                self._speech_frames = 0
+                self._silence_frames = 0
+                self._last_speech_time = 0
+                self._is_speaking = False
+                self._audio_buffer = b''  # Buffer for incomplete frames
+                logger.info(f"[VoiceAgent] VAD initialized (aggressiveness={self.VAD_AGGRESSIVENESS})")
+            except Exception as e:
+                logger.warning(f"[VoiceAgent] Failed to initialize VAD: {e}")
+                self.vad = None
+        else:
+            self.vad = None
+            logger.warning("[VoiceAgent] webrtcvad not available, VAD disabled")
+
+    # Text agent's agent_id for loading conversation history
+    TEXT_AGENT_ID = "default"
+
+    def _load_text_history(self) -> List[Dict[str, Any]]:
+        """
+        Load conversation history from text mode (agent_id="default").
+
+        This enables voice mode to have context from previous text interactions
+        within the same session. The messages are loaded read-only and passed
+        to BidiAgent as initial context.
+
+        Returns:
+            List of messages from text agent, or empty list if none found
+        """
+        try:
+            # Get the underlying session repository from session manager
+            if hasattr(self.session_manager, 'session_repository'):
+                repo = self.session_manager.session_repository
+
+                # Try to read messages from text agent (agent_id="default")
+                session_messages = repo.list_messages(
+                    session_id=self.session_id,
+                    agent_id=self.TEXT_AGENT_ID,
+                    offset=0
+                )
+
+                if session_messages:
+                    messages = [msg.to_message() for msg in session_messages]
+                    logger.info(f"[VoiceAgent] Loaded {len(messages)} messages from text mode history")
+                    return messages
+                else:
+                    logger.debug("[VoiceAgent] No text mode history found for this session")
+                    return []
+            else:
+                logger.debug("[VoiceAgent] Session manager does not support history loading")
+                return []
+
+        except Exception as e:
+            logger.warning(f"[VoiceAgent] Failed to load text history: {e}")
+            return []
+
+    def _create_session_manager(self):
+        """
+        Create session manager for conversation persistence.
+
+        Uses the same session management strategy as ChatbotAgent to enable
+        seamless voice-text conversation continuity:
+        - Cloud mode: AgentCoreMemorySessionManager (if MEMORY_ID is set)
+        - Local mode: FileSessionManager (file-based persistence)
+
+        Note: Voice and text agents use different agent_ids but share session_id.
+        Text history is loaded at initialization for conversation continuity.
+        """
+        memory_id = os.environ.get('MEMORY_ID')
+        aws_region = os.environ.get('AWS_REGION', 'us-west-2')
+
+        if memory_id and AGENTCORE_MEMORY_AVAILABLE:
+            # Cloud deployment: Use AgentCore Memory
+            logger.info(f"[VoiceAgent] Cloud mode: Using AgentCoreMemorySessionManager")
+
+            agentcore_memory_config = AgentCoreMemoryConfig(
+                memory_id=memory_id,
+                session_id=self.session_id,
+                actor_id=self.user_id,
+                enable_prompt_caching=False,  # Voice mode doesn't use prompt caching
+                retrieval_config=None  # No LTM retrieval for voice mode
+            )
+
+            return AgentCoreMemorySessionManager(
+                agentcore_memory_config=agentcore_memory_config,
+                region_name=aws_region
+            )
+        else:
+            # Local development: Use file-based session manager
+            logger.info(f"[VoiceAgent] Local mode: Using FileSessionManager")
+            sessions_dir = Path(__file__).parent.parent.parent / "sessions"
+            sessions_dir.mkdir(exist_ok=True)
+
+            return FileSessionManager(
+                session_id=self.session_id,
+                storage_dir=str(sessions_dir)
+            )
+
+    def _get_filtered_tools(self) -> List:
+        """
+        Get tools filtered by enabled_tools list.
+        Includes local tools, Gateway MCP client, and A2A agents.
+        (Same logic as ChatbotAgent.get_filtered_tools)
+        """
+        if not self.enabled_tools:
+            return []
+
+        # Filter local tools based on enabled_tools
+        filtered_tools = []
+        gateway_tool_ids = []
+        a2a_agent_ids = []
+
+        for tool_id in self.enabled_tools:
+            if tool_id in TOOL_REGISTRY:
+                # Local tool
+                filtered_tools.append(TOOL_REGISTRY[tool_id])
+            elif tool_id.startswith("gateway_"):
+                # Gateway MCP tool - collect for filtering
+                gateway_tool_ids.append(tool_id)
+            elif tool_id.startswith("agentcore_"):
+                # A2A Agent tool - collect for creation
+                a2a_agent_ids.append(tool_id)
+            else:
+                logger.warning(f"[VoiceAgent] Tool '{tool_id}' not found in registry, skipping")
+
+        logger.debug(f"[VoiceAgent] Local tools enabled: {len(filtered_tools)}")
+        logger.debug(f"[VoiceAgent] Gateway tools enabled: {len(gateway_tool_ids)}")
+        logger.debug(f"[VoiceAgent] A2A agents enabled: {len(a2a_agent_ids)}")
+
+        # Add Gateway MCP client if Gateway tools are enabled
+        # Store as instance variable to keep session alive during Agent lifecycle
+        if gateway_tool_ids:
+            self.gateway_client = get_gateway_client_if_enabled(enabled_tool_ids=gateway_tool_ids)
+            if self.gateway_client:
+                # Using Managed Integration (Strands 1.16+) - pass MCPClient directly to Agent
+                # BidiAgent will automatically manage lifecycle and filter tools
+                filtered_tools.append(self.gateway_client)
+                logger.info(f"[VoiceAgent] ✅ Gateway MCP client added: {gateway_tool_ids}")
+            else:
+                logger.warning("[VoiceAgent] ⚠️ Gateway MCP client not available")
+
+        # Add A2A Agent tools
+        if a2a_agent_ids:
+            for agent_id in a2a_agent_ids:
+                try:
+                    # Create A2A tool based on agent_id
+                    a2a_tool = a2a_tools.create_a2a_tool(agent_id)
+                    if a2a_tool:
+                        filtered_tools.append(a2a_tool)
+                        logger.info(f"[VoiceAgent] ✅ A2A Agent added: {agent_id}")
+                except Exception as e:
+                    logger.error(f"[VoiceAgent] Failed to create A2A tool {agent_id}: {e}")
+
+        logger.info(f"[VoiceAgent] Total enabled tools: {len(filtered_tools)} (local + gateway + a2a)")
+        return filtered_tools
+
+    async def start(self) -> None:
+        """Start the bidirectional agent connection
+
+        When starting, the session manager automatically loads conversation history
+        from previous text/voice interactions (if any), enabling seamless continuity.
+        """
+        if self._started:
+            logger.warning("[VoiceAgent] Already started")
+            return
+
+        invocation_state = {
+            "session_id": self.session_id,
+            "user_id": self.user_id,
+        }
+
+        try:
+            # Log messages BEFORE start (to see what was loaded from session)
+            messages_before = len(self.agent.messages)
+
+            await self.agent.start(invocation_state=invocation_state)
+            self._started = True
+
+            # Log messages AFTER start (session manager may have loaded history)
+            messages_after = len(self.agent.messages)
+
+            if messages_after > messages_before:
+                logger.info(f"[VoiceAgent] Loaded {messages_after} messages from session history "
+                           f"(voice-text continuity enabled)")
+            else:
+                logger.info(f"[VoiceAgent] Started with {messages_after} messages (new conversation)")
+
+        except Exception as e:
+            logger.error(f"[VoiceAgent] Failed to start: {e}", exc_info=True)
+            raise
+
+    async def stop(self) -> None:
+        """Stop the bidirectional agent connection"""
+        if not self._started:
+            return
+
+        await self.agent.stop()
+        self._started = False
+
+    def _process_vad(self, audio_bytes: bytes, sample_rate: int) -> tuple[bool, bytes]:
+        """Process audio through VAD to detect speech
+
+        Args:
+            audio_bytes: Raw PCM audio bytes (16-bit signed, mono)
+            sample_rate: Audio sample rate (must be 8000, 16000, 32000, or 48000)
+
+        Returns:
+            Tuple of (has_speech, processed_audio_bytes)
+            - has_speech: True if speech was detected in this chunk
+            - processed_audio_bytes: Audio bytes to forward (may include buffered data)
+        """
+        if not self.vad or sample_rate not in (8000, 16000, 32000, 48000):
+            # VAD not available or unsupported sample rate, pass through
+            return True, audio_bytes
+
+        # Calculate frame size in bytes (16-bit = 2 bytes per sample)
+        # For 30ms frame at 16kHz: 16000 * 0.030 * 2 = 960 bytes
+        frame_size = int(sample_rate * self.VAD_FRAME_DURATION_MS / 1000) * 2
+
+        # Add incoming audio to buffer
+        self._audio_buffer += audio_bytes
+
+        has_speech_in_chunk = False
+        frames_to_send = b''
+
+        # Process complete frames from buffer
+        while len(self._audio_buffer) >= frame_size:
+            frame = self._audio_buffer[:frame_size]
+            self._audio_buffer = self._audio_buffer[frame_size:]
+
+            try:
+                is_speech = self.vad.is_speech(frame, sample_rate)
+            except Exception as e:
+                logger.warning(f"[VoiceAgent] VAD error: {e}")
+                is_speech = True  # Assume speech on error
+
+            current_time = time.time() * 1000  # ms
+
+            if is_speech:
+                self._speech_frames += 1
+                self._silence_frames = 0
+                self._last_speech_time = current_time
+
+                # Only start considering as valid speech after MIN_SPEECH_FRAMES
+                if self._speech_frames >= self.MIN_SPEECH_FRAMES:
+                    if not self._is_speaking:
+                        logger.debug("[VoiceAgent] Speech started")
+                        self._is_speaking = True
+                    has_speech_in_chunk = True
+                    frames_to_send += frame
+                elif self._is_speaking:
+                    # Already speaking, continue
+                    has_speech_in_chunk = True
+                    frames_to_send += frame
+            else:
+                self._silence_frames += 1
+
+                if self._is_speaking:
+                    # Calculate silence duration
+                    silence_duration = self._silence_frames * self.VAD_FRAME_DURATION_MS
+
+                    if silence_duration < self.SILENCE_THRESHOLD_MS:
+                        # Short silence during speech, keep sending
+                        has_speech_in_chunk = True
+                        frames_to_send += frame
+                    else:
+                        # Long silence, speech ended
+                        logger.debug(f"[VoiceAgent] Speech ended (silence: {silence_duration}ms)")
+                        self._is_speaking = False
+                        self._speech_frames = 0
+
+        return has_speech_in_chunk, frames_to_send
+
+    async def send_audio(self, audio_base64: str, sample_rate: int = 16000) -> None:
+        """Send audio chunk to the agent
+
+        Args:
+            audio_base64: Base64 encoded PCM audio
+            sample_rate: Audio sample rate (default 16000 for Nova Sonic)
+        """
+        if not self._started:
+            raise RuntimeError("Agent not started")
+
+        try:
+            # Decode base64 audio
+            audio_bytes = base64.b64decode(audio_base64)
+
+            # Process through VAD if available
+            has_speech, processed_audio = self._process_vad(audio_bytes, sample_rate)
+
+            if has_speech and processed_audio:
+                # Re-encode and send only speech audio
+                processed_base64 = base64.b64encode(processed_audio).decode('utf-8')
+                await self.agent.send({
+                    "type": "bidi_audio_input",
+                    "audio": processed_base64,
+                    "format": "pcm",
+                    "sample_rate": sample_rate,
+                    "channels": 1,
+                })
+            # If no speech detected, we skip sending to reduce unnecessary processing
+
+        except Exception as e:
+            logger.error(f"[VoiceAgent] Error sending audio: {e}", exc_info=True)
+            raise
+
+    async def send_text(self, text: str) -> None:
+        """Send text input to the agent
+
+        Args:
+            text: Text message to send
+        """
+        if not self._started:
+            raise RuntimeError("Agent not started")
+
+        await self.agent.send({
+            "type": "bidi_text_input",
+            "text": text,
+            "role": "user",
+        })
+
+    async def receive_events(self) -> AsyncGenerator[Dict[str, Any], None]:
+        """Receive and transform events from the agent for WebSocket transmission
+
+        Yields:
+            Dictionary events suitable for JSON serialization and WebSocket transmission
+        """
+        if not self._started:
+            raise RuntimeError("Agent not started")
+
+        try:
+            async for event in self.agent.receive():
+                # Transform BidiOutputEvent to dict for WebSocket
+                transformed = self._transform_event(event)
+                # Skip events that return None (e.g., SPECULATIVE transcripts)
+                if transformed is not None:
+                    yield transformed
+        except Exception as e:
+            error_msg = str(e)
+            # Handle Nova Sonic specific errors gracefully
+            if "System instability detected" in error_msg:
+                logger.warning(f"[VoiceAgent] Nova Sonic system instability - recovering")
+                yield {
+                    "type": "bidi_error",
+                    "message": "Voice processing interrupted. Please try again.",
+                    "code": "SYSTEM_INSTABILITY",
+                    "recoverable": True,
+                }
+            else:
+                # Re-raise other exceptions
+                raise
+
+    def _transform_event(self, event: BidiOutputEvent) -> Dict[str, Any]:
+        """Transform BidiOutputEvent to a JSON-serializable dict
+
+        Args:
+            event: BidiAgent output event
+
+        Returns:
+            Dictionary representation for WebSocket transmission
+        """
+        event_type = type(event).__name__
+
+        # Map event types to simpler names for frontend
+        if isinstance(event, BidiAudioStreamEvent):
+            return {
+                "type": "bidi_audio_stream",
+                "audio": event.audio,
+                "format": getattr(event, "format", "pcm"),
+                "sample_rate": getattr(event, "sample_rate", 16000),
+            }
+
+        elif isinstance(event, BidiTranscriptStreamEvent):
+            # Transcript streaming from Nova Sonic
+            #
+            # Nova Sonic sends transcripts in TWO stages:
+            # 1. SPECULATIVE (is_final=False): Real-time preview, may change
+            # 2. FINAL (is_final=True): Confirmed text, won't change
+            #
+            # To avoid duplicates, we ONLY forward FINAL transcripts.
+            # SPECULATIVE transcripts are skipped.
+            role = event.role
+            is_final = getattr(event, "is_final", False)
+
+            # event.text is the text chunk from Nova Sonic
+            text = event.text or ""
+
+            # Skip SPECULATIVE transcripts - only process FINAL
+            if not is_final:
+                logger.debug(f"[VoiceAgent] Skipping SPECULATIVE transcript: role={role}, "
+                            f"text='{text[:50] if text else '(empty)'}...'")
+                return None  # Signal to skip this event
+
+            logger.info(f"[VoiceAgent] FINAL transcript: role={role}, text='{text[:80] if text else '(empty)'}...'")
+
+            return {
+                "type": "bidi_transcript_stream",
+                "role": role,
+                "delta": text,  # FINAL text - frontend accumulates
+                "is_final": True,
+            }
+
+        elif isinstance(event, BidiInterruptionEvent):
+            # User interrupted assistant
+            logger.info("[VoiceAgent] User interrupted")
+            return {
+                "type": "bidi_interruption",
+                "reason": getattr(event, "reason", "user_interrupt"),
+            }
+
+        elif isinstance(event, BidiResponseCompleteEvent):
+            # Assistant turn complete
+            logger.info("[VoiceAgent] Response complete")
+            return {
+                "type": "bidi_response_complete",
+            }
+
+        elif isinstance(event, BidiConnectionStartEvent):
+            return {
+                "type": "bidi_connection_start",
+                "connection_id": getattr(event, "connection_id", self.session_id),
+            }
+
+        elif isinstance(event, BidiConnectionCloseEvent):
+            return {
+                "type": "bidi_connection_close",
+                "reason": getattr(event, "reason", "normal"),
+            }
+
+        elif isinstance(event, BidiErrorEvent):
+            return {
+                "type": "bidi_error",
+                "message": getattr(event, "message", "Unknown error"),
+                "code": getattr(event, "code", None),
+            }
+
+        elif isinstance(event, ToolUseStreamEvent):
+            # Tool use starts
+            # ToolUseStreamEvent is dict-like, tool info is in current_tool_use
+            current_tool = event.get("current_tool_use", {})
+            tool_event = {
+                "type": "tool_use",
+                "toolUseId": current_tool.get("toolUseId"),
+                "name": current_tool.get("name"),
+                "input": current_tool.get("input", {}),
+            }
+            logger.info(f"[VoiceAgent] Tool use event: {tool_event}")
+            return tool_event
+
+        elif isinstance(event, ToolResultEvent):
+            # ToolResultEvent is dict-like, result info is in tool_result
+            tool_result = event.get("tool_result", {})
+            # content can be a list of content blocks, extract text
+            content = tool_result.get("content", [])
+            content_text = None
+            if isinstance(content, list) and len(content) > 0:
+                content_text = content[0].get("text") if isinstance(content[0], dict) else str(content[0])
+            elif isinstance(content, str):
+                content_text = content
+
+            result_event = {
+                "type": "tool_result",
+                "toolUseId": tool_result.get("toolUseId"),
+                "content": content_text,
+                "status": tool_result.get("status", "success"),
+            }
+            logger.info(f"[VoiceAgent] Tool result event: toolUseId={result_event['toolUseId']}, status={result_event['status']}")
+            return result_event
+
+        else:
+            # Handle other events generically
+            event_dict = {
+                "type": event_type.lower().replace("event", ""),
+            }
+
+            # Copy relevant attributes
+            for attr in ["toolUseId", "name", "input", "content", "status", "message"]:
+                if hasattr(event, attr):
+                    event_dict[attr] = getattr(event, attr)
+
+            # Handle usage/metrics events specially (normalize to bidi_usage format)
+            if "usage" in event_type.lower() or "metrics" in event_type.lower():
+                event_dict["type"] = "bidi_usage"
+                # Try to extract token counts from various possible attribute names
+                for input_attr in ["inputTokens", "input_tokens", "promptTokens", "prompt_tokens"]:
+                    if hasattr(event, input_attr):
+                        event_dict["inputTokens"] = getattr(event, input_attr)
+                        break
+                for output_attr in ["outputTokens", "output_tokens", "completionTokens", "completion_tokens"]:
+                    if hasattr(event, output_attr):
+                        event_dict["outputTokens"] = getattr(event, output_attr)
+                        break
+                for total_attr in ["totalTokens", "total_tokens"]:
+                    if hasattr(event, total_attr):
+                        event_dict["totalTokens"] = getattr(event, total_attr)
+                        break
+                # Calculate total if not provided
+                if "totalTokens" not in event_dict and "inputTokens" in event_dict and "outputTokens" in event_dict:
+                    event_dict["totalTokens"] = event_dict["inputTokens"] + event_dict["outputTokens"]
+
+            return event_dict
+
+    async def __aenter__(self) -> "VoiceChatbotAgent":
+        """Async context manager entry"""
+        await self.start()
+        return self
+
+    async def __aexit__(self, *args) -> None:
+        """Async context manager exit"""
+        await self.stop()

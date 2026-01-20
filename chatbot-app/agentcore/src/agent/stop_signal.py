@@ -192,10 +192,12 @@ def get_stop_signal_provider() -> StopSignalProvider:
     if _provider_instance is None:
         with _provider_lock:
             if _provider_instance is None:
-                is_local = os.environ.get('NEXT_PUBLIC_AGENTCORE_LOCAL', 'false').lower() == 'true'
-                logger.info(f"[StopSignal] NEXT_PUBLIC_AGENTCORE_LOCAL={os.environ.get('NEXT_PUBLIC_AGENTCORE_LOCAL', 'not set')}")
+                # Determine mode by MEMORY_ID presence (local = no MEMORY_ID)
+                memory_id = os.environ.get('MEMORY_ID')
+                is_cloud = memory_id is not None
+                logger.info(f"[StopSignal] MEMORY_ID={'set' if memory_id else 'not set'} (cloud={is_cloud})")
 
-                if is_local:
+                if not is_cloud:
                     logger.info("[StopSignal] Using LocalStopSignalProvider (in-memory)")
                     _provider_instance = LocalStopSignalProvider()
                 else:

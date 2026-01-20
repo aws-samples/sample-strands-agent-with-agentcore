@@ -697,6 +697,10 @@ export const useChatAPI = ({
               isDirective: true,
               directiveStep: directiveStep,
               autopilotType: autopilotType
+            }),
+            // Preserve voice message flag from local session store
+            ...(msg.isVoiceMessage && {
+              isVoiceMessage: true
             })
           }
 

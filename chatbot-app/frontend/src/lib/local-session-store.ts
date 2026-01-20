@@ -269,8 +269,41 @@ export function clearUserSessions(userId: string): void {
 }
 
 /**
+ * Read messages from a specific agent directory
+ */
+function readAgentMessages(
+  sessionDir: string,
+  agentId: string,
+  sessionId: string
+): Array<{ message: any; timestamp: string; source: string }> {
+  const messagesDir = path.join(sessionDir, 'agents', `agent_${agentId}`, 'messages')
+
+  if (!fs.existsSync(messagesDir)) {
+    return []
+  }
+
+  const messageFiles = fs.readdirSync(messagesDir)
+    .filter(f => f.startsWith('message_') && f.endsWith('.json'))
+
+  return messageFiles.map(filename => {
+    const filePath = path.join(messagesDir, filename)
+    const content = fs.readFileSync(filePath, 'utf-8')
+    const messageData = JSON.parse(content)
+
+    return {
+      message: messageData.message,
+      timestamp: messageData.created_at || new Date().toISOString(),
+      source: agentId, // Track which agent created this message
+    }
+  })
+}
+
+/**
  * Get conversation messages for a session from AgentCore Runtime storage
  * This reads directly from the agentcore sessions directory
+ *
+ * Reads from both text (agent_default) and voice (agent_voice) agent directories
+ * and merges them by timestamp for mixed text/voice conversations.
  */
 export function getSessionMessages(sessionId: string): any[] {
   try {
@@ -283,40 +316,35 @@ export function getSessionMessages(sessionId: string): any[] {
     // Path to AgentCore Runtime storage
     const agentcoreSessionsDir = path.join(process.cwd(), '..', 'agentcore', 'sessions')
     const sessionDir = path.join(agentcoreSessionsDir, `session_${sessionId}`)
-    const messagesDir = path.join(sessionDir, 'agents', 'agent_default', 'messages')
 
-    if (!fs.existsSync(messagesDir)) {
-      console.log(`[LocalSessionStore] No messages directory found: ${messagesDir}`)
+    if (!fs.existsSync(sessionDir)) {
+      console.log(`[LocalSessionStore] Session directory not found: ${sessionDir}`)
       return []
     }
 
-    // Read all message files
-    const messageFiles = fs.readdirSync(messagesDir)
-      .filter(f => f.startsWith('message_') && f.endsWith('.json'))
-      .sort((a, b) => {
-        const numA = parseInt(a.match(/message_(\d+)\.json/)?.[1] || '0')
-        const numB = parseInt(b.match(/message_(\d+)\.json/)?.[1] || '0')
-        return numA - numB
-      })
+    // Read messages from both text and voice agents
+    const textMessages = readAgentMessages(sessionDir, 'default', sessionId)
+    const voiceMessages = readAgentMessages(sessionDir, 'voice', sessionId)
 
-    console.log(`[LocalSessionStore] Found ${messageFiles.length} message files in ${messagesDir}`)
+    console.log(`[LocalSessionStore] Found ${textMessages.length} text messages, ${voiceMessages.length} voice messages`)
 
-    const messages = messageFiles.map((filename, index) => {
-      const filePath = path.join(messagesDir, filename)
-      const content = fs.readFileSync(filePath, 'utf-8')
-      const messageData = JSON.parse(content)
+    // Merge all messages
+    const allMessages = [...textMessages, ...voiceMessages]
 
-      // Return in the same format as AgentCore Memory
-      // AgentCore Memory returns parsed.message which contains { role, content }
-      // Add id and timestamp for frontend compatibility
-      return {
-        ...messageData.message, // Contains role and content array
-        id: `msg-${sessionId}-${index}`,
-        timestamp: messageData.created_at || new Date().toISOString(),
-      }
-    })
+    // Sort by timestamp to reconstruct the conversation chronologically
+    allMessages.sort((a, b) =>
+      new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+    )
 
-    console.log(`[LocalSessionStore] Loaded ${messages.length} messages`)
+    // Format messages for frontend
+    const messages = allMessages.map((item, index) => ({
+      ...item.message, // Contains role and content array
+      id: `msg-${sessionId}-${index}`,
+      timestamp: item.timestamp,
+      isVoiceMessage: item.source === 'voice', // Mark voice messages for UI distinction
+    }))
+
+    console.log(`[LocalSessionStore] Loaded ${messages.length} total messages (merged)`)
     return messages
   } catch (error) {
     console.error('[LocalSessionStore] Failed to load session messages:', error)

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Download, FileSpreadsheet, Presentation } from 'lucide-react'
+import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Download, FileSpreadsheet, Presentation, AudioWaveform } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { ReasoningState } from '@/types/events'
 import { Markdown } from '@/components/ui/Markdown'
@@ -303,8 +303,16 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
       <div className="flex items-start space-x-4 max-w-4xl w-full min-w-0">
         {/* Single Avatar for the entire turn */}
         <Avatar className="h-9 w-9 flex-shrink-0 mt-2">
-          <AvatarFallback className="bg-gradient-to-br from-blue-600 to-purple-600 text-white">
-            <Bot className="h-4 w-4" />
+          <AvatarFallback className={`text-white ${
+            messages.some(m => m.isVoiceMessage)
+              ? 'bg-gradient-to-br from-fuchsia-500 to-purple-600'
+              : 'bg-gradient-to-br from-blue-600 to-purple-600'
+          }`}>
+            {messages.some(m => m.isVoiceMessage) ? (
+              <AudioWaveform className="h-4 w-4" />
+            ) : (
+              <Bot className="h-4 w-4" />
+            )}
           </AvatarFallback>
         </Avatar>
 
