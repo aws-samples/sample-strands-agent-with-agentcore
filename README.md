@@ -205,12 +205,13 @@ This design emphasizes **extensibility, observability, and clear separation of c
 
 ## Key Features
 
-- Strands-based agent orchestration  
-- Amazon Bedrock AgentCore Runtime, Gateway, and Memory  
-- MCP Gateway tools (Google, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo)  
-- Agent-to-Agent (A2A) collaboration  
-- Built-in Code Interpreter for charts and documents  
-- Multimodal input and output (vision, charts, documents, screenshots)  
+- Strands-based agent orchestration
+- Amazon Bedrock AgentCore Runtime, Gateway, and Memory
+- MCP Gateway tools (Google, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo)
+- Agent-to-Agent (A2A) collaboration
+- Built-in Code Interpreter for charts and documents
+- Multimodal input and output (vision, charts, documents, screenshots)
+- Real-time voice interaction with Amazon Nova Sonic 2  
 
 ---
 
@@ -221,6 +222,17 @@ This design emphasizes **extensibility, observability, and clear separation of c
 - Autonomous web automation agents  
 - Memory-backed conversational assistants  
 - Hybrid research workflows using MCP, A2A, and AWS SDK tools  
+
+---
+
+## Voice Mode
+
+Real-time voice interaction using **Amazon Nova Sonic 2**, **Strands BidiAgent**,
+and **AgentCore Runtime WebSocket**.
+
+- Seamless switching between voice and text within a single session
+- Shared conversation history across both modes
+- Full tool execution support during voice conversations
 
 ---
 
