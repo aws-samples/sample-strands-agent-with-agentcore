@@ -38,6 +38,24 @@ function validateUserId(userId: string): boolean {
   return /^[a-zA-Z0-9_@.-]+$/.test(userId)
 }
 
+/**
+ * Validate agentId to prevent path traversal attacks
+ * Only allows known agent IDs
+ */
+function validateAgentId(agentId: string): boolean {
+  const ALLOWED_AGENT_IDS = ['default', 'voice']
+  return ALLOWED_AGENT_IDS.includes(agentId)
+}
+
+/**
+ * Validate that a resolved path stays within the expected base directory
+ */
+function isPathWithinBase(filePath: string, baseDir: string): boolean {
+  const resolvedPath = path.resolve(filePath)
+  const resolvedBase = path.resolve(baseDir)
+  return resolvedPath.startsWith(resolvedBase + path.sep) || resolvedPath === resolvedBase
+}
+
 // Ensure store directory exists
 function ensureStoreDir() {
   if (!fs.existsSync(STORE_DIR)) {
@@ -274,9 +292,21 @@ export function clearUserSessions(userId: string): void {
 function readAgentMessages(
   sessionDir: string,
   agentId: string,
-  sessionId: string
+  baseDir: string
 ): Array<{ message: any; timestamp: string; source: string }> {
+  // Validate agentId to prevent path traversal
+  if (!validateAgentId(agentId)) {
+    console.error(`[LocalSessionStore] Invalid agentId: ${agentId}`)
+    return []
+  }
+
   const messagesDir = path.join(sessionDir, 'agents', `agent_${agentId}`, 'messages')
+
+  // Verify path stays within base directory
+  if (!isPathWithinBase(messagesDir, baseDir)) {
+    console.error(`[LocalSessionStore] Path traversal attempt detected`)
+    return []
+  }
 
   if (!fs.existsSync(messagesDir)) {
     return []
@@ -286,7 +316,17 @@ function readAgentMessages(
     .filter(f => f.startsWith('message_') && f.endsWith('.json'))
 
   return messageFiles.map(filename => {
+    // Validate filename to prevent path traversal via directory listing
+    if (!/^message_\d+\.json$/.test(filename)) {
+      return null
+    }
     const filePath = path.join(messagesDir, filename)
+
+    // Double-check path stays within base
+    if (!isPathWithinBase(filePath, baseDir)) {
+      return null
+    }
+
     const content = fs.readFileSync(filePath, 'utf-8')
     const messageData = JSON.parse(content)
 
@@ -295,7 +335,7 @@ function readAgentMessages(
       timestamp: messageData.created_at || new Date().toISOString(),
       source: agentId, // Track which agent created this message
     }
-  })
+  }).filter((msg): msg is NonNullable<typeof msg> => msg !== null)
 }
 
 /**
@@ -317,14 +357,20 @@ export function getSessionMessages(sessionId: string): any[] {
     const agentcoreSessionsDir = path.join(process.cwd(), '..', 'agentcore', 'sessions')
     const sessionDir = path.join(agentcoreSessionsDir, `session_${sessionId}`)
 
+    // Verify sessionDir stays within agentcoreSessionsDir
+    if (!isPathWithinBase(sessionDir, agentcoreSessionsDir)) {
+      console.error(`[LocalSessionStore] Path traversal attempt detected for sessionId: ${sessionId}`)
+      return []
+    }
+
     if (!fs.existsSync(sessionDir)) {
       console.log(`[LocalSessionStore] Session directory not found: ${sessionDir}`)
       return []
     }
 
     // Read messages from both text and voice agents
-    const textMessages = readAgentMessages(sessionDir, 'default', sessionId)
-    const voiceMessages = readAgentMessages(sessionDir, 'voice', sessionId)
+    const textMessages = readAgentMessages(sessionDir, 'default', agentcoreSessionsDir)
+    const voiceMessages = readAgentMessages(sessionDir, 'voice', agentcoreSessionsDir)
 
     console.log(`[LocalSessionStore] Found ${textMessages.length} text messages, ${voiceMessages.length} voice messages`)
 
