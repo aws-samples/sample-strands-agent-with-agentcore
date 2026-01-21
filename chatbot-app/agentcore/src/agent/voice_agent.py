@@ -4,7 +4,6 @@ VoiceChatbotAgent for Agent Core
 - Nova Sonic model for bidirectional audio streaming
 - Shared tool registry with ChatbotAgent
 - Session management integration for seamless voice-text conversation continuity
-- WebRTC VAD for improved speech endpoint detection
 """
 
 import logging
@@ -12,16 +11,8 @@ import os
 import sys
 import asyncio
 import base64
-import time
 from typing import AsyncGenerator, Dict, Any, List, Optional
 from pathlib import Path
-
-# Voice Activity Detection
-try:
-    import webrtcvad
-    VAD_AVAILABLE = True
-except ImportError:
-    VAD_AVAILABLE = False
 
 # Mock pyaudio to avoid dependency (we use browser Web Audio API, not local audio)
 # This is needed because strands.experimental.bidi.io.audio imports pyaudio
@@ -85,18 +76,6 @@ class VoiceChatbotAgent:
     # This is the intended SDK behavior for different agent types.
     VOICE_AGENT_ID = "voice"
 
-    # VAD Configuration
-    # VAD is DISABLED by default because:
-    # 1. Browser already handles echo cancellation via getUserMedia constraints
-    # 2. Server-side VAD adds latency and may drop quiet speech
-    # 3. Nova Sonic handles audio processing well without pre-filtering
-    # Set ENABLE_VAD=true environment variable to enable VAD if needed
-    VAD_ENABLED_DEFAULT = False
-    VAD_AGGRESSIVENESS = 2  # 0-3, higher = more aggressive filtering (2 is balanced)
-    VAD_FRAME_DURATION_MS = 30  # webrtcvad supports 10, 20, or 30 ms frames
-    SILENCE_THRESHOLD_MS = 500  # Silence duration to consider speech ended
-    MIN_SPEECH_FRAMES = 3  # Minimum speech frames before considering it valid speech
-
     def __init__(
         self,
         session_id: str,
@@ -133,9 +112,6 @@ class VoiceChatbotAgent:
         # Load existing conversation history from text mode (agent_id="default")
         # This enables voice mode to have context from previous text interactions
         initial_messages = self._load_text_history()
-
-        # Initialize VAD (Voice Activity Detection)
-        self._init_vad()
 
         # Initialize Nova Sonic 2 model with proper configuration
         aws_region = os.environ.get('AWS_REGION', 'us-west-2')
@@ -189,38 +165,7 @@ class VoiceChatbotAgent:
         self._started = False
 
         logger.info(f"[VoiceAgent] Initialized with session_id={session_id}, "
-                   f"session_manager={type(self.session_manager).__name__}, "
-                   f"VAD={'enabled' if self.vad else 'disabled'}")
-
-    def _init_vad(self):
-        """Initialize Voice Activity Detection
-
-        VAD is disabled by default to reduce latency and avoid dropping quiet speech.
-        Browser handles echo cancellation. Set ENABLE_VAD=true to enable.
-        """
-        # Check if VAD should be enabled (default: disabled)
-        enable_vad = os.environ.get('ENABLE_VAD', '').lower() in ('true', '1', 'yes')
-
-        if not enable_vad:
-            self.vad = None
-            logger.info("[VoiceAgent] VAD disabled (set ENABLE_VAD=true to enable)")
-            return
-
-        if VAD_AVAILABLE:
-            try:
-                self.vad = webrtcvad.Vad(self.VAD_AGGRESSIVENESS)
-                self._speech_frames = 0
-                self._silence_frames = 0
-                self._last_speech_time = 0
-                self._is_speaking = False
-                self._audio_buffer = b''  # Buffer for incomplete frames
-                logger.info(f"[VoiceAgent] VAD initialized (aggressiveness={self.VAD_AGGRESSIVENESS})")
-            except Exception as e:
-                logger.warning(f"[VoiceAgent] Failed to initialize VAD: {e}")
-                self.vad = None
-        else:
-            self.vad = None
-            logger.warning("[VoiceAgent] webrtcvad not available, VAD disabled")
+                   f"session_manager={type(self.session_manager).__name__}")
 
     # Text agent's agent_id for loading conversation history
     TEXT_AGENT_ID = "default"
@@ -406,80 +351,6 @@ class VoiceChatbotAgent:
         await self.agent.stop()
         self._started = False
 
-    def _process_vad(self, audio_bytes: bytes, sample_rate: int) -> tuple[bool, bytes]:
-        """Process audio through VAD to detect speech
-
-        Args:
-            audio_bytes: Raw PCM audio bytes (16-bit signed, mono)
-            sample_rate: Audio sample rate (must be 8000, 16000, 32000, or 48000)
-
-        Returns:
-            Tuple of (has_speech, processed_audio_bytes)
-            - has_speech: True if speech was detected in this chunk
-            - processed_audio_bytes: Audio bytes to forward (may include buffered data)
-        """
-        if not self.vad or sample_rate not in (8000, 16000, 32000, 48000):
-            # VAD not available or unsupported sample rate, pass through
-            return True, audio_bytes
-
-        # Calculate frame size in bytes (16-bit = 2 bytes per sample)
-        # For 30ms frame at 16kHz: 16000 * 0.030 * 2 = 960 bytes
-        frame_size = int(sample_rate * self.VAD_FRAME_DURATION_MS / 1000) * 2
-
-        # Add incoming audio to buffer
-        self._audio_buffer += audio_bytes
-
-        has_speech_in_chunk = False
-        frames_to_send = b''
-
-        # Process complete frames from buffer
-        while len(self._audio_buffer) >= frame_size:
-            frame = self._audio_buffer[:frame_size]
-            self._audio_buffer = self._audio_buffer[frame_size:]
-
-            try:
-                is_speech = self.vad.is_speech(frame, sample_rate)
-            except Exception as e:
-                logger.warning(f"[VoiceAgent] VAD error: {e}")
-                is_speech = True  # Assume speech on error
-
-            current_time = time.time() * 1000  # ms
-
-            if is_speech:
-                self._speech_frames += 1
-                self._silence_frames = 0
-                self._last_speech_time = current_time
-
-                # Only start considering as valid speech after MIN_SPEECH_FRAMES
-                if self._speech_frames >= self.MIN_SPEECH_FRAMES:
-                    if not self._is_speaking:
-                        logger.debug("[VoiceAgent] Speech started")
-                        self._is_speaking = True
-                    has_speech_in_chunk = True
-                    frames_to_send += frame
-                elif self._is_speaking:
-                    # Already speaking, continue
-                    has_speech_in_chunk = True
-                    frames_to_send += frame
-            else:
-                self._silence_frames += 1
-
-                if self._is_speaking:
-                    # Calculate silence duration
-                    silence_duration = self._silence_frames * self.VAD_FRAME_DURATION_MS
-
-                    if silence_duration < self.SILENCE_THRESHOLD_MS:
-                        # Short silence during speech, keep sending
-                        has_speech_in_chunk = True
-                        frames_to_send += frame
-                    else:
-                        # Long silence, speech ended
-                        logger.debug(f"[VoiceAgent] Speech ended (silence: {silence_duration}ms)")
-                        self._is_speaking = False
-                        self._speech_frames = 0
-
-        return has_speech_in_chunk, frames_to_send
-
     async def send_audio(self, audio_base64: str, sample_rate: int = 16000) -> None:
         """Send audio chunk to the agent
 
@@ -491,24 +362,13 @@ class VoiceChatbotAgent:
             raise RuntimeError("Agent not started")
 
         try:
-            # Decode base64 audio
-            audio_bytes = base64.b64decode(audio_base64)
-
-            # Process through VAD if available
-            has_speech, processed_audio = self._process_vad(audio_bytes, sample_rate)
-
-            if has_speech and processed_audio:
-                # Re-encode and send only speech audio
-                processed_base64 = base64.b64encode(processed_audio).decode('utf-8')
-                await self.agent.send({
-                    "type": "bidi_audio_input",
-                    "audio": processed_base64,
-                    "format": "pcm",
-                    "sample_rate": sample_rate,
-                    "channels": 1,
-                })
-            # If no speech detected, we skip sending to reduce unnecessary processing
-
+            await self.agent.send({
+                "type": "bidi_audio_input",
+                "audio": audio_base64,
+                "format": "pcm",
+                "sample_rate": sample_rate,
+                "channels": 1,
+            })
         except Exception as e:
             logger.error(f"[VoiceAgent] Error sending audio: {e}", exc_info=True)
             raise

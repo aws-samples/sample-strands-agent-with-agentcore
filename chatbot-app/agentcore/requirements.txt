@@ -10,10 +10,7 @@ strands-agents[a2a]>=1.21.0
 strands-agents-tools[a2a_client]==0.2.3
 
 # Voice Chat (BidiAgent)
-aws-sdk-bedrock-runtime
-smithy-aws-core>=0.0.1
-setuptools  # Required for webrtcvad on Python 3.12+ (pkg_resources dependency)
-webrtcvad>=2.0.10  # Voice Activity Detection for speech endpoint detection
+aws-sdk-bedrock-runtime  # Required by strands BidiNovaSonicModel
 
 # A2A Protocol SDK for AgentCore Runtime communication
 a2a-sdk>=0.3.0
