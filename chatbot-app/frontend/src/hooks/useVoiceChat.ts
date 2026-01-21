@@ -64,6 +64,7 @@ export interface UseVoiceChatProps {
   onResponseComplete?: () => void  // Called when assistant finishes speaking (to finalize message)
   onUsageUpdate?: (usage: VoiceUsageStats) => void  // Token usage statistics
   onError?: (error: Error) => void
+  onSessionCreated?: () => void  // Called when new session is created (to refresh session list)
 }
 
 export interface UseVoiceChatReturn {
@@ -97,6 +98,7 @@ export function useVoiceChat({
   onResponseComplete,
   onUsageUpdate,
   onError,
+  onSessionCreated,
 }: UseVoiceChatProps): UseVoiceChatReturn {
   // ==================== STATE ====================
   const [isConnected, setIsConnected] = useState(false)
@@ -186,15 +188,27 @@ export function useVoiceChat({
   /**
    * Handle incoming WebSocket messages
    */
+  // Track if voice session has been initialized (first message received)
+  const sessionInitializedRef = useRef(false)
+
   const handleMessage = useCallback((event: MessageEvent) => {
     try {
       const data = JSON.parse(event.data)
 
+      // Workaround for AgentCore Runtime WebSocket proxy issue:
+      // The proxy may drop the initial bidi_connection_start message.
+      // Treat ANY first message as connection established.
+      if (!sessionInitializedRef.current) {
+        sessionInitializedRef.current = true
+        onStatusChange('voice_listening')
+        // Auto-start recording when connected
+        recorderRef.current?.start(sendAudioChunk)
+      }
+
       switch (data.type) {
         case 'bidi_connection_start':
-          onStatusChange('voice_listening')
-          // Auto-start recording when connected
-          recorderRef.current?.start(sendAudioChunk)
+          // Already handled above via first-message detection
+          // Keep this case for local mode where bidi_connection_start arrives properly
           break
 
         case 'bidi_response_start':
@@ -260,17 +274,23 @@ export function useVoiceChat({
           break
 
         case 'tool_use':
+        case 'tool_use_stream':
           // Tool execution started - finalize current assistant message first
+          // Note: tool_use_stream is alternative event name used by some implementations
+          // tool_use_stream format: { type, current_tool_use: { toolUseId, name, input } }
+          // tool_use format: { type, toolUseId, name, input }
           console.log('[VoiceChat] Tool use event received:', data)
           // Signal to finalize current assistant message before tool execution
           // This ensures text before tool use is saved as a separate message
           onResponseComplete?.()
 
+          // Handle both formats (tool_use_stream wraps in current_tool_use)
+          const toolData = data.current_tool_use || data
           const toolStart: VoiceToolExecution = {
-            toolUseId: data.toolUseId,
-            toolName: data.name,
+            toolUseId: toolData.toolUseId,
+            toolName: toolData.name,
             status: 'running',
-            input: data.input,
+            input: toolData.input,
           }
           console.log('[VoiceChat] Created toolStart:', toolStart)
           setCurrentToolExecution(toolStart)
@@ -295,6 +315,13 @@ export function useVoiceChat({
           })
           // Clear after a short delay
           setTimeout(() => setCurrentToolExecution(null), 2000)
+          break
+
+        case 'bidi_connection_restart':
+          // Nova Sonic has 8-minute session timeout, auto-reconnects
+          // Just log and continue - connection restarts automatically
+          console.log('[VoiceChat] Connection restarting (8-min timeout)')
+          onStatusChange('voice_connecting')
           break
 
         case 'bidi_error':
@@ -429,7 +456,7 @@ export function useVoiceChat({
       }
 
       const startData = await startResponse.json()
-      const { sessionId: activeSessionId, userId: activeUserId, wsUrl: baseWsUrl } = startData
+      const { sessionId: activeSessionId, wsUrl } = startData
 
       // Store active session ID for cleanup
       activeSessionIdRef.current = activeSessionId
@@ -440,30 +467,24 @@ export function useVoiceChat({
       if (!existingSessionId && activeSessionId) {
         sessionStorage.setItem('chat-session-id', activeSessionId)
         console.log(`[VoiceChat] Synced session ID to sessionStorage: ${activeSessionId}`)
+        // Notify parent that a new session was created (refresh session list)
+        onSessionCreated?.()
       } else if (existingSessionId !== activeSessionId) {
         console.warn(`[VoiceChat] Session ID mismatch - expected: ${existingSessionId}, got: ${activeSessionId}`)
       }
 
-      // 2. Build WebSocket URL with query params
-      const wsUrl = new URL(baseWsUrl)
-      wsUrl.searchParams.set('session_id', activeSessionId)
-      if (activeUserId) {
-        wsUrl.searchParams.set('user_id', activeUserId)
-      }
-      if (enabledTools.length > 0) {
-        wsUrl.searchParams.set('enabled_tools', JSON.stringify(enabledTools))
-      }
-
-      console.log('[VoiceChat] Connecting to WebSocket:', wsUrl.toString())
+      // 2. Use WebSocket URL from BFF directly
+      // BFF already includes query params (session_id, user_id, enabled_tools)
+      // For cloud mode, the URL is SigV4 pre-signed with all params included
+      console.log('[VoiceChat] Connecting to WebSocket (URL from BFF)')
 
       // 3. Create WebSocket connection
-      const ws = new WebSocket(wsUrl.toString())
+      const ws = new WebSocket(wsUrl)
       wsRef.current = ws
 
       ws.onopen = () => {
         reconnectAttemptRef.current = 0
         setIsConnected(true)
-        console.log('[VoiceChat] WebSocket connected')
         // Reset user spoken flag for new connection
         userHasSpokenRef.current = false
         // Start idle timer
@@ -514,7 +535,7 @@ export function useVoiceChat({
       onStatusChange('idle')
       onError?.(err instanceof Error ? err : new Error('Connection failed'))
     }
-  }, [sessionId, enabledTools, isSupported, missingFeatures, handleMessage, onStatusChange, onError, endVoiceSession, resetIdleTimer])
+  }, [sessionId, enabledTools, isSupported, missingFeatures, handleMessage, onStatusChange, onError, endVoiceSession, resetIdleTimer, onSessionCreated])
 
   /**
    * Disconnect from voice chat
@@ -525,6 +546,12 @@ export function useVoiceChat({
 
     // Stop recording
     recorderRef.current?.stop()
+
+    // Clear audio playback queue immediately (stop any playing audio)
+    playerRef.current?.clear()
+
+    // Reset session initialized flag for next connection
+    sessionInitializedRef.current = false
 
     // Close WebSocket
     if (wsRef.current) {
@@ -543,6 +570,36 @@ export function useVoiceChat({
     playerRef.current?.setVolume(volume)
   }, [])
 
+  // ==================== SESSION CHANGE DETECTION ====================
+  // Disconnect voice chat when session changes (e.g., user switches to another session)
+  // Also track the session ID that was used to establish the current voice connection
+  const connectedSessionIdRef = useRef<string | null>(null)
+
+  // Track which session ID was used when voice connection was established
+  useEffect(() => {
+    if (isConnected && sessionId) {
+      // Store the session ID when we become connected
+      if (!connectedSessionIdRef.current) {
+        connectedSessionIdRef.current = sessionId
+      }
+    } else if (!isConnected) {
+      // Clear when disconnected
+      connectedSessionIdRef.current = null
+    }
+  }, [isConnected, sessionId])
+
+  // Disconnect if session changes while voice is active
+  useEffect(() => {
+    // Only disconnect if:
+    // 1. We have an active WebSocket connection
+    // 2. We had a connected session ID
+    // 3. The session ID actually changed (not just from null to value)
+    if (wsRef.current && connectedSessionIdRef.current && sessionId !== connectedSessionIdRef.current) {
+      console.log(`[VoiceChat] Session changed from ${connectedSessionIdRef.current} to ${sessionId}, disconnecting`)
+      disconnect()
+    }
+  }, [sessionId, disconnect])
+
   // ==================== CLEANUP ====================
   useEffect(() => {
     return () => {
@@ -550,6 +607,7 @@ export function useVoiceChat({
       recorderRef.current?.stop()
       recorderRef.current?.dispose()
       playerRef.current?.dispose()
+      sessionInitializedRef.current = false
       if (wsRef.current) {
         wsRef.current.close(1000, 'Component unmounted')
         wsRef.current = null

@@ -203,6 +203,13 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     return ids
   }, [availableTools])
 
+  // Callback to refresh session list when voice creates a new session
+  const refreshSessionList = useCallback(() => {
+    if (typeof (window as any).__refreshSessionList === 'function') {
+      (window as any).__refreshSessionList()
+    }
+  }, [])
+
   // Voice chat hook - delegates state management to useChat via callbacks
   const {
     isSupported: isVoiceSupported,
@@ -245,6 +252,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     onError: (error) => {
       console.error('[Voice] Error:', error)
     },
+    onSessionCreated: refreshSessionList,  // Refresh session list when voice creates new session
   })
 
   // Helper to check if voice mode is active (derived from unified agentStatus)
@@ -545,9 +553,22 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   }, [])
 
   const handleNewChat = useCallback(async () => {
+    // Force disconnect voice chat before creating new session
+    if (isVoiceActive) {
+      disconnectVoice()
+    }
     await newChat()
     regenerateSuggestions()
-  }, [newChat, regenerateSuggestions])
+  }, [newChat, regenerateSuggestions, isVoiceActive, disconnectVoice])
+
+  // Wrapper for loadSession that disconnects voice first
+  const handleLoadSession = useCallback(async (newSessionId: string) => {
+    // Force disconnect voice chat before switching sessions
+    if (isVoiceActive) {
+      disconnectVoice()
+    }
+    await loadSession(newSessionId)
+  }, [loadSession, isVoiceActive, disconnectVoice])
 
   const handleToggleTool = useCallback(
     async (toolId: string) => {
@@ -744,7 +765,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
       <ChatSidebar
         sessionId={sessionId}
         onNewChat={handleNewChat}
-        loadSession={loadSession}
+        loadSession={handleLoadSession}
       />
 
       {/* Main Chat Area - unified layout for both modes */}

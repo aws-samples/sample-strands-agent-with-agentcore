@@ -24,10 +24,13 @@ except ImportError:
     VAD_AVAILABLE = False
 
 # Mock pyaudio to avoid dependency (we use browser Web Audio API, not local audio)
+# This is needed because strands.experimental.bidi.io.audio imports pyaudio
+# even though we don't use local audio I/O in cloud deployment
 if 'pyaudio' not in sys.modules:
     import types
     fake_pyaudio = types.ModuleType('pyaudio')
     fake_pyaudio.PyAudio = type('PyAudio', (), {})
+    fake_pyaudio.Stream = type('Stream', (), {})  # Required by BidiAudioIO
     fake_pyaudio.paInt16 = 8
     fake_pyaudio.paContinue = 0
     sys.modules['pyaudio'] = fake_pyaudio
@@ -134,12 +137,39 @@ class VoiceChatbotAgent:
         # Initialize VAD (Voice Activity Detection)
         self._init_vad()
 
-        # Initialize Nova Sonic 2 model
+        # Initialize Nova Sonic 2 model with proper configuration
         aws_region = os.environ.get('AWS_REGION', 'us-west-2')
         model_id = os.environ.get('NOVA_SONIC_MODEL_ID', 'amazon.nova-2-sonic-v1:0')
+
+        # Audio configuration (16kHz mono PCM - standard for Nova Sonic)
+        # Voice options: matthew, tiffany, amy (default: tiffany for natural conversation)
+        voice_id = os.environ.get('NOVA_SONIC_VOICE', 'tiffany')
+        input_sample_rate = int(os.environ.get('NOVA_SONIC_INPUT_RATE', '16000'))
+        output_sample_rate = int(os.environ.get('NOVA_SONIC_OUTPUT_RATE', '16000'))
+
         self.model = BidiNovaSonicModel(
             model_id=model_id,
-            region=aws_region,
+            provider_config={
+                # Audio configuration
+                # https://strandsagents.com/latest/documentation/docs/api-reference/experimental/bidi/types/#strands.experimental.bidi.types.model.AudioConfig
+                "audio": {
+                    "voice": voice_id,
+                    "input_rate": input_sample_rate,
+                    "output_rate": output_sample_rate,
+                    "channels": 1,  # Mono
+                    "format": "pcm",  # 16-bit PCM
+                },
+                # Inference configuration (optional)
+                # https://docs.aws.amazon.com/nova/latest/userguide/input-events.html
+                "inference": {
+                    # "temperature": 0.7,
+                    # "top_p": 0.9,
+                    # "max_tokens": 4096,
+                },
+            },
+            client_config={
+                "region": aws_region,
+            },
         )
 
         # Create BidiAgent with session manager for conversation persistence

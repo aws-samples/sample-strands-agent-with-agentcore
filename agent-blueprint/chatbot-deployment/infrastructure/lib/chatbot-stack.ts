@@ -532,13 +532,15 @@ async function sendResponse(event, status, data, reason) {
       cpu: 2048,             // 2 vCPU for improved performance
     });
 
-    // Add AgentCore Runtime invocation permissions
+    // Add AgentCore Runtime invocation permissions (HTTP + WebSocket)
+    // WebSocket connections require additional permissions beyond InvokeAgentRuntime
     frontendTaskDefinition.addToTaskRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
         actions: [
           'bedrock-agentcore:InvokeAgentRuntime',
-          'bedrock-agentcore:InvokeAgentRuntimeForUser'
+          'bedrock-agentcore:InvokeAgentRuntimeForUser',
+          'bedrock-agentcore:*'  // Wildcard for WebSocket and other runtime operations
         ],
         resources: [
           `arn:aws:bedrock-agentcore:${this.region}:${this.account}:runtime/*`
@@ -546,7 +548,7 @@ async function sendResponse(event, status, data, reason) {
       })
     );
 
-    // Add Parameter Store permissions to fetch AgentCore Runtime ARN and MCP Gateway URL
+    // Add Parameter Store permissions to fetch AgentCore Runtime ARN, MCP Gateway URL
     frontendTaskDefinition.addToTaskRolePolicy(
       new iam.PolicyStatement({
         effect: iam.Effect.ALLOW,
@@ -878,7 +880,7 @@ async function sendResponse(event, status, data, reason) {
 
     // Create ALB listener - all traffic goes to Frontend (which includes BFF)
     // Authentication is handled by the frontend application using AWS Amplify
-    const listener = alb.addListener('ChatbotListener', {
+    alb.addListener('ChatbotListener', {
       port: 80,
       open: true,
       defaultAction: elbv2.ListenerAction.forward([frontendTargetGroup]),

@@ -5,9 +5,10 @@ Handles real-time bidirectional audio streaming for voice chat
 using Nova Sonic speech-to-speech model via BidiAgent.
 
 Architecture:
-- BFF handles authentication and session initialization (/api/voice/start)
-- This router handles audio streaming only
-- BFF handles session metadata update on disconnect (/api/voice/end)
+- Local mode: Direct WebSocket to /voice/stream
+- Cloud mode: AgentCore Runtime routes WebSocket to /ws on container
+  - URL format: wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<arn>/ws
+  - BFF generates SigV4 pre-signed URL for browser authentication
 """
 
 import asyncio
@@ -73,24 +74,29 @@ async def voice_stream(
     voice_agent = None
 
     try:
-        # Create and start voice agent
+        # Create voice agent (but don't start yet)
         VoiceAgentClass = _get_voice_agent_class()
         voice_agent = VoiceAgentClass(
             session_id=session_id,
             user_id=user_id,
             enabled_tools=tools_list,
         )
-        await voice_agent.start()
 
         # Store in active sessions
         _active_sessions[session_id] = voice_agent
 
-        # Send connection established event
+        # Send connection established event FIRST (before starting agent)
+        # Note: AgentCore Runtime WebSocket proxy may drop this message,
+        # but client handles it via first-message detection workaround
         await websocket.send_json({
             "type": "bidi_connection_start",
             "connection_id": session_id,
             "status": "connected",
         })
+
+        # Now start the voice agent (connects to Nova Sonic)
+        await voice_agent.start()
+        logger.info(f"[Voice] Voice agent started: session={session_id}")
 
         # Create tasks for bidirectional communication
         receive_task = asyncio.create_task(
@@ -238,3 +244,31 @@ async def stop_voice_session(session_id: str):
         del _active_sessions[session_id]
         return {"status": "stopped", "session_id": session_id}
     return {"status": "not_found", "session_id": session_id}
+
+
+# =============================================================================
+# /ws endpoint for AgentCore Runtime
+# AgentCore Runtime routes WebSocket requests to /ws on the container
+# This is an alias of /voice/stream for cloud deployment compatibility
+# =============================================================================
+
+@router.websocket("/ws")
+async def ws_stream(
+    websocket: WebSocket,
+    session_id: Optional[str] = Query(None, description="Session ID"),
+    user_id: Optional[str] = Query(None, description="User ID"),
+    enabled_tools: Optional[str] = Query(None, description="JSON array of enabled tool IDs"),
+):
+    """
+    WebSocket endpoint for AgentCore Runtime (cloud mode)
+
+    AgentCore Runtime expects containers to implement WebSocket at /ws path on port 8080.
+    This endpoint mirrors /voice/stream for compatibility.
+    """
+    # Delegate to voice_stream implementation
+    await voice_stream(
+        websocket=websocket,
+        session_id=session_id,
+        user_id=user_id,
+        enabled_tools=enabled_tools,
+    )
