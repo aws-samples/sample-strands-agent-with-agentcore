@@ -418,7 +418,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         const response = await fetch(`/api/session/${sessionId}`, { headers: authHeaders })
 
         if (response.status === 404) {
-          console.log('[useChat] Session not yet created in DynamoDB (new session)')
+          // 404 is expected for new sessions - session metadata is created on first message
           setSessionState(prev => ({ ...prev, browserSession: null }))
           return
         }
@@ -427,16 +427,15 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           const data = await response.json()
           if (data.success && data.session?.metadata?.browserSession) {
             const browserSession = data.session.metadata.browserSession
-            console.log('[useChat] Restoring browser session from DynamoDB:', browserSession)
+            console.warn('[useChat] Restored browser session from DynamoDB')
             setSessionState(prev => ({ ...prev, browserSession }))
             sessionStorage.setItem(`browser-session-${sessionId}`, JSON.stringify(browserSession))
           } else {
-            console.log('[useChat] No browser session found for this session')
             setSessionState(prev => ({ ...prev, browserSession: null }))
           }
         }
       } catch (e) {
-        console.log('[useChat] Could not load browser session:', e)
+        console.warn('[useChat] Could not load browser session:', e)
       }
     }
 

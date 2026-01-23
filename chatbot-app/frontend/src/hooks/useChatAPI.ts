@@ -3,11 +3,25 @@ import { Message, Tool, ToolExecution } from '@/types/chat'
 import { StreamEvent, ChatUIState } from '@/types/events'
 import { getApiUrl } from '@/config/environment'
 import logger from '@/utils/logger'
-import { fetchAuthSession } from 'aws-amplify/auth'
+import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth'
 import { apiGet, apiPost } from '@/lib/api-client'
 import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
-import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData } from '@/config/session'
+import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData, triggerWarmup, generateSessionId } from '@/config/session'
 import { parseAutopilotMessage } from '@/utils/autopilotParser'
+
+/**
+ * Get current authenticated user's ID from Amplify
+ * Returns 'anonymous' if not authenticated
+ */
+async function getAuthUserId(): Promise<string> {
+  try {
+    const user = await getCurrentUser()
+    return user.userId || user.username || 'anonymous'
+  } catch {
+    // Not authenticated
+    return 'anonymous'
+  }
+}
 
 interface UseChatAPIProps {
   backendUrl: string
@@ -61,42 +75,50 @@ export const useChatAPI = ({
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null)
   const sessionIdRef = useRef<string | null>(null)
 
-  // Restore last session on page load (with timeout check)
+  // Restore last session on page load (with timeout check) and trigger warmup
   useEffect(() => {
-    const lastSessionId = sessionStorage.getItem('chat-session-id')
-    const lastActivityTime = getLastActivity()
+    const initSession = async () => {
+      // 1. First, get userId from Amplify auth
+      const userId = await getAuthUserId()
+      console.warn(`[Session] Initialized with userId: ${userId}`)
 
-    if (lastSessionId && lastActivityTime) {
-      // Check if session has timed out
-      if (isSessionTimedOut(lastActivityTime)) {
-        const minutesSinceActivity = (Date.now() - lastActivityTime) / 1000 / 60
-        console.log(`[Session] Session timed out after ${minutesSinceActivity.toFixed(1)} minutes of inactivity`)
-        console.log(`[Session] Starting new session...`)
+      const lastSessionId = sessionStorage.getItem('chat-session-id')
+      const lastActivityTime = getLastActivity()
 
-        // Clear timed-out session
-        clearSessionData()
-        setSessionId(null)
-        sessionIdRef.current = null
-      } else {
-        // Session is still valid - restore it
-        const minutesSinceActivity = (Date.now() - lastActivityTime) / 1000 / 60
-        console.log(`[Session] Restoring session: ${lastSessionId} (${minutesSinceActivity.toFixed(1)} minutes since last activity)`)
+      let currentSessionId: string | null = null
 
-        setSessionId(lastSessionId)
-        sessionIdRef.current = lastSessionId
-        // Note: loadSession will be called by useChat hook
+      if (lastSessionId && lastActivityTime) {
+        if (isSessionTimedOut(lastActivityTime)) {
+          const minutesSinceActivity = (Date.now() - lastActivityTime) / 1000 / 60
+          console.warn(`[Session] Session timed out after ${minutesSinceActivity.toFixed(1)} minutes of inactivity`)
+          clearSessionData()
+        } else {
+          const minutesSinceActivity = (Date.now() - lastActivityTime) / 1000 / 60
+          console.warn(`[Session] Restoring session: ${lastSessionId} (${minutesSinceActivity.toFixed(1)} minutes since last activity)`)
+          currentSessionId = lastSessionId
+        }
+      } else if (lastSessionId) {
+        console.warn(`[Session] Restoring session without activity timestamp: ${lastSessionId}`)
+        currentSessionId = lastSessionId
+        updateLastActivity()
       }
-    } else if (lastSessionId) {
-      // Session ID exists but no activity timestamp - restore session
-      console.log(`[Session] Restoring session without activity timestamp: ${lastSessionId}`)
-      setSessionId(lastSessionId)
-      sessionIdRef.current = lastSessionId
-      updateLastActivity() // Set activity timestamp for future
-    } else {
-      // No session to restore
-      setSessionId(null)
-      sessionIdRef.current = null
+
+      // 2. Generate new session with userId if none exists
+      if (!currentSessionId) {
+        currentSessionId = generateSessionId(userId)
+        sessionStorage.setItem('chat-session-id', currentSessionId)
+        console.warn(`[Session] Generated new session: ${currentSessionId}`)
+      }
+
+      setSessionId(currentSessionId)
+      sessionIdRef.current = currentSessionId
+
+      // 3. Trigger warmup with auth
+      const authHeaders = await getAuthHeaders()
+      triggerWarmup(currentSessionId, authHeaders)
     }
+
+    initSession()
   }, [])
 
   // Sync sessionIdRef with sessionId state
@@ -272,18 +294,26 @@ export const useChatAPI = ({
 
   const newChat = useCallback(async () => {
     try {
-      // Clear local state only - no server call
       setMessages([])
-      setSessionId(null)
-      sessionIdRef.current = null
-      clearSessionData() // Clear session ID and last activity timestamp
+      clearSessionData()
 
+      // Get userId first, then generate session ID with it
+      const userId = await getAuthUserId()
+      const newSessionId = generateSessionId(userId)
+      setSessionId(newSessionId)
+      sessionIdRef.current = newSessionId
+      sessionStorage.setItem('chat-session-id', newSessionId)
+      console.warn(`[Session] New chat created: ${newSessionId}`)
+
+      // Get auth headers for warmup affinity (userId must match)
+      const authHeaders = await getAuthHeaders()
+      triggerWarmup(newSessionId, authHeaders)
       return true
     } catch (error) {
       logger.error('Error clearing chat:', error)
       return false
     }
-  }, [setMessages])
+  }, [setMessages, setSessionId])
 
   const sendMessage = useCallback(async (
     messageToSend: string,

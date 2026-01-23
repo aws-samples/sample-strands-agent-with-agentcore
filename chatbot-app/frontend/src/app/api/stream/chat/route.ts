@@ -4,7 +4,7 @@
  */
 import { NextRequest } from 'next/server'
 import { invokeAgentCoreRuntime } from '@/lib/agentcore-runtime-client'
-import { extractUserFromRequest, getSessionId } from '@/lib/auth-utils'
+import { extractUserFromRequest, getSessionId, ensureSessionExists } from '@/lib/auth-utils'
 import { createDefaultHookManager } from '@/lib/chat-hooks'
 import { getSystemPrompt } from '@/lib/system-prompts'
 // Note: browser-session-poller is dynamically imported when browser-use-agent is enabled
@@ -83,31 +83,14 @@ export async function POST(request: NextRequest) {
     const userId = user.userId
 
     // Get or generate session ID (user-specific)
-    const { sessionId, isNew: isNewSession } = getSessionId(request, userId)
+    const { sessionId } = getSessionId(request, userId)
+
+    // Ensure session exists in storage (creates if not exists)
+    const { isNew: isNewSession } = await ensureSessionExists(userId, sessionId, {
+      title: message.length > 50 ? message.substring(0, 47) + '...' : message,
+    })
 
     console.log(`[BFF] User: ${userId}, Session: ${sessionId}${isNewSession ? ' (new)' : ''}`)
-
-    // If new session, create session metadata
-    if (isNewSession) {
-      const now = new Date().toISOString()
-      const sessionData = {
-        title: message.length > 50 ? message.substring(0, 47) + '...' : message,
-        messageCount: 0,
-        lastMessageAt: now,
-        status: 'active' as const,
-        starred: false,
-        tags: [],
-      }
-
-      // Create session in storage for all users (including anonymous in AWS)
-      if (IS_LOCAL) {
-        const { upsertSession } = await import('@/lib/local-session-store')
-        upsertSession(userId, sessionId, sessionData)
-      } else {
-        const { upsertSession: upsertDynamoSession } = await import('@/lib/dynamodb-client')
-        await upsertDynamoSession(userId, sessionId, sessionData)
-      }
-    }
 
     // Load or use provided enabled_tools
     let enabledToolsList: string[] = []

@@ -69,7 +69,14 @@ const nextConfig = {
     ];
   },
   async rewrites() {
-    // AgentCore Runtime URL (default port 8080)
+    // Cloud mode: MEMORY_ID is set, no need for local AgentCore proxy
+    // Local mode: proxy to local AgentCore for static files
+    const isCloud = !!process.env.MEMORY_ID
+    if (isCloud) {
+      return []
+    }
+
+    // Local development: proxy to AgentCore Runtime
     const agentCoreUrl = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080';
 
     return [

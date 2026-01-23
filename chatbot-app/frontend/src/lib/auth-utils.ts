@@ -53,13 +53,12 @@ export function extractUserFromRequest(request: Request): CognitoUser {
 /**
  * Generate or extract session ID from request headers
  * Session ID must be >= 33 characters to meet AgentCore Runtime validation
- * Returns: { sessionId: string, isNew: boolean }
  */
-export function getSessionId(request: Request, userId: string): { sessionId: string; isNew: boolean } {
+export function getSessionId(request: Request, userId: string): { sessionId: string } {
   // Check for existing session ID in header
   const headerSessionId = request.headers.get('X-Session-ID')
   if (headerSessionId) {
-    return { sessionId: headerSessionId, isNew: false }
+    return { sessionId: headerSessionId }
   }
 
   // Generate new session ID >= 33 characters
@@ -72,5 +71,58 @@ export function getSessionId(request: Request, userId: string): { sessionId: str
 
   console.log(`[Auth] Generated session ID (length: ${sessionId.length})`)
 
-  return { sessionId, isNew: true }
+  return { sessionId }
+}
+
+// Check if running in local development mode
+const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
+
+interface SessionData {
+  title: string
+  messageCount?: number
+  lastMessageAt?: string
+  status?: 'active' | 'archived' | 'deleted'
+  starred?: boolean
+  tags?: string[]
+  metadata?: Record<string, any>
+}
+
+/**
+ * Ensure session exists in storage (DynamoDB or local file)
+ * Creates session if it doesn't exist, returns isNew flag
+ */
+export async function ensureSessionExists(
+  userId: string,
+  sessionId: string,
+  defaultData: SessionData
+): Promise<{ isNew: boolean }> {
+  const now = new Date().toISOString()
+  const sessionData = {
+    ...defaultData,
+    messageCount: defaultData.messageCount ?? 0,
+    lastMessageAt: defaultData.lastMessageAt ?? now,
+    status: defaultData.status ?? 'active' as const,
+    starred: defaultData.starred ?? false,
+    tags: defaultData.tags ?? [],
+  }
+
+  if (IS_LOCAL) {
+    const { getSession, upsertSession } = await import('@/lib/local-session-store')
+    const existingSession = getSession(userId, sessionId)
+    if (!existingSession) {
+      upsertSession(userId, sessionId, sessionData)
+      console.log(`[Session] Created new local session: ${sessionId}`)
+      return { isNew: true }
+    }
+    return { isNew: false }
+  } else {
+    const { getSession, upsertSession } = await import('@/lib/dynamodb-client')
+    const existingSession = await getSession(userId, sessionId)
+    if (!existingSession) {
+      await upsertSession(userId, sessionId, sessionData)
+      console.log(`[Session] Created new DynamoDB session: ${sessionId}`)
+      return { isNew: true }
+    }
+    return { isNew: false }
+  }
 }

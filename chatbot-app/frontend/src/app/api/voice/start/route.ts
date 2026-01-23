@@ -3,7 +3,7 @@
  * Local: Direct WS to AgentCore, Cloud: SigV4 pre-signed URL to AgentCore Runtime
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { extractUserFromRequest, getSessionId } from '@/lib/auth-utils'
+import { extractUserFromRequest, getSessionId, ensureSessionExists } from '@/lib/auth-utils'
 import { SignatureV4 } from '@smithy/signature-v4'
 import { Sha256 } from '@aws-crypto/sha256-js'
 import { defaultProvider } from '@aws-sdk/credential-provider-node'
@@ -99,31 +99,17 @@ export async function POST(request: NextRequest) {
   try {
     const user = extractUserFromRequest(request)
     const userId = user.userId
-    const { sessionId, isNew } = getSessionId(request, userId)
+    const { sessionId } = getSessionId(request, userId)
     const body = await request.json().catch(() => ({}))
     const enabledTools: string[] = body.enabledTools || []
 
-    console.log(`[Voice Start] User: ${userId}, Session: ${sessionId}, New: ${isNew}, Tools: ${enabledTools.length}`)
+    // Ensure session exists in storage (creates if not exists)
+    const { isNew } = await ensureSessionExists(userId, sessionId, {
+      title: 'Voice Chat',
+      metadata: { isVoiceSession: true },
+    })
 
-    if (isNew) {
-      if (IS_LOCAL) {
-        const { upsertSession } = await import('@/lib/local-session-store')
-        upsertSession(userId, sessionId, {
-          title: 'Voice Chat',
-          messageCount: 0,
-          lastMessageAt: new Date().toISOString(),
-          metadata: { isVoiceSession: true },
-        })
-      } else {
-        const { upsertSession } = await import('@/lib/dynamodb-client')
-        await upsertSession(userId, sessionId, {
-          title: 'Voice Chat',
-          messageCount: 0,
-          lastMessageAt: new Date().toISOString(),
-          metadata: { isVoiceSession: true },
-        })
-      }
-    }
+    console.log(`[Voice Start] User: ${userId}, Session: ${sessionId}, New: ${isNew}, Tools: ${enabledTools.length}`)
 
     let wsUrl: string
     const awsRegion = process.env.AWS_REGION || 'us-west-2'
