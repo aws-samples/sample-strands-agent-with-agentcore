@@ -13,6 +13,21 @@ export interface ResponseEvent {
   step: 'answering';
 }
 
+// Text event (used by Swarm mode streaming)
+export interface TextEvent {
+  type: 'text';
+  content: string;
+}
+
+// Stream lifecycle events
+export interface StartEvent {
+  type: 'start';
+}
+
+export interface EndEvent {
+  type: 'end';
+}
+
 export interface ToolUseEvent {
   type: 'tool_use';
   toolUseId: string;
@@ -109,55 +124,91 @@ export interface ResearchProgressEvent {
   stepNumber: number;
 }
 
-// Autopilot Mode Events (Mission Control Orchestration)
-export type AutopilotState = 'off' | 'init' | 'executing' | 'finishing';
+// Swarm Mode Events (Multi-Agent Orchestration)
+export type SwarmState = 'idle' | 'running' | 'completed' | 'failed';
 
-export interface MissionProgressEvent {
-  type: 'mission_progress';
-  step: number;
-  directive_prompt: string;
-  active_tools: string[];
+export interface SwarmNodeStartEvent {
+  type: 'swarm_node_start';
+  node_id: string;
+  node_description: string;
 }
 
-export interface MissionCompleteEvent {
-  type: 'mission_complete';
-  total_steps: number;
+export interface SwarmNodeStopEvent {
+  type: 'swarm_node_stop';
+  node_id: string;
+  status: string;  // "completed" | "failed" | "interrupted"
 }
 
-// Autopilot mode flag for tracking multi-step missions as single turn
-export interface AutopilotModeState {
+export interface SwarmHandoffEvent {
+  type: 'swarm_handoff';
+  from_node: string;
+  to_node: string;
+  message?: string;
+  context?: Record<string, any>;  // shared_context data from the handing-off agent
+}
+
+export interface SwarmCompleteEvent {
+  type: 'swarm_complete';
+  total_nodes: number;
+  node_history: string[];
+  status: string;
+  // Fallback response when last agent is not responder
+  final_response?: string;
+  final_node_id?: string;
+}
+
+// Swarm agent execution step (for expanded view)
+export interface SwarmAgentStep {
+  nodeId: string;
+  displayName: string;
+  description?: string;
+  startTime: number;
+  endTime?: number;
+  toolCalls?: Array<{
+    toolName: string;
+    status: 'running' | 'completed' | 'failed';
+  }>;
+  status: 'running' | 'completed' | 'failed';
+  responseText?: string;   // Final response text
+  reasoningText?: string;  // Intermediate reasoning/thinking
+  handoffMessage?: string; // Message passed to next agent via handoff
+  handoffContext?: Record<string, any>; // Actual data passed via handoff context
+}
+
+// Swarm progress state for UI
+export interface SwarmProgress {
   isActive: boolean;
-  turnMessageId: string | null;  // The single message ID for entire autopilot turn
+  currentNode: string;
+  currentNodeDescription: string;
+  nodeHistory: string[];
+  status: SwarmState;
+  // For collapsible expanded view
+  currentAction?: string;  // Current tool or handoff being executed
+  agentSteps?: SwarmAgentStep[];  // Detailed steps for expanded view
 }
 
-// Legacy autopilot events (keep for compatibility)
-export interface AutopilotProgressEvent {
-  type: 'autopilot_progress';
-  missionId: string;
-  state: AutopilotState;
-  step: number;
-  currentTask: string;
-  activeTools: string[];
-}
-
-export interface AutopilotCompleteEvent {
-  type: 'autopilot_complete';
-  missionId: string;
-  totalSteps: number;
-  summary: string;
-}
-
-export interface AutopilotErrorEvent {
-  type: 'autopilot_error';
-  missionId: string;
-  step: number;
-  error: string;
-  recoverable: boolean;
-}
+// Agent name to display name mapping
+export const SWARM_AGENT_DISPLAY_NAMES: Record<string, string> = {
+  coordinator: 'Coordinator',
+  web_researcher: 'Web Researcher',
+  academic_researcher: 'Academic Researcher',
+  word_agent: 'Word',
+  excel_agent: 'Excel',
+  powerpoint_agent: 'PowerPoint',
+  data_analyst: 'Analyst',
+  browser_agent: 'Browser',
+  weather_agent: 'Weather',
+  finance_agent: 'Finance',
+  maps_agent: 'Maps',
+  responder: 'Responder',
+};
 
 export type StreamEvent =
   | ReasoningEvent
   | ResponseEvent
+  | TextEvent
+  | StartEvent
+  | EndEvent
   | ToolUseEvent
   | ToolResultEvent
   | InitEvent
@@ -169,11 +220,10 @@ export type StreamEvent =
   | MetadataEvent
   | BrowserProgressEvent
   | ResearchProgressEvent
-  | MissionProgressEvent
-  | MissionCompleteEvent
-  | AutopilotProgressEvent
-  | AutopilotCompleteEvent
-  | AutopilotErrorEvent;
+  | SwarmNodeStartEvent
+  | SwarmNodeStopEvent
+  | SwarmHandoffEvent
+  | SwarmCompleteEvent;
 
 // Chat state interfaces
 export interface ReasoningState {
@@ -198,14 +248,6 @@ export interface InterruptState {
   }>;
 }
 
-export interface AutopilotProgress {
-  missionId: string;
-  state: AutopilotState;
-  step: number;
-  currentTask: string;
-  activeTools: string[];
-}
-
 export interface ChatSessionState {
   reasoning: ReasoningState | null;
   streaming: StreamingState | null;
@@ -223,7 +265,7 @@ export interface ChatSessionState {
     content: string;
   };
   interrupt: InterruptState | null;
-  autopilotProgress?: AutopilotProgress;
+  swarmProgress?: SwarmProgress;
 }
 
 export type AgentStatus =
@@ -233,7 +275,7 @@ export type AgentStatus =
   | 'researching'
   | 'browser_automation'
   | 'stopping'
-  | 'autopilot'
+  | 'swarm'
   // Voice mode states
   | 'voice_connecting'
   | 'voice_listening'
@@ -264,3 +306,22 @@ export interface ChatUIState {
 
 // Re-export for convenience
 export type { ToolExecution } from '@/types/chat';
+
+// All valid event types (single source of truth)
+// Used by useChatAPI whitelist and sseParser validation
+export const STREAM_EVENT_TYPES = [
+  // Core events
+  'reasoning', 'response', 'text', 'start', 'end',
+  // Tool events
+  'tool_use', 'tool_result', 'tool_progress',
+  // Lifecycle events
+  'init', 'thinking', 'complete', 'error',
+  // Special events
+  'interrupt', 'progress', 'metadata',
+  // Progress events
+  'browser_progress', 'research_progress',
+  // Swarm events
+  'swarm_node_start', 'swarm_node_stop', 'swarm_handoff', 'swarm_complete',
+] as const;
+
+export type StreamEventType = typeof STREAM_EVENT_TYPES[number];

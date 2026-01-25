@@ -41,18 +41,18 @@ class FilteredMCPClient(MCPClient):
         self.enabled_tool_ids = enabled_tool_ids
         self.prefix = prefix
         self._session_started = False
-        logger.info(f"FilteredMCPClient created with {len(enabled_tool_ids)} enabled tool IDs")
+        logger.debug(f"FilteredMCPClient created with {len(enabled_tool_ids)} enabled tool IDs")
 
     def __enter__(self):
         """Start MCP session when entering context"""
-        logger.info("Starting FilteredMCPClient session")
+        logger.debug("Starting FilteredMCPClient session")
         result = super().__enter__()
         self._session_started = True
         return result
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Close MCP session when exiting context"""
-        logger.info("Closing FilteredMCPClient session")
+        logger.debug("Closing FilteredMCPClient session")
         self._session_started = False
         return super().__exit__(exc_type, exc_val, exc_tb)
 
@@ -98,9 +98,9 @@ class FilteredMCPClient(MCPClient):
                     filtered_tools.append(tool)
                     break
 
-        logger.info(f"✅ Filtered {len(filtered_tools)} tools from {len(paginated_result)} available")
-        logger.info(f"   Enabled tool IDs: {self.enabled_tool_ids}")
-        logger.info(f"   Original tool names: {[t.tool_name for t in filtered_tools]}")
+        logger.debug(f"Filtered {len(filtered_tools)} tools from {len(paginated_result)} available")
+        logger.debug(f"   Enabled tool IDs: {self.enabled_tool_ids}")
+        logger.debug(f"   Original tool names: {[t.tool_name for t in filtered_tools]}")
 
         # Build tool name mapping and simplify tool names
         self._tool_name_map = {}
@@ -121,14 +121,14 @@ class FilteredMCPClient(MCPClient):
                 # Note: tool is MCPAgentTool, tool_spec is a dict property
                 tool._agent_tool_name = simplified_name
 
-                logger.info(f"📝 Simplified tool name: {full_name} → {simplified_name}")
+                logger.debug(f"Simplified tool name: {full_name} → {simplified_name}")
             else:
                 simplified_name = full_name
 
             simplified_tools.append(tool)
 
-        logger.info(f"   Simplified tool names: {[t.tool_name for t in simplified_tools]}")
-        logger.info(f"   Tool name mapping created: {len(self._tool_name_map)} mappings")
+        logger.debug(f"   Simplified tool names: {[t.tool_name for t in simplified_tools]}")
+        logger.debug(f"   Tool name mapping created: {len(self._tool_name_map)} mappings")
 
         return PaginatedList(simplified_tools, token=paginated_result.pagination_token)
 
@@ -144,7 +144,7 @@ class FilteredMCPClient(MCPClient):
         actual_name = name
         if hasattr(self, '_tool_name_map') and name in self._tool_name_map:
             actual_name = self._tool_name_map[name]
-            logger.info(f"🔄 Restoring full tool name for Gateway: {name} → {actual_name}")
+            logger.debug(f"Restoring full tool name for Gateway: {name} → {actual_name}")
 
         return super().call_tool_sync(tool_use_id, actual_name, arguments)
 
@@ -171,10 +171,10 @@ def get_gateway_url_from_ssm(
             Name=f'/{project_name}/{environment}/mcp/gateway-url'
         )
         gateway_url = response['Parameter']['Value']
-        logger.info(f"✅ Gateway URL retrieved from SSM: {gateway_url}")
+        logger.debug(f"Gateway URL retrieved from SSM: {gateway_url}")
         return gateway_url
     except Exception as e:
-        logger.warning(f"⚠️  Failed to get Gateway URL from SSM: {e}")
+        logger.debug(f"Failed to get Gateway URL from SSM: {e}")
         return None
 
 
@@ -217,7 +217,7 @@ def create_gateway_mcp_client(
     if not gateway_url:
         gateway_url = get_gateway_url_from_ssm()
         if not gateway_url:
-            logger.warning("⚠️  Gateway URL not available. Gateway tools will not be loaded.")
+            logger.debug("Gateway URL not available. Gateway tools will not be loaded.")
             return None
 
     # Extract region from URL if not provided
@@ -237,11 +237,9 @@ def create_gateway_mcp_client(
         )
     )
 
-    logger.info(f"✅ Gateway MCP client created: {gateway_url}")
-    logger.info(f"   Region: {region}")
-    logger.info(f"   Note: Prefix '{prefix}' will be applied manually")
+    logger.debug(f"Gateway MCP client created: {gateway_url}, region: {region}")
     if tool_filters:
-        logger.info(f"   Note: Filters {tool_filters} will be applied manually")
+        logger.debug(f"   Filters {tool_filters} will be applied manually")
 
     return mcp_client
 
@@ -276,13 +274,13 @@ def create_filtered_gateway_client(
     gateway_tool_ids = [tid for tid in enabled_tool_ids if tid.startswith(f"{prefix}_")]
 
     if not gateway_tool_ids:
-        logger.info("No Gateway tools enabled")
+        logger.debug("No Gateway tools enabled")
         return None
 
     # Get Gateway URL from SSM
     gateway_url = get_gateway_url_from_ssm()
     if not gateway_url:
-        logger.warning("⚠️  Gateway URL not available. Gateway tools will not be loaded.")
+        logger.debug("Gateway URL not available. Gateway tools will not be loaded.")
         return None
 
     # Extract region from URL
@@ -292,7 +290,7 @@ def create_filtered_gateway_client(
     auth = get_sigv4_auth(region=region)
 
     # Create FilteredMCPClient with tool filtering
-    logger.info(f"Creating FilteredMCPClient with {len(gateway_tool_ids)} enabled tool IDs")
+    logger.debug(f"Creating FilteredMCPClient with {len(gateway_tool_ids)} enabled tool IDs")
 
     mcp_client = FilteredMCPClient(
         lambda: streamablehttp_client(
@@ -303,9 +301,7 @@ def create_filtered_gateway_client(
         prefix=prefix
     )
 
-    logger.info(f"✅ FilteredMCPClient created: {gateway_url}")
-    logger.info(f"   Region: {region}")
-    logger.info(f"   Enabled tool IDs: {gateway_tool_ids}")
+    logger.debug(f"FilteredMCPClient created: {gateway_url}, region: {region}")
 
     return mcp_client
 
@@ -326,7 +322,7 @@ def get_gateway_client_if_enabled(
         MCPClient or None if disabled or no tools enabled
     """
     if not GATEWAY_ENABLED:
-        logger.info("Gateway MCP is disabled via GATEWAY_MCP_ENABLED=false")
+        logger.debug("Gateway MCP is disabled via GATEWAY_MCP_ENABLED=false")
         return None
 
     if enabled_tool_ids:

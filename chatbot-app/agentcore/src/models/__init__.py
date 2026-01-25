@@ -7,17 +7,11 @@ from models.schemas import (
     InvocationResponse,
 )
 
-from models.autopilot_schemas import (
-    # Tool groups
-    ToolGroup,
-    # Mission protocol
-    Directive,
-    ProgressReport,
-    MissionComplete,
-    MissionControlResponse,
-    # SSE events
-    MissionProgressEvent,
-    MissionCompleteEvent,
+from models.swarm_schemas import (
+    SwarmNodeStartEvent,
+    SwarmNodeStopEvent,
+    SwarmHandoffEvent,
+    SwarmCompleteEvent,
 )
 
 __all__ = [
@@ -26,14 +20,9 @@ __all__ = [
     "InvocationInput",
     "InvocationRequest",
     "InvocationResponse",
-    # Tool groups
-    "ToolGroup",
-    # Mission protocol
-    "Directive",
-    "ProgressReport",
-    "MissionComplete",
-    "MissionControlResponse",
-    # SSE events
-    "MissionProgressEvent",
-    "MissionCompleteEvent",
+    # Swarm events
+    "SwarmNodeStartEvent",
+    "SwarmNodeStopEvent",
+    "SwarmHandoffEvent",
+    "SwarmCompleteEvent",
 ]

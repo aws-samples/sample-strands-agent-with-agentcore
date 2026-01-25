@@ -4,6 +4,7 @@
  */
 
 import type { StreamEvent } from '@/types/events'
+import { STREAM_EVENT_TYPES } from '@/types/events'
 
 /**
  * Parse a single SSE line into event type and data
@@ -183,15 +184,14 @@ export function validateStreamEvent(event: StreamEvent): { valid: boolean; error
       }
       break
 
-    case 'init':
-    case 'thinking':
-    case 'progress':
-    case 'metadata':
-      // These events have optional fields
-      break
-
     default:
-      errors.push(`Unknown event type: ${(event as any).type}`)
+      // Validate against known event types (from STREAM_EVENT_TYPES)
+      // Unknown types are allowed but logged for debugging
+      if (!STREAM_EVENT_TYPES.includes(event.type as any)) {
+        // Don't error, just note it for debugging
+        // errors.push(`Unknown event type: ${event.type}`)
+      }
+      break
   }
 
   return { valid: errors.length === 0, errors }

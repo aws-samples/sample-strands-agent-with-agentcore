@@ -1,6 +1,7 @@
 import { useCallback, useRef, startTransition } from 'react'
+import { flushSync } from 'react-dom'
 import { Message, ToolExecution } from '@/types/chat'
-import { StreamEvent, ChatSessionState, ChatUIState, WorkspaceFile } from '@/types/events'
+import { StreamEvent, ChatSessionState, ChatUIState, WorkspaceFile, SWARM_AGENT_DISPLAY_NAMES } from '@/types/events'
 import { useMetadataTracking } from './useMetadataTracking'
 import { useTextBuffer } from './useTextBuffer'
 import { A2A_TOOLS_REQUIRING_POLLING, isA2ATool, getAgentStatusForTool } from './usePolling'
@@ -42,12 +43,23 @@ export const useStreamEvents = ({
   const streamingIdRef = useRef<string | null>(null)
   const completeProcessedRef = useRef(false)
 
-  // Autopilot mode state: tracks single turn for entire mission
-  // When active, all events are part of one assistant turn until mission_complete
-  const autopilotModeRef = useRef<{
+  // Swarm mode state
+  const swarmModeRef = useRef<{
     isActive: boolean
     turnMessageId: string | null
-  }>({ isActive: false, turnMessageId: null })
+    nodeHistory: string[]
+    agentSteps: Array<{
+      nodeId: string
+      displayName: string
+      description?: string
+      startTime: number
+      endTime?: number
+      toolCalls?: Array<{ toolName: string; status: 'running' | 'completed' | 'failed' }>
+      status: 'running' | 'completed' | 'failed'
+      responseText?: string
+      reasoningText?: string
+    }>
+  }>({ isActive: false, turnMessageId: null, nodeHistory: [], agentSteps: [] })
 
   // Latency tracking hook (encapsulates all latency-related refs and logic)
   const metadataTracking = useMetadataTracking()
@@ -59,6 +71,30 @@ export const useStreamEvents = ({
 
   const handleReasoningEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'reasoning') {
+      // Swarm mode: capture reasoning for "Show agents"
+      if (swarmModeRef.current.isActive) {
+        if (swarmModeRef.current.agentSteps.length > 0) {
+          const stepIndex = swarmModeRef.current.agentSteps.length - 1
+          const currentStep = swarmModeRef.current.agentSteps[stepIndex]
+          const updatedStep = {
+            ...currentStep,
+            reasoningText: (currentStep.reasoningText || '') + data.text
+          }
+          swarmModeRef.current.agentSteps[stepIndex] = updatedStep
+          // Use flushSync to force immediate render for real-time progress
+          flushSync(() => {
+            setSessionState(prev => ({
+              ...prev,
+              swarmProgress: prev.swarmProgress ? {
+                ...prev.swarmProgress,
+                agentSteps: [...swarmModeRef.current.agentSteps]
+              } : prev.swarmProgress
+            }))
+          })
+        }
+        return
+      }
+      // Normal mode
       setSessionState(prev => ({
         ...prev,
         reasoning: { text: data.text, isActive: true }
@@ -68,6 +104,30 @@ export const useStreamEvents = ({
 
   const handleResponseEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'response') {
+      // Swarm mode: capture response and update SwarmProgress (no separate message)
+      if (swarmModeRef.current.isActive) {
+        if (swarmModeRef.current.agentSteps.length > 0) {
+          const stepIndex = swarmModeRef.current.agentSteps.length - 1
+          const currentStep = swarmModeRef.current.agentSteps[stepIndex]
+          const updatedStep = {
+            ...currentStep,
+            responseText: (currentStep.responseText || '') + data.text
+          }
+          swarmModeRef.current.agentSteps[stepIndex] = updatedStep
+          // Use flushSync to force immediate render for real-time streaming
+          flushSync(() => {
+            setSessionState(prev => ({
+              ...prev,
+              swarmProgress: prev.swarmProgress ? {
+                ...prev.swarmProgress,
+                agentSteps: [...swarmModeRef.current.agentSteps]
+              } : prev.swarmProgress
+            }))
+          })
+        }
+        return // SwarmProgress handles display, no separate message
+      }
+
       // Finalize reasoning step if active
       if (sessionState.reasoning?.isActive) {
         setSessionState(prev => ({
@@ -147,6 +207,29 @@ export const useStreamEvents = ({
 
   const handleToolUseEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'tool_use') {
+      // Track tool in swarm mode for expanded view
+      if (swarmModeRef.current.isActive && swarmModeRef.current.agentSteps.length > 0) {
+        const stepIndex = swarmModeRef.current.agentSteps.length - 1
+        const currentStep = swarmModeRef.current.agentSteps[stepIndex]
+        // Create new step object with updated toolCalls
+        const updatedStep = {
+          ...currentStep,
+          toolCalls: [...(currentStep.toolCalls || []), { toolName: data.name, status: 'running' as const }]
+        }
+        swarmModeRef.current.agentSteps[stepIndex] = updatedStep
+
+        setSessionState(prev => ({
+          ...prev,
+          swarmProgress: prev.swarmProgress ? {
+            ...prev.swarmProgress,
+            currentAction: `Using ${data.name}...`,
+            agentSteps: [...swarmModeRef.current.agentSteps]
+          } : prev.swarmProgress
+        }))
+
+        return
+      }
+
       // Tool execution started - update agent status using shared utility
       const agentStatus = getAgentStatusForTool(data.name)
 
@@ -262,6 +345,34 @@ export const useStreamEvents = ({
       // Find the tool name from current executions
       const toolExecution = currentToolExecutionsRef.current.find(tool => tool.id === data.toolUseId)
       const toolName = toolExecution?.toolName
+      const isCancelled = data.status === 'error'
+
+      // Track tool completion in swarm mode for expanded view
+      if (swarmModeRef.current.isActive && swarmModeRef.current.agentSteps.length > 0) {
+        const stepIndex = swarmModeRef.current.agentSteps.length - 1
+        const currentStep = swarmModeRef.current.agentSteps[stepIndex]
+        if (currentStep.toolCalls) {
+          // Create new toolCalls array with updated status
+          const updatedToolCalls = currentStep.toolCalls.map(t =>
+            t.status === 'running' ? { ...t, status: isCancelled ? 'failed' as const : 'completed' as const } : t
+          )
+          const updatedStep = { ...currentStep, toolCalls: updatedToolCalls }
+          swarmModeRef.current.agentSteps[stepIndex] = updatedStep
+        }
+
+        const currentNode = swarmModeRef.current.nodeHistory[swarmModeRef.current.nodeHistory.length - 1]
+        const displayName = SWARM_AGENT_DISPLAY_NAMES[currentNode] || currentNode
+        setSessionState(prev => ({
+          ...prev,
+          swarmProgress: prev.swarmProgress ? {
+            ...prev.swarmProgress,
+            currentAction: `${displayName} working...`,
+            agentSteps: [...swarmModeRef.current.agentSteps]
+          } : prev.swarmProgress
+        }))
+
+        return
+      }
 
       // If A2A tool completed, transition from researching/browser_automation to thinking
       // This allows subsequent response events to properly transition to 'responding'
@@ -275,7 +386,6 @@ export const useStreamEvents = ({
       }
 
       // Update tool execution with result
-      const isCancelled = data.status === 'error'
       const updatedExecutions = currentToolExecutionsRef.current.map(tool =>
         tool.id === data.toolUseId
           ? { ...tool, toolResult: data.result, images: data.images, isComplete: true, isCancelled }
@@ -534,7 +644,8 @@ export const useStreamEvents = ({
         browserSession: prev.browserSession,
         browserProgress: undefined,
         researchProgress: undefined,
-        interrupt: null
+        interrupt: null,
+        swarmProgress: prev.swarmProgress  // Preserve swarm progress for expanded view
       }))
 
       streamingStartedRef.current = false
@@ -593,7 +704,7 @@ export const useStreamEvents = ({
         browserProgress: undefined,  // Clear browser progress on error
         researchProgress: undefined,  // Clear research progress on error
         interrupt: null,
-        autopilotProgress: undefined  // Clear autopilot progress on error
+        swarmProgress: undefined  // Clear swarm progress on error
       }))
 
       // Reset refs on error
@@ -602,10 +713,10 @@ export const useStreamEvents = ({
       completeProcessedRef.current = false
       metadataTracking.reset()
 
-      // Reset autopilot mode state on error
-      if (autopilotModeRef.current.isActive) {
-        console.log('[Autopilot] Reset due to error')
-        autopilotModeRef.current = { isActive: false, turnMessageId: null }
+      // Reset swarm mode state on error
+      if (swarmModeRef.current.isActive) {
+        console.log('[Swarm] Reset due to error')
+        swarmModeRef.current = { isActive: false, turnMessageId: null, nodeHistory: [], agentSteps: [] }
       }
     }
   }, [uiState, setMessages, setUIState, setSessionState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, textBuffer])
@@ -657,82 +768,125 @@ export const useStreamEvents = ({
     }
   }, [setSessionState])
 
-  // Mission Control events (new Application-Level Orchestration)
-  const handleMissionProgressEvent = useCallback((event: StreamEvent) => {
-    if (event.type === 'mission_progress') {
-      // Initialize autopilot mode on first mission_progress event
-      // All subsequent events until mission_complete are part of this single turn
-      if (!autopilotModeRef.current.isActive) {
-        autopilotModeRef.current.isActive = true
-        // The turn message ID will be set when the first response creates a message
-        // Or we can create a placeholder message now
-        console.log('[Autopilot] Mission started - all steps will be in single turn')
+  // Swarm Mode event handlers
+  const handleSwarmNodeStartEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'swarm_node_start') {
+      const { node_id, node_description } = event
+      const displayName = SWARM_AGENT_DISPLAY_NAMES[node_id] || node_id
+
+      // Mark previous agent as completed (create new object)
+      if (swarmModeRef.current.agentSteps.length > 0) {
+        const lastIndex = swarmModeRef.current.agentSteps.length - 1
+        const lastStep = swarmModeRef.current.agentSteps[lastIndex]
+        if (lastStep.status === 'running') {
+          swarmModeRef.current.agentSteps[lastIndex] = {
+            ...lastStep,
+            status: 'completed',
+            endTime: Date.now()
+          }
+        }
       }
 
-      // For step 2+, finalize previous streaming message before adding new badge
-      if (event.step > 1) {
-        // Flush any remaining buffered text
+      // Add new agent step
+      const newStep = {
+        nodeId: node_id,
+        displayName,
+        description: node_description,
+        startTime: Date.now(),
+        toolCalls: [],
+        status: 'running' as const
+      }
+
+      // Initialize swarm mode on first node start
+      if (!swarmModeRef.current.isActive) {
+        swarmModeRef.current.isActive = true
+        swarmModeRef.current.nodeHistory = [node_id]
+        swarmModeRef.current.agentSteps = [newStep]
+        console.log('[Swarm] Started - first node:', node_id)
+      } else {
+        swarmModeRef.current.nodeHistory = [...swarmModeRef.current.nodeHistory, node_id]
+        swarmModeRef.current.agentSteps = [...swarmModeRef.current.agentSteps, newStep]
+        console.log('[Swarm] Node started:', node_id)
+      }
+
+      // For nodes after first node, reset streaming state
+      // (intermediate agents don't create chat messages - text goes to agentStep.responseText)
+      if (swarmModeRef.current.nodeHistory.length > 1) {
         textBuffer.reset()
-
-        // Finalize current streaming message
-        if (streamingStartedRef.current && streamingIdRef.current) {
-          setMessages(prevMsgs => prevMsgs.map(msg =>
-            msg.id === streamingIdRef.current
-              ? { ...msg, isStreaming: false }
-              : msg
-          ))
-        }
-
-        // Reset streaming refs so next response creates a new message
         streamingStartedRef.current = false
         streamingIdRef.current = null
       }
 
-      // Add directive message for consistent UI with session restore
-      // This creates the same visual as [DIRECTIVE:N] markers in restored sessions
-      const directiveMessageId = `directive-${event.step}-${Date.now()}`
-      setMessages(prev => [...prev, {
-        id: directiveMessageId,
-        text: event.directive_prompt,
-        sender: 'user',
-        timestamp: new Date().toISOString(),
-        isDirective: true,
-        directiveStep: event.step,
-        autopilotType: 'directive'
-      }])
+      // Don't add node badge messages - only show progress in SwarmProgress component
 
-      // Update autopilot progress in sessionState using mission event data
-      setSessionState(prev => ({
-        ...prev,
-        autopilotProgress: {
-          missionId: 'current-mission',
-          state: 'executing',
-          step: event.step,
-          currentTask: event.directive_prompt,
-          activeTools: event.active_tools
-        }
-      }))
+      // Update swarm progress in session state with flushSync for immediate render
+      flushSync(() => {
+        setSessionState(prev => ({
+          ...prev,
+          swarmProgress: {
+            isActive: true,
+            currentNode: node_id,
+            currentNodeDescription: node_description || '',
+            nodeHistory: [...swarmModeRef.current.nodeHistory],
+            status: 'running',
+            currentAction: `${displayName} working...`,
+            agentSteps: [...swarmModeRef.current.agentSteps]
+          }
+        }))
+      })
 
-      // Update agent status to autopilot if not already
+      // Update agent status to swarm
       setUIState(prev => {
-        if (prev.agentStatus !== 'autopilot' && prev.agentStatus !== 'stopping') {
-          return { ...prev, isTyping: true, agentStatus: 'autopilot' }
+        if (prev.agentStatus !== 'swarm' && prev.agentStatus !== 'stopping') {
+          return { ...prev, isTyping: true, agentStatus: 'swarm' }
         }
         return prev
       })
     }
   }, [setSessionState, setUIState, setMessages, textBuffer])
 
-  const handleMissionCompleteEvent = useCallback((event: StreamEvent) => {
-    if (event.type === 'mission_complete') {
-      const totalSteps = event.total_steps || 0
-      const isDirect = totalSteps === 0
-      console.log('[Autopilot] Mission complete:', totalSteps, 'steps', isDirect ? '(direct)' : '(summary)')
+  const handleSwarmNodeStopEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'swarm_node_stop') {
+      const { node_id, status } = event
+      console.log('[Swarm] Node stopped:', node_id, 'status:', status)
 
-      // Flush any remaining buffered text and finalize current streaming message
+      // Find and update the agent step with the correct status
+      if (swarmModeRef.current.agentSteps.length > 0) {
+        const stepIndex = swarmModeRef.current.agentSteps.findIndex(
+          step => step.nodeId === node_id && step.status === 'running'
+        )
+        if (stepIndex >= 0) {
+          const currentStep = swarmModeRef.current.agentSteps[stepIndex]
+          const finalStatus = status === 'completed' ? 'completed' : 'failed'
+          swarmModeRef.current.agentSteps[stepIndex] = {
+            ...currentStep,
+            status: finalStatus,
+            endTime: Date.now()
+          }
+
+          // Update session state
+          setSessionState(prev => ({
+            ...prev,
+            swarmProgress: prev.swarmProgress ? {
+              ...prev.swarmProgress,
+              agentSteps: [...swarmModeRef.current.agentSteps]
+            } : prev.swarmProgress
+          }))
+        }
+      }
+    }
+  }, [setSessionState])
+
+  const handleSwarmHandoffEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'swarm_handoff') {
+      console.log('[Swarm] Handoff:', event.from_node, '->', event.to_node, 'message:', event.message)
+
+      const toDisplayName = SWARM_AGENT_DISPLAY_NAMES[event.to_node] || event.to_node
+
+      // Flush buffer before handoff
       textBuffer.reset()
 
-      // Finalize current streaming message before adding badge
+      // Finalize current streaming message
       if (streamingStartedRef.current && streamingIdRef.current) {
         setMessages(prevMsgs => prevMsgs.map(msg =>
           msg.id === streamingIdRef.current
@@ -741,88 +895,153 @@ export const useStreamEvents = ({
         ))
       }
 
-      // Reset streaming refs so next response creates a new message
+      // Save handoff message and context to current agent's step
+      if (swarmModeRef.current.agentSteps.length > 0) {
+        const stepIndex = swarmModeRef.current.agentSteps.length - 1
+        const currentStep = swarmModeRef.current.agentSteps[stepIndex]
+        swarmModeRef.current.agentSteps[stepIndex] = {
+          ...currentStep,
+          ...(event.message && { handoffMessage: event.message }),
+          ...(event.context && { handoffContext: event.context })
+        }
+
+        // Log context for debugging
+        if (event.context) {
+          console.log('[Swarm] Handoff context:', event.context)
+        }
+      }
+
+      // Update swarm progress to show handoff
+      flushSync(() => {
+        setSessionState(prev => ({
+          ...prev,
+          swarmProgress: prev.swarmProgress ? {
+            ...prev.swarmProgress,
+            currentAction: `Handing off to ${toDisplayName}...`,
+            agentSteps: [...swarmModeRef.current.agentSteps]
+          } : prev.swarmProgress
+        }))
+      })
+
+      // Reset streaming refs for next agent
+      streamingStartedRef.current = false
+      streamingIdRef.current = null
+    }
+  }, [setMessages, setSessionState, textBuffer])
+
+  const handleSwarmCompleteEvent = useCallback((event: StreamEvent) => {
+    if (event.type === 'swarm_complete') {
+      console.log('[Swarm] Complete:', event.total_nodes, 'nodes, status:', event.status)
+
+      // Mark final agent as completed (create new object)
+      if (swarmModeRef.current.agentSteps.length > 0) {
+        const lastIndex = swarmModeRef.current.agentSteps.length - 1
+        const lastStep = swarmModeRef.current.agentSteps[lastIndex]
+        if (lastStep.status === 'running') {
+          swarmModeRef.current.agentSteps[lastIndex] = {
+            ...lastStep,
+            status: 'completed',
+            endTime: Date.now()
+          }
+        }
+      }
+
+      // Flush any remaining text
+      textBuffer.reset()
+
+      // Finalize streaming message
+      if (streamingStartedRef.current && streamingIdRef.current) {
+        setMessages(prevMsgs => prevMsgs.map(msg =>
+          msg.id === streamingIdRef.current
+            ? { ...msg, isStreaming: false }
+            : msg
+        ))
+      }
+
+      // Reset streaming refs
       streamingStartedRef.current = false
       streamingIdRef.current = null
 
-      // Add badge message for consistent UI with session restore
-      // total_steps=0 means direct response (no tools), otherwise it's a summary
-      const messageId = `${isDirect ? 'direct' : 'summary'}-${Date.now()}`
-      setMessages(prev => [...prev, {
-        id: messageId,
-        text: isDirect ? 'Responding directly...' : 'Generating final response...',
-        sender: 'user',
-        timestamp: new Date().toISOString(),
-        isDirective: true,
-        autopilotType: isDirect ? 'direct' : 'summary'
-      }])
+      // Handle fallback response (when non-responder ended without handoff)
+      // Create a chat message for the final response that wasn't streamed
+      if (event.final_response && event.final_node_id) {
+        console.log('[Swarm] Fallback response from', event.final_node_id)
+        const fallbackMessageId = String(Date.now())
+        setMessages(prevMsgs => [...prevMsgs, {
+          id: fallbackMessageId,
+          text: event.final_response,
+          sender: 'bot',
+          timestamp: new Date().toISOString(),
+          isStreaming: false,
+          images: []
+        }])
+      }
 
-      // Reset autopilot mode state
-      autopilotModeRef.current = { isActive: false, turnMessageId: null }
+      // Save final agent steps before reset
+      const finalAgentSteps = [...swarmModeRef.current.agentSteps]
 
-      // Clear autopilot progress on completion
+      // Reset swarm mode
+      swarmModeRef.current = { isActive: false, turnMessageId: null, nodeHistory: [], agentSteps: [] }
+
+      // Update swarm progress to completed with final steps
       setSessionState(prev => ({
         ...prev,
-        autopilotProgress: undefined
+        swarmProgress: {
+          isActive: false,
+          currentNode: '',
+          currentNodeDescription: '',
+          nodeHistory: event.node_history,
+          status: event.status === 'completed' ? 'completed' : 'failed',
+          currentAction: undefined,
+          agentSteps: finalAgentSteps
+        }
       }))
     }
   }, [setSessionState, setMessages, textBuffer])
 
-  // Legacy autopilot events (keep for compatibility)
-  const handleAutopilotProgressEvent = useCallback((event: StreamEvent) => {
-    if (event.type === 'autopilot_progress') {
-      // Update autopilot progress in sessionState
-      setSessionState(prev => ({
-        ...prev,
-        autopilotProgress: {
-          missionId: event.missionId,
-          state: event.state,
-          step: event.step,
-          currentTask: event.currentTask,
-          activeTools: event.activeTools
+  // Handler for 'text' events (used by Swarm mode for intermediate agents)
+  const handleTextEvent = useCallback((data: StreamEvent) => {
+    if (data.type === 'text') {
+      // Text events are ONLY from non-responder agents in swarm mode
+      // Update SwarmProgress only, never create chat messages
+      if (swarmModeRef.current.isActive && swarmModeRef.current.agentSteps.length > 0) {
+        const stepIndex = swarmModeRef.current.agentSteps.length - 1
+        const currentStep = swarmModeRef.current.agentSteps[stepIndex]
+        const updatedStep = {
+          ...currentStep,
+          responseText: (currentStep.responseText || '') + data.content
         }
-      }))
-
-      // Update agent status to autopilot if not already
-      setUIState(prev => {
-        if (prev.agentStatus !== 'autopilot' && prev.agentStatus !== 'stopping') {
-          return { ...prev, isTyping: true, agentStatus: 'autopilot' }
-        }
-        return prev
-      })
-    }
-  }, [setSessionState, setUIState])
-
-  const handleAutopilotCompleteEvent = useCallback((event: StreamEvent) => {
-    if (event.type === 'autopilot_complete') {
-      // Clear autopilot progress on completion
-      setSessionState(prev => ({
-        ...prev,
-        autopilotProgress: undefined
-      }))
-    }
-  }, [setSessionState])
-
-  const handleAutopilotErrorEvent = useCallback((event: StreamEvent) => {
-    if (event.type === 'autopilot_error') {
-      console.error('[Autopilot] Error:', event.error)
-      // Keep progress for display but could update state to show error
-      if (!event.recoverable) {
-        setSessionState(prev => ({
-          ...prev,
-          autopilotProgress: undefined
-        }))
+        swarmModeRef.current.agentSteps[stepIndex] = updatedStep
+        flushSync(() => {
+          setSessionState(prev => ({
+            ...prev,
+            swarmProgress: prev.swarmProgress ? {
+              ...prev.swarmProgress,
+              agentSteps: [...swarmModeRef.current.agentSteps]
+            } : prev.swarmProgress
+          }))
+        })
       }
+      // If not in swarm mode or no agentSteps, ignore text events
+      // (they shouldn't occur outside swarm mode anyway)
     }
   }, [setSessionState])
 
   const handleStreamEvent = useCallback((event: StreamEvent) => {
+    // Debug: log all swarm-related events
+    if (event.type.startsWith('swarm_') || event.type === 'start' || event.type === 'end') {
+      console.log('[Swarm Event]', event.type, event)
+    }
+
     switch (event.type) {
       case 'reasoning':
         handleReasoningEvent(event)
         break
       case 'response':
         handleResponseEvent(event)
+        break
+      case 'text':
+        handleTextEvent(event)
         break
       case 'tool_use':
         handleToolUseEvent(event)
@@ -852,20 +1071,24 @@ export const useStreamEvents = ({
       case 'research_progress':
         handleResearchProgressEvent(event)
         break
-      case 'mission_progress':
-        handleMissionProgressEvent(event)
+      case 'swarm_node_start':
+        handleSwarmNodeStartEvent(event)
         break
-      case 'mission_complete':
-        handleMissionCompleteEvent(event)
+      case 'swarm_node_stop':
+        handleSwarmNodeStopEvent(event)
         break
-      case 'autopilot_progress':
-        handleAutopilotProgressEvent(event)
+      case 'swarm_handoff':
+        handleSwarmHandoffEvent(event)
         break
-      case 'autopilot_complete':
-        handleAutopilotCompleteEvent(event)
+      case 'swarm_complete':
+        handleSwarmCompleteEvent(event)
         break
-      case 'autopilot_error':
-        handleAutopilotErrorEvent(event)
+      case 'start':
+        // Stream start marker - handled by init event
+        handleInitEvent()
+        break
+      case 'end':
+        // Stream end marker - no special handling needed
         break
       case 'metadata':
         // Handle metadata updates (e.g., browser session during tool execution)
@@ -899,6 +1122,7 @@ export const useStreamEvents = ({
   }, [
     handleReasoningEvent,
     handleResponseEvent,
+    handleTextEvent,
     handleToolUseEvent,
     handleToolResultEvent,
     handleCompleteEvent,
@@ -907,11 +1131,10 @@ export const useStreamEvents = ({
     handleInterruptEvent,
     handleBrowserProgressEvent,
     handleResearchProgressEvent,
-    handleMissionProgressEvent,
-    handleMissionCompleteEvent,
-    handleAutopilotProgressEvent,
-    handleAutopilotCompleteEvent,
-    handleAutopilotErrorEvent,
+    handleSwarmNodeStartEvent,
+    handleSwarmNodeStopEvent,
+    handleSwarmHandoffEvent,
+    handleSwarmCompleteEvent,
     setSessionState
   ])
 
@@ -925,10 +1148,10 @@ export const useStreamEvents = ({
     completeProcessedRef.current = false
     metadataTracking.reset()
 
-    // Reset autopilot mode state if active
-    if (autopilotModeRef.current.isActive) {
-      console.log('[Autopilot] Reset during streaming stop')
-      autopilotModeRef.current = { isActive: false, turnMessageId: null }
+    // Reset swarm mode state if active
+    if (swarmModeRef.current.isActive) {
+      console.log('[Swarm] Reset during streaming stop')
+      swarmModeRef.current = { isActive: false, turnMessageId: null, nodeHistory: [], agentSteps: [] }
     }
 
     // Mark current streaming message as stopped (not streaming)
@@ -940,7 +1163,7 @@ export const useStreamEvents = ({
       ...prev,
       reasoning: null,
       streaming: null,
-      autopilotProgress: undefined // Clear autopilot progress on reset
+      swarmProgress: undefined // Clear swarm progress on reset
     }))
   }, [setMessages, setSessionState, metadataTracking, textBuffer])
 

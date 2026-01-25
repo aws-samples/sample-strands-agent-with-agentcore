@@ -50,11 +50,10 @@ export interface Message {
     cacheWriteInputTokens?: number
   }
   feedback?: 'up' | 'down' | null
-  // Autopilot message markers (from Mission Control)
-  isDirective?: boolean
-  directiveStep?: number
-  // Autopilot type: 'directive' (step N), 'summary', or 'direct' (no tools needed)
-  autopilotType?: 'directive' | 'summary' | 'direct'
+  // Swarm message markers (multi-agent)
+  isSwarmNode?: boolean
+  swarmNodeId?: string
+  swarmNodeDescription?: string
   // Voice mode marker
   isVoiceMessage?: boolean
 }

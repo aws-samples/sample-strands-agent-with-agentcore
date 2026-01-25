@@ -1,13 +1,12 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { Message, Tool, ToolExecution } from '@/types/chat'
-import { StreamEvent, ChatUIState } from '@/types/events'
+import { StreamEvent, ChatUIState, STREAM_EVENT_TYPES } from '@/types/events'
 import { getApiUrl } from '@/config/environment'
 import logger from '@/utils/logger'
 import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth'
 import { apiGet, apiPost } from '@/lib/api-client'
 import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
 import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData, triggerWarmup, generateSessionId } from '@/config/session'
-import { parseAutopilotMessage } from '@/utils/autopilotParser'
 
 /**
  * Get current authenticated user's ID from Amplify
@@ -44,14 +43,13 @@ export interface SessionPreferences {
   enabledTools?: string[]
   selectedPromptId?: string
   customPromptText?: string
-  autopilotEnabled?: boolean
 }
 
 interface UseChatAPIReturn {
   loadTools: () => Promise<void>
   toggleTool: (toolId: string) => Promise<void>
   newChat: () => Promise<boolean>
-  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[], autopilot?: boolean) => Promise<void>
+  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[], swarm?: boolean) => Promise<void>
   cleanup: () => void
   isLoadingTools: boolean
   loadSession: (sessionId: string) => Promise<SessionPreferences | null>
@@ -321,7 +319,7 @@ export const useChatAPI = ({
     onSuccess?: () => void,
     onError?: (error: string) => void,
     overrideEnabledTools?: string[], // Override enabled tools (for Research Agent interrupt)
-    autopilot?: boolean // Enable autopilot mode (Mission Control orchestration)
+    swarm?: boolean // Enable swarm mode (Multi-Agent orchestration)
   ) => {
     // Update last activity timestamp (for session timeout tracking)
     updateLastActivity()
@@ -417,7 +415,7 @@ export const useChatAPI = ({
           body: JSON.stringify({
             message: messageToSend,
             enabled_tools: allEnabledToolIds,
-            ...(autopilot !== undefined && { autopilot })
+            ...(swarm !== undefined && { swarm })
           }),
           signal: abortControllerRef.current.signal
         })
@@ -472,13 +470,11 @@ export const useChatAPI = ({
                 logger.info('[useChatAPI] Received metadata event:', eventData)
               }
 
-              // Handle new simplified events
-              if (eventData.type && [
-                'text', 'reasoning', 'response', 'tool_use', 'tool_result', 'tool_progress', 'complete', 'init', 'thinking', 'error', 'interrupt', 'metadata', 'browser_progress', 'research_progress', 'mission_progress', 'mission_complete', 'autopilot_progress', 'autopilot_complete', 'autopilot_error'
-              ].includes(eventData.type)) {
+              // Handle stream events (types defined in STREAM_EVENT_TYPES)
+              if (eventData.type && STREAM_EVENT_TYPES.includes(eventData.type)) {
                 handleStreamEvent(eventData as StreamEvent)
               } else {
-                // Handle other event types
+                // Handle legacy/unknown event types
                 handleLegacyEvent(eventData)
               }
             } catch (parseError) {
@@ -675,29 +671,7 @@ export const useChatAPI = ({
           }
 
           // Clean user message text by removing file hints (these are for agent's context only)
-          let cleanedText = msg.role === 'user' ? removeFileHints(text) : text
-
-          // Parse autopilot markers from user messages
-          let isDirective = false
-          let directiveStep: number | undefined
-          let autopilotType: 'directive' | 'summary' | 'direct' | undefined
-          let originalUserQuery: string | undefined
-
-          if (msg.role === 'user') {
-            const autopilotResult = parseAutopilotMessage(cleanedText)
-            cleanedText = autopilotResult.cleanedText
-            isDirective = autopilotResult.isAutopilot
-            directiveStep = autopilotResult.directiveStep
-            autopilotType = autopilotResult.autopilotType
-            originalUserQuery = autopilotResult.originalUserQuery
-
-            if (autopilotResult.isAutopilot) {
-              logger.debug(`Detected autopilot message: type=${autopilotType}, step=${directiveStep}`)
-            }
-            if (originalUserQuery) {
-              logger.debug(`Extracted original user query: ${originalUserQuery.substring(0, 50)}...`)
-            }
-          }
+          const cleanedText = msg.role === 'user' ? removeFileHints(text) : text
 
           const currentMessage: Message = {
             id: msg.id || `${newSessionId}-${index}`,
@@ -723,26 +697,16 @@ export const useChatAPI = ({
             ...(msg.documents && {
               documents: msg.documents
             }),
-            ...(isDirective && {
-              isDirective: true,
-              directiveStep: directiveStep,
-              autopilotType: autopilotType
-            }),
             // Preserve voice message flag from local session store
             ...(msg.isVoiceMessage && {
               isVoiceMessage: true
+            }),
+            // Preserve swarm node marker from session
+            ...(msg.isSwarmNode && {
+              isSwarmNode: true,
+              swarmNodeId: msg.swarmNodeId,
+              swarmNodeDescription: msg.swarmNodeDescription
             })
-          }
-
-          // If this has embedded user query (directive step 1 or direct response), prepend user message
-          if (originalUserQuery && (directiveStep === 1 || autopilotType === 'direct')) {
-            const userMessage: Message = {
-              id: `${newSessionId}-user-query-${index}`,
-              text: originalUserQuery,
-              sender: 'user',
-              timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString()
-            }
-            return [userMessage, currentMessage]
           }
 
           return [currentMessage]

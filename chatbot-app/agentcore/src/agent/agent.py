@@ -119,14 +119,10 @@ class ChatbotAgent:
         self.model_id = model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
         self.temperature = temperature if temperature is not None else 0.7
 
-        # Check if this is an autopilot directive (system_prompt starts with "You are executing Step")
-        autopilot_directive = system_prompt if (system_prompt and system_prompt.startswith("You are executing Step")) else None
-
         # Build system prompt using prompt_builder module
         # Returns list of SystemContentBlock for better tracking and caching control
         self.system_prompt = build_text_system_prompt(
-            enabled_tools=enabled_tools,
-            autopilot_directive=autopilot_directive
+            enabled_tools=enabled_tools
         )
 
         self.caching_enabled = caching_enabled if caching_enabled is not None else True
@@ -487,14 +483,14 @@ class ChatbotAgent:
             # Get last LLM call's input tokens from stream processor
             # This is the actual context size (not accumulated across multiple LLM calls)
             context_tokens = self.stream_processor.last_llm_input_tokens
-            logger.info(f"_update_compaction_state: context_tokens={context_tokens:,} (from last LLM call)")
+            logger.debug(f"_update_compaction_state: context_tokens={context_tokens:,} (from last LLM call)")
 
             if context_tokens > 0:
                 self.session_manager.update_after_turn(context_tokens, self.agent.agent_id)
-                logger.info(f"Compaction updated: context={context_tokens:,} tokens")
+                logger.debug(f"Compaction updated: context={context_tokens:,} tokens")
             else:
                 # Skip compaction if no token data available
-                logger.info(f"Skipping compaction: context_tokens=0 (no token data from stream processor)")
+                logger.debug(f"Skipping compaction: context_tokens=0 (no token data from stream processor)")
         except Exception as e:
             logger.error(f"Compaction update failed: {e}")
 
@@ -818,7 +814,6 @@ class ChatbotAgent:
                 else:
                     name_without_ext = sanitized_full_name
 
-                logger.debug(f"[DEBUG] About to add document ContentBlock: name='{name_without_ext}', format={doc_format}, original='{file.filename}'")
                 content_blocks.append({
                     "document": {
                         "format": doc_format,
@@ -828,7 +823,7 @@ class ChatbotAgent:
                         }
                     }
                 })
-                logger.info(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
+                logger.debug(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
 
             else:
                 logger.warning(f"Unsupported file type: {filename} ({content_type})")

@@ -35,7 +35,7 @@ const AVAILABLE_MODELS = [
     description: 'Preview multimodal model with advanced capabilities'
   },
   {
-    id: 'us.amazon.nova-2-pro-v1:0',
+    id: 'us.amazon.nova-2-pro-preview-20251202-v1:0',
     name: 'Nova 2 Pro',
     provider: 'Amazon',
     description: 'High-performance multimodal model'

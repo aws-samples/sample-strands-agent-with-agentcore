@@ -27,9 +27,11 @@ interface AssistantTurnProps {
     stepNumber: number
     content: string
   }
+  // Hide avatar when this turn is part of a Swarm response (SwarmProgress shows the avatar)
+  hideAvatar?: boolean
 }
 
-export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onResearchClick, onBrowserClick, researchProgress }) => {
+export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onResearchClick, onBrowserClick, researchProgress, hideAvatar = false }) => {
   // Get initial feedback state from first message
   const initialFeedback = messages[0]?.feedback || null
 
@@ -300,24 +302,26 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
   return (
     <div className="flex justify-start mb-8 group">
-      <div className="flex items-start space-x-4 max-w-4xl w-full min-w-0">
-        {/* Single Avatar for the entire turn */}
-        <Avatar className="h-9 w-9 flex-shrink-0 mt-2">
-          <AvatarFallback className={`text-white ${
-            messages.some(m => m.isVoiceMessage)
-              ? 'bg-gradient-to-br from-fuchsia-500 to-purple-600'
-              : 'bg-gradient-to-br from-blue-600 to-purple-600'
-          }`}>
-            {messages.some(m => m.isVoiceMessage) ? (
-              <AudioWaveform className="h-4 w-4" />
-            ) : (
-              <Bot className="h-4 w-4" />
-            )}
-          </AvatarFallback>
-        </Avatar>
+      <div className={`flex items-start max-w-4xl w-full min-w-0 ${hideAvatar ? '' : 'space-x-4'}`}>
+        {/* Single Avatar for the entire turn - hidden when part of Swarm response */}
+        {!hideAvatar && (
+          <Avatar className="h-9 w-9 flex-shrink-0 mt-2">
+            <AvatarFallback className={`text-white ${
+              messages.some(m => m.isVoiceMessage)
+                ? 'bg-gradient-to-br from-fuchsia-500 to-purple-600'
+                : 'bg-gradient-to-br from-blue-600 to-purple-600'
+            }`}>
+              {messages.some(m => m.isVoiceMessage) ? (
+                <AudioWaveform className="h-4 w-4" />
+              ) : (
+                <Bot className="h-4 w-4" />
+              )}
+            </AvatarFallback>
+          </Avatar>
+        )}
 
-        {/* Turn Content */}
-        <div className="flex-1 space-y-4 pt-1 min-w-0">
+        {/* Turn Content - add left margin when avatar is hidden to align with SwarmProgress content */}
+        <div className={`flex-1 space-y-4 pt-1 min-w-0 ${hideAvatar ? 'ml-[52px]' : ''}`}>
           {/* Render messages in chronological order */}
           {groupedContent.map((item) => {
             if (item.type === 'tool') {
@@ -681,5 +685,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
   const researchProgressEqual = prevProps.researchProgress?.stepNumber === nextProps.researchProgress?.stepNumber &&
     prevProps.researchProgress?.content === nextProps.researchProgress?.content
 
-  return messagesEqual && reasoningEqual && prevProps.sessionId === nextProps.sessionId && callbackEqual && researchProgressEqual
+  const hideAvatarEqual = prevProps.hideAvatar === nextProps.hideAvatar
+
+  return messagesEqual && reasoningEqual && prevProps.sessionId === nextProps.sessionId && callbackEqual && researchProgressEqual && hideAvatarEqual
 })

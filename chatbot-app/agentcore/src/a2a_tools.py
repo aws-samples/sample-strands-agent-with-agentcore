@@ -77,17 +77,6 @@ Examples:
 """,
         "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn",
     },
-    "agentcore_mission-control": {
-        "name": "Mission Control",
-        "description": """Strategic orchestrator for Autopilot mode - internal use only.
-
-Analyzes complex requests, decomposes into focused steps, and issues Directives
-with specific tool assignments. Does NOT execute tools - planning only.
-
-This agent is used internally by Autopilot mode and is not directly callable.""",
-        "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/mission-control-agent-runtime-arn",
-        "internal": True  # Not exposed to users
-    },
 }
 
 # Global cache

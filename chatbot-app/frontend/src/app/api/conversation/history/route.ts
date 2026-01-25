@@ -244,7 +244,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Return messages with merged toolResults from blobs and metadata
-    // Also include session preferences (model, tools, autopilot) for restoration
+    // Also include session preferences (model, tools) for restoration
     return NextResponse.json({
       success: true,
       sessionId,
@@ -255,7 +255,6 @@ export async function GET(request: NextRequest) {
         lastModel: sessionMetadata.lastModel,
         lastTemperature: sessionMetadata.lastTemperature,
         enabledTools: sessionMetadata.enabledTools,
-        autopilotEnabled: sessionMetadata.autopilotEnabled,
       } : null,
     })
   } catch (error) {

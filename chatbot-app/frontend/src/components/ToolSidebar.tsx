@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
-import { Settings, Plus, Search, BarChart3, Globe, MapPin, Wrench, Rocket } from 'lucide-react';
+import { Settings, Plus, Search, BarChart3, Globe, MapPin, Wrench } from 'lucide-react';
 import { Tool } from '@/types/chat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,8 +27,6 @@ interface ToolSidebarProps {
   loadSession?: (sessionId: string) => Promise<void>;
   onSessionListRefresh?: () => void;
   onGatewayToolsChange?: (enabledToolIds: string[]) => void;
-  autopilotEnabled?: boolean;
-  onToggleAutopilot?: (enabled: boolean) => void;
 }
 
 export function ToolSidebar({
@@ -40,8 +38,6 @@ export function ToolSidebar({
   loadSession,
   onSessionListRefresh,
   onGatewayToolsChange,
-  autopilotEnabled = false,
-  onToggleAutopilot,
 }: ToolSidebarProps) {
   const { setOpenMobile, isMobile } = useSidebar();
 
@@ -221,28 +217,6 @@ export function ToolSidebar({
               {enabledCount}/{totalCount} enabled
             </span>
           </div>
-
-          {/* Autopilot Toggle */}
-          {onToggleAutopilot && (
-            <div className="flex items-center justify-between mb-3 p-2 rounded-lg bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 border border-indigo-500/20">
-              <div className="flex items-center gap-2">
-                <Rocket className={`h-4 w-4 ${autopilotEnabled ? 'text-indigo-500' : 'text-sidebar-foreground/50'}`} />
-                <div className="flex flex-col">
-                  <span className={`text-xs font-medium ${autopilotEnabled ? 'text-indigo-600 dark:text-indigo-400' : 'text-sidebar-foreground'}`}>
-                    Autopilot
-                  </span>
-                  <span className="text-[10px] text-sidebar-foreground/50">
-                    AI selects tools per step
-                  </span>
-                </div>
-              </div>
-              <Switch
-                checked={autopilotEnabled}
-                onCheckedChange={onToggleAutopilot}
-                className="data-[state=checked]:bg-indigo-500"
-              />
-            </div>
-          )}
 
           {/* Search Input */}
           <div className="relative">

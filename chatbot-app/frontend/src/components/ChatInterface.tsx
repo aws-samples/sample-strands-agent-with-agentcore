@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useChat } from "@/hooks/useChat"
 import { useIframeAuth, postAuthStatusToParent } from "@/hooks/useIframeAuth"
@@ -14,7 +14,7 @@ import { BrowserLiveViewButton } from "@/components/BrowserLiveViewButton"
 import { ResearchModal } from "@/components/ResearchModal"
 import { BrowserResultModal } from "@/components/BrowserResultModal"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
-import { AutopilotProgress } from "@/components/AutopilotProgress"
+import { SwarmProgress } from "@/components/SwarmProgress"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -108,9 +108,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     researchProgress,
     respondToInterrupt,
     currentInterrupt,
-    autopilotEnabled,
-    toggleAutopilot: toggleAutopilotHook,
-    autopilotProgress,
+    swarmEnabled,
+    toggleSwarm: toggleSwarmHook,
+    swarmProgress,
     addVoiceToolExecution,
     updateVoiceMessage,
     setVoiceStatus,
@@ -280,10 +280,10 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     if (researchTool) {
       const willBeEnabled = !researchTool.enabled
 
-      // If enabling research, disable all other tools and autopilot
+      // If enabling research, disable all other tools and swarm
       if (willBeEnabled) {
-        // Disable autopilot
-        toggleAutopilotHook(false)
+        // Disable swarm
+        toggleSwarmHook(false)
 
         // Disable all tools except research agent
         const enabledTools = availableTools.filter(tool =>
@@ -311,12 +311,12 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
       await toggleTool(researchTool.id)
       setIsResearchEnabled(willBeEnabled)
     }
-  }, [availableTools, toggleTool, toggleAutopilotHook])
+  }, [availableTools, toggleTool, toggleSwarmHook])
 
-  // Toggle Autopilot (using hook from useChat)
-  const toggleAutopilot = useCallback(() => {
-    toggleAutopilotHook(!autopilotEnabled)
-  }, [toggleAutopilotHook, autopilotEnabled])
+  // Toggle Swarm (using hook from useChat)
+  const toggleSwarm = useCallback(() => {
+    toggleSwarmHook(!swarmEnabled)
+  }, [toggleSwarmHook, swarmEnabled])
 
   // Monitor messages for research_agent and browser_use_agent tool executions separately
   useEffect(() => {
@@ -817,42 +817,50 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           </div>
         )}
 
-        {/* Autopilot Progress - Show when autopilot is active */}
-        {autopilotProgress && autopilotProgress.state !== 'off' && (
-          <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 pt-4`}>
-            <AutopilotProgress progress={autopilotProgress} />
-          </div>
-        )}
-
-
         {/* Messages Area - unified container scroll for both modes */}
         <div
           ref={messagesContainerRef}
           onScroll={handleScroll}
           className={`flex flex-col min-w-0 gap-6 ${groupedMessages.length > 0 ? 'flex-1' : ''} overflow-y-auto relative min-h-0 ${groupedMessages.length > 0 ? 'pt-4' : ''}`}
         >
-          {groupedMessages.map((group) => (
-            <div key={group.id} className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0`}>
-              {group.type === "user" ? (
-                group.messages.map((message) => (
-                  <ChatMessage key={message.id} message={message} sessionId={stableSessionId} />
-                ))
-              ) : (
-                <AssistantTurn
-                  messages={group.messages}
-                  currentReasoning={currentReasoning}
-                  availableTools={availableTools}
-                  sessionId={stableSessionId}
-                  onResearchClick={handleResearchClick}
-                  onBrowserClick={handleBrowserClick}
-                  researchProgress={researchProgress}
-                />
-              )}
-            </div>
-          ))}
+          {groupedMessages.map((group, index) => {
+            const isLastGroup = index === groupedMessages.length - 1;
+            const hasSwarmProgress = swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed');
+            const isSwarmFinalResponse = hasSwarmProgress && isLastGroup && group.type === 'assistant_turn';
 
-          {/* Thinking Animation - Show only when agent is thinking */}
-          {agentStatus === 'thinking' && (
+            return (
+              <React.Fragment key={group.id}>
+                <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0`}>
+                  {group.type === "user" ? (
+                    group.messages.map((message) => (
+                      <ChatMessage key={message.id} message={message} sessionId={stableSessionId} />
+                    ))
+                  ) : (
+                    <AssistantTurn
+                      messages={group.messages}
+                      currentReasoning={currentReasoning}
+                      availableTools={availableTools}
+                      sessionId={stableSessionId}
+                      onResearchClick={handleResearchClick}
+                      onBrowserClick={handleBrowserClick}
+                      researchProgress={researchProgress}
+                      hideAvatar={isSwarmFinalResponse}
+                    />
+                  )}
+                </div>
+              </React.Fragment>
+            );
+          })}
+
+          {/* SwarmProgress - always shown when active or completed */}
+          {swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed') && (
+            <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0`}>
+              <SwarmProgress progress={swarmProgress} />
+            </div>
+          )}
+
+          {/* Thinking Animation - Show only when agent is thinking (not in swarm mode) */}
+          {agentStatus === 'thinking' && !swarmProgress?.isActive && (
             <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0 animate-fade-in`}>
               <div className="flex gap-4 items-start">
                 <div className="flex items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-indigo-600 h-10 w-10 flex-shrink-0 shadow-md">
@@ -976,8 +984,8 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                     ? "Voice mode active - click mic to stop"
                     : isResearchEnabled
                     ? "Ask me anything... (Research Agent active)"
-                    : autopilotEnabled
-                    ? "Ask me anything... (Autopilot active)"
+                    : swarmEnabled
+                    ? "Ask me anything... (Swarm mode active)"
                     : "Ask me anything..."
                 }
                 className="flex-1 min-h-[48px] max-h-32 rounded-lg border-0 focus:ring-0 resize-none py-3 px-4 text-base leading-6 overflow-y-auto bg-transparent transition-all duration-200"
@@ -1068,7 +1076,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 <ToolsDropdown
                   availableTools={availableTools}
                   onToggleTool={toggleTool}
-                  disabled={isResearchEnabled || autopilotEnabled || isVoiceActive}
+                  disabled={isResearchEnabled || swarmEnabled || isVoiceActive}
                 />
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1076,10 +1084,10 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      onClick={toggleAutopilot}
+                      onClick={toggleSwarm}
                       disabled={isResearchEnabled || isVoiceActive}
                       className={`h-7 px-2 transition-all duration-200 text-xs font-medium flex items-center gap-1 ${
-                        autopilotEnabled
+                        swarmEnabled
                           ? 'bg-purple-500/20 text-purple-500 hover:bg-purple-500/30'
                           : isResearchEnabled || isVoiceActive
                           ? 'opacity-40 cursor-not-allowed'
@@ -1087,11 +1095,11 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                       }`}
                     >
                       <Bot className="w-3.5 h-3.5" />
-                      Autopilot
+                      Swarm
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{autopilotEnabled ? 'Autopilot mode active' : 'AI selects tools automatically'}</p>
+                    <p>{swarmEnabled ? 'Swarm mode active' : 'Multi-agent orchestration'}</p>
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>
