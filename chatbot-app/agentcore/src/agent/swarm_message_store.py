@@ -27,6 +27,8 @@ class SwarmMessageStore:
 
     Reuses FileSessionManager (local) or CompactingSessionManager (cloud)
     with a fixed agent_id for unified storage.
+
+    Both modes use the same session_repository API for consistency.
     """
 
     def __init__(
@@ -64,7 +66,7 @@ class SwarmMessageStore:
         from pathlib import Path
 
         if self.memory_id:
-            # Cloud mode: Use CompactingSessionManager (or AgentCoreMemorySessionManager)
+            # Cloud mode: Use CompactingSessionManager
             try:
                 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
                 from agent.compacting_session_manager import CompactingSessionManager
@@ -84,7 +86,7 @@ class SwarmMessageStore:
                     metrics_only=True  # No compaction for swarm messages
                 )
 
-                logger.debug(f"Using CompactingSessionManager for swarm storage")
+                logger.debug("Using CompactingSessionManager for swarm storage")
                 return manager
 
             except ImportError:
@@ -104,118 +106,47 @@ class SwarmMessageStore:
         logger.debug(f"Using FileSessionManager for swarm storage: {sessions_dir}")
         return manager
 
+    @property
+    def _repo(self):
+        """Get session repository (works for both local and cloud modes)."""
+        return self.session_manager.session_repository
+
     def _get_next_message_index(self) -> int:
         """Get the next message index by checking existing messages."""
-        # For cloud mode, use session repository API
-        if self.memory_id:
-            try:
-                existing = self.session_manager.session_repository.list_messages(
-                    session_id=self.session_id,
-                    agent_id=SWARM_AGENT_ID
-                )
-                return len(existing)
-            except SessionException:
-                return 0
-            except Exception:
-                return 0
-
-        # For local mode, count message files directly
-        from pathlib import Path
-
         try:
-            sessions_dir = Path(__file__).parent.parent.parent / "sessions"
-            messages_dir = sessions_dir / f"session_{self.session_id}" / "agents" / f"agent_{SWARM_AGENT_ID}" / "messages"
-
-            if not messages_dir.exists():
-                return 0
-
-            # Count message_*.json files
-            message_files = list(messages_dir.glob("message_*.json"))
-            return len(message_files)
+            existing = self._repo.list_messages(
+                session_id=self.session_id,
+                agent_id=SWARM_AGENT_ID
+            )
+            return len(existing)
+        except SessionException:
+            return 0
         except Exception:
             return 0
 
     def _ensure_session_and_agent_exist(self) -> None:
-        """Ensure session and agent exist before saving messages.
+        """Ensure session and agent exist before saving messages."""
+        repo = self._repo
 
-        For local mode, writes files directly to match LocalSessionBuffer format.
-        This ensures Normal mode can read Swarm messages and vice versa.
-        """
-        from datetime import datetime, timezone
-        from pathlib import Path
+        # Create session if not exists
+        try:
+            existing_session = repo.read_session(self.session_id)
+            if existing_session is None:
+                session = Session(session_id=self.session_id)
+                repo.create_session(session)
+                logger.debug(f"[Swarm] Created session: {self.session_id}")
+        except Exception as e:
+            logger.debug(f"[Swarm] Session check/create: {e}")
 
-        # For cloud mode, use the session repository API
-        if self.memory_id:
-            repo = self.session_manager.session_repository
-            try:
-                existing_session = repo.read_session(self.session_id)
-                if existing_session is None:
-                    session = Session(session_id=self.session_id)
-                    repo.create_session(session)
-                    logger.debug(f"[Swarm] Created session: {self.session_id}")
-            except Exception as e:
-                logger.debug(f"[Swarm] Session check/create: {e}")
-
-            try:
-                existing_agent = repo.read_agent(self.session_id, SWARM_AGENT_ID)
-                if existing_agent is None:
-                    agent = SessionAgent(agent_id=SWARM_AGENT_ID)
-                    repo.create_agent(self.session_id, agent)
-                    logger.debug(f"[Swarm] Created agent: {SWARM_AGENT_ID}")
-            except Exception as e:
-                logger.debug(f"[Swarm] Agent check/create: {e}")
-            return
-
-        # For local mode, write files directly (same as LocalSessionBuffer)
-        # This ensures compatibility with Normal mode's FileSessionManager
-        sessions_dir = Path(__file__).parent.parent.parent / "sessions"
-        session_dir = sessions_dir / f"session_{self.session_id}"
-        agent_dir = session_dir / "agents" / f"agent_{SWARM_AGENT_ID}"
-        messages_dir = agent_dir / "messages"
-
-        # Create directories
-        messages_dir.mkdir(parents=True, exist_ok=True)
-
-        now = datetime.now(timezone.utc).isoformat()
-
-        # Create session.json if it doesn't exist
-        session_file = session_dir / "session.json"
-        if not session_file.exists():
-            session_data = {
-                "session_id": self.session_id,
-                "session_type": "AGENT",
-                "created_at": now,
-                "updated_at": now
-            }
-            with open(session_file, 'w', encoding='utf-8') as f:
-                json.dump(session_data, f, indent=2, ensure_ascii=False)
-            logger.debug(f"[Swarm] Created session.json: {self.session_id}")
-
-        # Create agent.json if it doesn't exist
-        # Format must match what Strands SDK's FileSessionManager expects
-        agent_file = agent_dir / "agent.json"
-        if not agent_file.exists():
-            agent_data = {
-                "agent_id": SWARM_AGENT_ID,
-                "state": {},
-                "conversation_manager_state": {
-                    "__name__": "SlidingWindowConversationManager",
-                    "removed_message_count": 0,
-                    "model_call_count": 0
-                },
-                "_internal_state": {
-                    "interrupt_state": {
-                        "interrupts": {},
-                        "context": {},
-                        "activated": False
-                    }
-                },
-                "created_at": now,
-                "updated_at": now
-            }
-            with open(agent_file, 'w', encoding='utf-8') as f:
-                json.dump(agent_data, f, indent=2, ensure_ascii=False)
-            logger.debug(f"[Swarm] Created agent.json: {SWARM_AGENT_ID}")
+        # Create agent if not exists
+        try:
+            existing_agent = repo.read_agent(self.session_id, SWARM_AGENT_ID)
+            if existing_agent is None:
+                agent = SessionAgent(agent_id=SWARM_AGENT_ID)
+                repo.create_agent(self.session_id, agent)
+                logger.debug(f"[Swarm] Created agent: {SWARM_AGENT_ID}")
+        except Exception as e:
+            logger.debug(f"[Swarm] Agent check/create: {e}")
 
     def save_turn(
         self,
@@ -240,13 +171,47 @@ class SwarmMessageStore:
         self._ensure_session_and_agent_exist()
 
         # Build message sequence from content_blocks
-        # Bedrock API format:
-        #   user: [text]
-        #   assistant: [text, toolUse]
-        #   user: [toolResult]
-        #   assistant: [text, toolUse]
-        #   user: [toolResult]
-        #   assistant: [text]
+        messages_to_save = self._build_messages_to_save(user_message, content_blocks, swarm_state)
+
+        # Ensure we have more than just the user message
+        if len(messages_to_save) <= 1:
+            logger.warning(f"[Swarm] No assistant content to save for session={self.session_id}")
+            return
+
+        # Save messages using session repository API (unified for local/cloud)
+        try:
+            for msg in messages_to_save:
+                session_msg = SessionMessage.from_message(msg, self._message_index)
+                self._repo.create_message(
+                    session_id=self.session_id,
+                    agent_id=SWARM_AGENT_ID,
+                    session_message=session_msg
+                )
+                self._message_index += 1
+
+            mode = "cloud" if self.memory_id else "local"
+            logger.info(f"[Swarm] Saved {len(messages_to_save)} messages to {mode}: session={self.session_id}")
+
+        except Exception as e:
+            logger.error(f"[Swarm] Failed to save turn: {e}", exc_info=True)
+
+    def _build_messages_to_save(
+        self,
+        user_message: str,
+        content_blocks: Optional[List[Dict[str, Any]]],
+        swarm_state: Optional[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """
+        Build properly formatted message sequence from content blocks.
+
+        Bedrock API format:
+          user: [text]
+          assistant: [text, toolUse]
+          user: [toolResult]
+          assistant: [text, toolUse]
+          user: [toolResult]
+          assistant: [text]
+        """
         messages_to_save: List[Dict[str, Any]] = []
 
         # First user message (original query)
@@ -292,58 +257,7 @@ class SwarmMessageStore:
                 "content": current_assistant_content
             })
 
-        # Ensure we have more than just the user message
-        if len(messages_to_save) <= 1:
-            logger.warning(f"[Swarm] No assistant content to save for session={self.session_id}")
-            return
-
-        # For cloud mode, use session repository API
-        if self.memory_id:
-            try:
-                for msg in messages_to_save:
-                    session_msg = SessionMessage.from_message(msg, self._message_index)
-                    self.session_manager.session_repository.create_message(
-                        session_id=self.session_id,
-                        agent_id=SWARM_AGENT_ID,
-                        session_message=session_msg
-                    )
-                    self._message_index += 1
-
-                logger.info(f"[Swarm] Saved {len(messages_to_save)} messages to cloud: session={self.session_id}")
-            except Exception as e:
-                logger.error(f"[Swarm] Failed to save turn to cloud: {e}", exc_info=True)
-            return
-
-        # For local mode, write files directly (same format as LocalSessionBuffer)
-        # This ensures compatibility with Normal mode's FileSessionManager
-        from datetime import datetime, timezone
-        from pathlib import Path
-
-        try:
-            sessions_dir = Path(__file__).parent.parent.parent / "sessions"
-            messages_dir = sessions_dir / f"session_{self.session_id}" / "agents" / f"agent_{SWARM_AGENT_ID}" / "messages"
-            messages_dir.mkdir(parents=True, exist_ok=True)
-
-            now = datetime.now(timezone.utc).isoformat()
-
-            # Save all messages in sequence
-            for msg in messages_to_save:
-                session_dict = {
-                    "message": msg,
-                    "message_id": self._message_index,
-                    "redact_message": None,
-                    "created_at": now,
-                    "updated_at": now
-                }
-                msg_file = messages_dir / f"message_{self._message_index}.json"
-                with open(msg_file, 'w', encoding='utf-8') as f:
-                    json.dump(session_dict, f, indent=2, ensure_ascii=False)
-                self._message_index += 1
-
-            logger.info(f"[Swarm] Saved {len(messages_to_save)} messages to local: session={self.session_id}")
-
-        except Exception as e:
-            logger.error(f"[Swarm] Failed to save turn to local: {e}", exc_info=True)
+        return messages_to_save
 
     def _build_swarm_context(self, swarm_state: Dict[str, Any]) -> Optional[str]:
         """Build swarm_context block from swarm execution state."""
@@ -377,60 +291,19 @@ class SwarmMessageStore:
         Returns:
             List of message dicts for injection into coordinator.executor.messages
         """
-        # For cloud mode, use session repository API
-        if self.memory_id:
-            try:
-                session_messages = self.session_manager.session_repository.list_messages(
-                    session_id=self.session_id,
-                    agent_id=SWARM_AGENT_ID
-                )
-
-                if not session_messages:
-                    logger.debug(f"[Swarm] No history found for session={self.session_id}")
-                    return []
-
-                messages = [sm.to_message() for sm in session_messages]
-
-                max_messages = max_turns * 2
-                if len(messages) > max_messages:
-                    messages = messages[-max_messages:]
-
-                logger.info(f"[Swarm] Loaded {len(messages)} history messages for session={self.session_id}")
-                return messages
-
-            except SessionException:
-                logger.debug(f"[Swarm] No history (session/agent not created yet): session={self.session_id}")
-                return []
-            except Exception as e:
-                logger.error(f"[Swarm] Failed to get history: {e}", exc_info=True)
-                return []
-
-        # For local mode, read files directly
-        from pathlib import Path
-
         try:
-            sessions_dir = Path(__file__).parent.parent.parent / "sessions"
-            messages_dir = sessions_dir / f"session_{self.session_id}" / "agents" / f"agent_{SWARM_AGENT_ID}" / "messages"
+            session_messages = self._repo.list_messages(
+                session_id=self.session_id,
+                agent_id=SWARM_AGENT_ID
+            )
 
-            if not messages_dir.exists():
+            if not session_messages:
                 logger.debug(f"[Swarm] No history found for session={self.session_id}")
                 return []
 
-            # Read all message files and sort by index
-            message_files = sorted(messages_dir.glob("message_*.json"), key=lambda p: int(p.stem.split("_")[1]))
+            messages = [sm.to_message() for sm in session_messages]
 
-            if not message_files:
-                logger.debug(f"[Swarm] No history found for session={self.session_id}")
-                return []
-
-            messages = []
-            for msg_file in message_files:
-                with open(msg_file, 'r', encoding='utf-8') as f:
-                    msg_data = json.load(f)
-                    # Extract the message dict from SessionMessage format
-                    messages.append(msg_data.get("message", msg_data))
-
-            # Limit to max_turns (each turn = user + assistant = 2 messages)
+            # Limit to max_turns (each turn can have multiple messages)
             max_messages = max_turns * 2
             if len(messages) > max_messages:
                 messages = messages[-max_messages:]
@@ -438,39 +311,24 @@ class SwarmMessageStore:
             logger.info(f"[Swarm] Loaded {len(messages)} history messages for session={self.session_id}")
             return messages
 
+        except SessionException:
+            logger.debug(f"[Swarm] No history (session/agent not created yet): session={self.session_id}")
+            return []
         except Exception as e:
             logger.error(f"[Swarm] Failed to get history: {e}", exc_info=True)
             return []
 
     def has_previous_turns(self) -> bool:
         """Check if there are previous turns in this session."""
-        # For cloud mode, use session repository API
-        if self.memory_id:
-            try:
-                messages = self.session_manager.session_repository.list_messages(
-                    session_id=self.session_id,
-                    agent_id=SWARM_AGENT_ID,
-                    limit=1
-                )
-                return len(messages) > 0
-            except SessionException:
-                return False
-            except Exception:
-                return False
-
-        # For local mode, check if message files exist
-        from pathlib import Path
-
         try:
-            sessions_dir = Path(__file__).parent.parent.parent / "sessions"
-            messages_dir = sessions_dir / f"session_{self.session_id}" / "agents" / f"agent_{SWARM_AGENT_ID}" / "messages"
-
-            if not messages_dir.exists():
-                return False
-
-            # Check if any message files exist
-            message_files = list(messages_dir.glob("message_*.json"))
-            return len(message_files) > 0
+            messages = self._repo.list_messages(
+                session_id=self.session_id,
+                agent_id=SWARM_AGENT_ID,
+                limit=1
+            )
+            return len(messages) > 0
+        except SessionException:
+            return False
         except Exception:
             return False
 
