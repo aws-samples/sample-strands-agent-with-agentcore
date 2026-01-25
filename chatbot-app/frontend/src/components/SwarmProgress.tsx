@@ -223,7 +223,7 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
 /**
  * Swarm progress indicator - integrated into message flow
  * - Running: shows collapsible agent progress + streaming response
- * - Completed: collapsible "Show agents" + final response
+ * - Completed: collapsible "Show progress" + final response
  * - History mode: simplified view showing just agent names (no avatar)
  */
 export function SwarmProgress({ progress, className, historyMode, historyAgents, historySharedContext, sessionId }: SwarmProgressProps) {
@@ -296,25 +296,18 @@ export function SwarmProgress({ progress, className, historyMode, historyAgents,
   const displayName = SWARM_AGENT_DISPLAY_NAMES[currentNode] || currentNode;
   const isComplete = status === 'completed' || status === 'failed';
 
-  // Filter steps: exclude coordinator
-  const allSteps = agentSteps?.filter(step => step.nodeId !== 'coordinator') || [];
-
-  // Responder's response is the final response
-  const responderStep = allSteps.find(step => step.nodeId === 'responder');
-  const finalResponse = responderStep?.responseText?.trim() || '';
-
-  // All non-responder agents go to intermediate (including their responses)
-  const intermediateSteps = allSteps.filter(step => step.nodeId !== 'responder');
+  // Filter steps: exclude responder only
+  // Responder's content is rendered via normal message flow, not here
+  // Coordinator's reasoning and handoff context should be shown
+  const intermediateSteps = agentSteps?.filter(step =>
+    step.nodeId !== 'responder'
+  ) || [];
 
   // Check if there's any content to show in agents section
   const hasAgentContent = intermediateSteps.some(s =>
     s.reasoningText?.trim() || s.responseText?.trim() ||
     (s.toolCalls && s.toolCalls.length > 0) || s.handoffMessage || s.handoffContext
   );
-
-  // Current agent (last one in the list)
-  const currentStep = allSteps[allSteps.length - 1];
-  const isResponderActive = currentStep?.nodeId === 'responder';
 
   return (
     <div className={cn("flex justify-start mb-4 group", className)}>
@@ -337,7 +330,7 @@ export function SwarmProgress({ progress, className, historyMode, historyAgents,
               >
                 <Sparkles className="h-4 w-4 text-blue-500" />
                 <span className="text-sm font-medium">
-                  {isComplete ? 'Show agents' : (currentAction || `${displayName} working...`)}
+                  {isComplete ? 'Show progress' : (currentAction || `${displayName} working...`)}
                 </span>
                 <ChevronDown
                   className={cn(
@@ -354,28 +347,16 @@ export function SwarmProgress({ progress, className, historyMode, historyAgents,
                     <AgentStepSection
                       key={`${step.nodeId}-${index}`}
                       step={step}
-                      isRunning={!isComplete && index === intermediateSteps.length - 1 && !isResponderActive}
+                      isRunning={!isComplete && index === intermediateSteps.length - 1}
                       sessionId={sessionId}
                     />
                   ))}
-
-                  {/* Responder generating final response */}
-                  {!isComplete && isResponderActive && (
-                    <div className="text-xs text-muted-foreground italic">
-                      Generating response...
-                    </div>
-                  )}
                 </div>
               )}
             </div>
           )}
 
-          {/* Final response from last responding agent */}
-          {finalResponse && (
-            <div className="chat-chart-content">
-              <Markdown>{finalResponse}</Markdown>
-            </div>
-          )}
+          {/* Note: Responder's content is rendered via normal message flow, not here */}
         </div>
       </div>
     </div>

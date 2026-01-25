@@ -331,8 +331,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       console.warn('[useChat] Failed to update model config:', error)
     }
 
-    // Swarm mode is always off by default on session restore
-    setSwarmEnabled(false)
+    // Restore swarm mode preference from sessionStorage
+    const savedSwarmEnabled = sessionStorage.getItem(`swarm-enabled-${newSessionId}`)
+    const swarmRestored = savedSwarmEnabled === 'true'
+    setSwarmEnabled(swarmRestored)
+    console.log(`[useChat] Swarm mode restored: ${swarmRestored}`)
   }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
   // ==================== PROGRESS EVENTS ====================
@@ -632,6 +635,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
   const toggleSwarm = useCallback((enabled: boolean) => {
     setSwarmEnabled(enabled)
+    // Persist swarm mode preference to sessionStorage
+    const currentSessionId = sessionStorage.getItem('chat-session-id')
+    if (currentSessionId) {
+      sessionStorage.setItem(`swarm-enabled-${currentSessionId}`, String(enabled))
+    }
     console.log(`[useChat] Swarm ${enabled ? 'enabled' : 'disabled'}`)
   }, [])
 

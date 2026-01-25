@@ -220,58 +220,96 @@ class SwarmMessageStore:
     def save_turn(
         self,
         user_message: str,
-        assistant_message: str,
+        content_blocks: Optional[List[Dict[str, Any]]] = None,
         swarm_state: Optional[Dict[str, Any]] = None
     ) -> None:
         """
-        Save a swarm turn as user/assistant message pair.
+        Save a swarm turn as properly formatted message sequence.
+
+        Bedrock/Claude API requires:
+        - toolUse blocks in assistant messages
+        - toolResult blocks in user messages (separate from toolUse)
 
         Args:
             user_message: User's input message
-            assistant_message: Final assistant response
+            content_blocks: Ordered content blocks [text, toolUse, toolResult, text, ...]
+                           Preserves exact order from streaming for proper session restore
             swarm_state: Swarm execution state (node_history, shared_context, etc.)
         """
         # Ensure session and agent exist before saving
         self._ensure_session_and_agent_exist()
 
-        # Build user message
-        user_msg = {
+        # Build message sequence from content_blocks
+        # Bedrock API format:
+        #   user: [text]
+        #   assistant: [text, toolUse]
+        #   user: [toolResult]
+        #   assistant: [text, toolUse]
+        #   user: [toolResult]
+        #   assistant: [text]
+        messages_to_save: List[Dict[str, Any]] = []
+
+        # First user message (original query)
+        messages_to_save.append({
             "role": "user",
             "content": [{"text": user_message}]
-        }
+        })
 
-        # Build assistant message with swarm_context
-        assistant_content = [{"text": assistant_message}]
+        # Process content_blocks into properly formatted messages
+        current_assistant_content: List[Dict[str, Any]] = []
+
+        if content_blocks:
+            for block in content_blocks:
+                if "toolResult" in block:
+                    # toolResult must go in a user message
+                    # First, flush current assistant content if any
+                    if current_assistant_content:
+                        messages_to_save.append({
+                            "role": "assistant",
+                            "content": current_assistant_content
+                        })
+                        current_assistant_content = []
+
+                    # Add toolResult as user message
+                    messages_to_save.append({
+                        "role": "user",
+                        "content": [block]
+                    })
+                else:
+                    # text or toolUse goes in assistant message
+                    current_assistant_content.append(block)
+
+        # Add swarm_context at the end of final assistant content
         if swarm_state:
             swarm_context = self._build_swarm_context(swarm_state)
             if swarm_context:
-                assistant_content.append({"text": swarm_context})
+                current_assistant_content.append({"text": swarm_context})
 
-        assistant_msg = {
-            "role": "assistant",
-            "content": assistant_content
-        }
+        # Flush remaining assistant content
+        if current_assistant_content:
+            messages_to_save.append({
+                "role": "assistant",
+                "content": current_assistant_content
+            })
+
+        # Ensure we have more than just the user message
+        if len(messages_to_save) <= 1:
+            logger.warning(f"[Swarm] No assistant content to save for session={self.session_id}")
+            return
 
         # For cloud mode, use session repository API
         if self.memory_id:
             try:
-                user_session_msg = SessionMessage.from_message(user_msg, self._message_index)
-                self.session_manager.session_repository.create_message(
-                    session_id=self.session_id,
-                    agent_id=SWARM_AGENT_ID,
-                    session_message=user_session_msg
-                )
-                self._message_index += 1
+                for msg in messages_to_save:
+                    session_msg = SessionMessage.from_message(msg, self._message_index)
+                    self.session_manager.session_repository.create_message(
+                        session_id=self.session_id,
+                        agent_id=SWARM_AGENT_ID,
+                        session_message=session_msg
+                    )
+                    self._message_index += 1
 
-                assistant_session_msg = SessionMessage.from_message(assistant_msg, self._message_index)
-                self.session_manager.session_repository.create_message(
-                    session_id=self.session_id,
-                    agent_id=SWARM_AGENT_ID,
-                    session_message=assistant_session_msg
-                )
-                self._message_index += 1
-
-                logger.info(f"[Swarm] Saved turn to cloud storage: session={self.session_id}, msg_index={self._message_index}")
+                logger.info(f"[Swarm] Saved {len(messages_to_save)} messages to cloud: session={self.session_id}")
             except Exception as e:
                 logger.error(f"[Swarm] Failed to save turn to cloud: {e}", exc_info=True)
             return
@@ -288,33 +326,21 @@ class SwarmMessageStore:
 
             now = datetime.now(timezone.utc).isoformat()
 
-            # Save user message
-            user_session_dict = {
-                "message": user_msg,
-                "message_id": self._message_index,
-                "redact_message": None,
-                "created_at": now,
-                "updated_at": now
-            }
-            user_file = messages_dir / f"message_{self._message_index}.json"
-            with open(user_file, 'w', encoding='utf-8') as f:
-                json.dump(user_session_dict, f, indent=2, ensure_ascii=False)
-            self._message_index += 1
+            # Save all messages in sequence
+            for msg in messages_to_save:
+                session_dict = {
+                    "message": msg,
+                    "message_id": self._message_index,
+                    "redact_message": None,
+                    "created_at": now,
+                    "updated_at": now
+                }
+                msg_file = messages_dir / f"message_{self._message_index}.json"
+                with open(msg_file, 'w', encoding='utf-8') as f:
+                    json.dump(session_dict, f, indent=2, ensure_ascii=False)
+                self._message_index += 1
 
-            # Save assistant message
-            assistant_session_dict = {
-                "message": assistant_msg,
-                "message_id": self._message_index,
-                "redact_message": None,
-                "created_at": now,
-                "updated_at": now
-            }
-            assistant_file = messages_dir / f"message_{self._message_index}.json"
-            with open(assistant_file, 'w', encoding='utf-8') as f:
-                json.dump(assistant_session_dict, f, indent=2, ensure_ascii=False)
-            self._message_index += 1
-
-            logger.info(f"[Swarm] Saved turn to local storage: session={self.session_id}, msg_index={self._message_index}")
+            logger.info(f"[Swarm] Saved {len(messages_to_save)} messages to local: session={self.session_id}")
 
         except Exception as e:
             logger.error(f"[Swarm] Failed to save turn to local: {e}", exc_info=True)

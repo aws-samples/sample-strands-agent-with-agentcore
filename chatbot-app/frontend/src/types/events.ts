@@ -11,12 +11,14 @@ export interface ResponseEvent {
   type: 'response';
   text: string;
   step: 'answering';
+  node_id?: string;  // Swarm mode: which agent is responding
 }
 
 // Text event (used by Swarm mode streaming)
 export interface TextEvent {
   type: 'text';
   content: string;
+  node_id?: string;  // Swarm mode: which agent is sending text
 }
 
 // Stream lifecycle events
@@ -33,6 +35,7 @@ export interface ToolUseEvent {
   toolUseId: string;
   name: string;
   input: Record<string, any>;
+  node_id?: string;  // Swarm mode: which agent is using the tool
 }
 
 export interface WorkspaceFile {
@@ -53,6 +56,7 @@ export interface ToolResultEvent {
     data: string;
   }>;
   metadata?: Record<string, any>;
+  node_id?: string;  // Swarm mode: which agent produced the result
 }
 
 export interface InitEvent {
@@ -169,6 +173,7 @@ export interface SwarmAgentStep {
   toolCalls?: Array<{
     toolName: string;
     status: 'running' | 'completed' | 'failed';
+    toolUseId?: string;  // For matching with tool results
   }>;
   status: 'running' | 'completed' | 'failed';
   responseText?: string;   // Final response text
