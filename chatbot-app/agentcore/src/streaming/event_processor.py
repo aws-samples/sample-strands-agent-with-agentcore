@@ -49,7 +49,7 @@ class StreamEventProcessor:
 
         if self.observability_enabled:
             self._init_metrics()
-    
+
     def _init_metrics(self):
         """Initialize OpenTelemetry metrics for streaming"""
         self.stream_event_counter = self.meter.create_counter(
@@ -57,20 +57,20 @@ class StreamEventProcessor:
             description="Total number of stream events processed",
             unit="1"
         )
-        
+
         self.stream_duration = self.meter.create_histogram(
             name="stream_duration",
             description="Duration of streaming sessions",
             unit="s"
         )
-        
+
         self.tool_use_counter = self.meter.create_counter(
             name="tool_uses_total",
             description="Total number of tool uses in streams",
             unit="1"
         )
-        
-        logger.info("OpenTelemetry metrics initialized for StreamEventProcessor")
+
+        logger.debug("OpenTelemetry metrics initialized for StreamEventProcessor")
     
     def _get_current_timestamp(self) -> str:
         """Get current timestamp in ISO format"""
@@ -100,7 +100,7 @@ class StreamEventProcessor:
                 self.current_session_id
             )
             if is_stopped:
-                logger.info(f"[StopSignal] 🛑 Stop signal detected for {self.current_user_id}:{self.current_session_id}")
+                logger.debug(f"[StopSignal] Stop signal detected for {self.current_user_id}:{self.current_session_id}")
             return is_stopped
         except Exception as e:
             logger.warning(f"[StopSignal] Error checking stop signal: {e}")
@@ -129,7 +129,7 @@ class StreamEventProcessor:
         """
         # Skip if tool_use was started - Strands SDK already saved the assistant message
         if self.tool_use_started:
-            logger.info(f"[Partial Response] Skipping save - tool_use already emitted, Strands SDK handles message persistence")
+            logger.debug(f"[Partial Response] Skipping save - tool_use already emitted")
             self.partial_response_text = ""
             return False
 
@@ -148,7 +148,7 @@ class StreamEventProcessor:
             session_mgr.append_message(abort_message, agent)
             if hasattr(session_mgr, 'flush'):
                 session_mgr.flush()
-            logger.info(f"[Partial Response] Saved interrupted response ({len(abort_message_text)} chars)")
+            logger.debug(f"[Partial Response] Saved interrupted response ({len(abort_message_text)} chars)")
             return True
         except Exception as e:
             logger.error(f"Failed to save partial response: {e}")
@@ -173,7 +173,7 @@ class StreamEventProcessor:
             # Return the last registered tool (most recent)
             last_tool_id = list(self.tool_use_registry.keys())[-1] if self.tool_use_registry else None
             if last_tool_id:
-                logger.info(f"[Error Recovery] Found pending tool: {last_tool_id}")
+                logger.debug(f"[Error Recovery] Found pending tool: {last_tool_id}")
             return last_tool_id
 
         return None
@@ -310,7 +310,7 @@ class StreamEventProcessor:
             async for event in stream_iterator:
                 # Check stop signal periodically (throttled to reduce DB calls)
                 if self._check_stop_signal():
-                    logger.info(f"[StopSignal] 🛑 Stopping stream for session {session_id}")
+                    logger.debug(f"[StopSignal] Stopping stream for session {session_id}")
                     self._clear_stop_signal()
                     raise StopRequestedException("Stop requested by user")
 
@@ -321,11 +321,9 @@ class StreamEventProcessor:
                     if browser_session_arn and not self.invocation_state.get('_browser_session_emitted'):
                         # Mark as emitted to avoid duplicate events
                         self.invocation_state['_browser_session_emitted'] = True
-                        import logging as _logging
-                        _logger = _logging.getLogger(__name__)
                         # Include browserId if available (required for session validation)
                         browser_id = self.invocation_state.get('browser_id')
-                        _logger.info(f"🔴 [Live View] Emitting browser session from invocation_state: {browser_session_arn}, browserId: {browser_id}")
+                        logger.debug(f"[Live View] Emitting browser session: {browser_session_arn}")
                         metadata = {"browserSessionId": browser_session_arn}
                         if browser_id:
                             metadata["browserId"] = browser_id
@@ -339,19 +337,11 @@ class StreamEventProcessor:
                     # Check for interrupt (HITL - Human-in-the-loop)
                     if hasattr(final_result, 'stop_reason') and final_result.stop_reason == "interrupt":
                         if hasattr(final_result, 'interrupts') and final_result.interrupts:
-                            logger.info(f"🔔 Interrupt detected: {len(final_result.interrupts)} interrupt(s)")
-
-                            # Log interrupt details
-                            for interrupt in final_result.interrupts:
-                                logger.info(f"   Interrupt ID: {interrupt.id}, Name: {interrupt.name}")
-                                if hasattr(interrupt, 'reason'):
-                                    logger.info(f"   Reason: {interrupt.reason}")
+                            logger.debug(f"[Interrupt] Detected {len(final_result.interrupts)} interrupt(s)")
 
                             # Send interrupt event to frontend
                             interrupt_event = self.formatter.create_interrupt_event(final_result.interrupts)
-                            logger.info(f"📤 Sending interrupt event to frontend: {interrupt_event[:200]}...")
                             yield interrupt_event
-                            logger.info(f"✅ Interrupt event sent, closing stream")
                             return
 
                     images, result_text = self.formatter.extract_final_result_data(final_result)
@@ -549,14 +539,13 @@ class StreamEventProcessor:
                     if isinstance(stream_data, dict) and stream_data.get("type") == "browser_session_detected":
                         browser_session_id = stream_data.get("browserSessionId")
                         browser_id = stream_data.get("browserId")
-                        logger.info(f"[Live View] 🔴 Received browser session from tool stream: {browser_session_id}, browserId: {browser_id}")
+                        logger.debug(f"[Live View] Browser session detected: {browser_session_id}")
 
                         # Update invocation_state so it's available for tool result processing
                         if browser_session_id:
                             self.invocation_state['browser_session_arn'] = browser_session_id
                             if browser_id:
                                 self.invocation_state['browser_id'] = browser_id
-                            logger.info(f"[Live View] Stored browser session in invocation_state for immediate Live View")
 
                             # Send metadata event to frontend for immediate Live View
                             metadata = {"browserSessionId": browser_session_id}
@@ -564,7 +553,6 @@ class StreamEventProcessor:
                                 metadata["browserId"] = browser_id
 
                             yield self.formatter.create_metadata_event(metadata)
-                            logger.info(f"[Live View] ✅ Sent metadata event to frontend with browserSessionId and browserId")
 
                         # Also send a response message
                         yield self.formatter.create_response_event(f"\n\n*{stream_data.get('message', 'Browser session started')}*\n\n")
@@ -585,7 +573,7 @@ class StreamEventProcessor:
                         step_number = stream_data.get("stepNumber", 0)
 
                         if step_content:
-                            logger.info(f"[Research Step] ✅ Streaming research_step_{step_number} to frontend: {step_content[:50]}...")
+                            logger.debug(f"[Research Step] Step {step_number}: {step_content[:50]}...")
                             # Send as research_progress event to display in Research Agent card
                             yield self.formatter.create_research_progress_event(step_content, step_number)
 
@@ -641,7 +629,7 @@ class StreamEventProcessor:
             # This allows the agent to self-recover from errors
             pending_tool_id = self._get_last_pending_tool_id()
             if pending_tool_id:
-                logger.info(f"[Error Recovery] Emitting error as tool_result for {pending_tool_id}")
+                logger.debug(f"[Error Recovery] Emitting error as tool_result for {pending_tool_id}")
                 error_tool_result = {
                     "toolUseId": pending_tool_id,
                     "status": "error",
@@ -761,7 +749,6 @@ class StreamEventProcessor:
             tool_result["metadata"]["browserSessionId"] = self.invocation_state['browser_session_arn']
             if 'browser_id' in self.invocation_state:
                 tool_result["metadata"]["browserId"] = self.invocation_state['browser_id']
-            logger.debug(f"[Live View] Added browserSessionId to tool result metadata: {self.invocation_state['browser_session_arn']}")
 
     def _collect_document_info(self, tool_result: Dict[str, Any]) -> None:
         """Document collection is now handled by frontend via S3 workspace API.

@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
     let model_id: string | undefined
     let enabled_tools: string[] | undefined
     let files: File[] | undefined
-    let autopilot: boolean | undefined
+    let swarm: boolean | undefined
 
     if (isFormData) {
       // Parse FormData for file uploads
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
       message = body.message
       model_id = body.model_id
       enabled_tools = body.enabled_tools
-      autopilot = body.autopilot
+      swarm = body.swarm
     }
 
     if (!message) {
@@ -304,7 +304,7 @@ export async function POST(request: NextRequest) {
             modelConfig.system_prompt,
             modelConfig.caching_enabled,
             agentCoreAbortController.signal, // Pass abort signal for cancellation
-            autopilot // Pass autopilot flag for Mission Control orchestration
+            swarm // Pass swarm flag for multi-agent orchestration
           )
           agentStarted = true
 
@@ -375,7 +375,6 @@ export async function POST(request: NextRequest) {
                   lastModel: modelConfig.model_id,
                   lastTemperature: modelConfig.temperature,
                   enabledTools: enabledToolsList,
-                  autopilotEnabled: autopilot ?? false,
                 },
               }
 

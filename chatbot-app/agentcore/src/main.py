@@ -38,8 +38,19 @@ class HealthCheckFilter(logging.Filter):
 
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
-# Suppress verbose DEBUG logging from Strands SDK bidi components
+# Suppress verbose logging from various modules
 logging.getLogger("strands.experimental.bidi").setLevel(logging.WARNING)
+
+# Suppress detailed streaming logs (too verbose during normal operation)
+# Set to DEBUG level to reduce noise; change to INFO for debugging streaming issues
+logging.getLogger("streaming.event_processor").setLevel(logging.WARNING)
+
+# Suppress Gateway MCP client detailed logs (tool listing, filtering)
+logging.getLogger("agent.gateway_mcp_client").setLevel(logging.WARNING)
+
+# Suppress Strands SDK internal logs (model calls, tool execution details)
+logging.getLogger("strands.agent.agent").setLevel(logging.WARNING)
+logging.getLogger("strands.tools.mcp").setLevel(logging.WARNING)
 
 # Lifespan event handler (replaces on_event)
 @asynccontextmanager

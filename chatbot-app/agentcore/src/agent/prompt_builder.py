@@ -252,8 +252,7 @@ def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[str]:
 # =============================================================================
 
 def build_text_system_prompt(
-    enabled_tools: Optional[List[str]] = None,
-    autopilot_directive: Optional[str] = None
+    enabled_tools: Optional[List[str]] = None
 ) -> List[SystemContentBlock]:
     """
     Build system prompt for text mode as list of SystemContentBlock.
@@ -265,7 +264,6 @@ def build_text_system_prompt(
 
     Args:
         enabled_tools: List of enabled tool IDs (optional)
-        autopilot_directive: Autopilot task directive to include (optional)
 
     Returns:
         List of SystemContentBlock for Strands Agent
@@ -275,12 +273,7 @@ def build_text_system_prompt(
     # Block 1: Base system prompt
     system_prompt_blocks.append({"text": BASE_TEXT_PROMPT})
 
-    # Block 2 (optional): Autopilot directive
-    if autopilot_directive:
-        logger.info("[Autopilot] Adding directive to system prompt")
-        system_prompt_blocks.append({"text": autopilot_directive})
-
-    # Blocks 3-N: Tool-specific guidance (each tool guidance as separate block)
+    # Blocks 2-N: Tool-specific guidance (each tool guidance as separate block)
     tool_guidance_list = load_tool_guidance(enabled_tools)
     for i, guidance in enumerate(tool_guidance_list):
         system_prompt_blocks.append({"text": guidance})
@@ -293,8 +286,7 @@ def build_text_system_prompt(
     # Log summary
     total_chars = sum(len(block.get("text", "")) for block in system_prompt_blocks)
     logger.debug(f"System prompt: {len(system_prompt_blocks)} content blocks "
-                f"(1 base + {1 if autopilot_directive else 0} autopilot + "
-                f"{len(tool_guidance_list)} tool guidance + 1 date)")
+                f"(1 base + {len(tool_guidance_list)} tool guidance + 1 date)")
     logger.debug(f"System prompt total length: {total_chars} characters")
 
     return system_prompt_blocks

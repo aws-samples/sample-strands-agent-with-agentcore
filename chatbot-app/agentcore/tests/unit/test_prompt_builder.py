@@ -61,22 +61,8 @@ class TestBuildTextSystemPrompt:
         assert "text" in last_block
         assert "Current date:" in last_block["text"]
 
-    def test_autopilot_directive_added_when_provided(self):
-        """Verify autopilot directive is added as second block."""
-        from agent.prompt_builder import build_text_system_prompt
-
-        directive = "You are executing Step 1: Search for information"
-        result = build_text_system_prompt(
-            enabled_tools=[],
-            autopilot_directive=directive
-        )
-
-        # Second block should be the autopilot directive
-        assert len(result) >= 3  # base + autopilot + date
-        assert result[1]["text"] == directive
-
-    def test_no_autopilot_when_not_provided(self):
-        """Verify no autopilot block when directive is None."""
+    def test_base_prompt_and_date_only_without_tools(self):
+        """Verify base prompt and date blocks when no tools provided."""
         from agent.prompt_builder import build_text_system_prompt
 
         result = build_text_system_prompt(enabled_tools=[])

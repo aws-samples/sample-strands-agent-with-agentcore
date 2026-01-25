@@ -43,15 +43,15 @@ interface UseChatReturn {
   researchProgress?: { stepNumber: number; content: string }
   respondToInterrupt: (interruptId: string, response: string) => Promise<void>
   currentInterrupt: InterruptState | null
-  // Autopilot mode
-  autopilotEnabled: boolean
-  toggleAutopilot: (enabled: boolean) => void
-  autopilotProgress?: {
-    missionId: string
-    state: 'off' | 'init' | 'executing' | 'finishing'
-    step: number
-    currentTask: string
-    activeTools: string[]
+  // Swarm mode (Multi-Agent)
+  swarmEnabled: boolean
+  toggleSwarm: (enabled: boolean) => void
+  swarmProgress?: {
+    isActive: boolean
+    currentNode: string
+    currentNodeDescription: string
+    nodeHistory: string[]
+    status: 'idle' | 'running' | 'completed' | 'failed'
   }
   // Voice mode
   addVoiceToolExecution: (toolExecution: ToolExecution) => void
@@ -66,7 +66,6 @@ const DEFAULT_PREFERENCES: SessionPreferences = {
   lastTemperature: 0.7,
   enabledTools: [],
   selectedPromptId: 'general',
-  autopilotEnabled: false,
 }
 
 export const useChat = (props?: UseChatProps): UseChatReturn => {
@@ -77,7 +76,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [availableTools, setAvailableTools] = useState<Tool[]>([])
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [autopilotEnabled, setAutopilotEnabled] = useState(false)
+  const [swarmEnabled, setSwarmEnabled] = useState(false)
 
   const [sessionState, setSessionState] = useState<ChatSessionState>({
     reasoning: null,
@@ -332,10 +331,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       console.warn('[useChat] Failed to update model config:', error)
     }
 
-    // Restore autopilot state
-    const restoredAutopilot = effectivePreferences.autopilotEnabled ?? false
-    setAutopilotEnabled(restoredAutopilot)
-    console.log(`[useChat] Autopilot state restored: ${restoredAutopilot}`)
+    // Swarm mode is always off by default on session restore
+    setSwarmEnabled(false)
   }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
   // ==================== PROGRESS EVENTS ====================
@@ -575,9 +572,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         }))
       },
       undefined, // overrideEnabledTools
-      autopilotEnabled // Pass autopilot flag to backend
+      swarmEnabled // Pass swarm flag to backend
     )
-  }, [inputMessage, apiSendMessage, autopilotEnabled])
+  }, [inputMessage, apiSendMessage, swarmEnabled])
 
   const stopGeneration = useCallback(() => {
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
@@ -633,9 +630,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setGatewayToolIds(enabledToolIds)
   }, [])
 
-  const toggleAutopilot = useCallback((enabled: boolean) => {
-    setAutopilotEnabled(enabled)
-    console.log(`[useChat] Autopilot ${enabled ? 'enabled' : 'disabled'}`)
+  const toggleSwarm = useCallback((enabled: boolean) => {
+    setSwarmEnabled(enabled)
+    console.log(`[useChat] Swarm ${enabled ? 'enabled' : 'disabled'}`)
   }, [])
 
   // Add voice tool execution (mirrors text mode's handleToolUseEvent pattern)
@@ -842,10 +839,10 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     researchProgress: sessionState.researchProgress,
     respondToInterrupt,
     currentInterrupt: sessionState.interrupt,
-    // Autopilot mode
-    autopilotEnabled,
-    toggleAutopilot,
-    autopilotProgress: sessionState.autopilotProgress,
+    // Swarm mode (Multi-Agent)
+    swarmEnabled,
+    toggleSwarm,
+    swarmProgress: sessionState.swarmProgress,
     // Voice mode
     addVoiceToolExecution,
     updateVoiceMessage,

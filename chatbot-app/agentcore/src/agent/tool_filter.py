@@ -305,7 +305,7 @@ class ToolFilterRegistry:
         try:
             client = factory(enabled_tool_ids=tool_ids)
             if client:
-                logger.info(f"{log_prefix} Gateway MCP client created: {tool_ids}")
+                logger.debug(f"{log_prefix} Gateway MCP client created: {tool_ids}")
                 return {"client": client}
             else:
                 return {"error": "Gateway MCP client returned None"}
@@ -335,7 +335,7 @@ class ToolFilterRegistry:
         try:
             tool = factory(agent_id)
             if tool:
-                logger.info(f"{log_prefix} A2A Agent created: {agent_id}")
+                logger.debug(f"{log_prefix} A2A Agent created: {agent_id}")
                 return {"tool": tool}
             else:
                 return {"error": f"A2A agent '{agent_id}' not found in config"}

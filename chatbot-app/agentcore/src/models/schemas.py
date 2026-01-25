@@ -33,7 +33,7 @@ class InvocationInput(BaseModel):
     enabled_tools: Optional[List[str]] = None  # User-specific tool preferences
     files: Optional[List[FileContent]] = None  # Multimodal file attachments
     compaction_enabled: Optional[bool] = None
-    autopilot: Optional[bool] = None
+    swarm: Optional[bool] = None  # Enable multi-agent swarm mode
     warmup: Optional[bool] = None
 
 
