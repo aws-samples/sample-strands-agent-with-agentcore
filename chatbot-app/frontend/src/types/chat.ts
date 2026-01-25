@@ -54,6 +54,11 @@ export interface Message {
   isSwarmNode?: boolean
   swarmNodeId?: string
   swarmNodeDescription?: string
+  // Swarm context for history (parsed from <swarm_context> tag)
+  swarmContext?: {
+    agentsUsed: string[]
+    sharedContext?: Record<string, any>
+  }
   // Voice mode marker
   isVoiceMessage?: boolean
 }
@@ -69,3 +74,4 @@ export interface Tool {
   tool_type?: "local" | "builtin" | "gateway" | "runtime-a2a"
   connection_status?: "connected" | "disconnected" | "invalid" | "unknown"
 }
+

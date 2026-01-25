@@ -62,17 +62,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Map tool type to document type (for S3 path)
-    const toolTypeToDocType: Record<string, string> = {
-      'word_document': 'word',
-      'excel_spreadsheet': 'excel',
-      'powerpoint_presentation': 'powerpoint'  // Future
+    // Map tool type to document type (for S3 path) and file extension
+    const toolTypeConfig: Record<string, { docType: string; extension: string }> = {
+      'word_document': { docType: 'word', extension: '.docx' },
+      'word': { docType: 'word', extension: '.docx' },
+      'excel_spreadsheet': { docType: 'excel', extension: '.xlsx' },
+      'excel': { docType: 'excel', extension: '.xlsx' },
+      'powerpoint_presentation': { docType: 'powerpoint', extension: '.pptx' },
+      'powerpoint': { docType: 'powerpoint', extension: '.pptx' },
+      'image': { docType: 'image', extension: '' }  // PNG files already have extension
     }
 
-    const documentType = toolTypeToDocType[toolType] || toolType
+    const config = toolTypeConfig[toolType] || { docType: toolType, extension: '' }
+    const documentType = config.docType
+
+    // Add extension if filename doesn't have one
+    let finalFilename = filename
+    if (config.extension && !filename.toLowerCase().endsWith(config.extension)) {
+      finalFilename = `${filename}${config.extension}`
+    }
 
     // Reconstruct S3 path based on document type
-    const s3Key = `s3://${documentBucket}/documents/${userId}/${sessionId}/${documentType}/${filename}`
+    const s3Key = `s3://${documentBucket}/documents/${userId}/${sessionId}/${documentType}/${finalFilename}`
 
     console.log(`[DocumentDownload] Reconstructed S3 key: ${s3Key}`)
 

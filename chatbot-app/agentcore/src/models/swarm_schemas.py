@@ -43,3 +43,5 @@ class SwarmCompleteEvent(BaseModel):
     # Fallback response when last agent is not responder (didn't stream to chat)
     final_response: Optional[str] = None
     final_node_id: Optional[str] = None  # Which agent generated the final response
+    # Shared context from all agents (for history display)
+    shared_context: Optional[Dict[str, Any]] = None

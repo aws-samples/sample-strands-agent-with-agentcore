@@ -133,7 +133,7 @@ def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
     Returns:
         (user_id, session_id) tuple
     """
-    # Extract from invocation_state (set by agent)
+    # Extract from invocation_state (set by agent or swarm)
     invocation_state = tool_context.invocation_state
     user_id = invocation_state.get('user_id', 'default_user')
     session_id = invocation_state.get('session_id', 'default_session')

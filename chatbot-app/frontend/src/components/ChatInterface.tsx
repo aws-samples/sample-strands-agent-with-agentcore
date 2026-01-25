@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Upload, Send, FileText, ImageIcon, Square, Bot, Brain, Maximize2, Minimize2, Moon, Sun, FlaskConical, Loader2, ArrowDown, Download, Mic } from "lucide-react"
@@ -828,6 +829,16 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
             const hasSwarmProgress = swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed');
             const isSwarmFinalResponse = hasSwarmProgress && isLastGroup && group.type === 'assistant_turn';
 
+            // Check for swarmContext in history (for loaded sessions)
+            // Show history swarm for all previous messages, only hide for current active swarm group
+            const historySwarmContext = group.type === 'assistant_turn'
+              ? group.messages.find(m => m.swarmContext)?.swarmContext
+              : undefined;
+            // Show history SwarmProgress if:
+            // 1. Message has swarmContext, AND
+            // 2. Either no active swarm progress OR this is not the last group (previous messages)
+            const hasHistorySwarm = !!historySwarmContext && (!hasSwarmProgress || !isLastGroup);
+
             return (
               <React.Fragment key={group.id}>
                 <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0`}>
@@ -836,16 +847,38 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                       <ChatMessage key={message.id} message={message} sessionId={stableSessionId} />
                     ))
                   ) : (
-                    <AssistantTurn
-                      messages={group.messages}
-                      currentReasoning={currentReasoning}
-                      availableTools={availableTools}
-                      sessionId={stableSessionId}
-                      onResearchClick={handleResearchClick}
-                      onBrowserClick={handleBrowserClick}
-                      researchProgress={researchProgress}
-                      hideAvatar={isSwarmFinalResponse}
-                    />
+                    <>
+                      {/* History Swarm Progress - show collapsed agent list with shared context */}
+                      {hasHistorySwarm && (
+                        <div className="flex justify-start mb-4">
+                          <div className="flex items-start space-x-4 max-w-4xl w-full min-w-0">
+                            <Avatar className="h-9 w-9 flex-shrink-0 mt-1">
+                              <AvatarFallback className="text-white bg-gradient-to-br from-purple-500 to-indigo-600">
+                                <Bot className="h-4 w-4" />
+                              </AvatarFallback>
+                            </Avatar>
+                            <div className="flex-1 pt-0.5 min-w-0">
+                              <SwarmProgress
+                                historyMode={true}
+                                historyAgents={historySwarmContext.agentsUsed}
+                                historySharedContext={historySwarmContext.sharedContext}
+                                sessionId={stableSessionId}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <AssistantTurn
+                        messages={group.messages}
+                        currentReasoning={currentReasoning}
+                        availableTools={availableTools}
+                        sessionId={stableSessionId}
+                        onResearchClick={handleResearchClick}
+                        onBrowserClick={handleBrowserClick}
+                        researchProgress={researchProgress}
+                        hideAvatar={isSwarmFinalResponse || hasHistorySwarm}
+                      />
+                    </>
                   )}
                 </div>
               </React.Fragment>
@@ -855,7 +888,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
           {/* SwarmProgress - always shown when active or completed */}
           {swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed') && (
             <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0`}>
-              <SwarmProgress progress={swarmProgress} />
+              <SwarmProgress progress={swarmProgress} sessionId={stableSessionId} />
             </div>
           )}
 
@@ -985,7 +1018,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                     : isResearchEnabled
                     ? "Ask me anything... (Research Agent active)"
                     : swarmEnabled
-                    ? "Ask me anything... (Swarm mode active)"
+                    ? "Ask me anything... (Auto mode)"
                     : "Ask me anything..."
                 }
                 className="flex-1 min-h-[48px] max-h-32 rounded-lg border-0 focus:ring-0 resize-none py-3 px-4 text-base leading-6 overflow-y-auto bg-transparent transition-all duration-200"
@@ -993,8 +1026,8 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                 rows={1}
                 style={{ minHeight: "48px" }}
               />
-              {/* Voice Mode Button - Show mic button next to send */}
-              {isVoiceSupported && (agentStatus === 'idle' || isVoiceActive) && (
+              {/* Voice Mode Button - Show mic button next to send (hidden in Swarm mode) */}
+              {isVoiceSupported && !swarmEnabled && (agentStatus === 'idle' || isVoiceActive) && (
                 <TooltipProvider delayDuration={300}>
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -1095,11 +1128,11 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                       }`}
                     >
                       <Bot className="w-3.5 h-3.5" />
-                      Swarm
+                      Auto
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>{swarmEnabled ? 'Swarm mode active' : 'Multi-agent orchestration'}</p>
+                    <p>{swarmEnabled ? 'Auto mode active' : 'AI agents collaborate automatically'}</p>
                   </TooltipContent>
                 </Tooltip>
                 <Tooltip>

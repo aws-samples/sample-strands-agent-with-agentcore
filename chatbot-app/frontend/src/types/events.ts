@@ -155,6 +155,8 @@ export interface SwarmCompleteEvent {
   // Fallback response when last agent is not responder
   final_response?: string;
   final_node_id?: string;
+  // Shared context from all agents (for history display)
+  shared_context?: Record<string, any>;
 }
 
 // Swarm agent execution step (for expanded view)

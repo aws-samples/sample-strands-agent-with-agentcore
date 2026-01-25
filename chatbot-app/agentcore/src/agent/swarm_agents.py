@@ -55,16 +55,18 @@ def get_tools_for_agent(agent_name: str) -> List:
 def create_swarm_agents(
     session_id: str,
     user_id: str,
-    enabled_tools: Optional[List[str]] = None,
     model_id: Optional[str] = None,
     coordinator_model_id: Optional[str] = None,
 ) -> Dict[str, Agent]:
     """Create all specialist agents for the Swarm.
 
+    Note: Swarm agents use their predefined tool sets from AGENT_TOOL_MAPPING.
+    User tool preferences (enabled_tools) are not applied in Swarm mode because
+    each specialist agent requires its full tool set for proper functioning.
+
     Args:
         session_id: Session identifier
         user_id: User identifier
-        enabled_tools: Optional list of user-enabled tool IDs
         model_id: Model ID for specialist agents (default: Claude Sonnet)
         coordinator_model_id: Model ID for coordinator (default: Claude Haiku)
 
@@ -99,6 +101,14 @@ def create_swarm_agents(
         boto_client_config=retry_config,
     )
 
+    # Responder needs higher max_tokens to handle large context + tool results
+    responder_model = BedrockModel(
+        model_id=default_model_id,
+        temperature=0.7,
+        max_tokens=4096,
+        boto_client_config=retry_config,
+    )
+
     agents: Dict[str, Agent] = {}
 
     # Agent configurations: (name, model, use_tools)
@@ -114,7 +124,7 @@ def create_swarm_agents(
         ("weather_agent", main_model, True),
         ("finance_agent", main_model, True),
         ("maps_agent", main_model, True),
-        ("responder", main_model, False),  # Final response - no tools
+        ("responder", responder_model, True),  # Higher max_tokens for final response
     ]
 
     for agent_name, model, use_tools in agent_configs:
@@ -153,7 +163,6 @@ def create_swarm_agents(
 def create_chatbot_swarm(
     session_id: str,
     user_id: str,
-    enabled_tools: Optional[List[str]] = None,
     model_id: Optional[str] = None,
     coordinator_model_id: Optional[str] = None,
     max_handoffs: int = 15,
@@ -166,7 +175,6 @@ def create_chatbot_swarm(
     Args:
         session_id: Session identifier
         user_id: User identifier
-        enabled_tools: Optional list of user-enabled tool IDs
         model_id: Model ID for specialist agents
         coordinator_model_id: Model ID for coordinator agent
         max_handoffs: Maximum agent handoffs allowed (default: 15)
@@ -181,7 +189,6 @@ def create_chatbot_swarm(
     agents = create_swarm_agents(
         session_id=session_id,
         user_id=user_id,
-        enabled_tools=enabled_tools,
         model_id=model_id,
         coordinator_model_id=coordinator_model_id,
     )

@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Download, FileSpreadsheet, Presentation, AudioWaveform } from 'lucide-react'
+import { Bot, Clock, Zap, Coins, Copy, ThumbsUp, ThumbsDown, Check, FileText, Download, FileSpreadsheet, Presentation, AudioWaveform, Sparkles } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { ReasoningState } from '@/types/events'
 import { Markdown } from '@/components/ui/Markdown'
@@ -490,6 +490,9 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                           : 'format' in image
                           ? (image.format || 'IMG').toUpperCase()
                           : 'IMG';
+
+                        // Skip rendering if no valid image source
+                        if (!imageSrc) return null;
 
                         return (
                           <div key={idx} className="relative group">

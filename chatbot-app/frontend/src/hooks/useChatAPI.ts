@@ -537,6 +537,78 @@ export const useChatAPI = ({
     return text.replace(/<uploaded_files>[\s\S]*?<\/uploaded_files>/g, '').trim()
   }
 
+  /**
+   * Parse swarm context from assistant message text
+   * Returns the agents used, shared context, and removes the tag from text
+   */
+  const parseSwarmContext = (text: string): {
+    cleanedText: string;
+    swarmContext?: {
+      agentsUsed: string[];
+      sharedContext?: Record<string, any>;
+    }
+  } => {
+    const swarmContextMatch = text.match(/<swarm_context>([\s\S]*?)<\/swarm_context>/)
+
+    if (!swarmContextMatch) {
+      return { cleanedText: text }
+    }
+
+    const contextContent = swarmContextMatch[1]
+
+    // Extract agents_used from the context
+    const agentsMatch = contextContent.match(/agents_used:\s*\[(.*?)\]/)
+    let agentsUsed: string[] = []
+    if (agentsMatch) {
+      agentsUsed = agentsMatch[1]
+        .split(',')
+        .map(s => s.trim().replace(/['"]/g, ''))
+        .filter(s => s.length > 0)
+    }
+
+    // Extract shared_context for each agent (format: "agent_name: {json}")
+    const sharedContext: Record<string, any> = {}
+    const lines = contextContent.split('\n')
+    for (const line of lines) {
+      // Skip agents_used line
+      if (line.includes('agents_used:')) continue
+
+      // Match "agent_name: {json...}" or "agent_name: {...}"
+      const agentDataMatch = line.match(/^(\w+):\s*(\{.*)/)
+      if (agentDataMatch) {
+        const agentName = agentDataMatch[1]
+        let jsonStr = agentDataMatch[2]
+
+        // Handle truncated JSON (ends with ...)
+        if (jsonStr.endsWith('...')) {
+          jsonStr = jsonStr.slice(0, -3)
+          // Try to make it valid JSON by closing brackets
+          const openBraces = (jsonStr.match(/\{/g) || []).length
+          const closeBraces = (jsonStr.match(/\}/g) || []).length
+          jsonStr += '}'.repeat(openBraces - closeBraces)
+        }
+
+        try {
+          sharedContext[agentName] = JSON.parse(jsonStr)
+        } catch {
+          // If JSON parsing fails, store as string
+          sharedContext[agentName] = agentDataMatch[2]
+        }
+      }
+    }
+
+    // Remove the swarm_context tag from text
+    const cleanedText = text.replace(/<swarm_context>[\s\S]*?<\/swarm_context>/g, '').trim()
+
+    return {
+      cleanedText,
+      swarmContext: agentsUsed.length > 0 ? {
+        agentsUsed,
+        ...(Object.keys(sharedContext).length > 0 && { sharedContext })
+      } : undefined
+    }
+  }
+
   const loadSession = useCallback(async (newSessionId: string): Promise<SessionPreferences | null> => {
     try {
       logger.info(`Loading session: ${newSessionId}`)
@@ -670,8 +742,30 @@ export const useChatAPI = ({
             })
           }
 
-          // Clean user message text by removing file hints (these are for agent's context only)
-          const cleanedText = msg.role === 'user' ? removeFileHints(text) : text
+          // Clean message text and parse swarm context:
+          // - User messages: remove file hints
+          // - Assistant messages: parse and remove swarm context tags
+          let cleanedText = text
+          let swarmContext: { agentsUsed: string[]; sharedContext?: Record<string, any> } | undefined = undefined
+
+          if (msg.role === 'user') {
+            cleanedText = removeFileHints(text)
+          } else {
+            const parsed = parseSwarmContext(text)
+            cleanedText = parsed.cleanedText
+            swarmContext = parsed.swarmContext
+
+            // Debug: log swarm message parsing
+            if (swarmContext) {
+              logger.debug(`[loadSession] Swarm message parsed:`, {
+                originalTextLength: text.length,
+                cleanedTextLength: cleanedText.length,
+                agentsUsed: swarmContext.agentsUsed,
+                hasSharedContext: !!swarmContext.sharedContext,
+                cleanedTextPreview: cleanedText.substring(0, 100)
+              })
+            }
+          }
 
           const currentMessage: Message = {
             id: msg.id || `${newSessionId}-${index}`,
@@ -700,6 +794,10 @@ export const useChatAPI = ({
             // Preserve voice message flag from local session store
             ...(msg.isVoiceMessage && {
               isVoiceMessage: true
+            }),
+            // Preserve swarm context from parsed message
+            ...(swarmContext && {
+              swarmContext: swarmContext
             }),
             // Preserve swarm node marker from session
             ...(msg.isSwarmNode && {

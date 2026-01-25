@@ -8,10 +8,11 @@ Supports Swarm mode: Multi-Agent Orchestration with SDK Swarm pattern.
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from typing import Optional, List, AsyncGenerator
+from typing import Dict, Optional, List, AsyncGenerator
 import logging
 import json
 import asyncio
+import copy
 import os
 from opentelemetry import trace
 
@@ -126,6 +127,7 @@ async def swarm_orchestration_stream(
     """
     from agent.swarm_agents import create_chatbot_swarm
     from agent.stop_signal import get_stop_signal_provider
+    from agent.swarm_message_store import get_swarm_message_store
 
     session_id = input_data.session_id
     user_id = input_data.user_id
@@ -136,13 +138,43 @@ async def swarm_orchestration_stream(
 
     logger.info(f"[Swarm] Starting for session {session_id}: {user_query[:50]}...")
 
+    # Initialize message store for unified storage (same format as normal agent)
+    message_store = get_swarm_message_store(
+        session_id=session_id,
+        user_id=user_id
+    )
+
     # Create Swarm with specialist agents
+    # Note: enabled_tools is not passed - Swarm agents use their predefined tool sets
     swarm = create_chatbot_swarm(
         session_id=session_id,
         user_id=user_id,
-        enabled_tools=input_data.enabled_tools,
         model_id=input_data.model_id,
     )
+
+    # Inject conversation history into coordinator
+    # SDK SwarmNode captures _initial_messages at creation time and resets to it before each execution.
+    # To inject history, we must update BOTH executor.messages AND _initial_messages.
+    history_messages = message_store.get_history_messages()
+    coordinator_node = swarm.nodes.get("coordinator")
+
+    if history_messages and coordinator_node:
+        # Update executor.messages (current state)
+        coordinator_node.executor.messages = history_messages
+        # Update _initial_messages (reset state) - this is what gets restored on reset_executor_state()
+        coordinator_node._initial_messages = copy.deepcopy(history_messages)
+        logger.info(f"[Swarm] Injected {len(history_messages)} history messages into coordinator (executor + _initial_messages)")
+    else:
+        logger.info(f"[Swarm] No history (new session or first turn)")
+
+    # Prepare invocation_state for tool context access
+    # This will be passed to swarm.stream_async and forwarded to each agent's tools
+    invocation_state = {
+        'user_id': user_id,
+        'session_id': session_id,
+        'model_id': input_data.model_id,
+    }
+    logger.info(f"[Swarm] Prepared invocation_state: user_id={user_id}, session_id={session_id}")
 
     # Yield start event
     yield f"data: {json.dumps({'type': 'start'})}\n\n"
@@ -156,18 +188,20 @@ async def swarm_orchestration_stream(
 
     node_history = []
     current_node_id = None
+    responder_tool_ids: set = set()  # Track sent tool_use events for responder (avoid duplicates)
     # Track accumulated text for each node (for fallback when non-responder ends without handoff)
     node_text_accumulator: Dict[str, str] = {}
+    # Track final response text for session storage
+    final_response_text = ""
+    # Track swarm state for session storage
+    swarm_shared_context = {}
 
     try:
         # Execute Swarm with streaming
-        # Use asyncio.timeout context for overall timeout detection
-        import asyncio
-
         last_event_time = asyncio.get_event_loop().time()
         event_count = 0
 
-        async for event in swarm.stream_async(user_query):
+        async for event in swarm.stream_async(user_query, invocation_state=invocation_state):
             event_count += 1
             current_time = asyncio.get_event_loop().time()
             time_since_last = current_time - last_event_time
@@ -182,7 +216,7 @@ async def swarm_orchestration_stream(
             if stop_signal_provider.is_stop_requested(user_id, session_id):
                 logger.info(f"[Swarm] Stop signal received for {session_id}")
                 stop_signal_provider.clear_stop_signal(user_id, session_id)
-                # Send stop complete event
+                # Send stop complete event (don't save incomplete turn)
                 yield f"data: {json.dumps({'type': 'complete', 'message': 'Stream stopped by user'})}\n\n"
                 break
 
@@ -210,9 +244,16 @@ async def swarm_orchestration_stream(
             # - ReasoningTextStreamEvent: {"reasoningText": str, "reasoning": True, "delta": ...}
             # - TextStreamEvent: {"data": str, "delta": ...}
             # - ToolUseStreamEvent: {"type": "tool_use_stream", ...}
+            # - ToolResultEvent: {"type": "tool_result", ...}
             elif event_type == "multiagent_node_stream":
                 inner_event = event.get("event", {})
                 node_id = event.get("node_id", current_node_id)
+
+                # Debug: Log tool-related responder events
+                if node_id == "responder" and "message" in inner_event:
+                    msg = inner_event.get("message", {})
+                    if msg and isinstance(msg, dict):
+                        logger.info(f"[Swarm] Responder message event: role={msg.get('role')}, content_types={[c.get('type') if isinstance(c, dict) else type(c).__name__ for c in msg.get('content', [])]}")
 
                 # Reasoning event - SDK emits {"reasoningText": str, "reasoning": True}
                 if "reasoningText" in inner_event:
@@ -231,19 +272,54 @@ async def swarm_orchestration_stream(
 
                     if node_id == "responder":
                         # Final response - displayed as chat message
+                        final_response_text += text_data
                         yield f"data: {json.dumps({'type': 'response', 'text': text_data, 'node_id': node_id})}\n\n"
                     else:
                         # Intermediate agent text - for SwarmProgress display only
                         yield f"data: {json.dumps({'type': 'text', 'content': text_data, 'node_id': node_id})}\n\n"
 
-                # Tool use event
-                elif inner_event.get("type") == "tool_use":
-                    logger.debug(f"[Swarm] Tool use: {inner_event.get('name')}")
-                    yield f"data: {json.dumps(inner_event)}\n\n"
+                # Tool events - only responder's tools are sent to frontend for real-time rendering
+                # Other agents use shared_context for tool outputs via handoffs
+                elif inner_event.get("type") == "tool_use_stream" and node_id == "responder":
+                    # Send first tool_use event only (not streaming deltas)
+                    current_tool = inner_event.get("current_tool_use", {})
+                    tool_id = current_tool.get("toolUseId")
+                    if current_tool and tool_id and tool_id not in responder_tool_ids:
+                        responder_tool_ids.add(tool_id)
+                        tool_event = {
+                            "type": "tool_use",
+                            "toolUseId": tool_id,
+                            "name": current_tool.get("name"),
+                            "input": {}
+                        }
+                        logger.debug(f"[Swarm] Responder tool use: {tool_event.get('name')}")
+                        yield f"data: {json.dumps(tool_event)}\n\n"
 
-                # Tool result event
-                elif inner_event.get("type") == "tool_result":
-                    yield f"data: {json.dumps(inner_event)}\n\n"
+                # Tool result comes via 'message' event with role='user' containing toolResult blocks
+                # SDK structure: {"message": {"role": "user", "content": [{"toolResult": {...}}]}}
+                elif "message" in inner_event and node_id == "responder":
+                    msg = inner_event.get("message", {})
+                    if msg.get("role") == "user" and msg.get("content"):
+                        for content_block in msg["content"]:
+                            if isinstance(content_block, dict) and "toolResult" in content_block:
+                                tool_result = content_block["toolResult"]
+                                tool_use_id = tool_result.get("toolUseId")
+                                # Only send if we haven't already sent this tool result
+                                if tool_use_id and tool_use_id in responder_tool_ids:
+                                    result_event = {
+                                        "type": "tool_result",
+                                        "toolUseId": tool_use_id,
+                                        "status": tool_result.get("status", "success")
+                                    }
+                                    # Extract text from content
+                                    if tool_result.get("content"):
+                                        for result_content in tool_result["content"]:
+                                            if isinstance(result_content, dict) and "text" in result_content:
+                                                result_event["result"] = result_content["text"]
+                                    logger.info(f"[Swarm] Responder tool result: {tool_use_id}")
+                                    yield f"data: {json.dumps(result_event)}\n\n"
+                                    # Remove from set to prevent duplicate sends
+                                    responder_tool_ids.discard(tool_use_id)
 
             # Node stop
             elif event_type == "multiagent_node_stop":
@@ -286,6 +362,9 @@ async def swarm_orchestration_stream(
                 agent_context = None
                 if from_node and hasattr(swarm, 'shared_context'):
                     agent_context = swarm.shared_context.context.get(from_node)
+                    # Capture shared context for session storage
+                    if agent_context:
+                        swarm_shared_context[from_node] = agent_context
 
                 handoff_event = SwarmHandoffEvent(
                     from_node=from_node,
@@ -321,12 +400,28 @@ async def swarm_orchestration_stream(
                             final_node_id = last_node
                             logger.info(f"[Swarm] Fallback response from {last_node} ({len(accumulated_text)} chars)")
 
+                # Determine final assistant message for session storage
+                assistant_message = final_response_text if final_response_text else (final_response or "")
+
+                # Save turn to unified storage (same format as normal agent)
+                if assistant_message:
+                    swarm_state = {
+                        "node_history": node_history,
+                        "shared_context": swarm_shared_context,
+                    }
+                    message_store.save_turn(
+                        user_message=user_query,
+                        assistant_message=assistant_message,
+                        swarm_state=swarm_state
+                    )
+
                 complete_event = SwarmCompleteEvent(
                     total_nodes=len(node_history),
                     node_history=node_history,
                     status=status,
                     final_response=final_response,
-                    final_node_id=final_node_id
+                    final_node_id=final_node_id,
+                    shared_context=swarm_shared_context
                 )
                 yield f"data: {json.dumps(complete_event.model_dump())}\n\n"
 
@@ -341,6 +436,7 @@ async def swarm_orchestration_stream(
         logger.error(f"[Swarm] Error: {e}")
         import traceback
         traceback.print_exc()
+        # Error occurred - don't save incomplete turn
         yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
     finally:
