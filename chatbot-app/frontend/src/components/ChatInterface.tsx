@@ -669,6 +669,14 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     }
   }, [groupedMessages.length])
 
+  // Pre-calculate if there's a swarm final response group
+  // Used to determine where to render SwarmProgress (before AssistantTurn vs after loop)
+  const hasSwarmFinalResponseGroup = useMemo(() => {
+    const hasActiveSwarmProgress = swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed');
+    const lastGroup = groupedMessages[groupedMessages.length - 1];
+    return hasActiveSwarmProgress && lastGroup?.type === 'assistant_turn';
+  }, [swarmProgress, groupedMessages])
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
     // Append new files to existing ones instead of replacing
@@ -868,6 +876,10 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
                           </div>
                         </div>
                       )}
+                      {/* Active Swarm Progress - render before responder's messages */}
+                      {isSwarmFinalResponse && (
+                        <SwarmProgress progress={swarmProgress} sessionId={stableSessionId} />
+                      )}
                       <AssistantTurn
                         messages={group.messages}
                         currentReasoning={currentReasoning}
@@ -885,8 +897,9 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
             );
           })}
 
-          {/* SwarmProgress - always shown when active or completed */}
-          {swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed') && (
+          {/* SwarmProgress - shown here when active but NOT yet rendered in the loop (before AssistantTurn) */}
+          {/* This covers: coordinator/specialist working, OR responder started but no messages yet */}
+          {swarmProgress && swarmProgress.isActive && !hasSwarmFinalResponseGroup && (
             <div className={`mx-auto w-full ${isWideMode ? 'max-w-6xl' : 'max-w-3xl'} px-4 min-w-0`}>
               <SwarmProgress progress={swarmProgress} sessionId={stableSessionId} />
             </div>

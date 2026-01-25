@@ -9,6 +9,137 @@ import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
 import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData, triggerWarmup, generateSessionId } from '@/config/session'
 
 /**
+ * Process swarm message content blocks in order to preserve text/tool interleaving.
+ * Returns multiple messages: text -> tool -> text -> tool -> ...
+ */
+function processSwarmMessageContent(
+  msg: any,
+  msgIndex: number,
+  sessionId: string,
+  toolResultMap: Map<string, any>
+): Message[] {
+  const messages: Message[] = []
+  let currentText = ''
+  let swarmContext: { agentsUsed: string[]; sharedContext?: Record<string, any> } | undefined = undefined
+  let subIndex = 0
+
+  const createTextMessage = (text: string, isLast: boolean): Message => {
+    const cleanedText = text.trim()
+    return {
+      id: `${sessionId}-${msgIndex}-${subIndex++}`,
+      text: cleanedText,
+      sender: 'bot' as const,
+      timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+      // Only add swarmContext to the last message
+      ...(isLast && swarmContext && { swarmContext })
+    }
+  }
+
+  const createToolMessage = (toolUse: any, toolResult: any): Message => {
+    const execution = createToolExecution(toolUse, toolResult, msg)
+    return {
+      id: `${sessionId}-${msgIndex}-${subIndex++}`,
+      text: '',
+      sender: 'bot' as const,
+      timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+      toolExecutions: [execution],
+      isToolMessage: true
+    }
+  }
+
+  if (Array.isArray(msg.content)) {
+    // First pass: extract swarm context (same logic as parseSwarmContext)
+    for (const item of msg.content) {
+      if (item.text?.includes('<swarm_context>')) {
+        const contextMatch = item.text.match(/<swarm_context>([\s\S]*?)<\/swarm_context>/)
+        if (contextMatch) {
+          const contextContent = contextMatch[1]
+
+          // Extract agents_used from the context
+          const agentsMatch = contextContent.match(/agents_used:\s*\[(.*?)\]/)
+          let agentsUsed: string[] = []
+          if (agentsMatch) {
+            agentsUsed = agentsMatch[1]
+              .split(',')
+              .map(s => s.trim().replace(/['"]/g, ''))
+              .filter(s => s.length > 0)
+          }
+
+          // Extract shared_context for each agent
+          const sharedContextData: Record<string, any> = {}
+          const lines = contextContent.split('\n')
+          for (const line of lines) {
+            if (line.includes('agents_used:')) continue
+            const agentDataMatch = line.match(/^(\w+):\s*(\{.*)/)
+            if (agentDataMatch) {
+              try {
+                sharedContextData[agentDataMatch[1]] = JSON.parse(agentDataMatch[2])
+              } catch {
+                // Ignore parse errors
+              }
+            }
+          }
+
+          if (agentsUsed.length > 0) {
+            swarmContext = {
+              agentsUsed,
+              ...(Object.keys(sharedContextData).length > 0 && { sharedContext: sharedContextData })
+            }
+          }
+        }
+      }
+    }
+
+    // Second pass: process content blocks in order
+    for (let i = 0; i < msg.content.length; i++) {
+      const item = msg.content[i]
+
+      if (item.text) {
+        // Skip swarm_context text blocks
+        if (item.text.includes('<swarm_context>')) {
+          // Extract non-context text if any
+          const cleanedText = item.text.replace(/<swarm_context>[\s\S]*?<\/swarm_context>/g, '').trim()
+          if (cleanedText) {
+            currentText += cleanedText
+          }
+        } else {
+          currentText += item.text
+        }
+      } else if (item.toolUse) {
+        // Save current text as a message before tool
+        if (currentText.trim()) {
+          messages.push(createTextMessage(currentText, false))
+          currentText = ''
+        }
+        // Create tool message
+        const toolResult = toolResultMap.get(item.toolUse.toolUseId)
+        messages.push(createToolMessage(item.toolUse, toolResult))
+      }
+      // toolResult is handled via toolResultMap, skip here
+    }
+
+    // Save remaining text as final message
+    if (currentText.trim()) {
+      messages.push(createTextMessage(currentText, true))
+    } else if (messages.length > 0 && swarmContext) {
+      // Add swarmContext to last message if no trailing text
+      messages[messages.length - 1] = {
+        ...messages[messages.length - 1],
+        swarmContext
+      }
+    }
+  }
+
+  // If no messages were created, return empty array
+  if (messages.length === 0) {
+    return []
+  }
+
+  logger.debug(`[loadSession] Swarm message split into ${messages.length} messages`)
+  return messages
+}
+
+/**
  * Get current authenticated user's ID from Amplify
  * Returns 'anonymous' if not authenticated
  */
@@ -648,6 +779,16 @@ export const useChatAPI = ({
       // Process messages - keep all messages and parse tool executions
       const loadedMessages: Message[] = data.messages
         .map((msg: any, index: number) => {
+          // Check if this is a swarm mode message (has swarm_context tag in content)
+          const isSwarmMessage = msg.role === 'assistant' && Array.isArray(msg.content) &&
+            msg.content.some((item: any) => item.text?.includes('<swarm_context>'))
+
+          // For swarm messages, process content blocks in order to preserve text/tool interleaving
+          if (isSwarmMessage) {
+            return processSwarmMessageContent(msg, index, newSessionId, toolResultMap)
+          }
+
+          // Normal mode: original processing logic
           let text = ''
           const toolExecutions: ToolExecution[] = []
           const processedToolUseIds = new Set<string>()

@@ -107,8 +107,9 @@ COMMON_GUIDELINES = """
 ## Rules
 - Be concise - focus on tools, not narration
 - Include ONLY your own results in handoff context (previous data is auto-accumulated)
-- When your task is complete, handoff to responder for final response
-- If more work needed, handoff to appropriate specialist
+- CRITICAL: You MUST call handoff_to_agent when done. NEVER finish without handoff.
+  - If ALL user tasks are complete → handoff to "responder"
+  - If more work needed by another specialist → handoff to that specialist
 """
 
 
@@ -133,19 +134,19 @@ Context format: {"citations": [{"source": "Paper (arXiv:ID)", "url": "...", "con
 
     "word_agent": """Word Agent - create/modify .docx documents.
 
-Context format: {"documents": [{"filename": "...", "tool_type": "word"}]}""",
+Handoff context (REQUIRED): {"documents": [{"filename": "actual_filename.docx", "tool_type": "word"}]}""",
 
     "excel_agent": """Excel Agent - create/modify .xlsx spreadsheets.
 
-Context format: {"documents": [{"filename": "...", "tool_type": "excel"}]}""",
+Handoff context (REQUIRED): {"documents": [{"filename": "actual_filename.xlsx", "tool_type": "excel"}]}""",
 
     "powerpoint_agent": """PowerPoint Agent - create/modify .pptx presentations.
 
-Context format: {"documents": [{"filename": "...", "tool_type": "powerpoint"}]}""",
+Handoff context (REQUIRED): {"documents": [{"filename": "actual_filename.pptx", "tool_type": "powerpoint"}]}""",
 
     "data_analyst": """Data Analyst - diagrams (PNG) and calculations.
 
-Context format: {"images": [{"filename": "...", "description": "..."}]}""",
+Handoff context (REQUIRED): {"images": [{"filename": "actual_filename.png", "description": "brief description"}]}""",
 
     "browser_agent": """Browser Agent - web automation and screenshots.""",
 

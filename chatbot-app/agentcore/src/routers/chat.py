@@ -191,10 +191,13 @@ async def swarm_orchestration_stream(
     responder_tool_ids: set = set()  # Track sent tool_use events for responder (avoid duplicates)
     # Track accumulated text for each node (for fallback when non-responder ends without handoff)
     node_text_accumulator: Dict[str, str] = {}
-    # Track final response text for session storage
-    final_response_text = ""
     # Track swarm state for session storage
     swarm_shared_context = {}
+    # Track responder's content blocks in order: [text, toolUse, toolResult, text, ...]
+    # This preserves the exact order for session restore
+    responder_content_blocks: List[Dict] = []
+    responder_current_text: str = ""  # Current text segment (before tool or between tools)
+    responder_pending_tools: Dict[str, Dict] = {}  # toolUseId -> toolUse block
 
     try:
         # Execute Swarm with streaming
@@ -272,7 +275,7 @@ async def swarm_orchestration_stream(
 
                     if node_id == "responder":
                         # Final response - displayed as chat message
-                        final_response_text += text_data
+                        responder_current_text += text_data
                         yield f"data: {json.dumps({'type': 'response', 'text': text_data, 'node_id': node_id})}\n\n"
                     else:
                         # Intermediate agent text - for SwarmProgress display only
@@ -294,6 +297,25 @@ async def swarm_orchestration_stream(
                         }
                         logger.debug(f"[Swarm] Responder tool use: {tool_event.get('name')}")
                         yield f"data: {json.dumps(tool_event)}\n\n"
+
+                        # Save current text segment before tool (if any)
+                        if responder_current_text.strip():
+                            responder_content_blocks.append({"text": responder_current_text})
+                            responder_current_text = ""
+
+                        # Store toolUse block for session storage
+                        # Ensure input is a dict (Bedrock API rejects empty string)
+                        tool_input = current_tool.get("input")
+                        if not isinstance(tool_input, dict):
+                            tool_input = {}
+                        tool_use_block = {
+                            "toolUse": {
+                                "toolUseId": tool_id,
+                                "name": current_tool.get("name"),
+                                "input": tool_input
+                            }
+                        }
+                        responder_pending_tools[tool_id] = tool_use_block
 
                 # Tool result comes via 'message' event with role='user' containing toolResult blocks
                 # SDK structure: {"message": {"role": "user", "content": [{"toolResult": {...}}]}}
@@ -318,6 +340,12 @@ async def swarm_orchestration_stream(
                                                 result_event["result"] = result_content["text"]
                                     logger.info(f"[Swarm] Responder tool result: {tool_use_id}")
                                     yield f"data: {json.dumps(result_event)}\n\n"
+
+                                    # Store toolUse + toolResult blocks in content order
+                                    if tool_use_id in responder_pending_tools:
+                                        responder_content_blocks.append(responder_pending_tools.pop(tool_use_id))
+                                        responder_content_blocks.append({"toolResult": tool_result})
+
                                     # Remove from set to prevent duplicate sends
                                     responder_tool_ids.discard(tool_use_id)
 
@@ -361,10 +389,16 @@ async def swarm_orchestration_stream(
                 from_node = from_nodes[0] if from_nodes else ""
                 agent_context = None
                 if from_node and hasattr(swarm, 'shared_context'):
+                    # Debug: log shared_context structure
+                    logger.debug(f"[Swarm] shared_context type: {type(swarm.shared_context)}")
+                    logger.debug(f"[Swarm] shared_context attrs: {dir(swarm.shared_context)}")
+                    if hasattr(swarm.shared_context, 'context'):
+                        logger.debug(f"[Swarm] shared_context.context: {swarm.shared_context.context}")
                     agent_context = swarm.shared_context.context.get(from_node)
                     # Capture shared context for session storage
                     if agent_context:
                         swarm_shared_context[from_node] = agent_context
+                        logger.info(f"[Swarm] Captured context from {from_node}: {agent_context}")
 
                 handoff_event = SwarmHandoffEvent(
                     from_node=from_node,
@@ -400,18 +434,23 @@ async def swarm_orchestration_stream(
                             final_node_id = last_node
                             logger.info(f"[Swarm] Fallback response from {last_node} ({len(accumulated_text)} chars)")
 
-                # Determine final assistant message for session storage
-                assistant_message = final_response_text if final_response_text else (final_response or "")
+                # Add any remaining text segment after the last tool
+                if responder_current_text.strip():
+                    responder_content_blocks.append({"text": responder_current_text})
+
+                # Fallback: if no content blocks but have fallback response
+                if not responder_content_blocks and final_response:
+                    responder_content_blocks.append({"text": final_response})
 
                 # Save turn to unified storage (same format as normal agent)
-                if assistant_message:
+                if responder_content_blocks:
                     swarm_state = {
                         "node_history": node_history,
                         "shared_context": swarm_shared_context,
                     }
                     message_store.save_turn(
                         user_message=user_query,
-                        assistant_message=assistant_message,
+                        content_blocks=responder_content_blocks,
                         swarm_state=swarm_state
                     )
 
