@@ -22,7 +22,7 @@ from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
 from a2a.types import Message, Part, Role, TextPart, AgentCard
 
 # Import SigV4 auth for IAM authentication
-from agent.gateway_auth import get_sigv4_auth
+from agent.gateway.sigv4_auth import get_sigv4_auth
 
 logger = logging.getLogger(__name__)
 

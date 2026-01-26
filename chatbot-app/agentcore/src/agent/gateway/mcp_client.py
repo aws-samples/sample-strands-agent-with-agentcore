@@ -9,7 +9,7 @@ import boto3
 from typing import Optional, List, Callable, Any
 from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp import MCPClient
-from agent.gateway_auth import get_sigv4_auth, get_gateway_region_from_url
+from agent.gateway.sigv4_auth import get_sigv4_auth, get_gateway_region_from_url
 
 logger = logging.getLogger(__name__)
 

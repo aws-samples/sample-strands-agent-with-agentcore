@@ -164,7 +164,7 @@ describe('getSessionId', () => {
       const result = getSessionId(request, 'user-123')
 
       expect(result.sessionId).toBe(existingSessionId)
-      expect(result.isNew).toBe(false)
+      // Note: isNew is determined by ensureSessionExists, not getSessionId
     })
 
     it('should not generate new ID when header exists', () => {
@@ -172,7 +172,7 @@ describe('getSessionId', () => {
 
       const result = getSessionId(request, 'user-123')
 
-      expect(result.isNew).toBe(false)
+      expect(result.sessionId).toBe('existing-id')
     })
   })
 
@@ -182,7 +182,7 @@ describe('getSessionId', () => {
 
       const result = getSessionId(request, 'user-123')
 
-      expect(result.isNew).toBe(true)
+      // Note: isNew is determined by ensureSessionExists, not getSessionId
       expect(result.sessionId).toBeTruthy()
     })
 

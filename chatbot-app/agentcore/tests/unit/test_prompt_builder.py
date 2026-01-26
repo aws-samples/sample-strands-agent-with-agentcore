@@ -24,7 +24,7 @@ class TestBuildTextSystemPrompt:
 
     def test_returns_list_of_content_blocks(self):
         """Verify return type is list of SystemContentBlock."""
-        from agent.prompt_builder import build_text_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt
 
         result = build_text_system_prompt(enabled_tools=[])
 
@@ -33,7 +33,7 @@ class TestBuildTextSystemPrompt:
 
     def test_each_block_has_text_key(self):
         """Verify each block has 'text' key."""
-        from agent.prompt_builder import build_text_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt
 
         result = build_text_system_prompt(enabled_tools=[])
 
@@ -43,7 +43,7 @@ class TestBuildTextSystemPrompt:
 
     def test_base_prompt_is_first_block(self):
         """Verify base prompt is the first content block."""
-        from agent.prompt_builder import build_text_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt
 
         result = build_text_system_prompt(enabled_tools=[])
 
@@ -53,7 +53,7 @@ class TestBuildTextSystemPrompt:
 
     def test_date_is_last_block(self):
         """Verify current date is the last content block."""
-        from agent.prompt_builder import build_text_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt
 
         result = build_text_system_prompt(enabled_tools=[])
 
@@ -63,7 +63,7 @@ class TestBuildTextSystemPrompt:
 
     def test_base_prompt_and_date_only_without_tools(self):
         """Verify base prompt and date blocks when no tools provided."""
-        from agent.prompt_builder import build_text_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt
 
         result = build_text_system_prompt(enabled_tools=[])
 
@@ -72,10 +72,10 @@ class TestBuildTextSystemPrompt:
 
     def test_tool_guidance_blocks_added(self):
         """Verify tool guidance adds content blocks."""
-        from agent.prompt_builder import build_text_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt
 
         # Mock load_tool_guidance to return test guidance
-        with patch('agent.prompt_builder.load_tool_guidance') as mock_load:
+        with patch('agent.config.prompt_builder.load_tool_guidance') as mock_load:
             mock_load.return_value = [
                 "Calculator guidance text",
                 "Web search guidance text"
@@ -98,7 +98,7 @@ class TestBuildVoiceSystemPrompt:
 
     def test_returns_string(self):
         """Verify return type is string."""
-        from agent.prompt_builder import build_voice_system_prompt
+        from agent.config.prompt_builder import build_voice_system_prompt
 
         result = build_voice_system_prompt(enabled_tools=[])
 
@@ -106,7 +106,7 @@ class TestBuildVoiceSystemPrompt:
 
     def test_contains_voice_specific_guidelines(self):
         """Verify voice-specific guidelines are included."""
-        from agent.prompt_builder import build_voice_system_prompt
+        from agent.config.prompt_builder import build_voice_system_prompt
 
         result = build_voice_system_prompt(enabled_tools=[])
 
@@ -116,7 +116,7 @@ class TestBuildVoiceSystemPrompt:
 
     def test_contains_current_date(self):
         """Verify current date is included."""
-        from agent.prompt_builder import build_voice_system_prompt
+        from agent.config.prompt_builder import build_voice_system_prompt
 
         result = build_voice_system_prompt(enabled_tools=[])
 
@@ -124,9 +124,9 @@ class TestBuildVoiceSystemPrompt:
 
     def test_tool_guidance_included_when_tools_enabled(self):
         """Verify tool guidance is included when tools are enabled."""
-        from agent.prompt_builder import build_voice_system_prompt
+        from agent.config.prompt_builder import build_voice_system_prompt
 
-        with patch('agent.prompt_builder.load_tool_guidance') as mock_load:
+        with patch('agent.config.prompt_builder.load_tool_guidance') as mock_load:
             mock_load.return_value = ["Calculator: Use for math operations"]
 
             result = build_voice_system_prompt(enabled_tools=["calculator"])
@@ -144,7 +144,7 @@ class TestSystemPromptToString:
 
     def test_converts_list_to_string(self):
         """Verify list of content blocks is converted to string."""
-        from agent.prompt_builder import system_prompt_to_string
+        from agent.config.prompt_builder import system_prompt_to_string
 
         blocks = [
             {"text": "First section"},
@@ -161,7 +161,7 @@ class TestSystemPromptToString:
 
     def test_sections_separated_by_double_newlines(self):
         """Verify sections are joined with double newlines."""
-        from agent.prompt_builder import system_prompt_to_string
+        from agent.config.prompt_builder import system_prompt_to_string
 
         blocks = [
             {"text": "Section A"},
@@ -174,7 +174,7 @@ class TestSystemPromptToString:
 
     def test_ignores_cache_point_blocks(self):
         """Verify cachePoint blocks are ignored in string conversion."""
-        from agent.prompt_builder import system_prompt_to_string
+        from agent.config.prompt_builder import system_prompt_to_string
 
         blocks = [
             {"text": "Text content"},
@@ -190,7 +190,7 @@ class TestSystemPromptToString:
 
     def test_handles_string_input(self):
         """Verify string input is returned as-is."""
-        from agent.prompt_builder import system_prompt_to_string
+        from agent.config.prompt_builder import system_prompt_to_string
 
         input_str = "Already a string"
         result = system_prompt_to_string(input_str)
@@ -199,7 +199,7 @@ class TestSystemPromptToString:
 
     def test_handles_empty_list(self):
         """Verify empty list returns empty string."""
-        from agent.prompt_builder import system_prompt_to_string
+        from agent.config.prompt_builder import system_prompt_to_string
 
         result = system_prompt_to_string([])
 
@@ -215,7 +215,7 @@ class TestLoadToolGuidance:
 
     def test_returns_empty_list_when_no_tools_enabled(self):
         """Verify empty list when enabled_tools is empty."""
-        from agent.prompt_builder import load_tool_guidance
+        from agent.config.prompt_builder import load_tool_guidance
 
         result = load_tool_guidance(enabled_tools=[])
 
@@ -223,7 +223,7 @@ class TestLoadToolGuidance:
 
     def test_returns_empty_list_when_tools_is_none(self):
         """Verify empty list when enabled_tools is None."""
-        from agent.prompt_builder import load_tool_guidance
+        from agent.config.prompt_builder import load_tool_guidance
 
         result = load_tool_guidance(enabled_tools=None)
 
@@ -231,7 +231,7 @@ class TestLoadToolGuidance:
 
     def test_returns_list_of_strings(self):
         """Verify return type is list of strings."""
-        from agent.prompt_builder import load_tool_guidance
+        from agent.config.prompt_builder import load_tool_guidance
 
         # Mock the file reading to avoid actual file dependency
         mock_config = {
@@ -263,7 +263,7 @@ class TestGetCurrentDatePacific:
 
     def test_returns_string(self):
         """Verify return type is string."""
-        from agent.prompt_builder import get_current_date_pacific
+        from agent.config.prompt_builder import get_current_date_pacific
 
         result = get_current_date_pacific()
 
@@ -271,7 +271,7 @@ class TestGetCurrentDatePacific:
 
     def test_contains_date_format(self):
         """Verify date format includes year, month, day."""
-        from agent.prompt_builder import get_current_date_pacific
+        from agent.config.prompt_builder import get_current_date_pacific
 
         result = get_current_date_pacific()
 
@@ -282,7 +282,7 @@ class TestGetCurrentDatePacific:
 
     def test_contains_timezone(self):
         """Verify timezone abbreviation is included."""
-        from agent.prompt_builder import get_current_date_pacific
+        from agent.config.prompt_builder import get_current_date_pacific
 
         result = get_current_date_pacific()
 
@@ -299,7 +299,7 @@ class TestPromptBuilderIntegration:
 
     def test_text_prompt_blocks_can_be_converted_to_string(self):
         """Verify text prompt blocks can be converted back to string."""
-        from agent.prompt_builder import build_text_system_prompt, system_prompt_to_string
+        from agent.config.prompt_builder import build_text_system_prompt, system_prompt_to_string
 
         blocks = build_text_system_prompt(enabled_tools=[])
         string_version = system_prompt_to_string(blocks)
@@ -310,7 +310,7 @@ class TestPromptBuilderIntegration:
 
     def test_voice_and_text_prompts_have_consistent_date(self):
         """Verify both prompt types include current date."""
-        from agent.prompt_builder import build_text_system_prompt, build_voice_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt, build_voice_system_prompt
 
         text_prompt = build_text_system_prompt(enabled_tools=[])
         voice_prompt = build_voice_system_prompt(enabled_tools=[])
@@ -322,9 +322,9 @@ class TestPromptBuilderIntegration:
 
     def test_both_prompts_support_same_tools(self):
         """Verify both prompt types load guidance for same tools."""
-        from agent.prompt_builder import build_text_system_prompt, build_voice_system_prompt
+        from agent.config.prompt_builder import build_text_system_prompt, build_voice_system_prompt
 
-        with patch('agent.prompt_builder.load_tool_guidance') as mock_load:
+        with patch('agent.config.prompt_builder.load_tool_guidance') as mock_load:
             mock_load.return_value = ["Calculator guidance"]
 
             text_prompt = build_text_system_prompt(enabled_tools=["calculator"])

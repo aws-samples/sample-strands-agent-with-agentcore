@@ -300,12 +300,14 @@ describe('sseParser', () => {
       expect(validateStreamEvent({ type: 'metadata' } as StreamEvent).valid).toBe(true)
     })
 
-    it('should reject unknown event type', () => {
+    it('should allow unknown event types for forward compatibility', () => {
+      // Unknown event types are intentionally allowed to support
+      // forward compatibility when new event types are added
       const unknown = { type: 'unknown_type' } as unknown as StreamEvent
 
       const result = validateStreamEvent(unknown)
-      expect(result.valid).toBe(false)
-      expect(result.errors[0]).toContain('Unknown event type')
+      expect(result.valid).toBe(true)
+      expect(result.errors).toHaveLength(0)
     })
   })
 
