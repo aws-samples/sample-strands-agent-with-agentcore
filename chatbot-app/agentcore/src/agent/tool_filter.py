@@ -96,7 +96,7 @@ class ToolFilterRegistry:
         """Lazy load gateway client factory."""
         if self._gateway_client_factory is None:
             try:
-                from agent.gateway_mcp_client import get_gateway_client_if_enabled
+                from agent.gateway.mcp_client import get_gateway_client_if_enabled
                 self._gateway_client_factory = get_gateway_client_if_enabled
             except ImportError:
                 logger.warning("Gateway MCP client not available")

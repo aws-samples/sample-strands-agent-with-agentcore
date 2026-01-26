@@ -15,7 +15,7 @@ from strands.models import BedrockModel
 from strands.session.file_session_manager import FileSessionManager
 from streaming.event_processor import StreamEventProcessor
 from agent.hooks import ResearchApprovalHook, ConversationCachingHook
-from agent.prompt_builder import (
+from agent.config.prompt_builder import (
     build_text_system_prompt,
     system_prompt_to_string,
     load_tool_guidance,
@@ -26,7 +26,7 @@ from agent.prompt_builder import (
 try:
     from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
     from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
-    from agent.compacting_session_manager import CompactingSessionManager
+    from agent.session.compacting_session_manager import CompactingSessionManager
     AGENTCORE_MEMORY_AVAILABLE = True
 except ImportError:
     AGENTCORE_MEMORY_AVAILABLE = False
@@ -43,7 +43,7 @@ import builtin_tools
 # Import unified tool filter
 from agent.tool_filter import filter_tools
 # Import unified file session manager for cross-agent history sharing (local mode)
-from agent.unified_file_session_manager import UnifiedFileSessionManager
+from agent.session.unified_file_session_manager import UnifiedFileSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +234,7 @@ class ChatbotAgent:
             )
 
             # Wrap with local buffering manager for stop functionality
-            from agent.local_session_buffer import LocalSessionBuffer
+            from agent.session.local_session_buffer import LocalSessionBuffer
             self.session_manager = LocalSessionBuffer(
                 base_manager=base_file_manager,
                 session_id=session_id

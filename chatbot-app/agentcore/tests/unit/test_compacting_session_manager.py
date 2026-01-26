@@ -21,12 +21,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 class TestCompactingSessionManagerInit:
     """Test CompactingSessionManager initialization"""
 
-    @patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__')
+    @patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__')
     def test_init_with_default_config(self, mock_parent_init):
         """Should initialize with default thresholds and turn counts"""
         mock_parent_init.return_value = None
 
-        from agent.compacting_session_manager import CompactingSessionManager
+        from agent.session.compacting_session_manager import CompactingSessionManager
         from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
         config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -48,12 +48,12 @@ class TestCompactingSessionManagerInit:
         # Compaction state should be None initially
         assert manager.compaction_state is None
 
-    @patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__')
+    @patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__')
     def test_init_with_custom_config(self, mock_parent_init):
         """Should accept custom token_threshold and protected_turns"""
         mock_parent_init.return_value = None
 
-        from agent.compacting_session_manager import CompactingSessionManager
+        from agent.session.compacting_session_manager import CompactingSessionManager
         from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
         config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -77,7 +77,7 @@ class TestCompactionState:
 
     def test_compaction_state_default_values(self):
         """Should initialize with default values"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState()
 
@@ -88,7 +88,7 @@ class TestCompactionState:
 
     def test_compaction_state_with_values(self):
         """Should accept all parameters"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState(
             checkpoint=50,
@@ -104,7 +104,7 @@ class TestCompactionState:
 
     def test_compaction_state_to_dict(self):
         """Should convert to dictionary for DynamoDB storage"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState(
             checkpoint=30,
@@ -121,7 +121,7 @@ class TestCompactionState:
 
     def test_compaction_state_from_dict(self):
         """Should create from DynamoDB data"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         data = {
             "checkpoint": 25,
@@ -139,7 +139,7 @@ class TestCompactionState:
 
     def test_compaction_state_from_dict_none(self):
         """Should return default state when data is None"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState.from_dict(None)
 
@@ -149,7 +149,7 @@ class TestCompactionState:
 
     def test_compaction_state_from_dict_empty(self):
         """Should handle empty dictionary"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState.from_dict({})
 
@@ -185,7 +185,7 @@ class TestThresholdLogic:
 
     def test_checkpoint_can_update_forward(self):
         """When checkpoint exists, it can be updated forward if tokens exceed threshold again"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState(checkpoint=50, lastInputTokens=150000)
         input_tokens = 200000
@@ -209,8 +209,8 @@ class TestTurnSafety:
     @pytest.fixture
     def manager(self):
         """Create CompactingSessionManager instance for testing"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
-            from agent.compacting_session_manager import CompactingSessionManager
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
+            from agent.session.compacting_session_manager import CompactingSessionManager
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -333,8 +333,8 @@ class TestSummaryRetrieval:
     @pytest.fixture
     def manager(self):
         """Create CompactingSessionManager instance for testing"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
-            from agent.compacting_session_manager import CompactingSessionManager
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
+            from agent.session.compacting_session_manager import CompactingSessionManager
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -579,8 +579,8 @@ class TestToolTruncation:
     @pytest.fixture
     def manager(self):
         """Create CompactingSessionManager instance for testing"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
-            from agent.compacting_session_manager import CompactingSessionManager
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
+            from agent.session.compacting_session_manager import CompactingSessionManager
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -1018,9 +1018,9 @@ class TestProtectedMessageIndices:
     @pytest.fixture
     def manager(self):
         """Create a CompactingSessionManager with mocked dependencies"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
             mock_init.return_value = None
-            from agent.compacting_session_manager import CompactingSessionManager
+            from agent.session.compacting_session_manager import CompactingSessionManager
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -1119,9 +1119,9 @@ class TestTruncationWithProtectedIndices:
     @pytest.fixture
     def manager(self):
         """Create a CompactingSessionManager with mocked dependencies"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
             mock_init.return_value = None
-            from agent.compacting_session_manager import CompactingSessionManager
+            from agent.session.compacting_session_manager import CompactingSessionManager
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -1238,7 +1238,7 @@ class TestModeSelectionLogic:
 
     def test_mode_selection_no_checkpoint(self):
         """checkpoint == 0 -> Load all messages, apply truncation"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState(checkpoint=0, lastInputTokens=30_000)
 
@@ -1252,7 +1252,7 @@ class TestModeSelectionLogic:
 
     def test_mode_selection_with_checkpoint(self):
         """checkpoint > 0 -> Load from checkpoint, apply truncation"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState(checkpoint=50, lastInputTokens=150_000)
 
@@ -1266,7 +1266,7 @@ class TestModeSelectionLogic:
 
     def test_truncation_always_applies(self):
         """Truncation is always applied regardless of checkpoint state"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         # Case 1: No checkpoint
         state1 = CompactionState(checkpoint=0)
@@ -1284,9 +1284,9 @@ class TestTwoFeatureCompaction:
     @pytest.fixture
     def manager(self):
         """Create a CompactingSessionManager with custom thresholds for testing"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
             mock_init.return_value = None
-            from agent.compacting_session_manager import CompactingSessionManager
+            from agent.session.compacting_session_manager import CompactingSessionManager
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -1326,9 +1326,9 @@ class TestUpdateAfterTurnLogic:
     @pytest.fixture
     def manager(self):
         """Create a CompactingSessionManager with mocked dependencies"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
             mock_init.return_value = None
-            from agent.compacting_session_manager import CompactingSessionManager, CompactionState
+            from agent.session.compacting_session_manager import CompactingSessionManager, CompactionState
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -1392,7 +1392,7 @@ class TestUpdateAfterTurnLogic:
 
     def test_updates_checkpoint_forward(self, manager):
         """Should update checkpoint forward when tokens exceed threshold again"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         manager.compaction_state = CompactionState(
             checkpoint=2,
@@ -1422,7 +1422,7 @@ class TestUpdateAfterTurnLogic:
 
     def test_does_not_update_checkpoint_backward(self, manager):
         """Should not update checkpoint if new_checkpoint <= current checkpoint"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         manager.compaction_state = CompactionState(
             checkpoint=50,
@@ -1463,9 +1463,9 @@ class TestEndToEndScenarios:
     @pytest.fixture
     def manager(self):
         """Create a CompactingSessionManager with low thresholds for testing"""
-        with patch('agent.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__') as mock_init:
             mock_init.return_value = None
-            from agent.compacting_session_manager import CompactingSessionManager, CompactionState
+            from agent.session.compacting_session_manager import CompactingSessionManager, CompactionState
             from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
 
             config = MagicMock(spec=AgentCoreMemoryConfig)
@@ -1506,7 +1506,7 @@ class TestEndToEndScenarios:
 
     def test_scenario_above_threshold_sets_checkpoint(self, manager):
         """Scenario: Tokens exceed threshold - checkpoint gets set"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         manager.compaction_state = CompactionState(lastInputTokens=700)
 
@@ -1542,7 +1542,7 @@ class TestEndToEndScenarios:
 
     def test_scenario_checkpoint_updates_forward(self, manager):
         """Scenario: Checkpoint can be updated forward as conversation grows"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         # Already has checkpoint at 2
         manager.compaction_state = CompactionState(
@@ -1574,7 +1574,7 @@ class TestEndToEndScenarios:
 
     def test_scenario_checkpoint_stable_below_threshold(self, manager):
         """Scenario: Checkpoint remains stable when tokens are below threshold"""
-        from agent.compacting_session_manager import CompactionState
+        from agent.session.compacting_session_manager import CompactionState
 
         # Already has checkpoint
         manager.compaction_state = CompactionState(

@@ -40,17 +40,17 @@ from strands.types._events import ToolUseStreamEvent, ToolResultEvent
 from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
 
 # Import prompt builder for dynamic system prompt
-from agent.prompt_builder import build_voice_system_prompt
+from agent.config.prompt_builder import build_voice_system_prompt
 # Import unified tool filter (shared with ChatbotAgent)
 from agent.tool_filter import filter_tools
 # Import unified file session manager for cross-agent history sharing (local mode)
-from agent.unified_file_session_manager import UnifiedFileSessionManager
+from agent.session.unified_file_session_manager import UnifiedFileSessionManager
 
 # AgentCore Memory integration (optional, only for cloud deployment)
 try:
     from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
     from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
-    from agent.compacting_session_manager import CompactingSessionManager
+    from agent.session.compacting_session_manager import CompactingSessionManager
     AGENTCORE_MEMORY_AVAILABLE = True
 except ImportError:
     AGENTCORE_MEMORY_AVAILABLE = False

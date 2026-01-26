@@ -24,7 +24,8 @@ class TestPingEndpoint:
 
     def test_ping_returns_healthy(self):
         """Test that ping returns healthy status."""
-        from routers.chat import router
+        # Note: /ping endpoint is in health router, not chat router
+        from routers.health import router
         from fastapi import FastAPI
 
         app = FastAPI()
@@ -34,11 +35,12 @@ class TestPingEndpoint:
         response = client.get("/ping")
 
         assert response.status_code == 200
-        assert response.json() == {"status": "healthy"}
+        assert response.json() == {"status": "pong"}
 
     def test_ping_is_get_method(self):
         """Test that ping only accepts GET requests."""
-        from routers.chat import router
+        # Note: /ping endpoint is in health router, not chat router
+        from routers.health import router
         from fastapi import FastAPI
 
         app = FastAPI()

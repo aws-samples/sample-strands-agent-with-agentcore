@@ -20,6 +20,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 class TestMemoryStrategyIdLookup:
     """Test _get_memory_strategy_ids method"""
 
+    @pytest.fixture(autouse=True)
+    def reset_strategy_cache(self):
+        """Reset global cache before each test."""
+        import agent.agent as agent_module
+        agent_module._cached_strategy_ids = None
+        yield
+        agent_module._cached_strategy_ids = None
+
     @patch('boto3.client')
     def test_get_memory_strategy_ids_success(self, mock_boto_client):
         """Should return strategy IDs mapped by type"""

@@ -69,7 +69,7 @@ class SwarmMessageStore:
             # Cloud mode: Use CompactingSessionManager
             try:
                 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
-                from agent.compacting_session_manager import CompactingSessionManager
+                from agent.session.compacting_session_manager import CompactingSessionManager
 
                 config = AgentCoreMemoryConfig(
                     memory_id=self.memory_id,

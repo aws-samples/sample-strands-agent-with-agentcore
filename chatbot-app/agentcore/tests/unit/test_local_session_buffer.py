@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
 
-from agent.local_session_buffer import LocalSessionBuffer, encode_bytes_for_json
+from agent.session.local_session_buffer import LocalSessionBuffer, encode_bytes_for_json
 
 
 class TestLocalSessionBuffer:

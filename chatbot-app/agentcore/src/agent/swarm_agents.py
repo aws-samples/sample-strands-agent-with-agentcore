@@ -14,7 +14,7 @@ from strands import Agent
 from strands.models import BedrockModel
 from strands.multiagent import Swarm
 
-from agent.swarm_config import (
+from agent.config.swarm_config import (
     AGENT_TOOL_MAPPING,
     AGENT_DESCRIPTIONS,
     build_agent_system_prompt,

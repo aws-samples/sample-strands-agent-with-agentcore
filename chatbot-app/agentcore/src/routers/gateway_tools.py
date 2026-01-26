@@ -6,7 +6,7 @@ Provides endpoints to discover and manage Gateway MCP tools
 import logging
 from fastapi import APIRouter, HTTPException
 from typing import List, Dict, Any
-from agent.gateway_mcp_client import create_gateway_mcp_client
+from agent.gateway.mcp_client import create_gateway_mcp_client
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ async def get_gateway_status() -> Dict[str, Any]:
         }
     """
     try:
-        from agent.gateway_mcp_client import get_gateway_url_from_ssm
+        from agent.gateway.mcp_client import get_gateway_url_from_ssm
 
         gateway_url = get_gateway_url_from_ssm()
 

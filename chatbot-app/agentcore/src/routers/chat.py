@@ -24,7 +24,7 @@ from models.swarm_schemas import (
     SwarmCompleteEvent,
 )
 from agent.agent import ChatbotAgent
-from agent.swarm_config import AGENT_DESCRIPTIONS
+from agent.config.swarm_config import AGENT_DESCRIPTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ async def swarm_orchestration_stream(
     """
     from agent.swarm_agents import create_chatbot_swarm
     from agent.stop_signal import get_stop_signal_provider
-    from agent.swarm_message_store import get_swarm_message_store
+    from agent.session.swarm_message_store import get_swarm_message_store
 
     session_id = input_data.session_id
     user_id = input_data.user_id
