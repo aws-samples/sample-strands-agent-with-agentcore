@@ -38,17 +38,19 @@ from strands.experimental.bidi.types.events import (
 )
 from strands.types._events import ToolUseStreamEvent, ToolResultEvent
 from strands.experimental.bidi.models.nova_sonic import BidiNovaSonicModel
-from strands.session.file_session_manager import FileSessionManager
 
 # Import prompt builder for dynamic system prompt
 from agent.prompt_builder import build_voice_system_prompt
 # Import unified tool filter (shared with ChatbotAgent)
 from agent.tool_filter import filter_tools
+# Import unified file session manager for cross-agent history sharing (local mode)
+from agent.unified_file_session_manager import UnifiedFileSessionManager
 
 # AgentCore Memory integration (optional, only for cloud deployment)
 try:
     from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
     from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
+    from agent.compacting_session_manager import CompactingSessionManager
     AGENTCORE_MEMORY_AVAILABLE = True
 except ImportError:
     AGENTCORE_MEMORY_AVAILABLE = False
@@ -168,59 +170,54 @@ class VoiceChatbotAgent:
 
     def _load_text_history(self) -> List[Dict[str, Any]]:
         """
-        Load conversation history from text mode (agent_id="default").
+        Load conversation history from previous interactions.
 
-        This enables voice mode to have context from previous text interactions
-        within the same session. The messages are loaded read-only and passed
-        to BidiAgent as initial context.
+        Both cloud and local modes now use unified session managers:
+        - Cloud: CompactingSessionManager (unified format under actor_id)
+        - Local: UnifiedFileSessionManager (reads from all agent folders)
 
         Returns:
-            List of messages from text agent, or empty list if none found
+            List of messages from this session, or empty list if none found
         """
         try:
-            # Get the underlying session repository from session manager
-            if hasattr(self.session_manager, 'session_repository'):
-                repo = self.session_manager.session_repository
-
-                # Try to read messages from text agent (agent_id="default")
-                session_messages = repo.list_messages(
+            if hasattr(self.session_manager, 'list_messages'):
+                session_messages = self.session_manager.list_messages(
                     session_id=self.session_id,
-                    agent_id=self.TEXT_AGENT_ID,
+                    agent_id=self.VOICE_AGENT_ID,
                 )
 
                 if session_messages:
                     messages = [msg.to_message() for msg in session_messages]
-                    logger.info(f"[VoiceAgent] Loaded {len(messages)} messages from text mode history")
+                    logger.info(f"[VoiceAgent] Loaded {len(messages)} messages from unified storage")
                     return messages
                 else:
-                    logger.debug("[VoiceAgent] No text mode history found for this session")
+                    logger.debug("[VoiceAgent] No previous messages found")
                     return []
             else:
-                logger.debug("[VoiceAgent] Session manager does not support history loading")
+                logger.debug("[VoiceAgent] Session manager does not support list_messages")
                 return []
 
         except Exception as e:
-            logger.warning(f"[VoiceAgent] Failed to load text history: {e}")
+            logger.warning(f"[VoiceAgent] Failed to load history: {e}")
             return []
 
     def _create_session_manager(self):
         """
         Create session manager for conversation persistence.
 
-        Uses the same session management strategy as ChatbotAgent to enable
-        seamless voice-text conversation continuity:
-        - Cloud mode: AgentCoreMemorySessionManager (if MEMORY_ID is set)
-        - Local mode: FileSessionManager (file-based persistence)
+        Both cloud and local modes use unified session managers that share
+        messages across all agents while keeping agent states separate:
+        - Cloud: CompactingSessionManager (unified format under actor_id)
+        - Local: UnifiedFileSessionManager (reads from all agent folders)
 
-        Note: Voice and text agents use different agent_ids but share session_id.
-        Text history is loaded at initialization for conversation continuity.
+        This enables seamless voice-text conversation continuity.
         """
         memory_id = os.environ.get('MEMORY_ID')
         aws_region = os.environ.get('AWS_REGION', 'us-west-2')
 
         if memory_id and AGENTCORE_MEMORY_AVAILABLE:
-            # Cloud deployment: Use AgentCore Memory
-            logger.info(f"[VoiceAgent] Cloud mode: Using AgentCoreMemorySessionManager")
+            # Cloud deployment: Use CompactingSessionManager for unified format
+            logger.info(f"[VoiceAgent] Cloud mode: Using CompactingSessionManager (unified format)")
 
             agentcore_memory_config = AgentCoreMemoryConfig(
                 memory_id=memory_id,
@@ -230,17 +227,24 @@ class VoiceChatbotAgent:
                 retrieval_config=None  # No LTM retrieval for voice mode
             )
 
-            return AgentCoreMemorySessionManager(
+            return CompactingSessionManager(
                 agentcore_memory_config=agentcore_memory_config,
-                region_name=aws_region
+                region_name=aws_region,
+                token_threshold=1_000_000,  # Very high threshold - effectively no compaction
+                protected_turns=100,  # Protect all turns
+                user_id=self.user_id,
+                metrics_only=True,  # Only track metrics, no actual compaction
+                enable_api_optimization=True,  # Use unified format for storage
             )
         else:
-            # Local development: Use file-based session manager
-            logger.info(f"[VoiceAgent] Local mode: Using FileSessionManager")
+            # Local development: Use unified file session manager
+            # UnifiedFileSessionManager overrides list_messages to read from ALL agent folders,
+            # enabling voice-text conversation continuity (matching cloud mode behavior)
+            logger.info(f"[VoiceAgent] Local mode: Using UnifiedFileSessionManager")
             sessions_dir = Path(__file__).parent.parent.parent / "sessions"
             sessions_dir.mkdir(exist_ok=True)
 
-            return FileSessionManager(
+            return UnifiedFileSessionManager(
                 session_id=self.session_id,
                 storage_dir=str(sessions_dir)
             )
