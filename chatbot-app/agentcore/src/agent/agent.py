@@ -42,6 +42,8 @@ import builtin_tools
 
 # Import unified tool filter
 from agent.tool_filter import filter_tools
+# Import unified file session manager for cross-agent history sharing (local mode)
+from agent.unified_file_session_manager import UnifiedFileSessionManager
 
 logger = logging.getLogger(__name__)
 
@@ -219,12 +221,14 @@ class ChatbotAgent:
                 logger.debug(f"    Compaction DISABLED - all messages loaded without truncation or summarization")
                 logger.debug(f"   Context token tracking ENABLED for baseline comparison")
         else:
-            # Local development: Use file-based session manager with buffering wrapper
-            logger.debug(f"💻 Local mode: Using FileSessionManager with buffering")
+            # Local development: Use unified file session manager for cross-agent history sharing
+            # UnifiedFileSessionManager overrides list_messages to read from ALL agent folders,
+            # enabling voice-text conversation continuity (matching cloud mode behavior)
+            logger.debug(f"💻 Local mode: Using UnifiedFileSessionManager with buffering")
             sessions_dir = Path(__file__).parent.parent.parent / "sessions"
             sessions_dir.mkdir(exist_ok=True)
 
-            base_file_manager = FileSessionManager(
+            base_file_manager = UnifiedFileSessionManager(
                 session_id=session_id,
                 storage_dir=str(sessions_dir)
             )
@@ -236,7 +240,7 @@ class ChatbotAgent:
                 session_id=session_id
             )
 
-            logger.debug(f"FileSessionManager with buffering initialized: {sessions_dir}")
+            logger.debug(f"UnifiedFileSessionManager with buffering initialized: {sessions_dir}")
 
         self.create_agent()
 
@@ -376,6 +380,10 @@ class ChatbotAgent:
                 logger.debug("Using NullConversationManager (no context manipulation by Strands)")
 
             self.agent = Agent(**agent_kwargs)
+
+            # Note: Voice history is now automatically loaded via CompactingSessionManager
+            # since both voice and text agents use unified format storage.
+            # No need for separate voice history injection - all messages are shared.
 
             # Calculate total characters for logging
             total_chars = sum(len(block.get("text", "")) for block in self.system_prompt)
