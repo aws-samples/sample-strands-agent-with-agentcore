@@ -1,10 +1,11 @@
 {
-  "defaultRegion": "us-west-2",
+  "defaultRegion": "eu-west-1",
   "supportedRegions": [
     "us-west-2",
     "us-east-1", 
     "ap-northeast-2",
     "ap-southeast-2",
+    "eu-central-1",
     "eu-west-1"
   ]
 }
