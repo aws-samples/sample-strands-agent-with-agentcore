@@ -1,4 +1,60 @@
 import { Calculator, Globe, Code, Image, UserCheck, Monitor, GitBranch, Cog } from 'lucide-react'
+import toolsConfig from '@/config/tools-config.json'
+
+// Type for display name
+interface DisplayName {
+  running: string
+  complete: string
+}
+
+// Build a flat map of tool id -> displayName from tools-config.json
+const buildDisplayNameMap = (): Record<string, DisplayName> => {
+  const map: Record<string, DisplayName> = {}
+
+  const categories = [
+    'local_tools',
+    'builtin_tools',
+    'browser_automation',
+    'gateway_targets',
+    'agentcore_runtime_a2a'
+  ] as const
+
+  for (const category of categories) {
+    const tools = (toolsConfig as any)[category] as any[] | undefined
+    if (!tools) continue
+
+    for (const tool of tools) {
+      // Check if tool itself has displayName
+      if (tool.displayName) {
+        map[tool.id] = tool.displayName
+      }
+      // Check sub-tools (for dynamic tools with nested tools array)
+      if (tool.tools && Array.isArray(tool.tools)) {
+        for (const subTool of tool.tools) {
+          if (subTool.displayName) {
+            map[subTool.id] = subTool.displayName
+          }
+        }
+      }
+    }
+  }
+
+  return map
+}
+
+// Pre-built map for performance
+const displayNameMap = buildDisplayNameMap()
+
+// Tool name to user-friendly display name
+export const getToolDisplayName = (toolId: string, isComplete: boolean): string => {
+  const mapping = displayNameMap[toolId]
+  if (mapping) {
+    return isComplete ? mapping.complete : mapping.running
+  }
+  // Fallback: tool_name → "Using Tool Name"
+  const formatted = toolId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return isComplete ? `Used ${formatted}` : `Using ${formatted}`
+}
 
 export const getToolIconById = (toolId: string) => {
   switch (toolId) {

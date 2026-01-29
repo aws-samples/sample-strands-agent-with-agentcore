@@ -6,7 +6,7 @@ fastapi==0.116.1
 uvicorn[standard]==0.35.0
 
 # Strands Agent Framework
-strands-agents[a2a]>=1.21.0
+strands-agents[a2a]>=1.24.0
 strands-agents-tools[a2a_client]==0.2.3
 
 # Voice Chat (BidiAgent)

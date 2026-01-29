@@ -320,80 +320,78 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   }, [toggleSwarmHook, swarmEnabled])
 
   // Monitor messages for research_agent and browser_use_agent tool executions separately
-  useEffect(() => {
-    const newResearchData = new Map(researchData)
-    const newBrowserData = new Map(browserData)
+  // PERFORMANCE: Use useMemo to compute data, then sync to state only if changed
+  const { computedResearchData, computedBrowserData } = useMemo(() => {
+    const newResearchData = new Map<string, {
+      query: string
+      result: string
+      status: 'idle' | 'searching' | 'analyzing' | 'generating' | 'complete' | 'error' | 'declined'
+      agentName: string
+    }>()
+    const newBrowserData = new Map<string, {
+      query: string
+      result: string
+      status: 'idle' | 'running' | 'complete' | 'error'
+      agentName: string
+    }>()
 
-    // Process ALL research/browser executions across all messages
+    // Process ALL research/browser executions to avoid missing historical data
+    // (User may click on old research results to view modal)
     for (const group of groupedMessages) {
       if (group.type === 'assistant_turn') {
         for (const message of group.messages) {
-          if (message.toolExecutions && message.toolExecutions.length > 0) {
-            // Separate research_agent and browser_use_agent
-            const researchExecutions = message.toolExecutions.filter(te => te.toolName === 'research_agent')
-            const browserExecutions = message.toolExecutions.filter(te => te.toolName === 'browser_use_agent')
+          const toolExecutions = message.toolExecutions
+          if (!toolExecutions || toolExecutions.length === 0) continue
 
-            // Process research_agent executions
-            for (const researchExecution of researchExecutions) {
-              const executionId = researchExecution.id
-              const query = researchExecution.toolInput?.plan || "Research Task"
+          // PERFORMANCE: Filter once instead of twice
+          for (const execution of toolExecutions) {
+            if (execution.toolName === 'research_agent') {
+              const executionId = execution.id
+              const query = execution.toolInput?.plan || "Research Task"
 
-              if (!researchExecution.isComplete) {
-                // Still running
+              if (!execution.isComplete) {
                 newResearchData.set(executionId, {
                   query: query,
-                  result: researchExecution.streamingResponse || '',
-                  status: researchExecution.streamingResponse ? 'generating' : 'searching',
+                  result: execution.streamingResponse || '',
+                  status: execution.streamingResponse ? 'generating' : 'searching',
                   agentName: 'Research Agent'
                 })
-              } else if (researchExecution.toolResult) {
-                // Completed with result
-                const resultText = researchExecution.toolResult.toLowerCase()
-                const isError = researchExecution.isCancelled || resultText.includes('error:') || resultText.includes('failed:')
-                // Match exact declined message from ResearchApprovalHook
+              } else if (execution.toolResult) {
+                const resultText = execution.toolResult.toLowerCase()
+                const isError = execution.isCancelled || resultText.includes('error:') || resultText.includes('failed:')
                 const isDeclined = resultText === 'user declined to proceed with research' ||
                                   resultText === 'user declined to proceed with browser automation'
 
                 let status: 'complete' | 'error' | 'declined' = 'complete'
-                if (isError) {
-                  status = 'error'
-                } else if (isDeclined) {
-                  status = 'declined'
-                }
+                if (isError) status = 'error'
+                else if (isDeclined) status = 'declined'
 
                 newResearchData.set(executionId, {
                   query: query,
-                  result: researchExecution.toolResult,
+                  result: execution.toolResult,
                   status: status,
                   agentName: 'Research Agent'
                 })
               }
-            }
+            } else if (execution.toolName === 'browser_use_agent') {
+              const executionId = execution.id
+              const query = execution.toolInput?.task || "Browser Task"
 
-            // Process browser_use_agent executions
-            for (const browserExecution of browserExecutions) {
-              const executionId = browserExecution.id
-              const query = browserExecution.toolInput?.task || "Browser Task"
-
-              if (!browserExecution.isComplete) {
-                // Still running
+              if (!execution.isComplete) {
                 newBrowserData.set(executionId, {
                   query: query,
-                  result: browserExecution.streamingResponse || '',
+                  result: execution.streamingResponse || '',
                   status: 'running',
                   agentName: 'Browser Use Agent'
                 })
-              } else if (browserExecution.toolResult) {
-                // Completed with result
-                const resultText = browserExecution.toolResult.toLowerCase()
-                const isError = browserExecution.isCancelled || resultText.includes('error:') || resultText.includes('failed:') || resultText.includes('browser automation failed')
-
-                const status: 'complete' | 'error' = isError ? 'error' : 'complete'
+              } else if (execution.toolResult) {
+                const resultText = execution.toolResult.toLowerCase()
+                const isError = execution.isCancelled || resultText.includes('error:') || resultText.includes('failed:') || resultText.includes('browser automation failed')
 
                 newBrowserData.set(executionId, {
                   query: query,
-                  result: browserExecution.toolResult,
-                  status: status,
+                  result: execution.toolResult,
+                  status: isError ? 'error' : 'complete',
                   agentName: 'Browser Use Agent'
                 })
               }
@@ -403,24 +401,32 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
       }
     }
 
-    // Update research data only if changed
-    if (newResearchData.size !== researchData.size ||
-        Array.from(newResearchData.entries()).some(([id, data]) => {
+    return {
+      computedResearchData: newResearchData,
+      computedBrowserData: newBrowserData
+    }
+  }, [groupedMessages])
+
+  // Sync computed data to state only when it actually changes
+  useEffect(() => {
+    if (computedResearchData.size !== researchData.size ||
+        Array.from(computedResearchData.entries()).some(([id, data]) => {
           const existing = researchData.get(id)
           return !existing || existing.result !== data.result || existing.status !== data.status
         })) {
-      setResearchData(newResearchData)
+      setResearchData(computedResearchData)
     }
+  }, [computedResearchData, researchData])
 
-    // Update browser data only if changed
-    if (newBrowserData.size !== browserData.size ||
-        Array.from(newBrowserData.entries()).some(([id, data]) => {
+  useEffect(() => {
+    if (computedBrowserData.size !== browserData.size ||
+        Array.from(computedBrowserData.entries()).some(([id, data]) => {
           const existing = browserData.get(id)
           return !existing || existing.result !== data.result || existing.status !== data.status
         })) {
-      setBrowserData(newBrowserData)
+      setBrowserData(computedBrowserData)
     }
-  }, [groupedMessages])
+  }, [computedBrowserData, browserData])
 
   // Handle research container click
   const handleResearchClick = useCallback((executionId: string) => {
@@ -688,6 +694,16 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     if (e.key === "Enter" && !e.shiftKey) {
       // Don't submit if user is composing Korean/Chinese/Japanese
       if (isComposingRef.current) {
+        return
+      }
+
+      // Detect touch-capable devices (mobile/tablet)
+      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
+
+      // On touch devices (iPad, mobile), allow Enter to create new line
+      // On desktop, Enter sends message (Shift+Enter for new line)
+      if (isTouchDevice) {
+        // Allow default behavior (new line) on touch devices
         return
       }
 

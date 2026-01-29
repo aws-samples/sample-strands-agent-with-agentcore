@@ -371,6 +371,22 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
   line-height: 1.8 !important;
 }
 
+/* Citation styling - override ai-message-text font size */
+.ai-message-text .citation-inline a {
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+}
+
+.ai-message-text .citation-inline a span {
+  font-size: 11px !important;
+  line-height: 1.3 !important;
+}
+
+.ai-message-text .citation-inline a svg {
+  width: 10px !important;
+  height: 10px !important;
+}
+
 /* Dark mode text color for AI messages */
 .dark .ai-message-text,
 .dark .ai-message-text p,

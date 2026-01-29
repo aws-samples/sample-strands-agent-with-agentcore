@@ -12,6 +12,7 @@
       "icon": "🧮",
       "enabled": true,
       "isDynamic": false,
+      "displayName": { "running": "Calculating", "complete": "Calculated" },
       "tags": ["math", "finance", "business", "report", "analysis"]
     },
     {
@@ -22,17 +23,19 @@
       "icon": "📊",
       "enabled": true,
       "isDynamic": false,
+      "displayName": { "running": "Creating chart", "complete": "Created chart" },
       "systemPromptGuidance": "Visualization Best Practices:\n\n**Data Format:**\n- Bar/Line charts: [{\"x\": label, \"y\": value}]\n- Pie charts: [{\"segment\": name, \"value\": number}]\n- Optional colors: \"color\": \"hsl(210, 100%, 50%)\"",
       "tags": ["report", "analysis", "business", "presentation", "data"]
     },
     {
       "id": "ddg_web_search",
-      "name": "Web Search",
+      "name": "Web Search (DuckDuckGo)",
       "description": "Search the web using DuckDuckGo",
       "category": "search",
       "icon": "🔍",
       "enabled": true,
       "isDynamic": false,
+      "displayName": { "running": "Searching the web", "complete": "Searched the web" },
       "usesCitation": true,
       "tags": ["research", "information", "learning", "knowledge"]
     },
@@ -44,6 +47,7 @@
       "icon": "🌐",
       "enabled": true,
       "isDynamic": false,
+      "displayName": { "running": "Fetching URL", "complete": "Fetched URL" },
       "usesCitation": true,
       "tags": ["scraping", "research", "data"]
     }
@@ -57,6 +61,7 @@
       "icon": "📊",
       "enabled": true,
       "isDynamic": false,
+      "displayName": { "running": "Generating diagram", "complete": "Generated diagram" },
       "systemPromptGuidance": "Diagram Generator Best Practices:\n\n**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability",
       "tags": ["report", "presentation", "analysis", "business", "data"]
     },
@@ -74,22 +79,26 @@
         {
           "id": "create_word_document",
           "name": "Create Document",
-          "description": "Create new Word document from Markdown content"
+          "description": "Create new Word document from Markdown content",
+          "displayName": { "running": "Creating Word document", "complete": "Created Word document" }
         },
         {
           "id": "modify_word_document",
           "name": "Modify Document",
-          "description": "Edit existing Word document using python-docx code"
+          "description": "Edit existing Word document using python-docx code",
+          "displayName": { "running": "Modifying Word document", "complete": "Modified Word document" }
         },
         {
           "id": "list_my_word_documents",
           "name": "List Documents",
-          "description": "List all Word documents in workspace"
+          "description": "List all Word documents in workspace",
+          "displayName": { "running": "Listing documents", "complete": "Listed documents" }
         },
         {
           "id": "read_word_document",
           "name": "Read Document",
-          "description": "Read and download document from workspace"
+          "description": "Read and download document from workspace",
+          "displayName": { "running": "Reading document", "complete": "Read document" }
         }
       ]
     },
@@ -107,22 +116,26 @@
         {
           "id": "create_excel_spreadsheet",
           "name": "Create Spreadsheet",
-          "description": "Create new Excel spreadsheet with openpyxl code"
+          "description": "Create new Excel spreadsheet with openpyxl code",
+          "displayName": { "running": "Creating Excel spreadsheet", "complete": "Created Excel spreadsheet" }
         },
         {
           "id": "modify_excel_spreadsheet",
           "name": "Modify Spreadsheet",
-          "description": "Edit existing Excel spreadsheet using openpyxl code"
+          "description": "Edit existing Excel spreadsheet using openpyxl code",
+          "displayName": { "running": "Modifying Excel spreadsheet", "complete": "Modified Excel spreadsheet" }
         },
         {
           "id": "list_my_excel_spreadsheets",
           "name": "List Spreadsheets",
-          "description": "List all Excel spreadsheets in workspace"
+          "description": "List all Excel spreadsheets in workspace",
+          "displayName": { "running": "Listing spreadsheets", "complete": "Listed spreadsheets" }
         },
         {
           "id": "read_excel_spreadsheet",
           "name": "Read Spreadsheet",
-          "description": "Read and download spreadsheet from workspace"
+          "description": "Read and download spreadsheet from workspace",
+          "displayName": { "running": "Reading spreadsheet", "complete": "Read spreadsheet" }
         }
       ]
     },
@@ -140,52 +153,62 @@
         {
           "id": "list_my_powerpoint_presentations",
           "name": "List Presentations",
-          "description": "List all PowerPoint presentations in workspace"
+          "description": "List all PowerPoint presentations in workspace",
+          "displayName": { "running": "Listing presentations", "complete": "Listed presentations" }
         },
         {
           "id": "get_presentation_layouts",
           "name": "Get Layouts",
-          "description": "Get all available slide layouts from presentation"
+          "description": "Get all available slide layouts from presentation",
+          "displayName": { "running": "Getting layouts", "complete": "Got layouts" }
         },
         {
           "id": "analyze_presentation",
           "name": "Analyze Presentation",
-          "description": "Analyze presentation structure with detailed element IDs for editing"
+          "description": "Analyze presentation structure with detailed element IDs for editing",
+          "displayName": { "running": "Analyzing presentation", "complete": "Analyzed presentation" }
         },
         {
           "id": "create_presentation",
           "name": "Create Presentation",
-          "description": "Create presentation from outline or blank (outline=None for blank)"
+          "description": "Create presentation from outline or blank (outline=None for blank)",
+          "displayName": { "running": "Creating presentation", "complete": "Created presentation" }
         },
         {
           "id": "update_slide_content",
           "name": "Update Slides",
-          "description": "Edit one or more slides in a single call using operations (replace_text, add_paragraph, replace_image, etc.)"
+          "description": "Edit one or more slides in a single call using operations (replace_text, add_paragraph, replace_image, etc.)",
+          "displayName": { "running": "Updating slides", "complete": "Updated slides" }
         },
         {
           "id": "add_slide",
           "name": "Add Slide",
-          "description": "Add new slide at specified position with chosen layout"
+          "description": "Add new slide at specified position with chosen layout",
+          "displayName": { "running": "Adding slide", "complete": "Added slide" }
         },
         {
           "id": "delete_slides",
           "name": "Delete Slides",
-          "description": "Delete one or more slides by indices"
+          "description": "Delete one or more slides by indices",
+          "displayName": { "running": "Deleting slides", "complete": "Deleted slides" }
         },
         {
           "id": "move_slide",
           "name": "Move Slide",
-          "description": "Move slide from one position to another"
+          "description": "Move slide from one position to another",
+          "displayName": { "running": "Moving slide", "complete": "Moved slide" }
         },
         {
           "id": "duplicate_slide",
           "name": "Duplicate Slide",
-          "description": "Copy slide to specified position"
+          "description": "Copy slide to specified position",
+          "displayName": { "running": "Duplicating slide", "complete": "Duplicated slide" }
         },
         {
           "id": "update_slide_notes",
           "name": "Update Notes",
-          "description": "Update speaker notes for a specific slide"
+          "description": "Update speaker notes for a specific slide",
+          "displayName": { "running": "Updating notes", "complete": "Updated notes" }
         }
       ]
     }
@@ -205,37 +228,44 @@
         {
           "id": "browser_navigate",
           "name": "Navigate",
-          "description": "Navigate browser to a URL and see the page"
+          "description": "Navigate browser to a URL and see the page",
+          "displayName": { "running": "Navigating to page", "complete": "Navigated to page" }
         },
         {
           "id": "browser_act",
           "name": "Browser Action",
-          "description": "Execute browser actions using natural language (click, type, scroll, select). Does NOT support drag - use browser_drag instead."
+          "description": "Execute browser actions using natural language (click, type, scroll, select). Does NOT support drag - use browser_drag instead.",
+          "displayName": { "running": "Performing browser action", "complete": "Performed browser action" }
         },
         {
           "id": "browser_extract",
           "name": "Extract Data",
-          "description": "Extract structured data (auto-scrolls entire page, collects all data in single call)"
+          "description": "Extract structured data (auto-scrolls entire page, collects all data in single call)",
+          "displayName": { "running": "Extracting data", "complete": "Extracted data" }
         },
         {
           "id": "browser_get_page_info",
           "name": "Get Page Info",
-          "description": "Get page structure and all open tabs (fast, no AI)"
+          "description": "Get page structure and all open tabs (fast, no AI)",
+          "displayName": { "running": "Getting page info", "complete": "Got page info" }
         },
         {
           "id": "browser_manage_tabs",
           "name": "Manage Tabs",
-          "description": "Switch, close, or create browser tabs (use get_page_info to view tabs)"
+          "description": "Switch, close, or create browser tabs (use get_page_info to view tabs)",
+          "displayName": { "running": "Managing tabs", "complete": "Managed tabs" }
         },
         {
           "id": "browser_drag",
           "name": "Drag",
-          "description": "Drag from start to end coordinates (for drawing, resizing, moving elements)"
+          "description": "Drag from start to end coordinates (for drawing, resizing, moving elements)",
+          "displayName": { "running": "Dragging element", "complete": "Dragged element" }
         },
         {
           "id": "browser_save_screenshot",
           "name": "Save Screenshot",
-          "description": "Save current page screenshot to workspace for document use"
+          "description": "Save current page screenshot to workspace for document use",
+          "displayName": { "running": "Saving screenshot", "complete": "Saved screenshot" }
         }
       ]
     },
@@ -247,12 +277,14 @@
       "icon": "🤖",
       "enabled": true,
       "isDynamic": true,
+      "displayName": { "running": "Browsing autonomously", "complete": "Browsed autonomously" },
       "tags": ["shopping", "automation", "scraping", "research"],
       "tools": [
         {
           "id": "agentcore_browser-use-agent",
           "name": "Browser Automation Skill",
           "description": "Execute multi-step browser tasks: navigate websites, interact with elements, fill forms, extract information using AI-driven adaptive navigation",
+          "displayName": { "running": "Browsing autonomously", "complete": "Browsed autonomously" },
           "enabled": true
         }
       ]
@@ -272,12 +304,14 @@
         {
           "id": "gateway_get_today_weather",
           "name": "Today's Weather",
-          "description": "Get current weather and today's hourly forecast"
+          "description": "Get current weather and today's hourly forecast",
+          "displayName": { "running": "Checking weather", "complete": "Checked weather" }
         },
         {
           "id": "gateway_get_weather_forecast",
           "name": "Weather Forecast",
-          "description": "Get multi-day weather forecast (up to 16 days)"
+          "description": "Get multi-day weather forecast (up to 16 days)",
+          "displayName": { "running": "Getting forecast", "complete": "Got forecast" }
         }
       ]
     },
@@ -294,22 +328,26 @@
         {
           "id": "gateway_stock_quote",
           "name": "Stock Quote",
-          "description": "Get current stock quote with key metrics"
+          "description": "Get current stock quote with key metrics",
+          "displayName": { "running": "Getting stock quote", "complete": "Got stock quote" }
         },
         {
           "id": "gateway_stock_history",
           "name": "Stock History",
-          "description": "Get historical stock price data"
+          "description": "Get historical stock price data",
+          "displayName": { "running": "Getting stock history", "complete": "Got stock history" }
         },
         {
           "id": "gateway_financial_news",
           "name": "Financial News",
-          "description": "Get latest financial news articles"
+          "description": "Get latest financial news articles",
+          "displayName": { "running": "Getting financial news", "complete": "Got financial news" }
         },
         {
           "id": "gateway_stock_analysis",
           "name": "Stock Analysis",
-          "description": "Get comprehensive stock analysis"
+          "description": "Get comprehensive stock analysis",
+          "displayName": { "running": "Analyzing stock", "complete": "Analyzed stock" }
         }
       ]
     },
@@ -327,12 +365,14 @@
         {
           "id": "gateway_arxiv_search",
           "name": "Search Papers",
-          "description": "Search scientific papers on ArXiv"
+          "description": "Search scientific papers on ArXiv",
+          "displayName": { "running": "Searching ArXiv", "complete": "Searched ArXiv" }
         },
         {
           "id": "gateway_arxiv_get_paper",
           "name": "Get Paper",
-          "description": "Get full paper content from ArXiv by paper ID"
+          "description": "Get full paper content from ArXiv by paper ID",
+          "displayName": { "running": "Getting paper", "complete": "Got paper" }
         }
       ]
     },
@@ -349,8 +389,9 @@
       "tools": [
         {
           "id": "gateway_google_web_search",
-          "name": "Web Search",
-          "description": "Search the web using Google Custom Search (includes image results)"
+          "name": "Web Search (Google)",
+          "description": "Search the web using Google Custom Search (includes image results)",
+          "displayName": { "running": "Searching the web", "complete": "Searched the web" }
         }
       ]
     },
@@ -368,37 +409,44 @@
         {
           "id": "gateway_search_places",
           "name": "Search Places",
-          "description": "Search for places using text query (e.g., 'restaurants in New York')"
+          "description": "Search for places using text query (e.g., 'restaurants in New York')",
+          "displayName": { "running": "Searching places", "complete": "Found places" }
         },
         {
           "id": "gateway_search_nearby_places",
           "name": "Nearby Places",
-          "description": "Search for places near a specific location"
+          "description": "Search for places near a specific location",
+          "displayName": { "running": "Searching nearby", "complete": "Found nearby places" }
         },
         {
           "id": "gateway_get_place_details",
           "name": "Place Details",
-          "description": "Get detailed information about a place including reviews"
+          "description": "Get detailed information about a place including reviews",
+          "displayName": { "running": "Getting place details", "complete": "Got place details" }
         },
         {
           "id": "gateway_get_directions",
           "name": "Get Directions",
-          "description": "Get directions between two locations with step-by-step instructions"
+          "description": "Get directions between two locations with step-by-step instructions",
+          "displayName": { "running": "Getting directions", "complete": "Got directions" }
         },
         {
           "id": "gateway_geocode_address",
           "name": "Geocode Address",
-          "description": "Convert address to geographic coordinates"
+          "description": "Convert address to geographic coordinates",
+          "displayName": { "running": "Geocoding address", "complete": "Geocoded address" }
         },
         {
           "id": "gateway_reverse_geocode",
           "name": "Reverse Geocode",
-          "description": "Convert geographic coordinates to address"
+          "description": "Convert geographic coordinates to address",
+          "displayName": { "running": "Reverse geocoding", "complete": "Reverse geocoded" }
         },
         {
           "id": "gateway_show_on_map",
           "name": "Show on Map",
-          "description": "Display locations and routes on interactive Google Map"
+          "description": "Display locations and routes on interactive Google Map",
+          "displayName": { "running": "Showing on map", "complete": "Showed on map" }
         }
       ]
     },
@@ -416,12 +464,14 @@
         {
           "id": "gateway_wikipedia_search",
           "name": "Search Articles",
-          "description": "Search Wikipedia for articles"
+          "description": "Search Wikipedia for articles",
+          "displayName": { "running": "Searching Wikipedia", "complete": "Searched Wikipedia" }
         },
         {
           "id": "gateway_wikipedia_get_article",
           "name": "Get Article",
-          "description": "Get full content of a Wikipedia article"
+          "description": "Get full content of a Wikipedia article",
+          "displayName": { "running": "Getting article", "complete": "Got article" }
         }
       ]
     },
@@ -438,13 +488,15 @@
       "tools": [
         {
           "id": "gateway_tavily_search",
-          "name": "AI Search",
-          "description": "AI-powered web search using Tavily"
+          "name": "Web Search (Tavily)",
+          "description": "AI-powered web search using Tavily",
+          "displayName": { "running": "Searching the web", "complete": "Searched the web" }
         },
         {
           "id": "gateway_tavily_extract",
           "name": "Content Extract",
-          "description": "Extract clean content from web URLs"
+          "description": "Extract clean content from web URLs",
+          "displayName": { "running": "Extracting content", "complete": "Extracted content" }
         }
       ]
     }
@@ -458,6 +510,7 @@
       "icon": "🔍",
       "enabled": false,
       "isDynamic": false,
+      "displayName": { "running": "Researching", "complete": "Researched" },
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
       "systemPromptGuidance": "Research Agent Best Practices:\n\n**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
     }

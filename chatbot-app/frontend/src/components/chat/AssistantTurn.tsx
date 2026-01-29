@@ -662,8 +662,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
         if (tool.id !== nextTool.id) return true
         if (tool.isComplete !== nextTool.isComplete) return true
         if (tool.toolResult !== nextTool.toolResult) return true
+        if (tool.streamingResponse !== nextTool.streamingResponse) return true
 
         // Compare toolInput to detect parameter updates
+        // PERFORMANCE: Use reference equality check first
+        if (tool.toolInput === nextTool.toolInput) return false
+
+        // Deep comparison only if references differ
         const prevInput = JSON.stringify(tool.toolInput || {})
         const nextInput = JSON.stringify(nextTool.toolInput || {})
         if (prevInput !== nextInput) return true

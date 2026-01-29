@@ -32,13 +32,14 @@ const components: Partial<Components> = {
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-1.5 py-0.5 ml-1 text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-500 dark:text-slate-400 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-600 dark:hover:text-blue-300 no-underline transition-colors align-middle"
+            className="inline-flex items-center gap-0.5 px-1 py-[1px] ml-0.5 bg-zinc-200/60 dark:bg-zinc-700/60 text-zinc-500 dark:text-zinc-400 rounded-md hover:bg-blue-200/70 dark:hover:bg-blue-800/60 hover:text-blue-700 dark:hover:text-blue-300 no-underline transition-colors align-middle"
+            style={{ fontSize: '9px', lineHeight: '1.2' }}
             title={source || url}
           >
-            <svg className="w-2.5 h-2.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            <svg className="flex-shrink-0" style={{ width: '8px', height: '8px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
             </svg>
-            <span className="truncate max-w-[100px]">{domain}</span>
+            <span className="truncate" style={{ maxWidth: '60px' }}>{domain}</span>
           </a>
         )}
       </span>

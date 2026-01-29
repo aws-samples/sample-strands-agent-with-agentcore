@@ -216,15 +216,17 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   // ==================== A2A AGENT UI STATE MANAGEMENT ====================
   // Update UI status based on ongoing A2A agents (research/browser)
   // This is the ONLY place that sets researching/browser_automation status from messages
+  // PERFORMANCE: Only check last 5 messages for ongoing tools (recent activity)
   useEffect(() => {
     if (!sessionId || currentSessionIdRef.current !== sessionId) return
 
-    // Check for ongoing A2A agents (single pass, reverse order for efficiency)
-    // Ongoing agents are typically in recent messages
+    // PERFORMANCE: Only check recent messages (last 5) for ongoing A2A agents
+    // Ongoing agents are always in the most recent messages
     let hasOngoingResearch = false
     let hasOngoingBrowser = false
 
-    for (let i = messages.length - 1; i >= 0; i--) {
+    const startIdx = Math.max(0, messages.length - 5)
+    for (let i = messages.length - 1; i >= startIdx; i--) {
       const toolExecutions = messages[i].toolExecutions
       if (!toolExecutions) continue
 

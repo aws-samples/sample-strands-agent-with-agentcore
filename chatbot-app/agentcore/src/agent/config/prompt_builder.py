@@ -157,7 +157,7 @@ def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[str]:
 
     # Local mode: load from tools-config.json (required)
     if not is_cloud:
-        config_path = Path(__file__).parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
+        config_path = Path(__file__).parent.parent.parent.parent.parent / "frontend" / "src" / "config" / "tools-config.json"
         logger.debug(f"Loading tool guidance from local: {config_path}")
 
         if not config_path.exists():

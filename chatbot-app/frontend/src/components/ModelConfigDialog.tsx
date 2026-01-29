@@ -140,7 +140,9 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
       return availableModels;
     }
 
-    const query = searchQuery.toLowerCase();
+    // MOBILE FIX: Normalize search query (trim + lowercase) to handle mobile keyboard input
+    // Mobile keyboards may add extra spaces or autocorrect issues
+    const query = searchQuery.trim().toLowerCase();
     return availableModels.filter(model => {
       const nameMatch = model.name.toLowerCase().includes(query);
       const providerMatch = model.provider.toLowerCase().includes(query);

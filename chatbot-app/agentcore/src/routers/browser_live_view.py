@@ -90,10 +90,10 @@ async def get_browser_live_view_url(sessionId: str, browserId: str):
                 )
 
             except Exception as e:
-                logger.error(f"[Live View] Failed to create BrowserClient for A2A session: {e}")
+                logger.error(f"[Live View] Failed to create BrowserClient for A2A session: {e}", exc_info=True)
                 raise HTTPException(
                     status_code=500,
-                    detail=f"Failed to access A2A browser session: {str(e)}"
+                    detail="Failed to access browser session. Please check logs for details."
                 )
 
         # Strategy 1 success: Use builtin controller
@@ -142,7 +142,7 @@ async def get_browser_live_view_url(sessionId: str, browserId: str):
             logger.error(f"[Live View] Traceback: {traceback.format_exc()}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to generate live view URL: {str(e)}"
+                detail="Failed to generate live view URL. Please check logs for details."
             )
 
     except HTTPException:
@@ -153,5 +153,5 @@ async def get_browser_live_view_url(sessionId: str, browserId: str):
         logger.error(f"[Live View] Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Internal server error. Please check logs for details."
         )

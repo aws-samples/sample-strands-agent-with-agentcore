@@ -1,8 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { Badge } from '@/components/ui/badge'
-import { ChevronRight, Zap, Brain, CheckCircle, Clock, TrendingUp, Download, Loader2, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronRight, Download, ChevronDown, ChevronUp } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
-import { getToolIconById } from '@/utils/chat'
+import { getToolDisplayName } from '@/utils/chat'
 import { ChartRenderer } from '@/components/ChartRenderer'
 import { ChartToolResult } from '@/types/chart'
 import { MapRenderer } from '@/components/MapRenderer'
@@ -11,79 +10,28 @@ import { JsonDisplay } from '@/components/ui/JsonDisplay'
 import { Markdown } from '@/components/ui/Markdown'
 import { LazyImage } from '@/components/ui/LazyImage'
 import { getApiUrl } from '@/config/environment'
+import { cn } from '@/lib/utils'
 import type { ImageData } from '@/utils/imageExtractor'
 
 interface ToolExecutionContainerProps {
   toolExecutions: ToolExecution[]
-  compact?: boolean // For use within message containers
+  compact?: boolean
   availableTools?: Array<{
     id: string
     name: string
     tool_type?: string
   }>
-  sessionId?: string // Add session ID prop
+  sessionId?: string
 }
 
-// Memoized component for tool input parameters to prevent unnecessary re-renders
-const ToolInputParameters = React.memo<{ toolInput: any; isComplete: boolean; compact: boolean }>(
-  ({ toolInput, isComplete, compact }) => {
-    return (
-      <div className={compact ? "mb-4" : "mb-6"}>
-        <div className="flex items-center gap-2 mb-3">
-          <Zap className="h-4 w-4 text-blue-500 dark:text-blue-400" />
-          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Input Parameters</h4>
-        </div>
-        {toolInput && Object.keys(toolInput).length > 0 ? (
-          // Case 1: Full parameters available
-          <div className="bg-background rounded-lg border border-border overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
-            <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-              <JsonDisplay
-                data={toolInput}
-                maxLines={6}
-                label="Parameters"
-              />
-            </div>
-          </div>
-        ) : isComplete ? (
-          // Case 2: Tool completed with no parameters (legitimate)
-          <div className="bg-background rounded-lg border border-border p-3 break-words" style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
-            <div className="text-sm text-muted-foreground italic">
-              No input parameters (this tool takes no arguments)
-            </div>
-          </div>
-        ) : (
-          // Case 3: Tool running but parameters not yet received (loading)
-          <div className="bg-background rounded-lg border border-border p-3 break-words" style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word' }}>
-            <div className="flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin text-blue-500 dark:text-blue-400" />
-              <div className="text-sm text-muted-foreground italic">
-                Loading parameters...
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    )
-  },
-  (prevProps, nextProps) => {
-    // Custom comparison: only re-render if data actually changed
-    return (
-      JSON.stringify(prevProps.toolInput) === JSON.stringify(nextProps.toolInput) &&
-      prevProps.isComplete === nextProps.isComplete &&
-      prevProps.compact === nextProps.compact
-    )
-  }
-)
-
-// Collapsible Markdown component for tool results with show more/less functionality
+// Collapsible Markdown component for tool results
 const CollapsibleMarkdown = React.memo<{
   children: string;
   maxLines?: number;
   sessionId?: string;
-}>(({ children, maxLines = 10, sessionId }) => {
+}>(({ children, maxLines = 8, sessionId }) => {
   const [isExpanded, setIsExpanded] = useState(false)
 
-  // Memoize expensive operations
   const lines = useMemo(() => children.split('\n'), [children])
   const needsTruncation = useMemo(() => lines.length > maxLines, [lines.length, maxLines])
 
@@ -98,37 +46,31 @@ const CollapsibleMarkdown = React.memo<{
   }, [isExpanded])
 
   return (
-    <div className="bg-background rounded-lg border border-border" style={{ maxWidth: '100%', width: '100%' }}>
-      {/* Markdown Content */}
-      <div className="p-3 overflow-x-auto" style={{ maxWidth: '100%' }}>
-        <div className={needsTruncation && !isExpanded ? 'max-h-96 overflow-hidden' : ''}>
-          <Markdown size="sm" sessionId={sessionId}>
-            {displayContent}
-          </Markdown>
-        </div>
-
-        {/* Expand/Collapse Button */}
-        {needsTruncation && (
-          <div className="mt-3 pt-2 border-t border-border">
-            <button
-              onClick={handleToggleExpand}
-              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
-            >
-              {isExpanded ? (
-                <>
-                  <ChevronUp className="h-3 w-3" />
-                  Show Less ({lines.length} lines)
-                </>
-              ) : (
-                <>
-                  <ChevronDown className="h-3 w-3" />
-                  Show More (+{lines.length - maxLines} lines)
-                </>
-              )}
-            </button>
-          </div>
-        )}
+    <div>
+      <div className={needsTruncation && !isExpanded ? 'max-h-48 overflow-hidden' : ''}>
+        <Markdown size="sm" sessionId={sessionId}>
+          {displayContent}
+        </Markdown>
       </div>
+
+      {needsTruncation && (
+        <button
+          onClick={handleToggleExpand}
+          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors font-medium mt-1"
+        >
+          {isExpanded ? (
+            <>
+              <ChevronUp className="h-3 w-3" />
+              Show less
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              Show more ({lines.length - maxLines} more lines)
+            </>
+          )}
+        </button>
+      )}
     </div>
   )
 }, (prevProps, nextProps) => {
@@ -141,19 +83,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
 
-  // Helper to detect if content contains markdown links or formatting
   const containsMarkdown = (text: string): boolean => {
     if (typeof text !== 'string') return false
-
-    // Try to parse as JSON first - if it's valid JSON, it's not markdown
     try {
       JSON.parse(text)
-      return false // Valid JSON, not markdown
+      return false
     } catch {
       // Not valid JSON, check for markdown patterns
     }
-
-    // Check for markdown links: [text](url) or **bold** or other markdown syntax
     return /\[([^\]]+)\]\(([^)]+)\)|\*\*[^*]+\*\*|_{1,2}[^_]+_{1,2}|^#+\s/.test(text)
   }
 
@@ -169,18 +106,15 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     })
   }
 
-
-  const isToolExpanded = (toolId: string, toolExecution: ToolExecution) => {
-    // Only expand if user manually clicked to expand
+  const isToolExpanded = (toolId: string) => {
     return expandedTools.has(toolId)
   }
-
 
   if (!toolExecutions || toolExecutions.length === 0) {
     return null
   }
 
-  // Memoize parsed chart data to prevent re-renders during streaming
+  // Memoize parsed chart data
   const toolExecutionsDeps = useMemo(() => {
     return toolExecutions.map(t => ({
       id: t.id,
@@ -200,8 +134,6 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
         try {
           let parsed = JSON.parse(deps.toolResult);
 
-          // Unwrap Lambda response if present (Gateway tools)
-          // Format: {"statusCode": 200, "body": "{\"content\": [{\"type\": \"text\", \"text\": \"...\"}]}"}
           if (parsed.statusCode && parsed.body) {
             try {
               const body = typeof parsed.body === 'string' ? JSON.parse(parsed.body) : parsed.body;
@@ -212,7 +144,6 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                 }
               }
             } catch (unwrapError) {
-              // If unwrapping fails, use original parsed
               console.warn('Failed to unwrap Lambda response:', unwrapError);
             }
           }
@@ -230,14 +161,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     return cache;
   }, [toolExecutionsDeps]);
 
-  // Helper function to render visualization tool result
   const renderVisualizationResult = useCallback((toolUseId: string) => {
     const cached = chartDataCache.get(toolUseId);
     if (!cached) return null;
 
     const result = cached.parsed;
 
-    // Check for map data first
     if (result.success && result.map_data) {
       return (
         <div className="my-4">
@@ -249,7 +178,6 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       );
     }
 
-    // Check for chart data
     if (result.success && result.chart_data) {
       return (
         <div className="my-4">
@@ -261,46 +189,40 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       );
     }
 
-    // Error state
     return (
       <div className="my-4 p-3 bg-red-50 border border-red-200 rounded">
         <p className="text-red-600">{result.message}</p>
       </div>
     );
-  }, [chartDataCache, sessionId]);
+  }, [chartDataCache]);
 
-  // Helper function to handle ZIP download
   const handleFilesDownload = async (toolUseId: string, toolName?: string, toolResult?: string) => {
     try {
-      // Handle Python MCP downloads
       if (toolName === 'run_python_code' || toolName === 'finalize_document' && sessionId) {
         try {
-          // Get list of all files in the session directory for this tool execution
           const filesListResponse = await fetch(getApiUrl(`files/list?toolUseId=${toolUseId}&sessionId=${sessionId}`));
-          
+
           if (!filesListResponse.ok) {
             throw new Error(`Failed to get file list: ${filesListResponse.status}`);
           }
-          
+
           const filesData = await filesListResponse.json();
           const filesList = filesData.files || [];
-          
+
           if (filesList.length === 0) {
             throw new Error('No files found to download');
           }
-          
-          // Import JSZip dynamically
+
           const JSZip = (await import('jszip')).default;
           const zip = new JSZip();
-          
+
           let filesAdded = 0;
-          
-          // Download each file from backend session directory using static file serving
+
           for (const fileName of filesList) {
             try {
               const fileUrl = getApiUrl(`output/sessions/${sessionId}/${toolUseId}/${fileName}`);
               const response = await fetch(fileUrl);
-              
+
               if (response.ok) {
                 const blob = await response.blob();
                 zip.file(fileName, blob);
@@ -310,12 +232,11 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
               console.warn(`Failed to download ${fileName}:`, e);
             }
           }
-          
+
           if (filesAdded === 0) {
             throw new Error('No files could be downloaded');
           }
-          
-          // Generate and download ZIP
+
           const zipBlob = await zip.generateAsync({ type: 'blob' });
           const objectUrl = URL.createObjectURL(zipBlob);
           const link = document.createElement('a');
@@ -326,18 +247,16 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           document.body.removeChild(link);
           URL.revokeObjectURL(objectUrl);
           return;
-          
+
         } catch (error) {
           console.error('Python MCP download failed:', error);
-          // Check if it's a 404 error (session expired)
           if (error instanceof Error && error.message.includes('404')) {
             throw new Error('Download session expired. Please run the code again to generate new files.');
           }
           throw error;
         }
       }
-      
-      // For Bedrock Code Interpreter, try to use the zip_download info from tool result first
+
       if (toolName === 'bedrock_code_interpreter' && toolResult) {
         try {
           const result = JSON.parse(toolResult);
@@ -359,15 +278,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
             }
           }
         } catch (e) {
-          console.warn('ZIP download info not available or invalid, falling back to manual path');
+          console.warn('ZIP download info not available or invalid');
         }
-        
-        // Fallback: try hardcoded path
+
         try {
-          const zipUrl = sessionId 
+          const zipUrl = sessionId
             ? `/files/download/${sessionId}/${toolUseId}/code_interpreter_${toolUseId}.zip`
             : `/files/download/output/${toolUseId}/code_interpreter_${toolUseId}.zip`;
-          
+
           const zipResponse = await fetch(zipUrl);
           if (zipResponse.ok) {
             const zipBlob = await zipResponse.blob();
@@ -383,75 +301,66 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
             return;
           }
         } catch (e) {
-          console.warn('Pre-made ZIP not available, falling back to individual files');
+          console.warn('Pre-made ZIP not available');
         }
       }
-      
-      // Fallback: create ZIP from individual files
-      // Import JSZip dynamically
+
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
-      
-      // Get actual file list from backend API
+
       const params = new URLSearchParams({ toolUseId });
       if (sessionId) {
         params.append('sessionId', sessionId);
       }
-      
+
       const listResponse = await fetch(getApiUrl(`files/list?${params.toString()}`));
-      
+
       if (!listResponse.ok) {
         throw new Error(`Failed to get file list: ${listResponse.status}`);
       }
-      
+
       const { files } = await listResponse.json();
-      
+
       if (!files || files.length === 0) {
         throw new Error('No files found to download');
       }
-      
+
       let filesAdded = 0;
-      const addedFiles: string[] = [];
-      
-      // Download each file that actually exists
+
       for (const fileName of files) {
         try {
-          const fileUrl = sessionId 
+          const fileUrl = sessionId
             ? `/output/sessions/${sessionId}/${toolUseId}/${fileName}`
             : `/output/${toolUseId}/${fileName}`;
-          
+
           const response = await fetch(fileUrl);
-          
+
           if (response.ok) {
             if (fileName.endsWith('.py') || fileName.endsWith('.txt') || fileName.endsWith('.csv') || fileName.endsWith('.json')) {
-              // Text files
               const content = await response.text();
               zip.file(fileName, content);
             } else {
-              // Binary files (images, etc.)
               const blob = await response.blob();
               zip.file(fileName, blob);
             }
             filesAdded++;
-            addedFiles.push(fileName);
           }
         } catch (e) {
           console.warn(`Failed to download ${fileName}:`, e);
           continue;
         }
       }
-      
+
       if (filesAdded === 0) {
         throw new Error('No files could be downloaded');
       }
-      
-      // Generate and download ZIP
-      const zipBlob = await zip.generateAsync({ 
+
+      const zipBlob = await zip.generateAsync({
         type: 'blob',
         compression: 'DEFLATE',
         compressionOptions: { level: 6 }
       });
-      
+
       const objectUrl = URL.createObjectURL(zipBlob);
       const link = document.createElement('a');
       link.href = objectUrl;
@@ -460,270 +369,214 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      
-      // Clean up object URL
       URL.revokeObjectURL(objectUrl);
-      
+
     } catch (error) {
       console.error('Failed to create ZIP:', error);
-      // Fallback: download just the Python script
-      try {
-        await handleScriptDownload(toolUseId);
-      } catch (fallbackError) {
-        const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-        alert(`Download failed: ${errorMessage}`);
-      }
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`Download failed: ${errorMessage}`);
     }
   };
-
-  // Fallback function to download script file directly
-  const handleScriptDownload = async (toolUseId: string) => {
-    try {
-      // Use session-specific path if sessionId is available, otherwise fallback to old path
-      const scriptUrl = sessionId 
-        ? `/output/sessions/${sessionId}/${toolUseId}/script_001.py`
-        : `/output/${toolUseId}/script_001.py`;
-      const scriptResponse = await fetch(scriptUrl);
-      
-      if (scriptResponse.ok) {
-        const scriptBlob = await scriptResponse.blob();
-        const objectUrl = URL.createObjectURL(scriptBlob);
-        const link = document.createElement('a');
-        link.href = objectUrl;
-        link.download = `script_001_${toolUseId}.py`;
-        link.style.display = 'none';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        // Clean up object URL
-        URL.revokeObjectURL(objectUrl);
-        
-        alert('Could not create ZIP. Downloaded Python script only.');
-      } else {
-        throw new Error('Script file not found');
-      }
-    } catch (error) {
-      throw new Error('Failed to download files');
-    }
-  };
-
 
   return (
     <>
-      <div className={compact ? "space-y-1" : "mb-4 space-y-1"}>
-      {toolExecutions.map((toolExecution) => {
-        const IconComponent = getToolIconById(toolExecution.toolName)
-        const isExpanded = isToolExpanded(toolExecution.id, toolExecution)
+      <div className="space-y-0.5">
+        {toolExecutions.map((toolExecution) => {
+          const isExpanded = isToolExpanded(toolExecution.id)
+          const displayName = getToolDisplayName(toolExecution.toolName, toolExecution.isComplete)
 
-        // Check if this is a visualization or map tool and render directly
-        if ((toolExecution.toolName === 'create_visualization' || toolExecution.toolName === 'show_on_map') &&
-            toolExecution.toolResult &&
-            toolExecution.isComplete) {
-          const chartResult = renderVisualizationResult(toolExecution.id);
-          if (chartResult) {
-            return (
-              <div key={toolExecution.id} className="my-4">
-                {chartResult}
-              </div>
-            );
+          // Render visualization/map tools directly
+          if ((toolExecution.toolName === 'create_visualization' || toolExecution.toolName === 'show_on_map') &&
+              toolExecution.toolResult &&
+              toolExecution.isComplete) {
+            const chartResult = renderVisualizationResult(toolExecution.id);
+            if (chartResult) {
+              return (
+                <div key={toolExecution.id} className="my-4">
+                  {chartResult}
+                </div>
+              );
+            }
           }
-        }
 
-        return (
-          <React.Fragment key={toolExecution.id}>
-            <div className={`${
-              compact
-                ? "bg-gray-50/60 dark:bg-gray-800/30 rounded-lg border border-gray-200/50 dark:border-gray-700/40"
-                : "bg-gray-50/60 dark:bg-gray-800/30 rounded-lg border border-gray-200/80 dark:border-gray-700/50"
-            } overflow-hidden break-words transition-all duration-200`} style={{ maxWidth: '100%', width: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-              {/* Tool Header - More Compact */}
-              <button
-                onClick={() => toggleToolExpansion(toolExecution.id)}
-                className={`w-full ${compact ? "px-3 py-2" : "px-3.5 py-2"} flex items-center justify-between hover:bg-gray-100/50 dark:hover:bg-gray-800/50 transition-colors rounded-lg`}
-              >
-                <div className="flex items-center gap-2.5">
-                  <div className="flex items-center justify-center w-7 h-7 bg-white dark:bg-gray-900 rounded shadow-sm">
-                    <IconComponent className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="text-left">
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-medium text-sm text-gray-700 dark:text-gray-200">{toolExecution.toolName}</span>
-                      {toolExecution.isComplete ? (
-                        <CheckCircle className="h-3.5 w-3.5 text-green-500 dark:text-green-400" />
-                      ) : (
-                        <Clock className="h-3.5 w-3.5 text-blue-500 dark:text-blue-400 animate-pulse" />
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs px-2 py-0.5 bg-white/70 dark:bg-gray-900/70 text-gray-600 dark:text-gray-300 border-gray-300 dark:border-gray-600">
-                    {toolExecution.isComplete ? 'Completed' : 'Running'}
-                  </Badge>
+          return (
+            <React.Fragment key={toolExecution.id}>
+              <div>
+                {/* Minimal header row */}
+                <button
+                  onClick={() => toggleToolExpansion(toolExecution.id)}
+                  className="flex items-center gap-2 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors w-full text-left group"
+                >
                   <ChevronRight
-                    className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 transition-transform"
-                    style={{ transform: isExpanded ? 'rotate(90deg)' : 'rotate(0deg)' }}
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform duration-200",
+                      isExpanded && "rotate-90"
+                    )}
                   />
-                </div>
-              </button>
+                  <span className="text-sm text-foreground">
+                    {displayName}
+                  </span>
+                  {toolExecution.isComplete ? (
+                    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                      <circle cx="8" cy="8" r="7" fill="url(#checkGradient)" className="drop-shadow-sm" />
+                      <path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                      <defs>
+                        <linearGradient id="checkGradient" x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse">
+                          <stop offset="0%" stopColor="#10b981" />
+                          <stop offset="100%" stopColor="#059669" />
+                        </linearGradient>
+                      </defs>
+                    </svg>
+                  ) : (
+                    <span className="flex gap-0.5 ml-0.5">
+                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" />
+                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+                    </span>
+                  )}
+                  {/* Download button for code tools */}
+                  {(toolExecution.toolName === 'bedrock_code_interpreter' ||
+                    toolExecution.toolName === 'run_python_code' ||
+                    toolExecution.toolName === 'finalize_document') &&
+                    toolExecution.isComplete && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult);
+                      }}
+                      className="ml-auto p-1 hover:bg-muted rounded transition-colors opacity-0 group-hover:opacity-100"
+                      title="Download files"
+                    >
+                      <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                    </button>
+                  )}
+                </button>
 
-              {/* Tool Content */}
-              {isExpanded && (
-                <div className={`border-t ${compact ? "border-gray-200/60 dark:border-gray-700/60 bg-white/50 dark:bg-gray-900/50" : "border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/70"} backdrop-blur-sm`}>
-                  <div className={`${compact ? "p-3" : "p-4"} min-w-0 max-w-full overflow-x-auto break-words`} style={{ wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                    {/* Tool Input - Memoized to prevent re-renders during parameter streaming */}
-                    <ToolInputParameters
-                      toolInput={toolExecution.toolInput}
-                      isComplete={toolExecution.isComplete}
-                      compact={compact}
-                    />
-
-                    {/* Reasoning Process */}
-                    {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
-                      <div className={compact ? "mb-4" : "mb-6"}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <Brain className="h-4 w-4 text-purple-500 dark:text-purple-400" />
-                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">AI Reasoning Process</h4>
-                        </div>
-                        <div className="bg-background rounded-lg border-l-4 border-secondary overflow-x-auto" style={{ maxWidth: '100%', width: '100%' }}>
-                          <div className="p-3 break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
-                            <JsonDisplay
-                              data={toolExecution.reasoningText}
-                              maxLines={5}
-                              label="Reasoning"
-                            />
-                          </div>
-                        </div>
+                {/* Expanded detail section */}
+                {isExpanded && (
+                  <div className="ml-4 mt-1 mb-2 border-l-2 border-muted pl-3 space-y-2 animate-fade-in">
+                    {/* Input parameters */}
+                    {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 && (
+                      <div className="text-sm">
+                        <JsonDisplay
+                          data={toolExecution.toolInput}
+                          maxLines={4}
+                          label="Input"
+                        />
                       </div>
                     )}
 
+                    {/* Reasoning (if present) */}
+                    {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
+                      <div className="text-sm text-muted-foreground italic">
+                        {toolExecution.reasoningText}
+                      </div>
+                    )}
 
-                    {/* Tool Result */}
+                    {/* Tool result */}
                     {toolExecution.toolResult && (
-                      <div className={compact ? "mb-4" : "mb-6"}>
-                        <div className="flex items-center gap-2 mb-3">
-                          <CheckCircle className="h-4 w-4 text-green-500 dark:text-green-400" />
-                          <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-200">Tool Result</h4>
-                          {(toolExecution.toolName === 'bedrock_code_interpreter' || toolExecution.toolName === 'run_python_code' || toolExecution.toolName === 'finalize_document') && toolExecution.isComplete && (
-                            <button
-                              onClick={() => handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult)}
-                              className="ml-auto p-1.5 hover:bg-muted rounded transition-colors flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                              title="Download all files as ZIP"
-                            >
-                              <Download className="h-3 w-3" />
-                              <span>Download Files</span>
-                            </button>
-                          )}
-                        </div>
+                      <div className="text-sm">
                         {containsMarkdown(toolExecution.toolResult) ? (
-                          <CollapsibleMarkdown sessionId={sessionId} maxLines={10}>
+                          <CollapsibleMarkdown sessionId={sessionId} maxLines={8}>
                             {toolExecution.toolResult}
                           </CollapsibleMarkdown>
                         ) : (
                           <JsonDisplay
                             data={toolExecution.toolResult}
-                            maxLines={8}
-                            label="Tool Result"
+                            maxLines={6}
+                            label="Result"
                           />
                         )}
                       </div>
                     )}
                   </div>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
 
-            {/* Tool Images - Rendered outside tool execution field */}
-            {toolExecution.images && toolExecution.images.length > 0 && (
-              <div className="mt-4">
-                <div className="space-y-4">
-                  {toolExecution.images
-                    .filter((image) => {
-                      // Filter to only valid images with actual URLs or data
-                      const isUrlImage = 'type' in image && image.type === 'url';
-                      const hasValidSource = isUrlImage
-                        ? (image.thumbnail || image.url)
-                        : ('data' in image && image.data);
-                      return !!hasValidSource;
-                    })
-                    .slice(0, 3)
-                    .map((image: ImageData, idx: number) => {
-                    // Handle URL-based images (Google search)
-                    const isUrlImage = 'type' in image && image.type === 'url';
+              {/* Tool Images */}
+              {toolExecution.images && toolExecution.images.length > 0 && (
+                <div className="mt-3 mb-2">
+                  <div className="space-y-3">
+                    {toolExecution.images
+                      .filter((image) => {
+                        const isUrlImage = 'type' in image && image.type === 'url';
+                        const hasValidSource = isUrlImage
+                          ? (image.thumbnail || image.url)
+                          : ('data' in image && image.data);
+                        return !!hasValidSource;
+                      })
+                      .slice(0, 3)
+                      .map((image: ImageData, idx: number) => {
+                        const isUrlImage = 'type' in image && image.type === 'url';
 
-                    // Use high-resolution original image URL instead of thumbnail for better quality
-                    let imageSrc: string = '';
-                    if (isUrlImage) {
-                      imageSrc = image.url || image.thumbnail || '';
-                    } else if ('data' in image && 'format' in image) {
-                      const imageData = typeof image.data === 'string'
-                        ? image.data
-                        : btoa(String.fromCharCode(...new Uint8Array(image.data as ArrayBuffer)));
-                      imageSrc = `data:image/${image.format};base64,${imageData}`;
-                    }
+                        let imageSrc: string = '';
+                        if (isUrlImage) {
+                          imageSrc = image.url || image.thumbnail || '';
+                        } else if ('data' in image && 'format' in image) {
+                          const imageData = typeof image.data === 'string'
+                            ? image.data
+                            : btoa(String.fromCharCode(...new Uint8Array(image.data as ArrayBuffer)));
+                          imageSrc = `data:image/${image.format};base64,${imageData}`;
+                        }
 
-                    // Properly type-narrow for title and format based on image type
-                    let imageTitle: string = `Tool generated image ${idx + 1}`;
-                    if (isUrlImage && 'title' in image && typeof image.title === 'string') {
-                      imageTitle = image.title;
-                    }
+                        let imageTitle: string = `Tool generated image ${idx + 1}`;
+                        if (isUrlImage && 'title' in image && typeof image.title === 'string') {
+                          imageTitle = image.title;
+                        }
 
-                    let imageFormat: string = 'IMG';
-                    if (isUrlImage) {
-                      imageFormat = 'WEB';
-                    } else if ('format' in image && typeof image.format === 'string') {
-                      imageFormat = image.format.toUpperCase();
-                    }
+                        let imageFormat: string = 'IMG';
+                        if (isUrlImage) {
+                          imageFormat = 'WEB';
+                        } else if ('format' in image && typeof image.format === 'string') {
+                          imageFormat = image.format.toUpperCase();
+                        }
 
-                    const handleClick = () => {
-                      if (isUrlImage && 'url' in image && image.url) {
-                        // Open original URL in new tab
-                        window.open(image.url, '_blank', 'noopener,noreferrer');
-                      } else {
-                        // Show modal for base64 images
-                        setSelectedImage({ src: imageSrc, alt: imageTitle });
-                      }
-                    };
+                        const handleClick = () => {
+                          if (isUrlImage && 'url' in image && image.url) {
+                            window.open(image.url, '_blank', 'noopener,noreferrer');
+                          } else {
+                            setSelectedImage({ src: imageSrc, alt: imageTitle });
+                          }
+                        };
 
-                    return (
-                      <div key={idx} className="relative w-full">
-                        {/* Image Container - Full width */}
-                        <div className="relative rounded-xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900" onClick={handleClick}>
-                          <LazyImage
-                            src={imageSrc}
-                            alt={imageTitle}
-                            className="w-full h-auto object-contain"
-                          />
+                        return (
+                          <div key={idx} className="relative w-full">
+                            <div
+                              className="relative rounded-xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900"
+                              onClick={handleClick}
+                            >
+                              <LazyImage
+                                src={imageSrc}
+                                alt={imageTitle}
+                                className="w-full h-auto object-contain"
+                              />
 
-                          {/* Badge Overlay - Always visible */}
-                          <div className="absolute top-3 right-3">
-                            <div className="text-xs font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1 rounded inline-block">
-                              {String(imageFormat)}
+                              <div className="absolute top-3 right-3">
+                                <div className="text-xs font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1 rounded inline-block">
+                                  {String(imageFormat)}
+                                </div>
+                              </div>
+
+                              {isUrlImage && 'title' in image && image.title && (
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-4 pt-8">
+                                  <p className="text-sm font-medium text-white line-clamp-2 leading-tight">
+                                    {image.title}
+                                  </p>
+                                </div>
+                              )}
                             </div>
                           </div>
-
-                          {/* Title Overlay - Always visible at bottom */}
-                          {isUrlImage && 'title' in image && image.title && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-4 pt-8">
-                              <p className="text-sm font-medium text-white line-clamp-2 leading-tight">
-                                {image.title}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                        );
+                      })}
+                  </div>
                 </div>
-              </div>
-            )}
-          </React.Fragment>
-        )
-      })}
+              )}
+            </React.Fragment>
+          )
+        })}
       </div>
 
-      {/* Image Modal - 1.5x size */}
+      {/* Image Modal */}
       {selectedImage && (
         <div
           className="fixed inset-0 bg-black/90 flex items-center justify-center z-50"
@@ -751,33 +604,26 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     </>
   )
 }, (prevProps, nextProps) => {
-  // Check if array lengths differ
   if (prevProps.toolExecutions.length !== nextProps.toolExecutions.length) {
     return false
   }
 
-  // Check basic props
   if (prevProps.compact !== nextProps.compact || prevProps.sessionId !== nextProps.sessionId) {
     return false
   }
 
-  // Deep compare each tool execution
   return prevProps.toolExecutions.every((tool, idx) => {
     const nextTool = nextProps.toolExecutions[idx]
     if (!nextTool) return false
 
-    // Compare critical fields that affect rendering
     if (tool.id !== nextTool.id) return false
     if (tool.isComplete !== nextTool.isComplete) return false
     if (tool.toolResult !== nextTool.toolResult) return false
 
-    // Compare toolInput (critical for preventing flickering during parameter loading)
-    // Use JSON.stringify for deep comparison since toolInput is an object
     const prevInput = JSON.stringify(tool.toolInput || {})
     const nextInput = JSON.stringify(nextTool.toolInput || {})
     if (prevInput !== nextInput) return false
 
-    // Compare images array
     if ((tool.images?.length || 0) !== (nextTool.images?.length || 0)) return false
 
     return true

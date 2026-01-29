@@ -11,10 +11,10 @@ import os
 from typing import AsyncGenerator, Dict, Any, List, Optional
 from pathlib import Path
 from strands import Agent
-from strands.models import BedrockModel
+from strands.models import BedrockModel, CacheConfig
 from strands.session.file_session_manager import FileSessionManager
 from streaming.event_processor import StreamEventProcessor
-from agent.hooks import ResearchApprovalHook, ConversationCachingHook
+from agent.hooks import ResearchApprovalHook
 from agent.config.prompt_builder import (
     build_text_system_prompt,
     system_prompt_to_string,
@@ -334,11 +334,13 @@ class ChatbotAgent:
                 "boto_client_config": retry_config
             }
 
-            # Note: We intentionally do NOT use cache_prompt="default" here.
-            # ConversationCachingHook adds a single cache point at the end which covers
-            # the entire conversation including system prompt. Adding a separate system
-            # prompt cache point would cause duplicate write premiums (25% extra cost)
-            # without any read benefit. Testing showed this costs ~21% more than needed.
+            # Add CacheConfig if caching is enabled (strands-agents 1.24.0+)
+            # CacheConfig(strategy="auto") automatically injects cache point at the end of
+            # the last assistant message, covering the entire conversation including system prompt.
+            # This replaces the previous ConversationCachingHook implementation.
+            if self.caching_enabled:
+                model_config["cache_config"] = CacheConfig(strategy="auto")
+                logger.info("Prompt caching enabled via CacheConfig(strategy='auto')")
 
             logger.debug("Bedrock retry config: max_attempts=10, mode=adaptive")
             model = BedrockModel(**model_config)
@@ -354,11 +356,8 @@ class ChatbotAgent:
             hooks.append(research_approval_hook)
             logger.debug("Research approval hook enabled (BeforeToolCallEvent)")
 
-            # Add conversation caching hook if enabled
-            if self.caching_enabled:
-                conversation_hook = ConversationCachingHook(enabled=True)
-                hooks.append(conversation_hook)
-                logger.debug("Conversation caching hook enabled")
+            # Note: Prompt caching now handled by CacheConfig in model initialization (above)
+            # ConversationCachingHook is no longer needed with strands-agents 1.24.0+
 
             # Create agent with session manager, hooks, and system prompt as list of content blocks
             # Using list[SystemContentBlock] enables:

@@ -626,8 +626,8 @@ async def invocations(request: InvocationRequest, http_request: Request):
         )
 
     except Exception as e:
-        logger.error(f"Error in invocations: {e}")
+        logger.error(f"Error in invocations: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Agent processing failed: {str(e)}"
+            detail="Agent processing failed. Please check logs for details."
         )
