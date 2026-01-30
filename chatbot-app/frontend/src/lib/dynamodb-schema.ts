@@ -246,7 +246,7 @@ export const EXAMPLE_USER_RECORD: UserProfileRecord = {
   createdAt: '2025-01-14T10:00:00Z',
   lastAccessAt: '2025-01-14T15:30:00Z',
   preferences: {
-    defaultModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+    defaultModel: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
     defaultTemperature: 0.7,
     systemPrompt: 'You are a helpful AI assistant.',
     enabledTools: ['calculator', 'web_search', 'code_interpreter'],
@@ -267,7 +267,7 @@ export const EXAMPLE_SESSION_RECORD: SessionRecord = {
   tags: ['aws', 'lambda', 'deployment'],
   starred: true,
   metadata: {
-    lastModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+    lastModel: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
     lastTemperature: 0.7,
     totalTokens: 8500,
     agentCoreTraceId: 'trace-abc123',

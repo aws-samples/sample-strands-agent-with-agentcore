@@ -498,7 +498,7 @@ class TestA2AProtocolContract:
             metadata={
                 "session_id": "s1",
                 "user_id": "u1",
-                "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "model_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
                 "temperature": 0.7
             }
         )
@@ -603,7 +603,7 @@ class TestCrossComponentContracts:
             metadata={
                 "session_id": "main-session-123",
                 "user_id": "user-456",
-                "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+                "model_id": "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
             }
         )
 

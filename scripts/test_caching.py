@@ -221,7 +221,7 @@ This system prompt needs sufficient length for cache testing. Additional padding
 Research methodology: Search first, then summarize key findings in 2-3 sentences."""
 
     model = BedrockModel(
-        model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
         temperature=0.0,
         max_tokens=1024
     )
@@ -422,7 +422,7 @@ When given a research plan, execute it by gathering information and generating a
     system_prompt_with_date = f"{system_prompt}\n\nCurrent date: {current_date}"
 
     model = BedrockModel(
-        model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
         temperature=0.0,
         max_tokens=8192
     )
@@ -661,7 +661,7 @@ When asked a question, respond with EXACTLY this format:
 Keep your response under 50 words."""
 
         model = BedrockModel(
-            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             temperature=0.0,
             max_tokens=100
         )
@@ -867,7 +867,7 @@ Keep response under 50 words."""
         async def run_two_calls(cache_enabled: bool) -> Dict:
             """Run 2 calls and return 2nd call metrics."""
             model = BedrockModel(
-                model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
                 temperature=0.0,
                 max_tokens=100
             )

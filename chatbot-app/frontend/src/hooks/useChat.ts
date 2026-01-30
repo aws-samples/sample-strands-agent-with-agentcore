@@ -62,7 +62,7 @@ interface UseChatReturn {
 
 // Default preferences when session has no saved preferences
 const DEFAULT_PREFERENCES: SessionPreferences = {
-  lastModel: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+  lastModel: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
   lastTemperature: 0.7,
   enabledTools: [],
   selectedPromptId: 'general',
@@ -480,7 +480,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const respondToInterrupt = useCallback(async (interruptId: string, response: string) => {
     if (!sessionState.interrupt) return
 
-    setSessionState(prev => ({ ...prev, interrupt: null }))
+    const isApproved = response.toLowerCase() === 'y' || response.toLowerCase() === 'yes' || 
+                       response.toLowerCase() === 'approve' || response.toLowerCase() === 'approved'
 
     const isResearchInterrupt = sessionState.interrupt.interrupts.some(
       int => int.reason?.tool_name === 'research_agent'
@@ -488,6 +489,57 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     const isBrowserUseInterrupt = sessionState.interrupt.interrupts.some(
       int => int.reason?.tool_name === 'browser_use_agent'
     )
+
+    // Mark interrupted tool executions as complete (cancelled if rejected, or ready for retry if approved)
+    // This prevents the UI from showing stale "loading" state
+    const interruptedToolName = isResearchInterrupt ? 'research_agent' : isBrowserUseInterrupt ? 'browser_use_agent' : null
+    
+    if (interruptedToolName) {
+      setMessages(prev => prev.map(msg => {
+        if (msg.toolExecutions) {
+          const updatedToolExecutions = msg.toolExecutions.map(te => {
+            if (te.toolName === interruptedToolName && !te.isComplete) {
+              if (isApproved) {
+                // For approved interrupts, mark as complete with a "retrying" message
+                // The new tool_use event will create a fresh entry
+                return {
+                  ...te,
+                  isComplete: true,
+                  toolResult: 'Approved - retrying...',
+                  isCancelled: false
+                }
+              } else {
+                // For rejected interrupts, mark as cancelled
+                return {
+                  ...te,
+                  isComplete: true,
+                  toolResult: `User declined to proceed with ${isResearchInterrupt ? 'research' : 'browser automation'}`,
+                  isCancelled: true
+                }
+              }
+            }
+            return te
+          })
+          return { ...msg, toolExecutions: updatedToolExecutions }
+        }
+        return msg
+      }))
+    }
+
+    // Clear interrupt and reset progress states for fresh start
+    setSessionState(prev => ({ 
+      ...prev, 
+      interrupt: null,
+      toolExecutions: [],  // Clear current tool executions for fresh start
+      researchProgress: undefined,  // Reset research progress for new execution
+      browserProgress: undefined    // Reset browser progress for new execution
+    }))
+
+    // If rejected, just update UI and return (no need to send message)
+    if (!isApproved) {
+      setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
+      return
+    }
 
     let agentStatus: 'thinking' | 'researching' | 'browser_automation' = 'thinking'
     if (isResearchInterrupt) agentStatus = 'researching'
@@ -513,7 +565,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       console.error('[Interrupt] Failed to respond to interrupt:', error)
       setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
     }
-  }, [sessionState.interrupt, apiSendMessage])
+  }, [sessionState.interrupt, apiSendMessage, setMessages, setSessionState, setUIState])
 
   const sendMessage = useCallback(async (e: React.FormEvent, files?: File[]) => {
     e.preventDefault()

@@ -38,7 +38,7 @@ A2A_PREFIX = "agentcore_"
 # =============================================================================
 
 # Default Bedrock model ID
-DEFAULT_MODEL_ID = "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+DEFAULT_MODEL_ID = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 # Default temperature for model inference
 DEFAULT_TEMPERATURE = 0.7

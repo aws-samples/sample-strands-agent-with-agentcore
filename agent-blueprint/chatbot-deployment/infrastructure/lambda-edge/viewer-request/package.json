@@ -1,0 +1,29 @@
+{
+  "name": "viewer-request-lambda-edge",
+  "version": "1.0.0",
+  "description": "Lambda@Edge function for JWT validation at CloudFront viewer request",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "build": "npm install --production"
+  },
+  "dependencies": {
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "lambda",
+    "edge",
+    "jwt",
+    "authentication",
+    "cloudfront"
+  ],
+  "author": "DevOps Team",
+  "license": "MIT"
+}

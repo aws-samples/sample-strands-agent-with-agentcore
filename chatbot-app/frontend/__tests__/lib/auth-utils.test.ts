@@ -2,13 +2,14 @@
  * Tests for auth-utils.ts
  *
  * Tests cover:
+ * - SSO header extraction from Lambda@Edge
  * - JWT token extraction from Authorization header
  * - User ID extraction from Cognito tokens
  * - Session ID generation and validation
  * - Error handling for invalid tokens
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { extractUserFromRequest, getSessionId } from '@/lib/auth-utils'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { extractUserFromRequest, getSessionId, isSSOEnabled } from '@/lib/auth-utils'
 
 // Helper to create a mock JWT token
 function createMockJWT(payload: Record<string, any>): string {
@@ -27,9 +28,124 @@ function createMockRequest(headers: Record<string, string> = {}): Request {
   } as unknown as Request
 }
 
+describe('isSSOEnabled', () => {
+  const originalEnv = process.env
+
+  beforeEach(() => {
+    vi.resetModules()
+    process.env = { ...originalEnv }
+  })
+
+  afterEach(() => {
+    process.env = originalEnv
+  })
+
+  it('should return true when NEXT_PUBLIC_SSO_ENABLED is true', () => {
+    process.env.NEXT_PUBLIC_SSO_ENABLED = 'true'
+    expect(isSSOEnabled()).toBe(true)
+  })
+
+  it('should return false when NEXT_PUBLIC_SSO_ENABLED is false', () => {
+    process.env.NEXT_PUBLIC_SSO_ENABLED = 'false'
+    expect(isSSOEnabled()).toBe(false)
+  })
+
+  it('should return false when NEXT_PUBLIC_SSO_ENABLED is not set', () => {
+    delete process.env.NEXT_PUBLIC_SSO_ENABLED
+    expect(isSSOEnabled()).toBe(false)
+  })
+})
+
 describe('extractUserFromRequest', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  describe('SSO Header Extraction (Lambda@Edge)', () => {
+    it('should extract user from SSO headers when present', () => {
+      const request = createMockRequest({
+        'x-user-email': 'sso-user@example.com',
+        'x-user-sub': 'sso-user-uuid-12345',
+        'x-user-name': 'SSO User',
+        'x-user-groups': 'admin,developers'
+      })
+
+      const result = extractUserFromRequest(request)
+
+      expect(result.userId).toBe('sso-user-uuid-12345')
+      expect(result.email).toBe('sso-user@example.com')
+      expect(result.name).toBe('SSO User')
+      expect(result.groups).toEqual(['admin', 'developers'])
+    })
+
+    it('should use email as name when x-user-name is missing', () => {
+      const request = createMockRequest({
+        'x-user-email': 'user@example.com',
+        'x-user-sub': 'user-uuid'
+      })
+
+      const result = extractUserFromRequest(request)
+
+      expect(result.name).toBe('user@example.com')
+    })
+
+    it('should handle empty groups header', () => {
+      const request = createMockRequest({
+        'x-user-email': 'user@example.com',
+        'x-user-sub': 'user-uuid',
+        'x-user-groups': ''
+      })
+
+      const result = extractUserFromRequest(request)
+
+      expect(result.groups).toBeUndefined()
+    })
+
+    it('should trim whitespace from groups', () => {
+      const request = createMockRequest({
+        'x-user-email': 'user@example.com',
+        'x-user-sub': 'user-uuid',
+        'x-user-groups': ' admin , developers , '
+      })
+
+      const result = extractUserFromRequest(request)
+
+      expect(result.groups).toEqual(['admin', 'developers'])
+    })
+
+    it('should prioritize SSO headers over JWT token', () => {
+      const token = createMockJWT({
+        sub: 'jwt-user-id',
+        email: 'jwt@example.com'
+      })
+      const request = createMockRequest({
+        'x-user-email': 'sso@example.com',
+        'x-user-sub': 'sso-user-id',
+        'authorization': `Bearer ${token}`
+      })
+
+      const result = extractUserFromRequest(request)
+
+      expect(result.userId).toBe('sso-user-id')
+      expect(result.email).toBe('sso@example.com')
+    })
+
+    it('should fall back to JWT when SSO headers are incomplete', () => {
+      const token = createMockJWT({
+        sub: 'jwt-user-id',
+        email: 'jwt@example.com'
+      })
+      const request = createMockRequest({
+        'x-user-email': 'sso@example.com',
+        // Missing x-user-sub
+        'authorization': `Bearer ${token}`
+      })
+
+      const result = extractUserFromRequest(request)
+
+      expect(result.userId).toBe('jwt-user-id')
+      expect(result.email).toBe('jwt@example.com')
+    })
   })
 
   describe('Authorization Header Handling', () => {
@@ -119,6 +235,19 @@ describe('extractUserFromRequest', () => {
       expect(result.userId).toBe('sub-only-user')
       expect(result.email).toBeUndefined()
       expect(result.username).toBeUndefined()
+    })
+
+    it('should extract name from JWT token', () => {
+      const token = createMockJWT({
+        sub: 'user-123',
+        name: 'John Doe',
+        email: 'john@example.com'
+      })
+      const request = createMockRequest({ authorization: `Bearer ${token}` })
+
+      const result = extractUserFromRequest(request)
+
+      expect(result.name).toBe('John Doe')
     })
   })
 

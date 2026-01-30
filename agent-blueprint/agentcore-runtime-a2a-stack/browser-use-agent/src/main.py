@@ -107,7 +107,7 @@ def create_screenshot_tools():
 # Configuration from environment
 PORT = int(os.environ.get('PORT', 9000))
 AWS_REGION = os.environ.get('AWS_REGION', 'us-west-2')
-DEFAULT_MODEL_ID = os.environ.get('MODEL_ID', 'us.anthropic.claude-haiku-4-5-20251001-v1:0')
+DEFAULT_MODEL_ID = os.environ.get('MODEL_ID', 'eu.anthropic.claude-haiku-4-5-20251001-v1:0')
 PROJECT_NAME = os.environ.get('PROJECT_NAME', 'strands-agent-chatbot')
 ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 
@@ -197,7 +197,7 @@ def get_or_create_llm(model_id: str) -> PatchedChatAWSBedrock:
     Get cached LLM client or create new one with specified model_id.
 
     Args:
-        model_id: AWS Bedrock model ID (e.g., 'us.anthropic.claude-sonnet-4-20250514-v1:0')
+        model_id: AWS Bedrock model ID (e.g., 'eu.anthropic.claude-sonnet-4-20250514-v1:0')
 
     Returns:
         PatchedChatAWSBedrock instance with fixed tool schema conversion

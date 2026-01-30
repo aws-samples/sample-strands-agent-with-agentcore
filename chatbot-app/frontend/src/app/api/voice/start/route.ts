@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
     const awsRegion = process.env.AWS_REGION || 'us-west-2'
 
     if (IS_LOCAL) {
-      const agentcoreUrl = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080'
+      const agentcoreUrl = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://127.0.0.1:8080'
       wsUrl = agentcoreUrl.replace('http://', 'ws://').replace('https://', 'wss://') + '/voice/stream'
       const params = new URLSearchParams()
       params.set('session_id', sessionId)

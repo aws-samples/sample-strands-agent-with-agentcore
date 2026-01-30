@@ -7,41 +7,41 @@ export const runtime = 'nodejs'
 
 // Available Bedrock models
 const AVAILABLE_MODELS = [
-  // Claude (Anthropic)
+  // Claude (Anthropic) - EU region requires eu. prefix
   {
-    id: 'us.anthropic.claude-opus-4-5-20251101-v1:0',
+    id: 'eu.anthropic.claude-opus-4-5-20251101-v1:0',
     name: 'Claude Opus 4.5',
     provider: 'Anthropic',
     description: 'Most intelligent model, best for complex tasks'
   },
   {
-    id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
+    id: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
     name: 'Claude Sonnet 4.5',
     provider: 'Anthropic',
     description: 'Most capable model, balanced performance'
   },
   {
-    id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+    id: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
     name: 'Claude Haiku 4.5',
     provider: 'Anthropic',
     description: 'Fast and efficient, cost-effective'
   },
 
-  // Nova (Amazon)
+  // Nova (Amazon) - EU region requires eu. prefix
   {
-    id: 'us.amazon.nova-2-omni-v1:0',
+    id: 'eu.amazon.nova-2-omni-v1:0',
     name: 'Nova 2 Omni',
     provider: 'Amazon',
     description: 'Preview multimodal model with advanced capabilities'
   },
   {
-    id: 'us.amazon.nova-2-pro-preview-20251202-v1:0',
+    id: 'eu.amazon.nova-2-pro-preview-20251202-v1:0',
     name: 'Nova 2 Pro',
     provider: 'Amazon',
     description: 'High-performance multimodal model'
   },
   {
-    id: 'us.amazon.nova-2-lite-v1:0',
+    id: 'eu.amazon.nova-2-lite-v1:0',
     name: 'Nova 2 Lite',
     provider: 'Amazon',
     description: 'Lightweight and efficient model'

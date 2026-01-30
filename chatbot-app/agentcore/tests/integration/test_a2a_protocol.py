@@ -80,13 +80,13 @@ class TestA2AMessageFormat:
         """Test A2A message carries metadata correctly."""
         parts = [MockA2APart("Test message", "text")]
         metadata = {
-            "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "model_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
             "session_id": "test-session-123",
             "user_id": "user-456"
         }
         message = MockA2AMessage(parts, metadata)
 
-        assert message.metadata["model_id"] == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        assert message.metadata["model_id"] == "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
         assert message.metadata["session_id"] == "test-session-123"
         assert message.metadata["user_id"] == "user-456"
 
@@ -95,14 +95,14 @@ class TestA2AMessageFormat:
         parts = [MockA2APart("Test", "text")]
         message = MockA2AMessage(parts)
         context_metadata = {
-            "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "model_id": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             "session_id": "session-abc",
             "user_id": "user-xyz"
         }
         context = MockRequestContext(message, context_metadata)
 
         # Executor should be able to access metadata from context
-        assert context.metadata["model_id"] == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        assert context.metadata["model_id"] == "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     def test_a2a_message_metadata_fallback(self):
         """Test metadata fallback from message when context metadata is empty."""
@@ -348,7 +348,7 @@ class TestA2AMetadataIntegration:
         # Frontend sends model_id in request
         frontend_request = {
             "message": "Research quantum computing",
-            "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+            "model_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
             "enabled_tools": ["research-agent"]
         }
 
@@ -426,7 +426,7 @@ class TestA2AInvocationState:
                 "session_id": "session-abc",
                 "user_id": "user-123",
                 "metadata": {
-                    "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+                    "model_id": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
                     "temperature": 0.7
                 }
             }

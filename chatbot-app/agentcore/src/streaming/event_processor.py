@@ -240,8 +240,16 @@ class StreamEventProcessor:
         
         return cleaned_text
 
-    async def process_stream(self, agent, message: str, file_paths: list = None, session_id: str = None, invocation_state: dict = None) -> AsyncGenerator[str, None]:
-        """Process streaming events from agent with proper error handling and event separation"""
+    async def process_stream(self, agent, message, file_paths: list = None, session_id: str = None, invocation_state: dict = None) -> AsyncGenerator[str, None]:
+        """Process streaming events from agent with proper error handling and event separation
+        
+        Args:
+            agent: The Strands agent instance
+            message: User message - can be str, list[ContentBlock], or list with interruptResponse
+            file_paths: Optional list of file paths to include
+            session_id: Session identifier
+            invocation_state: Optional state dict passed to tools
+        """
 
         # Store current session ID and invocation_state for tools to use
         self.current_session_id = session_id
@@ -293,7 +301,16 @@ class StreamEventProcessor:
         stream_iterator = None
         stream_completed_normally = False  # Track if stream completed without interruption
         try:
-            multimodal_message = self._create_multimodal_message(message, file_paths)
+            # Handle different message types:
+            # 1. String message - may need multimodal conversion with file_paths
+            # 2. List message - already formatted (interrupt response or multimodal content)
+            if isinstance(message, list):
+                # Already a list (interrupt response or multimodal content) - use as-is
+                multimodal_message = message
+                logger.debug(f"[process_stream] Using list message directly ({len(message)} items)")
+            else:
+                # String message - convert to multimodal if file_paths provided
+                multimodal_message = self._create_multimodal_message(message, file_paths)
 
             # Initialize streaming
             yield self.formatter.create_init_event()

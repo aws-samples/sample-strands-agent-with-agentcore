@@ -6,7 +6,9 @@
 
 // Check if running in local development mode
 const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
-const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080'
+// Force IPv4 (127.0.0.1) to avoid IPv6 connection issues on macOS
+// Node.js fetch prefers IPv6 (::1) when using 'localhost', but Python/Uvicorn binds to IPv4 by default
+const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://127.0.0.1:8080'
 
 // AWS configuration (for cloud deployment)
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2'

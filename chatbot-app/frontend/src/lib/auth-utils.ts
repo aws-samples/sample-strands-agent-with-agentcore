@@ -1,17 +1,67 @@
 /**
  * Authentication utilities for extracting user info from Cognito JWT tokens
+ * and SSO headers injected by Lambda@Edge
  */
 
 interface CognitoUser {
   userId: string
   email?: string
   username?: string
+  name?: string
+  groups?: string[]
+}
+
+/**
+ * SSO Header names (injected by Lambda@Edge after JWT validation)
+ */
+const SSO_HEADERS = {
+  USER_EMAIL: 'x-user-email',
+  USER_SUB: 'x-user-sub',
+  USER_NAME: 'x-user-name',
+  USER_GROUPS: 'x-user-groups',
+} as const
+
+/**
+ * Check if SSO authentication is enabled
+ */
+export function isSSOEnabled(): boolean {
+  return process.env.NEXT_PUBLIC_SSO_ENABLED === 'true'
+}
+
+/**
+ * Extract user information from SSO headers (injected by Lambda@Edge)
+ * Returns null if SSO headers are not present
+ */
+function extractUserFromSSOHeaders(request: Request): CognitoUser | null {
+  const email = request.headers.get(SSO_HEADERS.USER_EMAIL)
+  const sub = request.headers.get(SSO_HEADERS.USER_SUB)
+  const name = request.headers.get(SSO_HEADERS.USER_NAME)
+  const groupsStr = request.headers.get(SSO_HEADERS.USER_GROUPS)
+
+  // If required SSO headers are missing, return null
+  if (!email || !sub) {
+    return null
+  }
+
+  const groups = groupsStr
+    ? groupsStr.split(',').map(g => g.trim()).filter(Boolean)
+    : undefined
+
+  console.log(`[Auth] SSO authenticated user: ${sub} (${email})`)
+
+  return {
+    userId: sub,
+    email,
+    username: email,
+    name: name || email,
+    groups,
+  }
 }
 
 /**
  * Extract user information from Cognito JWT token in Authorization header
  */
-export function extractUserFromRequest(request: Request): CognitoUser {
+function extractUserFromJWT(request: Request): CognitoUser {
   try {
     // Get Authorization header
     const authHeader = request.headers.get('authorization')
@@ -36,18 +86,39 @@ export function extractUserFromRequest(request: Request): CognitoUser {
     const userId = payload.sub || payload['cognito:username'] || 'anonymous'
     const email = payload.email
     const username = payload['cognito:username']
+    const name = payload.name || payload['cognito:username']
 
-    console.log(`[Auth] Authenticated user: ${userId} (${email || username || 'no email'})`)
+    console.log(`[Auth] JWT authenticated user: ${userId} (${email || username || 'no email'})`)
 
     return {
       userId,
       email,
-      username
+      username,
+      name,
     }
   } catch (error) {
     console.error('[Auth] Error extracting user from token:', error)
     return { userId: 'anonymous' }
   }
+}
+
+/**
+ * Extract user information from request
+ * 
+ * Priority:
+ * 1. SSO headers (from Lambda@Edge) - when SSO is enabled
+ * 2. Cognito JWT token in Authorization header
+ * 3. Anonymous user fallback
+ */
+export function extractUserFromRequest(request: Request): CognitoUser {
+  // First, try SSO headers (injected by Lambda@Edge)
+  const ssoUser = extractUserFromSSOHeaders(request)
+  if (ssoUser) {
+    return ssoUser
+  }
+
+  // Fall back to JWT token extraction
+  return extractUserFromJWT(request)
 }
 
 /**

@@ -118,7 +118,7 @@ class ChatbotAgent:
         self.gateway_client = None  # Store Gateway MCP client for lifecycle management
 
         # Store model configuration
-        self.model_id = model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+        self.model_id = model_id or "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
         self.temperature = temperature if temperature is not None else 0.7
 
         # Build system prompt using prompt_builder module
@@ -328,10 +328,12 @@ class ChatbotAgent:
             )
 
             # Create model configuration
+            aws_region = os.environ.get('AWS_REGION', 'eu-west-1')
             model_config = {
                 "model_id": config["model_id"],
                 "temperature": config.get("temperature", 0.7),
-                "boto_client_config": retry_config
+                "boto_client_config": retry_config,
+                "region_name": aws_region
             }
 
             # Note: We intentionally do NOT use cache_prompt="default" here.
@@ -403,12 +405,43 @@ class ChatbotAgent:
             logger.error(f"Error creating agent: {e}")
             raise
 
-    async def stream_async(self, message: str, session_id: str = None, files: Optional[List] = None) -> AsyncGenerator[str, None]:
+    def _store_approval_state(self, interrupt_id: str, is_approved: bool) -> None:
+        """Store approval state for interrupt in environment variable.
+        
+        This allows the ResearchApprovalHook to check if an approval was already given
+        and auto-approve on retry instead of asking again.
+        
+        Args:
+            interrupt_id: The interrupt ID that was approved/rejected
+            is_approved: Whether the user approved or rejected
+        """
+        import os
+        import json
+        
+        # Store in environment variable (simple approach for single-container)
+        # Format: JSON dict of interrupt_id -> approval status
+        approval_key = f"APPROVAL_STATE_{self.session_id}"
+        
+        try:
+            existing = os.environ.get(approval_key, "{}")
+            approval_state = json.loads(existing)
+        except json.JSONDecodeError:
+            approval_state = {}
+        
+        approval_state[interrupt_id] = is_approved
+        # Also store a general "last_approval" flag that the hook can check
+        approval_state["_last_approval"] = is_approved
+        approval_state["_last_approval_time"] = __import__("time").time()
+        
+        os.environ[approval_key] = json.dumps(approval_state)
+        logger.debug(f"Stored approval state: {interrupt_id} = {is_approved}")
+
+    async def stream_async(self, message, session_id: str = None, files: Optional[List] = None) -> AsyncGenerator[str, None]:
         """
         Stream responses using StreamEventProcessor
 
         Args:
-            message: User message text
+            message: User message text (str) or interrupt response (list with interruptResponse)
             session_id: Session identifier
             files: Optional list of FileContent objects (with base64 bytes)
         """
@@ -425,12 +458,51 @@ class ChatbotAgent:
             if hasattr(self.session_manager, 'reset_context_token_tracking'):
                 self.session_manager.reset_context_token_tracking()
 
-            logger.debug(f"Streaming message: {message[:50]}...")
-            if files:
-                logger.debug(f"Processing {len(files)} file(s)")
+            # Check if this is an interrupt response (list with interruptResponse)
+            is_interrupt_response = (
+                isinstance(message, list) and
+                len(message) > 0 and
+                isinstance(message[0], dict) and
+                "interruptResponse" in message[0]
+            )
 
-            # Convert files to Strands ContentBlock format and prepare uploaded_files for tools
-            prompt, uploaded_files = self._build_prompt(message, files)
+            if is_interrupt_response:
+                # Interrupt response - convert to a text message that the agent can understand
+                # This bypasses the SDK's interrupt mechanism which requires the same agent instance
+                logger.info(f"Processing interrupt response: {message}")
+                
+                # Extract the response from the interrupt
+                interrupt_response = message[0]["interruptResponse"]
+                user_response = interrupt_response.get("response", "").lower()
+                interrupt_id = interrupt_response.get("interruptId", "")
+                
+                # Determine if approved or rejected
+                is_approved = user_response in ["y", "yes", "approve", "approved"]
+                
+                if is_approved:
+                    # Convert to a text message that tells the agent to proceed
+                    # The agent will see this and re-attempt the tool call
+                    # The hook will need to be modified to auto-approve on retry
+                    prompt = "User approved. Please proceed with the previously requested action."
+                    logger.info(f"Interrupt approved - converting to text prompt for agent retry")
+                else:
+                    # User rejected - tell the agent to stop
+                    prompt = f"User declined the request. Please acknowledge and do not proceed with the action."
+                    logger.info(f"Interrupt rejected - informing agent")
+                
+                # Store approval state in session for the hook to check
+                # This allows the hook to auto-approve on the retry
+                self._store_approval_state(interrupt_id, is_approved)
+                
+                uploaded_files = []
+            else:
+                # Normal message - build prompt with files
+                logger.debug(f"Streaming message: {str(message)[:50]}...")
+                if files:
+                    logger.debug(f"Processing {len(files)} file(s)")
+
+                # Convert files to Strands ContentBlock format and prepare uploaded_files for tools
+                prompt, uploaded_files = self._build_prompt(message, files)
 
             # Log prompt type for debugging (without printing bytes)
             if isinstance(prompt, list):

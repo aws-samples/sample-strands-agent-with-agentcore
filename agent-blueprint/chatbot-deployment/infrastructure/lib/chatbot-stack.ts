@@ -24,6 +24,31 @@ export interface ChatbotStackProps extends cdk.StackProps {
   enableCognito?: boolean;
   projectName?: string;
   environment?: string;
+  /**
+   * Enable SSO authentication with Lambda@Edge
+   * When enabled, Lambda@Edge functions will validate JWT tokens at CloudFront edge
+   */
+  enableSso?: boolean;
+  /**
+   * Login URL for SSO redirects when authentication fails
+   * Required when enableSso is true
+   */
+  ssoLoginUrl?: string;
+  /**
+   * Cookie name containing the JWT token for SSO
+   * @default 'id_token'
+   */
+  ssoTokenCookieName?: string;
+  /**
+   * Viewer Request Lambda@Edge function version (from us-east-1 stack)
+   * Required when enableSso is true
+   */
+  viewerRequestFunctionVersion?: lambda.IVersion;
+  /**
+   * Origin Request Lambda@Edge function version (from us-east-1 stack)
+   * Required when enableSso is true
+   */
+  originRequestFunctionVersion?: lambda.IVersion;
 }
 
 // Region-specific configuration
@@ -161,17 +186,25 @@ export class ChatbotStack extends cdk.Stack {
     // ============================================================
     // Step 2: S3 Bucket for CodeBuild Source
     // ============================================================
-    const sourceBucket = new s3.Bucket(this, 'FrontendSourceBucket', {
-      bucketName: `${projectName}-frontend-sources-${this.account}-${this.region}`,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      autoDeleteObjects: true,
-      lifecycleRules: [
-        {
-          expiration: cdk.Duration.days(7),
-          id: 'DeleteOldSources',
-        },
-      ],
-    });
+    // Shorten bucket name to fit within 63 character limit
+    // Format: strands-fe-src-{account}-{region}-{suffix}
+    const bucketSuffix = process.env.BUCKET_SUFFIX || 'v3';
+    const bucketName = `stormy-strands-fe-src-${this.account}-${this.region}-${bucketSuffix}`;
+    const useExistingBucket = process.env.USE_EXISTING_BUCKET === 'true';
+    
+    const sourceBucket = useExistingBucket
+      ? s3.Bucket.fromBucketName(this, 'FrontendSourceBucket', bucketName)
+      : new s3.Bucket(this, 'FrontendSourceBucket', {
+          bucketName: bucketName,
+          removalPolicy: cdk.RemovalPolicy.RETAIN, // Changed to RETAIN to avoid deletion issues
+          autoDeleteObjects: false, // Disabled due to service control policy
+          lifecycleRules: [
+            {
+              expiration: cdk.Duration.days(7),
+              id: 'DeleteOldSources',
+            },
+          ],
+        });
 
     // ============================================================
     // Step 3: CodeBuild Project for Frontend+BFF
@@ -287,13 +320,13 @@ export class ChatbotStack extends cdk.Stack {
               'echo Getting Google Maps API key from Secrets Manager...',
               `GOOGLE_MAPS_SECRET=$(aws secretsmanager get-secret-value --secret-id "${projectName}/mcp/google-maps-credentials" --region ${this.region} --query SecretString --output text || echo "{}")`,
               `GOOGLE_MAPS_API_KEY=$(echo $GOOGLE_MAPS_SECRET | jq -r '.api_key // empty')`,
-              'echo "Google Maps API Key: ${GOOGLE_MAPS_API_KEY:0:10}..." # Show first 10 chars only for security',
+              'echo "Google Maps API Key found (first 10 chars hidden for security)"',
             ],
           },
           build: {
             commands: [
-              'echo Building Docker image for AMD64 with build args...',
-              'docker build --platform linux/amd64 ' +
+              'echo "Building Docker image for AMD64 with build args..."',
+              'docker build --no-cache --platform linux/amd64 ' +
               `--build-arg NEXT_PUBLIC_AWS_REGION=${this.region} ` +
               '--build-arg NEXT_PUBLIC_COGNITO_USER_POOL_ID=$COGNITO_USER_POOL_ID ' +
               '--build-arg NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID=$COGNITO_CLIENT_ID ' +
@@ -895,6 +928,39 @@ async function sendResponse(event, status, data, reason) {
       cookieBehavior: cloudfront.OriginRequestCookieBehavior.all(),
     });
 
+    // ============================================================
+    // Lambda@Edge for SSO Authentication (optional)
+    // Lambda@Edge functions are deployed to us-east-1 in a separate stack
+    // and passed in as props for cross-region reference
+    // ============================================================
+    let lambdaEdgeAssociations: cloudfront.EdgeLambda[] = [];
+
+    if (props?.enableSso && props?.enableCognito && props?.userPoolId && props?.userPoolClientId) {
+      // Validate required SSO configuration
+      if (!props.ssoLoginUrl) {
+        throw new Error('ssoLoginUrl is required when enableSso is true');
+      }
+      
+      if (!props.viewerRequestFunctionVersion || !props.originRequestFunctionVersion) {
+        throw new Error('viewerRequestFunctionVersion and originRequestFunctionVersion are required when enableSso is true. Deploy LambdaEdgeStack to us-east-1 first.');
+      }
+
+      // Configure Lambda@Edge associations for CloudFront
+      // Using function versions from the us-east-1 Lambda@Edge stack
+      lambdaEdgeAssociations = [
+        {
+          functionVersion: props.viewerRequestFunctionVersion,
+          eventType: cloudfront.LambdaEdgeEventType.VIEWER_REQUEST,
+        },
+        {
+          functionVersion: props.originRequestFunctionVersion,
+          eventType: cloudfront.LambdaEdgeEventType.ORIGIN_REQUEST,
+        },
+      ];
+
+      console.log('[ChatbotStack] SSO authentication enabled with Lambda@Edge from us-east-1');
+    }
+
     // CloudFront Distribution (for HTTPS and global CDN)
     const distribution = new cloudfront.Distribution(this, 'ChatbotCloudFront', {
       defaultBehavior: {
@@ -910,9 +976,24 @@ async function sendResponse(event, status, data, reason) {
         cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED, // Disable caching for dynamic content
         originRequestPolicy: customOriginRequestPolicy, // Use custom policy to forward session headers
         compress: true,
+        // Add Lambda@Edge associations for SSO authentication (if enabled)
+        ...(lambdaEdgeAssociations.length > 0 && { edgeLambdas: lambdaEdgeAssociations }),
       },
+      // Configure custom error responses for authentication errors
+      // Note: CloudFront only supports specific error codes (400, 403, 404, 405, 414, 416, 500, 501, 502, 503, 504)
+      // 401 is NOT supported, so we only configure 403 error response
+      errorResponses: props?.enableSso ? [
+        {
+          httpStatus: 403,
+          responseHttpStatus: 403,
+          responsePagePath: '/error/access-denied',
+          ttl: cdk.Duration.seconds(0),
+        },
+      ] : undefined,
       priceClass: cloudfront.PriceClass.PRICE_CLASS_100, // Use only North America and Europe
-      comment: 'CloudFront distribution for Chatbot application with HTTPS support',
+      comment: props?.enableSso 
+        ? 'CloudFront distribution for Chatbot application with HTTPS and SSO authentication'
+        : 'CloudFront distribution for Chatbot application with HTTPS support',
     });
 
     // Update Cognito User Pool Client with CloudFront callback URL (if Cognito is enabled)
@@ -1042,6 +1123,31 @@ async function sendResponse(event, status, data, reason) {
       new cdk.CfnOutput(this, 'CognitoLoginUrl', {
         value: `https://${props.userPoolDomain}.auth.${this.region}.amazoncognito.com/login?client_id=${props.userPoolClientId}&response_type=code&scope=openid+email+profile&redirect_uri=https://${distribution.distributionDomainName}/oauth2/idpresponse`,
         description: 'Cognito Login URL (CloudFront HTTPS)'
+      });
+    }
+
+    // SSO Authentication Outputs
+    if (props?.enableSso && props?.viewerRequestFunctionVersion && props?.originRequestFunctionVersion) {
+      new cdk.CfnOutput(this, 'SsoEnabled', {
+        value: 'true',
+        description: 'SSO authentication is enabled with Lambda@Edge'
+      });
+
+      new cdk.CfnOutput(this, 'ViewerRequestFunctionArn', {
+        value: props.viewerRequestFunctionVersion.functionArn,
+        description: 'ARN of the Viewer Request Lambda@Edge function for JWT validation',
+        exportName: `${this.stackName}-viewer-request-function-arn`
+      });
+
+      new cdk.CfnOutput(this, 'OriginRequestFunctionArn', {
+        value: props.originRequestFunctionVersion.functionArn,
+        description: 'ARN of the Origin Request Lambda@Edge function for user identity headers',
+        exportName: `${this.stackName}-origin-request-function-arn`
+      });
+
+      new cdk.CfnOutput(this, 'SsoLoginUrl', {
+        value: props.ssoLoginUrl || '',
+        description: 'SSO Login URL for authentication redirects'
       });
     }
 

@@ -170,13 +170,25 @@ export async function getUserEnabledTools(userId: string): Promise<string[]> {
 
 /**
  * Update enabled tools for a user
+ * Creates user profile if it doesn't exist
  */
 export async function updateUserEnabledTools(
   userId: string,
   enabledTools: string[]
 ): Promise<void> {
   try {
-    await updateUserPreferences(userId, { enabledTools })
+    // Check if profile exists, create if not
+    const profile = await getUserProfile(userId)
+    
+    if (!profile) {
+      // Create profile with enabled tools
+      console.log(`[DynamoDB] Creating new profile for ${userId} with enabled tools`)
+      await upsertUserProfile(userId, userId, userId, { enabledTools })
+    } else {
+      // Update existing profile
+      await updateUserPreferences(userId, { enabledTools })
+    }
+    
     console.log(`[DynamoDB] Enabled tools updated for ${userId}:`, enabledTools)
   } catch (error) {
     console.error('[DynamoDB] Error updating enabled tools:', error)

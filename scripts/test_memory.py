@@ -215,7 +215,7 @@ def test_compacting_agent_with_tools(memory_id: str, session_id: str, actor_id: 
         )
 
         model = BedrockModel(
-            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             region_name=REGION
         )
 
@@ -316,7 +316,7 @@ def test_compacting_agent_with_memory(memory_id: str, session_id: str, actor_id:
         print(f"   API Mode: {mode}")
 
         model = BedrockModel(
-            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             region_name=REGION
         )
 
@@ -403,7 +403,7 @@ def test_agent_with_memory(memory_id: str, session_id: str, actor_id: str):
 
         # Create agent with memory (same as ChatbotAgent.create_agent())
         model = BedrockModel(
-            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             region_name=REGION
         )
 

@@ -1,77 +1,41 @@
 'use client';
 
-import { Authenticator } from '@aws-amplify/ui-react';
-import '@aws-amplify/ui-react/styles.css';
-import { useEffect, useState } from 'react';
+/**
+ * AuthWrapper - SSO-Only Authentication
+ * 
+ * This wrapper no longer uses Amplify Authenticator since authentication
+ * is handled entirely by:
+ * 1. AWS IAM Identity Center (SSO)
+ * 2. Cognito User Pool (as SAML SP)
+ * 3. Lambda@Edge (JWT validation and header injection)
+ * 
+ * The wrapper now simply passes through children and optionally
+ * initializes Amplify for API calls that need auth tokens.
+ */
 
-const HAS_COGNITO_CONFIG = !!(
-  process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID &&
-  process.env.NEXT_PUBLIC_COGNITO_USER_POOL_CLIENT_ID
-);
+import { useEffect } from 'react';
 
 export default function AuthWrapper({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [isClient, setIsClient] = useState(false);
-  const [isLocalDev, setIsLocalDev] = useState(false);
-  const [isConfigured, setIsConfigured] = useState(false);
-
-  // Hydration-safe: Run after mount
+  // Initialize Amplify config for API calls (token management)
+  // but don't block rendering or show any login UI
   useEffect(() => {
-    setIsClient(true);
-
-    // Check if we're in local development
-    const localDev = window.location.hostname === 'localhost' ||
-                     window.location.hostname === '127.0.0.1';
-    setIsLocalDev(localDev);
-
-    // Only initialize Amplify if we need authentication (not local dev, has Cognito config)
-    if (!localDev && HAS_COGNITO_CONFIG) {
-      import('../lib/amplify-config').then(() => {
-        setIsConfigured(true);
+    const isLocalDev = typeof window !== 'undefined' && 
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+    
+    // Only load Amplify config in production for token management
+    if (!isLocalDev && process.env.NEXT_PUBLIC_COGNITO_USER_POOL_ID) {
+      import('../lib/amplify-config').catch(() => {
+        // Amplify config failed - non-critical for SSO flow
+        console.warn('[AuthWrapper] Amplify config failed to load');
       });
-    } else {
-      setIsConfigured(true);
     }
   }, []);
 
-  // Wait for client-side hydration
-  if (!isClient) {
-    return <>{children}</>;
-  }
-
-  // In local development or without Cognito config, skip authentication
-  if (isLocalDev || !HAS_COGNITO_CONFIG) {
-    return <>{children}</>;
-  }
-
-  // Wait for Amplify config to load
-  if (!isConfigured) {
-    return <>{children}</>; // Show content while loading auth
-  }
-
-  // In production with Cognito config, use Authenticator
-  return (
-    <Authenticator
-      variation="modal"
-      components={{
-        Header() {
-          return (
-            <div className="text-center p-4">
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                Strands Chatbot
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Sign in to access your AI assistant
-              </p>
-            </div>
-          );
-        },
-      }}
-    >
-      {children}
-    </Authenticator>
-  );
+  // SSO authentication is handled by Lambda@Edge
+  // Just render children directly - no login UI needed
+  return <>{children}</>;
 }

@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     if (IS_LOCAL) {
       // Local mode: Call local AgentCore endpoint
-      const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080'
+      const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://127.0.0.1:8080'
 
       const response = await fetch(`${AGENTCORE_URL}/stop`, {
         method: 'POST',

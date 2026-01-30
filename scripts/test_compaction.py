@@ -488,7 +488,7 @@ def create_local_chatbot_agent(
             session_id=session_id,
             user_id=user_id,
             enabled_tools=enabled_tools,
-            model_id="us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            model_id="eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             temperature=0.7,
             caching_enabled=caching_enabled,
             compaction_enabled=compaction_enabled,
@@ -1175,7 +1175,7 @@ def invoke_agent_runtime(
         "user_id": user_id,
         "session_id": session_id,
         "message": message,
-        "model_id": model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "model_id": model_id or "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
         "compaction_enabled": compaction_enabled,
         "caching_enabled": caching_enabled,
     }

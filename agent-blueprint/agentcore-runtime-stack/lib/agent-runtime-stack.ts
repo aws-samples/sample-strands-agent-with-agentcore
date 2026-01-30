@@ -882,7 +882,7 @@ async function sendResponse(event, status, data, reason) {
     const runtimeName = projectName.replace(/-/g, '_') + '_runtime'
     const runtime = new agentcore.CfnRuntime(this, 'AgentCoreRuntime', {
       agentRuntimeName: runtimeName,
-      description: 'Strands Agent Chatbot Runtime with MCP tool support',
+      description: 'Strands Agent Chatbot Runtime with MCP tool support - v2',
       roleArn: executionRole.roleArn,
 
       // Container configuration
@@ -912,6 +912,9 @@ async function sendResponse(event, status, data, reason) {
         BROWSER_NAME: browserCustomName,
         CODE_INTERPRETER_ID: codeInterpreter.attrCodeInterpreterId,
         DOCUMENT_BUCKET: documentBucket.bucketName,
+        // Disable auth middleware - authentication is handled by AWS IAM at SDK level
+        // The InvokeAgentRuntimeCommand requires IAM credentials, so no additional auth needed
+        AUTH_REQUIRE_AUTH: 'false',
         // OpenTelemetry observability configuration
         AGENT_OBSERVABILITY_ENABLED: 'true',
         OTEL_PYTHON_DISTRO: 'aws_distro',

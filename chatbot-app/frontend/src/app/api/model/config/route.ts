@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
 
     // Default configuration
     let config = {
-      model_id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+      model_id: 'eu.anthropic.claude-haiku-4-5-20251001-v1:0',
       temperature: 0.7,
     }
 

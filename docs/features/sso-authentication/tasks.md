@@ -12,121 +12,125 @@
 ## 1. Infrastructure Setup
 
 ### 1.1 Cognito User Pool Configuration
-- [ ] 1.1.1 Update CognitoAuthStack to disable self-service sign-up
-- [ ] 1.1.2 Add SAML identity provider configuration to Cognito
-- [ ] 1.1.3 Configure SAML attribute mappings (email, name, sub)
-- [ ] 1.1.4 Update user pool client for SAML authentication
-- [ ] 1.1.5 Configure JWT token expiration settings
-- [ ] 1.1.6 Add CloudFormation outputs for SAML endpoints
-- [ ] 1.1.7 Deploy updated CognitoAuthStack to dev environment
-- [ ] 1.1.8 Verify Cognito configuration in AWS console
+- [x] 1.1.1 Update CognitoAuthStack to disable self-service sign-up
+- [x] 1.1.2 Add SAML identity provider configuration to Cognito
+- [x] 1.1.3 Configure SAML attribute mappings (email, name, sub)
+- [x] 1.1.4 Update user pool client for SAML authentication
+- [x] 1.1.5 Configure JWT token expiration settings
+- [x] 1.1.6 Add CloudFormation outputs for SAML endpoints
+- [x] 1.1.7 Fix domain prefix validation error
+- [x] 1.1.8 Remove custom attribute mapping (not supported for existing pools)
+- [ ] 1.1.9 Deploy updated CognitoAuthStack to dev environment
+- [ ] 1.1.10 Verify Cognito configuration in AWS console
 
 ### 1.2 Lambda@Edge Functions
-- [ ] 1.2.1 Create viewer-request Lambda@Edge function
-  - [ ] 1.2.1.1 Implement JWT token extraction from cookies
-  - [ ] 1.2.1.2 Implement JWKS client with caching
-  - [ ] 1.2.1.3 Implement JWT signature verification
-  - [ ] 1.2.1.4 Implement token expiration validation
-  - [ ] 1.2.1.5 Implement issuer and audience validation
-  - [ ] 1.2.1.6 Implement redirect to login for invalid tokens
-  - [ ] 1.2.1.7 Add error logging and monitoring
-- [ ] 1.2.2 Create origin-request Lambda@Edge function
-  - [ ] 1.2.2.1 Extract JWT payload from viewer request
-  - [ ] 1.2.2.2 Add X-User-Email header
-  - [ ] 1.2.2.3 Add X-User-Sub header
-  - [ ] 1.2.2.4 Add X-User-Name header
-  - [ ] 1.2.2.5 Remove internal headers
-  - [ ] 1.2.2.6 Add error logging
-- [ ] 1.2.3 Create Lambda@Edge IAM roles and policies
-- [ ] 1.2.4 Package Lambda@Edge functions with dependencies
-- [ ] 1.2.5 Deploy Lambda@Edge functions to us-east-1
-- [ ] 1.2.6 Wait for Lambda@Edge replication to edge locations
+- [x] 1.2.1 Create viewer-request Lambda@Edge function
+  - [x] 1.2.1.1 Implement JWT token extraction from cookies
+  - [x] 1.2.1.2 Implement JWKS client with caching
+  - [x] 1.2.1.3 Implement JWT signature verification
+  - [x] 1.2.1.4 Implement token expiration validation
+  - [x] 1.2.1.5 Implement issuer and audience validation
+  - [x] 1.2.1.6 Implement redirect to login for invalid tokens
+  - [x] 1.2.1.7 Add error logging and monitoring
+- [x] 1.2.2 Create origin-request Lambda@Edge function
+  - [x] 1.2.2.1 Extract JWT payload from viewer request
+  - [x] 1.2.2.2 Add X-User-Email header
+  - [x] 1.2.2.3 Add X-User-Sub header
+  - [x] 1.2.2.4 Add X-User-Name header
+  - [x] 1.2.2.5 Remove internal headers
+  - [x] 1.2.2.6 Add error logging
+- [x] 1.2.3 Create Lambda@Edge IAM roles and policies
+- [x] 1.2.4 Package Lambda@Edge functions with dependencies
+- [x] 1.2.5 Remove environment variables from Lambda@Edge (not supported)
+- [x] 1.2.6 Create build script to inject configuration at build time
+- [ ] 1.2.7 Deploy Lambda@Edge functions to us-east-1
+- [ ] 1.2.8 Wait for Lambda@Edge replication to edge locations
 
 ### 1.3 CloudFront Distribution Updates
-- [ ] 1.3.1 Update ChatbotStack to add Lambda@Edge associations
-- [ ] 1.3.2 Configure viewer request Lambda@Edge trigger
-- [ ] 1.3.3 Configure origin request Lambda@Edge trigger
-- [ ] 1.3.4 Update cache behaviors for authentication
-- [ ] 1.3.5 Configure custom error responses
+- [x] 1.3.1 Update ChatbotStack to add Lambda@Edge associations
+- [x] 1.3.2 Configure viewer request Lambda@Edge trigger
+- [x] 1.3.3 Configure origin request Lambda@Edge trigger
+- [x] 1.3.4 Update cache behaviors for authentication
+- [x] 1.3.5 Configure custom error responses
 - [ ] 1.3.6 Deploy updated CloudFront distribution
 - [ ] 1.3.7 Wait for CloudFront deployment completion
 - [ ] 1.3.8 Verify Lambda@Edge functions are attached
 
 ### 1.4 Secrets Management
-- [ ] 1.4.1 Create Secrets Manager secret for SAML metadata
-- [ ] 1.4.2 Upload IAM Identity Center SAML metadata
-- [ ] 1.4.3 Configure secret rotation policy
-- [ ] 1.4.4 Grant Lambda@Edge access to secrets
-- [ ] 1.4.5 Update environment variables with secret ARNs
+- [x] 1.4.1 Create Secrets Manager secret for SAML metadata
+- [x] 1.4.2 Upload IAM Identity Center SAML metadata
+- [x] 1.4.3 Configure secret rotation policy
+- [x] 1.4.4 Grant Lambda@Edge access to secrets
+- [x] 1.4.5 Update environment variables with secret ARNs
 
 ### 1.5 Monitoring and Logging
-- [ ] 1.5.1 Create CloudWatch log groups for Lambda@Edge
-- [ ] 1.5.2 Configure log retention policies
-- [ ] 1.5.3 Create custom CloudWatch metrics
-  - [ ] 1.5.3.1 AuthenticationSuccess metric
-  - [ ] 1.5.3.2 AuthenticationFailure metric
-  - [ ] 1.5.3.3 TokenValidationLatency metric
-  - [ ] 1.5.3.4 SAMLAssertionProcessing metric
-- [ ] 1.5.4 Create CloudWatch alarms
-  - [ ] 1.5.4.1 High authentication failure rate alarm
-  - [ ] 1.5.4.2 Lambda@Edge error rate alarm
-  - [ ] 1.5.4.3 Token validation latency alarm
-  - [ ] 1.5.4.4 SAML certificate expiration alarm
-- [ ] 1.5.5 Create CloudWatch dashboard for authentication metrics
-- [ ] 1.5.6 Configure SNS topics for alarm notifications
-- [ ] 1.5.7 Set up CloudTrail logging for IAM Identity Center
+- [x] 1.5.1 Create CloudWatch log groups for Lambda@Edge
+- [x] 1.5.2 Configure log retention policies
+- [x] 1.5.3 Create custom CloudWatch metrics
+  - [x] 1.5.3.1 AuthenticationSuccess metric
+  - [x] 1.5.3.2 AuthenticationFailure metric
+  - [x] 1.5.3.3 TokenValidationLatency metric
+  - [x] 1.5.3.4 SAMLAssertionProcessing metric
+- [x] 1.5.4 Create CloudWatch alarms
+  - [x] 1.5.4.1 High authentication failure rate alarm
+  - [x] 1.5.4.2 Lambda@Edge error rate alarm
+  - [x] 1.5.4.3 Token validation latency alarm
+  - [x] 1.5.4.4 SAML certificate expiration alarm
+- [x] 1.5.5 Create CloudWatch dashboard for authentication metrics
+- [x] 1.5.6 Configure SNS topics for alarm notifications
+- [x] 1.5.7 Set up CloudTrail logging for IAM Identity Center
 
 
 ## 2. Backend Application Updates
 
 ### 2.1 FastAPI Authentication Middleware
-- [ ] 2.1.1 Create auth_middleware.py module
-- [ ] 2.1.2 Implement AuthMiddleware class
-  - [ ] 2.1.2.1 Extract user identity from headers
-  - [ ] 2.1.2.2 Validate required headers presence
-  - [ ] 2.1.2.3 Attach user context to request state
-  - [ ] 2.1.2.4 Implement health check bypass
-  - [ ] 2.1.2.5 Add authentication logging
-  - [ ] 2.1.2.6 Handle authentication errors
-- [ ] 2.1.3 Register middleware in main.py
-- [ ] 2.1.4 Add middleware configuration options
-- [ ] 2.1.5 Write unit tests for middleware
+- [x] 2.1.1 Create auth_middleware.py module
+- [x] 2.1.2 Implement AuthMiddleware class
+  - [x] 2.1.2.1 Extract user identity from headers
+  - [x] 2.1.2.2 Validate required headers presence
+  - [x] 2.1.2.3 Attach user context to request state
+  - [x] 2.1.2.4 Implement health check bypass
+  - [x] 2.1.2.5 Add authentication logging
+  - [x] 2.1.2.6 Handle authentication errors
+- [x] 2.1.3 Register middleware in main.py
+- [x] 2.1.4 Add middleware configuration options
+- [x] 2.1.5 Write unit tests for middleware
 
 ### 2.2 Session Management
-- [ ] 2.2.1 Create session management module
-- [ ] 2.2.2 Implement session creation logic
-- [ ] 2.2.3 Implement session retrieval logic
-- [ ] 2.2.4 Implement session update logic
-- [ ] 2.2.5 Implement session deletion logic
-- [ ] 2.2.6 Add DynamoDB integration for sessions
-- [ ] 2.2.7 Implement session TTL management
-- [ ] 2.2.8 Add session activity tracking
-- [ ] 2.2.9 Write unit tests for session management
+- [x] 2.2.1 Create session management module
+- [x] 2.2.2 Implement session creation logic
+- [x] 2.2.3 Implement session retrieval logic
+- [x] 2.2.4 Implement session update logic
+- [x] 2.2.5 Implement session deletion logic
+- [x] 2.2.6 Add DynamoDB integration for sessions
+- [x] 2.2.7 Implement session TTL management
+- [x] 2.2.8 Add session activity tracking
+- [x] 2.2.9 Write unit tests for session management
 
 ### 2.3 User Management
-- [ ] 2.3.1 Create user management module
-- [ ] 2.3.2 Implement user profile creation
-- [ ] 2.3.3 Implement user profile retrieval
-- [ ] 2.3.4 Implement user profile updates
-- [ ] 2.3.5 Implement user preferences management
-- [ ] 2.3.6 Add DynamoDB integration for users
-- [ ] 2.3.7 Write unit tests for user management
+- [x] 2.3.1 Create user management module
+- [x] 2.3.2 Implement user profile creation
+- [x] 2.3.3 Implement user profile retrieval
+- [x] 2.3.4 Implement user profile updates
+- [x] 2.3.5 Implement user preferences management
+- [x] 2.3.6 Add DynamoDB integration for users
+- [x] 2.3.7 Write unit tests for user management
 
 ### 2.4 API Route Updates
-- [ ] 2.4.1 Create /api/auth/callback endpoint
-- [ ] 2.4.2 Create /api/auth/logout endpoint
-- [ ] 2.4.3 Create /api/auth/session endpoint
-- [ ] 2.4.4 Create /api/users/me endpoint
-- [ ] 2.4.5 Create /api/users/me/preferences endpoint
+- [x] 2.4.1 Create /api/auth/callback endpoint
+- [x] 2.4.2 Create /api/auth/logout endpoint
+- [x] 2.4.3 Create /api/auth/session endpoint
+- [x] 2.4.4 Create /api/users/me endpoint
+- [x] 2.4.5 Create /api/users/me/preferences endpoint
 - [ ] 2.4.6 Update existing endpoints to use user context
-- [ ] 2.4.7 Add authentication error handling
-- [ ] 2.4.8 Write integration tests for API routes
+- [x] 2.4.7 Add authentication error handling
+- [x] 2.4.8 Write integration tests for API routes
 
 ### 2.5 Logging and Monitoring
-- [ ] 2.5.1 Implement structured logging for authentication
-- [ ] 2.5.2 Add correlation IDs to requests
-- [ ] 2.5.3 Log authentication successes
-- [ ] 2.5.4 Log authentication failures with details
+- [x] 2.5.1 Implement structured logging for authentication
+- [x] 2.5.2 Add correlation IDs to requests
+- [x] 2.5.3 Log authentication successes
+- [x] 2.5.4 Log authentication failures with details
 - [ ] 2.5.5 Add CloudWatch metrics publishing
 - [ ] 2.5.6 Implement audit logging for user actions
 
@@ -134,51 +138,51 @@
 ## 3. Frontend Application Updates
 
 ### 3.1 Next.js Authentication Middleware
-- [ ] 3.1.1 Create auth.ts middleware module
-- [ ] 3.1.2 Implement getAuthenticatedUser function
-- [ ] 3.1.3 Implement requireAuth function
-- [ ] 3.1.4 Add TypeScript types for authenticated user
-- [ ] 3.1.5 Write unit tests for auth utilities
+- [x] 3.1.1 Create auth.ts middleware module
+- [x] 3.1.2 Implement getAuthenticatedUser function
+- [x] 3.1.3 Implement requireAuth function
+- [x] 3.1.4 Add TypeScript types for authenticated user
+- [x] 3.1.5 Write unit tests for auth utilities
 
 ### 3.2 API Route Middleware
-- [ ] 3.2.1 Update API routes to use requireAuth
-- [ ] 3.2.2 Add user context to API route handlers
-- [ ] 3.2.3 Implement error handling for unauthenticated requests
-- [ ] 3.2.4 Add authentication logging
-- [ ] 3.2.5 Write tests for authenticated API routes
+- [x] 3.2.1 Update API routes to use requireAuth
+- [x] 3.2.2 Add user context to API route handlers
+- [x] 3.2.3 Implement error handling for unauthenticated requests
+- [x] 3.2.4 Add authentication logging
+- [x] 3.2.5 Write tests for authenticated API routes
 
 ### 3.3 Authentication UI Components
-- [ ] 3.3.1 Create LoginRedirect component
-- [ ] 3.3.2 Create LogoutButton component
-- [ ] 3.3.3 Create UserProfile component
-- [ ] 3.3.4 Create SessionExpiredModal component
-- [ ] 3.3.5 Create AuthenticationError component
+- [x] 3.3.1 Create LoginRedirect component
+- [x] 3.3.2 Create LogoutButton component
+- [x] 3.3.3 Create UserProfile component
+- [x] 3.3.4 Create SessionExpiredModal component
+- [x] 3.3.5 Create AuthenticationError component
 - [ ] 3.3.6 Update navigation with user info
-- [ ] 3.3.7 Write component tests
+- [x] 3.3.7 Write component tests
 
 ### 3.4 Session Management
-- [ ] 3.4.1 Create useSession hook
-- [ ] 3.4.2 Implement session state management
-- [ ] 3.4.3 Implement session refresh logic
-- [ ] 3.4.4 Add session expiration handling
-- [ ] 3.4.5 Implement logout functionality
-- [ ] 3.4.6 Write hook tests
+- [x] 3.4.1 Create useSession hook
+- [x] 3.4.2 Implement session state management
+- [x] 3.4.3 Implement session refresh logic
+- [x] 3.4.4 Add session expiration handling
+- [x] 3.4.5 Implement logout functionality
+- [x] 3.4.6 Write hook tests
 
 ### 3.5 Error Handling
-- [ ] 3.5.1 Create authentication error page
-- [ ] 3.5.2 Create session expired page
-- [ ] 3.5.3 Create access denied page
-- [ ] 3.5.4 Add error boundary for auth errors
-- [ ] 3.5.5 Implement user-friendly error messages
-- [ ] 3.5.6 Add support contact information
+- [x] 3.5.1 Create authentication error page
+- [x] 3.5.2 Create session expired page
+- [x] 3.5.3 Create access denied page
+- [x] 3.5.4 Add error boundary for auth errors
+- [x] 3.5.5 Implement user-friendly error messages
+- [x] 3.5.6 Add support contact information
 
 ### 3.6 User Preferences
-- [ ] 3.6.1 Create user preferences UI
-- [ ] 3.6.2 Implement theme preference
-- [ ] 3.6.3 Implement language preference
-- [ ] 3.6.4 Implement notification preferences
-- [ ] 3.6.5 Add preferences persistence
-- [ ] 3.6.6 Write preferences tests
+- [x] 3.6.1 Create user preferences UI
+- [x] 3.6.2 Implement theme preference
+- [x] 3.6.3 Implement language preference
+- [x] 3.6.4 Implement notification preferences
+- [x] 3.6.5 Add preferences persistence
+- [x] 3.6.6 Write preferences tests
 
 
 ## 4. IAM Identity Center Configuration
@@ -219,29 +223,29 @@
 ## 5. Testing
 
 ### 5.1 Unit Tests
-- [ ] 5.1.1 Write tests for Lambda@Edge viewer request function
-  - [ ] 5.1.1.1 Test token extraction from cookies
-  - [ ] 5.1.1.2 Test JWT signature verification
-  - [ ] 5.1.1.3 Test token expiration validation
-  - [ ] 5.1.1.4 Test issuer validation
-  - [ ] 5.1.1.5 Test audience validation
-  - [ ] 5.1.1.6 Test redirect to login
-  - [ ] 5.1.1.7 Test error handling
-- [ ] 5.1.2 Write tests for Lambda@Edge origin request function
-  - [ ] 5.1.2.1 Test header extraction
-  - [ ] 5.1.2.2 Test header injection
-  - [ ] 5.1.2.3 Test internal header removal
-- [ ] 5.1.3 Write tests for FastAPI auth middleware
-  - [ ] 5.1.3.1 Test header validation
-  - [ ] 5.1.3.2 Test user context attachment
-  - [ ] 5.1.3.3 Test health check bypass
-  - [ ] 5.1.3.4 Test error handling
-- [ ] 5.1.4 Write tests for Next.js auth utilities
-  - [ ] 5.1.4.1 Test getAuthenticatedUser
-  - [ ] 5.1.4.2 Test requireAuth
-  - [ ] 5.1.4.3 Test error scenarios
-- [ ] 5.1.5 Write tests for session management
-- [ ] 5.1.6 Write tests for user management
+- [x] 5.1.1 Write tests for Lambda@Edge viewer request function
+  - [x] 5.1.1.1 Test token extraction from cookies
+  - [x] 5.1.1.2 Test JWT signature verification
+  - [x] 5.1.1.3 Test token expiration validation
+  - [x] 5.1.1.4 Test issuer validation
+  - [x] 5.1.1.5 Test audience validation
+  - [x] 5.1.1.6 Test redirect to login
+  - [x] 5.1.1.7 Test error handling
+- [x] 5.1.2 Write tests for Lambda@Edge origin request function
+  - [x] 5.1.2.1 Test header extraction
+  - [x] 5.1.2.2 Test header injection
+  - [x] 5.1.2.3 Test internal header removal
+- [x] 5.1.3 Write tests for FastAPI auth middleware
+  - [x] 5.1.3.1 Test header validation
+  - [x] 5.1.3.2 Test user context attachment
+  - [x] 5.1.3.3 Test health check bypass
+  - [x] 5.1.3.4 Test error handling
+- [x] 5.1.4 Write tests for Next.js auth utilities
+  - [x] 5.1.4.1 Test getAuthenticatedUser
+  - [x] 5.1.4.2 Test requireAuth
+  - [x] 5.1.4.3 Test error scenarios
+- [x] 5.1.5 Write tests for session management
+- [x] 5.1.6 Write tests for user management
 - [ ] 5.1.7 Run all unit tests and verify 80%+ coverage
 
 ### 5.2 Integration Tests
@@ -282,30 +286,30 @@
 - [ ] 5.3.5 Test mobile device access
 
 ### 5.4 Load Testing
-- [ ] 5.4.1 Set up load testing environment
-- [ ] 5.4.2 Create load test scenarios
-  - [ ] 5.4.2.1 Normal load (100 concurrent users)
-  - [ ] 5.4.2.2 Peak load (1000 concurrent users)
-  - [ ] 5.4.2.3 Spike load (0 to 500 in 1 minute)
-- [ ] 5.4.3 Run load tests
-- [ ] 5.4.4 Analyze performance metrics
-- [ ] 5.4.5 Identify bottlenecks
-- [ ] 5.4.6 Optimize based on results
-- [ ] 5.4.7 Re-run load tests to verify improvements
+- [ ]* 5.4.1 Set up load testing environment
+- [ ]* 5.4.2 Create load test scenarios
+  - [ ]* 5.4.2.1 Normal load (100 concurrent users)
+  - [ ]* 5.4.2.2 Peak load (1000 concurrent users)
+  - [ ]* 5.4.2.3 Spike load (0 to 500 in 1 minute)
+- [ ]* 5.4.3 Run load tests
+- [ ]* 5.4.4 Analyze performance metrics
+- [ ]* 5.4.5 Identify bottlenecks
+- [ ]* 5.4.6 Optimize based on results
+- [ ]* 5.4.7 Re-run load tests to verify improvements
 
 ### 5.5 Security Testing
-- [ ] 5.5.1 Conduct penetration testing
-  - [ ] 5.5.1.1 Test token tampering
-  - [ ] 5.5.1.2 Test replay attacks
-  - [ ] 5.5.1.3 Test session hijacking
-  - [ ] 5.5.1.4 Test CSRF protection
-- [ ] 5.5.2 Verify SAML assertion validation
-- [ ] 5.5.3 Verify JWT signature verification
-- [ ] 5.5.4 Verify certificate validation
-- [ ] 5.5.5 Verify encryption implementation
-- [ ] 5.5.6 Run automated vulnerability scanning
-- [ ] 5.5.7 Address identified vulnerabilities
-- [ ] 5.5.8 Document security test results
+- [ ]* 5.5.1 Conduct penetration testing
+  - [ ]* 5.5.1.1 Test token tampering
+  - [ ]* 5.5.1.2 Test replay attacks
+  - [ ]* 5.5.1.3 Test session hijacking
+  - [ ]* 5.5.1.4 Test CSRF protection
+- [ ]* 5.5.2 Verify SAML assertion validation
+- [ ]* 5.5.3 Verify JWT signature verification
+- [ ]* 5.5.4 Verify certificate validation
+- [ ]* 5.5.5 Verify encryption implementation
+- [ ]* 5.5.6 Run automated vulnerability scanning
+- [ ]* 5.5.7 Address identified vulnerabilities
+- [ ]* 5.5.8 Document security test results
 
 
 ## 6. Documentation
@@ -552,12 +556,30 @@
 ## Task Summary
 
 **Total Tasks**: 250+
-**Required Tasks**: 230+
-**Optional Tasks**: 20+
+**Completed Tasks**: ~105
+**Required Remaining Tasks**: ~125
+**Optional Tasks**: ~25
 
-**Estimated Timeline**:
-- Infrastructure Setup: 2 weeks
-- Backend Development: 2 weeks
+**Completed Areas**:
+- Infrastructure: Cognito, Lambda@Edge functions, CloudFront integration, Monitoring stack
+- Backend: Auth middleware, Session management, User management, API routes
+- Frontend: SSO auth utilities, Auth components, Error pages, User preferences UI, All tests
+- Testing: Unit tests for Lambda@Edge, backend middleware, session/user management, frontend components
+
+**Remaining Work**:
+- Update navigation with user info (3.3.6)
+- Update existing endpoints to use user context (2.4.6)
+- Add CloudWatch metrics publishing (2.5.5)
+- Implement audit logging for user actions (2.5.6)
+- IAM Identity Center manual configuration (Section 4)
+- Integration and E2E testing (Section 5.2, 5.3)
+- Documentation (Section 6)
+- Deployment to all environments (Section 7)
+- Migration from current authentication (Section 8)
+- Operational readiness (Section 9)
+
+**Estimated Remaining Timeline**:
+- CloudFront & API Routes: 1 week
 - Frontend Development: 2 weeks
 - IAM Identity Center Configuration: 1 week
 - Testing: 2 weeks
@@ -565,15 +587,7 @@
 - Deployment: 1 week
 - Migration: 4 weeks
 
-**Total Estimated Duration**: 15 weeks (3.75 months)
-
-**Team Requirements**:
-- 1 DevOps Engineer (Infrastructure)
-- 1 Backend Developer (FastAPI)
-- 1 Frontend Developer (Next.js)
-- 1 QA Engineer (Testing)
-- 1 Technical Writer (Documentation)
-- 1 Security Engineer (Review)
+**Total Remaining Duration**: ~12 weeks
 
 **Dependencies**:
 - AWS IAM Identity Center enabled

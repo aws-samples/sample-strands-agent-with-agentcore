@@ -203,7 +203,7 @@ def test_agent_with_gateway_tools(tool_pattern: str = "wikipedia"):
             # Create agent with Haiku 4.5 (same model ID as agent.py default)
             agent = Agent(
                 tools=matching_tools,
-                model="us.anthropic.claude-haiku-4-5-20251001-v1:0"
+                model="eu.anthropic.claude-haiku-4-5-20251001-v1:0"
             )
 
             print(f"   Model: Claude Haiku 4.5")

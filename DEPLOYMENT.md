@@ -126,7 +126,7 @@ AWS_REGION=us-west-2
 AWS_ACCOUNT_ID=your-account-id
 
 # AgentCore Configuration
-AGENTCORE_MODEL_ID=us.anthropic.claude-sonnet-4-20250514-v1:0
+AGENTCORE_MODEL_ID=eu.anthropic.claude-sonnet-4-20250514-v1:0
 AGENTCORE_TEMPERATURE=0.7
 
 # Gateway Tools API Keys (optional)

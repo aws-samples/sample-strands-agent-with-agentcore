@@ -313,7 +313,7 @@ def get_current_date_pacific() -> str:
 
 
 # Configuration
-MODEL_ID = os.getenv("MODEL_ID", "us.anthropic.claude-haiku-4-5-20251001-v1:0")
+MODEL_ID = os.getenv("MODEL_ID", "eu.anthropic.claude-haiku-4-5-20251001-v1:0")
 AWS_REGION = os.getenv("AWS_REGION", "us-west-2")
 PORT = int(os.getenv("PORT", "9000"))  # A2A protocol requires port 9000
 PROJECT_NAME = os.getenv("PROJECT_NAME", "strands-agent-chatbot")

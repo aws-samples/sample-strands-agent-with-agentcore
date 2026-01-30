@@ -23,6 +23,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
 
+# Import authentication middleware
+from middleware.auth_middleware import AuthMiddleware, AuthConfig
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -96,8 +99,15 @@ if os.getenv('ENVIRONMENT', 'development') == 'development':
         allow_headers=["*"],
     )
 
+# Add authentication middleware
+# In production, this validates headers from Lambda@Edge
+# In development, it can be disabled via AUTH_REQUIRE_AUTH=false
+auth_config = AuthConfig.from_env()
+app.add_middleware(AuthMiddleware, config=auth_config)
+logger.info(f"Authentication middleware added: require_auth={auth_config.require_auth}")
+
 # Import routers
-from routers import health, chat, gateway_tools, tools, browser_live_view, stop, voice
+from routers import health, chat, gateway_tools, tools, browser_live_view, stop, voice, auth, users
 
 # Include routers
 app.include_router(health.router)
@@ -107,12 +117,16 @@ app.include_router(tools.router)
 app.include_router(browser_live_view.router)
 app.include_router(stop.router)
 app.include_router(voice.router)  # Voice chat WebSocket
+app.include_router(auth.router)   # SSO authentication endpoints
+app.include_router(users.router)  # User management endpoints
 
 if __name__ == "__main__":
     import uvicorn
+    # Use '::' to listen on both IPv4 and IPv6
+    # This fixes connection issues when Node.js prefers IPv6 (::1) over IPv4 (127.0.0.1)
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host="::",
         port=8080,
         reload=True,
         log_level="info"

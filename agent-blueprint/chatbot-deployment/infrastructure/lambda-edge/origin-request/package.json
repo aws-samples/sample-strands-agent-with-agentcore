@@ -1,0 +1,25 @@
+{
+  "name": "origin-request-lambda-edge",
+  "version": "1.0.0",
+  "description": "Lambda@Edge function for adding user identity headers at CloudFront origin request",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest",
+    "build": "npm install --production"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "lambda",
+    "edge",
+    "authentication",
+    "cloudfront",
+    "headers"
+  ],
+  "author": "DevOps Team",
+  "license": "MIT"
+}

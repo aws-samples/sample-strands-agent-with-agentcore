@@ -75,11 +75,11 @@ def create_swarm_agents(
     """
     from botocore.config import Config
 
-    region = os.environ.get("AWS_REGION", "us-west-2")
+    region = os.environ.get("AWS_REGION", "eu-west-1")
 
     # Default models
-    default_model_id = model_id or "us.anthropic.claude-sonnet-4-20250514-v1:0"
-    default_coordinator_model_id = coordinator_model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    default_model_id = model_id or "eu.anthropic.claude-sonnet-4-20250514-v1:0"
+    default_coordinator_model_id = coordinator_model_id or "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 
     # Retry configuration
     retry_config = Config(
@@ -88,17 +88,19 @@ def create_swarm_agents(
         read_timeout=180,
     )
 
-    # Create models
+    # Create models with explicit region
     main_model = BedrockModel(
         model_id=default_model_id,
         temperature=0.7,
         boto_client_config=retry_config,
+        region_name=region,
     )
 
     coordinator_model = BedrockModel(
         model_id=default_coordinator_model_id,
         temperature=0.3,  # Lower temperature for routing decisions
         boto_client_config=retry_config,
+        region_name=region,
     )
 
     # Responder needs higher max_tokens to handle large context + tool results
@@ -107,6 +109,7 @@ def create_swarm_agents(
         temperature=0.7,
         max_tokens=4096,
         boto_client_config=retry_config,
+        region_name=region,
     )
 
     agents: Dict[str, Agent] = {}

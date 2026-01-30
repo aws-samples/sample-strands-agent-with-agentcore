@@ -39,14 +39,15 @@ export async function POST(request: NextRequest) {
       }
 
       // Extract and convert files to AgentCore format
-      const uploadedFiles: File[] = []
+      // Note: In Node.js environment, formData files are Blob-like objects with name property
+      const uploadedFiles: Array<{ name: string; type: string; arrayBuffer: () => Promise<ArrayBuffer> }> = []
       for (const [key, value] of formData.entries()) {
-        if (key === 'files' && value instanceof File) {
-          uploadedFiles.push(value)
+        if (key === 'files' && typeof value === 'object' && value !== null && 'arrayBuffer' in value) {
+          uploadedFiles.push(value as any)
         }
       }
 
-      // Convert File objects to AgentCore format
+      // Convert file objects to AgentCore format
       if (uploadedFiles.length > 0) {
         files = await Promise.all(
           uploadedFiles.map(async (file) => {
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
             const base64 = Buffer.from(buffer).toString('base64')
 
             return {
-              filename: file.name,
+              filename: file.name || 'unnamed',
               content_type: file.type || 'application/octet-stream',
               bytes: base64
             } as any // Type assertion to avoid AgentCore File type conflict
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Load model configuration from storage
-    const defaultModelId = model_id || 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
+    const defaultModelId = model_id || 'eu.anthropic.claude-haiku-4-5-20251001-v1:0'
 
     let modelConfig = {
       model_id: defaultModelId,

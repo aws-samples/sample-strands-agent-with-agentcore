@@ -618,7 +618,7 @@ class TestStrandsAgentSignatureCompliance:
     def test_model_config_format(self):
         """Test model configuration format for BedrockModel."""
         model_config = {
-            "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "model_id": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             "temperature": 0.7,
         }
 
@@ -633,7 +633,7 @@ class TestStrandsAgentSignatureCompliance:
         """Test cache_prompt configuration for BedrockModel."""
         # When caching is enabled
         model_config_cached = {
-            "model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+            "model_id": "eu.anthropic.claude-sonnet-4-20250514-v1:0",
             "temperature": 0.7,
             "cache_prompt": "default"  # Valid value for Strands
         }
@@ -642,7 +642,7 @@ class TestStrandsAgentSignatureCompliance:
 
         # When caching is disabled
         model_config_no_cache = {
-            "model_id": "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+            "model_id": "eu.anthropic.claude-haiku-4-5-20251001-v1:0",
             "temperature": 0.7,
             # No cache_prompt key
         }

@@ -60,6 +60,10 @@ COPY --from=builder /app/public ./public
 RUN mkdir -p .next
 RUN chown nextjs:nodejs .next
 
+# Create .local-store directory for local file storage (model config, tools, sessions)
+RUN mkdir -p .local-store
+RUN chown nextjs:nodejs .local-store
+
 USER nextjs
 
 EXPOSE 3000
