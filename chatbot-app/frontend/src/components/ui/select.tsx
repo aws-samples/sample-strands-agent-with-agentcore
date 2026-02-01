@@ -71,7 +71,7 @@ const SelectTrigger = ({ className = "", children }: SelectTriggerProps) => {
   return (
     <button
       type="button"
-      className={`flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+      className={`flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-label ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
       onClick={() => context.setOpen(!context.open)}
     >
       {children}
@@ -108,7 +108,7 @@ const SelectItem = ({ value, children }: SelectItemProps) => {
 
   return (
     <div
-      className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-sm outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+      className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-label outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
       onClick={() => {
         context.onValueChange(value)
         context.setOpen(false)

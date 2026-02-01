@@ -102,7 +102,7 @@ export function ResearchContainer({
           {/* Content */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center justify-between mb-2">
-              <h4 className="font-semibold text-base text-foreground">
+              <h4 className="font-semibold text-body text-foreground">
                 {agentName}
               </h4>
               {showOpenButton && (
@@ -121,13 +121,13 @@ export function ResearchContainer({
               )}
             </div>
 
-            <p className="text-sm text-muted-foreground mb-3 line-clamp-2 leading-relaxed">
+            <p className="text-label text-muted-foreground mb-3 line-clamp-2 leading-relaxed">
               {query}
             </p>
 
             <div className="flex items-center gap-2">
               <div className={`
-                inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium
+                inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-caption font-medium
                 ${isComplete
                   ? 'bg-green-100 text-green-700 dark:bg-green-950/30 dark:text-green-400'
                   : isDeclined

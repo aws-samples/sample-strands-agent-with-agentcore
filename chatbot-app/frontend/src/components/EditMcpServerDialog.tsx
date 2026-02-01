@@ -239,7 +239,7 @@ export function EditMcpServerDialog({
               placeholder="https://your-mcp-server.com/mcp or ssm:///mcp/endpoints/serverless/my-server"
               required
             />
-            <p className="text-xs text-muted-foreground">
+            <p className="text-caption text-muted-foreground">
               Use HTTP URLs ending with /mcp, or Parameter Store references like ssm:///mcp/endpoints/serverless/my-server
             </p>
           </div>
@@ -272,14 +272,14 @@ export function EditMcpServerDialog({
                   ) : (
                     <XCircle className="h-4 w-4 text-red-600" />
                   )}
-                  <span className="font-medium text-sm">
+                  <span className="font-medium text-label">
                     {testResult.success ? 'Connection Successful' : 'Connection Failed'}
                   </span>
                 </div>
                 
                 {/* Parameter Store information */}
                 {testResult.used_parameter_store && (
-                  <div className="text-xs mt-2 mb-2 p-2 bg-blue-50 border border-blue-200 rounded">
+                  <div className="text-caption mt-2 mb-2 p-2 bg-blue-50 border border-blue-200 rounded">
                     <div className="font-medium text-blue-800 mb-1">Parameter Store Resolution:</div>
                     <div className="text-blue-700">
                       <div><strong>Reference:</strong> {testResult.original_url}</div>
@@ -288,9 +288,9 @@ export function EditMcpServerDialog({
                   </div>
                 )}
                 
-                <p className="text-xs">{testResult.message}</p>
+                <p className="text-caption">{testResult.message}</p>
                 {testResult.success && testResult.tools_count !== undefined && testResult.tools_count > 0 && (
-                  <p className="text-xs mt-1">
+                  <p className="text-caption mt-1">
                     Found {testResult.tools_count} tools available
                   </p>
                 )}

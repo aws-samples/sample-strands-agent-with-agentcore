@@ -211,10 +211,10 @@ export function ToolsDropdown({
                   <Zap className={`w-4 h-4 ${autoEnabled ? 'text-white' : 'text-slate-500 dark:text-slate-400'}`} />
                 </div>
                 <div>
-                  <div className={`text-sm font-semibold ${autoEnabled ? 'text-purple-700 dark:text-purple-300' : 'text-foreground'}`}>
+                  <div className={`text-label font-semibold ${autoEnabled ? 'text-purple-700 dark:text-purple-300' : 'text-foreground'}`}>
                     Auto Mode
                   </div>
-                  <div className="text-xs text-muted-foreground">
+                  <div className="text-caption text-muted-foreground">
                     AI automatically selects tools
                   </div>
                 </div>
@@ -231,11 +231,11 @@ export function ToolsDropdown({
         {/* Header */}
         <div className={`p-4 border-b shrink-0 ${autoEnabled ? 'opacity-50' : ''}`}>
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold flex items-center gap-2 text-slate-700 dark:text-slate-300">
+            <h3 className="text-label font-semibold flex items-center gap-2 text-slate-700 dark:text-slate-300">
               <Sparkles className="w-4 h-4" />
               Manual Selection
             </h3>
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+            <span className="text-caption font-medium px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
               {enabledCount} active
             </span>
           </div>
@@ -248,7 +248,7 @@ export function ToolsDropdown({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               disabled={autoEnabled}
-              className="pl-9 h-9 text-sm bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 focus-visible:ring-2 focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500"
+              className="pl-9 h-9 text-label bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 focus-visible:ring-2 focus-visible:ring-emerald-500/20 focus-visible:border-emerald-500"
             />
           </div>
         </div>
@@ -264,15 +264,15 @@ export function ToolsDropdown({
                       <div className="flex items-center justify-center w-5 h-5 rounded-full bg-emerald-500 dark:bg-emerald-600">
                         <Check className="w-3 h-3 text-white" />
                       </div>
-                      <span className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+                      <span className="text-label font-semibold text-emerald-900 dark:text-emerald-100">
                         Active Tools
                       </span>
-                      <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-emerald-200 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
+                      <span className="text-caption font-bold px-2 py-0.5 rounded-full bg-emerald-200 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200">
                         {enabledTools.length}
                       </span>
                       <button
                         onClick={handleClearAll}
-                        className="ml-auto text-xs font-semibold px-2.5 py-1 rounded-md hover:bg-emerald-200/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 transition-colors"
+                        className="ml-auto text-caption font-semibold px-2.5 py-1 rounded-md hover:bg-emerald-200/60 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 transition-colors"
                       >
                         Clear All
                       </button>
@@ -298,9 +298,9 @@ export function ToolsDropdown({
                             <TooltipContent side="top" className="max-w-xs z-50">
                               <div className="space-y-1">
                                 <p className="font-semibold">{tool.name}</p>
-                                <p className="text-sm text-muted-foreground">{tool.description}</p>
+                                <p className="text-label text-muted-foreground">{tool.description}</p>
                                 {isDynamic && nestedTools.length > 0 && (
-                                  <p className="text-xs opacity-70 mt-1">{nestedTools.length} tools included</p>
+                                  <p className="text-caption opacity-70 mt-1">{nestedTools.length} tools included</p>
                                 )}
                               </div>
                             </TooltipContent>
@@ -315,7 +315,7 @@ export function ToolsDropdown({
               {/* Search Results for Active Tools */}
               {searchQuery && filteredEnabledTools.length > 0 && (
                 <div className="mb-5">
-                  <div className="px-3 py-2 mb-2 text-xs font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200/50 dark:border-emerald-800/30">
+                  <div className="px-3 py-2 mb-2 text-caption font-semibold text-emerald-700 dark:text-emerald-300 flex items-center gap-2 bg-emerald-50/50 dark:bg-emerald-950/20 rounded-lg border border-emerald-200/50 dark:border-emerald-800/30">
                     <div className="flex items-center justify-center w-4 h-4 rounded-full bg-emerald-500 dark:bg-emerald-600">
                       <Check className="w-2.5 h-2.5 text-white" />
                     </div>
@@ -341,9 +341,9 @@ export function ToolsDropdown({
                             <TooltipContent side="top" className="max-w-xs z-50">
                               <div className="space-y-1">
                                 <p className="font-semibold">{tool.name}</p>
-                                <p className="text-sm text-muted-foreground">{tool.description}</p>
+                                <p className="text-label text-muted-foreground">{tool.description}</p>
                                 {isDynamic && nestedTools.length > 0 && (
-                                  <p className="text-xs opacity-70 mt-1">{nestedTools.length} tools included</p>
+                                  <p className="text-caption opacity-70 mt-1">{nestedTools.length} tools included</p>
                                 )}
                               </div>
                             </TooltipContent>
@@ -387,7 +387,7 @@ export function ToolsDropdown({
                               }`} />
                             </div>
                             <div className="flex-1 text-left min-w-0">
-                              <div className={`text-xs truncate ${
+                              <div className={`text-caption truncate ${
                                 enabled
                                   ? 'font-semibold text-emerald-900 dark:text-emerald-100'
                                   : 'font-medium text-slate-700 dark:text-slate-300'
@@ -405,9 +405,9 @@ export function ToolsDropdown({
                           </div>
                         </TooltipTrigger>
                         <TooltipContent side="right" className="max-w-xs">
-                          <p className="text-sm">{tool.description}</p>
+                          <p className="text-label">{tool.description}</p>
                           {isDynamic && nestedTools.length > 0 && (
-                            <p className="text-xs opacity-70 mt-1">{nestedTools.length} tools included</p>
+                            <p className="text-caption opacity-70 mt-1">{nestedTools.length} tools included</p>
                           )}
                         </TooltipContent>
                       </Tooltip>

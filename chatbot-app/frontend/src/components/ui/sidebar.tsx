@@ -383,7 +383,7 @@ const SidebarGroupLabel = React.forwardRef<
     <Comp
       ref={ref}
       className={cn(
-        'flex h-8 shrink-0 items-center rounded-md px-2 text-xs font-medium text-sidebar-foreground outline-none transition-colors',
+        'flex h-8 shrink-0 items-center rounded-md px-2 text-caption font-medium text-sidebar-foreground outline-none transition-colors',
         className,
       )}
       {...props}
@@ -398,7 +398,7 @@ const SidebarGroupContent = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn('w-full text-sm', className)}
+    className={cn('w-full text-label', className)}
     {...props}
   />
 ));

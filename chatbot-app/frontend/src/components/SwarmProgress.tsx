@@ -135,7 +135,7 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
   // If no renderable items, show raw JSON as fallback
   if (documents.length === 0 && images.length === 0 && charts.length === 0) {
     return (
-      <div className="mt-1 p-2 bg-muted/30 rounded text-xs font-mono overflow-x-auto">
+      <div className="mt-1 p-2 bg-muted/30 rounded text-caption font-mono overflow-x-auto">
         <pre className="whitespace-pre-wrap break-words text-muted-foreground">
           {typeof context === 'string' ? context : JSON.stringify(context, null, 2)}
         </pre>
@@ -159,7 +159,7 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
                 <div className="flex items-center justify-center w-6 h-6 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
                   <Icon className={`h-3 w-3 ${color}`} />
                 </div>
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
+                <span className="text-caption font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
                   {doc.filename}
                 </span>
                 <Download className="h-3 w-3 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -181,11 +181,11 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
               <div className="flex items-center justify-center w-6 h-6 bg-purple-50 dark:bg-purple-900/30 rounded shadow-sm">
                 <Image className="h-3 w-3 text-purple-600 dark:text-purple-400" />
               </div>
-              <span className="text-xs font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
+              <span className="text-caption font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
                 {img.filename}
               </span>
               {img.description && (
-                <span className="text-xs text-gray-500 dark:text-gray-400 max-w-[200px] truncate">
+                <span className="text-caption text-gray-500 dark:text-gray-400 max-w-[200px] truncate">
                   - {img.description}
                 </span>
               )}
@@ -204,11 +204,11 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
               className="flex items-center gap-2 px-3 py-1.5 bg-purple-50 dark:bg-purple-900/20 rounded-lg border border-purple-200/50 dark:border-purple-700/50"
             >
               <BarChart2 className="h-3 w-3 text-purple-600 dark:text-purple-400" />
-              <span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+              <span className="text-caption font-medium text-purple-700 dark:text-purple-300">
                 {chart.title}
               </span>
               {chart.description && (
-                <span className="text-xs text-purple-500 dark:text-purple-400">
+                <span className="text-caption text-purple-500 dark:text-purple-400">
                   - {chart.description}
                 </span>
               )}
@@ -248,7 +248,7 @@ export function SwarmProgress({ progress, className, historyMode, historyAgents,
           className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors py-1"
         >
           <Sparkles className="h-4 w-4 text-purple-500" />
-          <span className="text-sm font-medium">Show Progress</span>
+          <span className="text-label font-medium">Show Progress</span>
           <ChevronDown
             className={cn(
               "h-4 w-4 transition-transform duration-200",
@@ -267,10 +267,10 @@ export function SwarmProgress({ progress, className, historyMode, historyAgents,
                 <div key={`${agentId}-${index}`} className="space-y-1.5">
                   {/* Agent header */}
                   <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold text-foreground">
+                    <span className="text-label font-semibold text-foreground">
                       {displayName}
                     </span>
-                    <span className="text-xs text-green-600 dark:text-green-400">✓</span>
+                    <span className="text-caption text-green-600 dark:text-green-400">✓</span>
                   </div>
 
                   {/* Agent's shared context data - rendered as documents/charts */}
@@ -325,7 +325,7 @@ export function SwarmProgress({ progress, className, historyMode, historyAgents,
                 className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors py-1"
               >
                 <Sparkles className="h-4 w-4 text-blue-500" />
-                <span className="text-sm font-medium">
+                <span className="text-label font-medium">
                   {isComplete ? 'Show progress' : (currentAction || `${displayName} working...`)}
                 </span>
                 <ChevronDown
@@ -382,11 +382,11 @@ function AgentStepSection({ step, isRunning, sessionId }: { step: SwarmAgentStep
     <div className="space-y-1.5">
       {/* Agent header */}
       <div className="flex items-center gap-2">
-        <span className="text-sm font-semibold text-foreground">
+        <span className="text-label font-semibold text-foreground">
           {step.displayName}
         </span>
         {duration !== null && (
-          <span className="text-xs text-muted-foreground">
+          <span className="text-caption text-muted-foreground">
             ({duration}s)
           </span>
         )}
@@ -401,7 +401,7 @@ function AgentStepSection({ step, isRunning, sessionId }: { step: SwarmAgentStep
 
       {/* Reasoning text */}
       {hasReasoning && (
-        <div className="text-sm text-muted-foreground/80 italic leading-relaxed">
+        <div className="text-label text-muted-foreground/80 italic leading-relaxed">
           {step.reasoningText}
         </div>
       )}
@@ -413,7 +413,7 @@ function AgentStepSection({ step, isRunning, sessionId }: { step: SwarmAgentStep
             <span
               key={`${tool.toolName}-${i}`}
               className={cn(
-                "inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs",
+                "inline-flex items-center gap-1 px-2 py-0.5 rounded text-caption",
                 tool.status === 'completed' && "bg-green-100/50 text-green-700 dark:bg-green-900/20 dark:text-green-400",
                 tool.status === 'failed' && "bg-red-100/50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
                 tool.status === 'running' && "bg-purple-100/50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400"
@@ -428,14 +428,14 @@ function AgentStepSection({ step, isRunning, sessionId }: { step: SwarmAgentStep
 
       {/* Agent's response text (intermediate, not final) */}
       {hasResponse && (
-        <div className="text-sm text-muted-foreground leading-relaxed pl-2 border-l border-muted">
+        <div className="text-label text-muted-foreground leading-relaxed pl-2 border-l border-muted">
           {step.responseText}
         </div>
       )}
 
       {/* Handoff message */}
       {hasHandoff && (
-        <div className="flex items-start gap-1.5 text-xs text-muted-foreground/70 mt-1">
+        <div className="flex items-start gap-1.5 text-caption text-muted-foreground/70 mt-1">
           <ArrowRight className="h-3 w-3 mt-0.5 flex-shrink-0" />
           <span className="italic">{step.handoffMessage}</span>
         </div>

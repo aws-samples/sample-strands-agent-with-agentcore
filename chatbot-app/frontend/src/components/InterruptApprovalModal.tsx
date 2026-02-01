@@ -57,10 +57,10 @@ export function InterruptApprovalModal({
               )}
             </div>
             <div>
-              <DialogTitle className="text-lg font-semibold">
+              <DialogTitle className="text-heading font-semibold">
                 {isBrowserApproval ? 'Browser Automation Approval Required' : 'Research Approval Required'}
               </DialogTitle>
-              <DialogDescription className="text-sm mt-0.5">
+              <DialogDescription className="text-label mt-0.5">
                 {isBrowserApproval
                   ? 'Review the browser task before proceeding'
                   : 'Review the research plan before proceeding'}
@@ -72,11 +72,11 @@ export function InterruptApprovalModal({
         {/* Content - Scrollable */}
         <div className="flex-1 overflow-y-auto mt-4 mb-4">
           <div className="rounded-lg border bg-muted/20 p-5">
-            <h3 className="text-xs font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
+            <h3 className="text-caption font-semibold mb-3 text-muted-foreground uppercase tracking-wide">
               {isBrowserApproval ? 'Browser Task' : 'Research Plan'}
             </h3>
             <div className="prose prose-sm dark:prose-invert max-w-none">
-              <pre className="whitespace-pre-wrap font-sans text-sm leading-relaxed text-foreground/90 bg-transparent border-0 p-0 m-0">
+              <pre className="whitespace-pre-wrap font-sans text-label leading-relaxed text-foreground/90 bg-transparent border-0 p-0 m-0">
                 {isBrowserApproval ? task : plan}
               </pre>
             </div>

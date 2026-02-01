@@ -56,7 +56,7 @@ const CollapsibleMarkdown = React.memo<{
       {needsTruncation && (
         <button
           onClick={handleToggleExpand}
-          className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors font-medium mt-1"
+          className="flex items-center gap-1 text-caption text-primary hover:text-primary/80 transition-colors font-medium mt-1"
         >
           {isExpanded ? (
             <>
@@ -171,7 +171,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       return (
         <div className="my-4">
           <MapRenderer mapData={result.map_data} />
-          <p className="text-sm text-green-600 mt-2">
+          <p className="text-label text-green-600 mt-2">
             {result.message}
           </p>
         </div>
@@ -182,7 +182,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       return (
         <div className="my-4">
           <ChartRenderer chartData={result.chart_data} />
-          <p className="text-sm text-green-600 mt-2">
+          <p className="text-label text-green-600 mt-2">
             {result.message}
           </p>
         </div>
@@ -413,7 +413,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                       isExpanded && "rotate-90"
                     )}
                   />
-                  <span className="text-sm text-foreground">
+                  <span className="text-label text-foreground">
                     {displayName}
                   </span>
                   {toolExecution.isComplete ? (
@@ -457,7 +457,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                   <div className="ml-4 mt-1 mb-2 border-l-2 border-muted pl-3 space-y-2 animate-fade-in">
                     {/* Input parameters */}
                     {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 && (
-                      <div className="text-sm">
+                      <div className="text-label">
                         <JsonDisplay
                           data={toolExecution.toolInput}
                           maxLines={4}
@@ -468,14 +468,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
 
                     {/* Reasoning (if present) */}
                     {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
-                      <div className="text-sm text-muted-foreground italic">
+                      <div className="text-label text-muted-foreground italic">
                         {toolExecution.reasoningText}
                       </div>
                     )}
 
                     {/* Tool result */}
                     {toolExecution.toolResult && (
-                      <div className="text-sm">
+                      <div className="text-label">
                         {containsMarkdown(toolExecution.toolResult) ? (
                           <CollapsibleMarkdown sessionId={sessionId} maxLines={8}>
                             {toolExecution.toolResult}
@@ -552,14 +552,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                               />
 
                               <div className="absolute top-3 right-3">
-                                <div className="text-xs font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1 rounded inline-block">
+                                <div className="text-caption font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1 rounded inline-block">
                                   {String(imageFormat)}
                                 </div>
                               </div>
 
                               {isUrlImage && 'title' in image && image.title && (
                                 <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-4 pt-8">
-                                  <p className="text-sm font-medium text-white line-clamp-2 leading-tight">
+                                  <p className="text-label font-medium text-white line-clamp-2 leading-tight">
                                     {image.title}
                                   </p>
                                 </div>

@@ -135,8 +135,8 @@ export function BrowserResultModal({
               <Monitor className="w-5 h-5 text-purple-500" />
             </div>
             <div>
-              <DialogTitle className="text-lg font-semibold">Browser Use Agent</DialogTitle>
-              <DialogDescription className="text-sm mt-1">
+              <DialogTitle className="text-heading font-semibold">Browser Use Agent</DialogTitle>
+              <DialogDescription className="text-label mt-1">
                 {query}
               </DialogDescription>
             </div>
@@ -144,7 +144,7 @@ export function BrowserResultModal({
 
           {/* Status bar */}
           {isLoading && (
-            <div className="mt-4 flex items-center gap-2 text-sm">
+            <div className="mt-4 flex items-center gap-2 text-label">
               <Loader2 className={`w-4 h-4 animate-spin ${getStatusColor()}`} />
               <span className={getStatusColor()}>{getStatusText()}</span>
             </div>
@@ -178,11 +178,11 @@ export function BrowserResultModal({
           ) : isLoading ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <Loader2 className="w-8 h-8 animate-spin mb-4" />
-              <p className="text-sm">Starting browser automation...</p>
+              <p className="text-label">Starting browser automation...</p>
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
-              <p className="text-sm">No results yet</p>
+              <p className="text-label">No results yet</p>
             </div>
           )}
         </div>
@@ -191,7 +191,7 @@ export function BrowserResultModal({
         {status === 'complete' && (
           <div className="px-6 py-4 border-t bg-muted/30">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Automation completed • {Math.round(result.length / 1000)}k characters
               </p>
               <Button

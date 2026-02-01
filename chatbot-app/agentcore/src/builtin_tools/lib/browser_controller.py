@@ -155,12 +155,12 @@ class BrowserController:
 
             logger.info(f"🔐 Starting Custom Browser with Web Bot Auth: {self.browser_name} (ID: {self.browser_id})")
             # Pass identifier parameter to use Custom Browser
-            # Nova Act optimal resolution: width 1536-2304, height 864-1296
-            # Using 1536×1296 (minimum width, maximum height) for optimal content visibility
+            # Nova Act recommended resolution: 1600x813 (±20%)
+            # Valid range: width 1280-1920, height 650-976
             session_id = self.browser_session_client.start(
                 identifier=self.browser_id,
                 session_timeout_seconds=3600,
-                viewport={'width': 1536, 'height': 1296}
+                viewport={'width': 1600, 'height': 900}
             )
 
             logger.info(f"✅ Browser session started: {session_id}")

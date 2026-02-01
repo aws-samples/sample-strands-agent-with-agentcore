@@ -70,8 +70,8 @@ export function OutlineConfirmDialog({
           <FileText className="h-4 w-4 mt-0.5 text-muted-foreground flex-shrink-0" />
           <div className="flex-1">
             <div className="font-medium">{section.title}</div>
-            <div className="text-sm text-muted-foreground">{section.description}</div>
-            <div className="text-xs text-muted-foreground mt-1">
+            <div className="text-label text-muted-foreground">{section.description}</div>
+            <div className="text-caption text-muted-foreground mt-1">
               ~{section.estimated_words} words
             </div>
           </div>
@@ -106,8 +106,8 @@ export function OutlineConfirmDialog({
           <div className="space-y-4">
             {/* Title */}
             <div className="border-b pb-3">
-              <h3 className="text-lg font-semibold">{outline.title}</h3>
-              <p className="text-sm text-muted-foreground">
+              <h3 className="text-heading font-semibold">{outline.title}</h3>
+              <p className="text-label text-muted-foreground">
                 Total: ~{outline.total_estimated_words} words
               </p>
             </div>
@@ -126,7 +126,7 @@ export function OutlineConfirmDialog({
         {/* Feedback textarea */}
         {showFeedback && (
           <div className="space-y-2">
-            <label className="text-sm font-medium">What changes would you like?</label>
+            <label className="text-label font-medium">What changes would you like?</label>
             <Textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
@@ -161,7 +161,7 @@ export function OutlineConfirmDialog({
         </div>
 
         {attempt >= maxAttempts && (
-          <p className="text-xs text-muted-foreground text-center">
+          <p className="text-caption text-muted-foreground text-center">
             Maximum revision attempts reached. Please approve to continue.
           </p>
         )}

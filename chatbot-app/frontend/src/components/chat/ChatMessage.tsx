@@ -45,8 +45,8 @@ const ArtifactNotification = ({ title, wordCount }: { title: string; wordCount: 
         className="flex items-center gap-3 py-2 px-4 rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/20 hover:bg-violet-100/50 dark:hover:bg-violet-900/30 transition-colors text-left"
       >
         <Sparkles className="w-4 h-4 text-violet-500 flex-shrink-0" />
-        <span className="text-sm font-medium text-foreground">{title}</span>
-        <span className="text-xs text-muted-foreground">{wordCount.toLocaleString()} words</span>
+        <span className="text-label font-medium text-foreground">{title}</span>
+        <span className="text-caption text-muted-foreground">{wordCount.toLocaleString()} words</span>
       </button>
     </div>
   )
@@ -133,7 +133,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
             {message.uploadedFiles && message.uploadedFiles.length > 0 && (
               <div className="flex flex-wrap gap-1 justify-end max-w-sm">
                 {message.uploadedFiles.map((file, index) => (
-                  <Badge key={index} variant="secondary" className="flex items-center gap-1 text-xs">
+                  <Badge key={index} variant="secondary" className="flex items-center gap-1 text-caption">
                     {getFileIcon(file.type)}
                     <span className="truncate max-w-[120px]">
                       {file.name.length > 15 ? `${file.name.substring(0, 15)}...` : file.name}
@@ -208,7 +208,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
           {/* Tool Executions Section - Only show if not a separate tool message */}
           {message.toolExecutions && message.toolExecutions.length > 0 && !message.isToolMessage && (
             <div className="mb-4">
-              <div className="text-xs font-medium text-slate-600 mb-2 flex items-center gap-2">
+              <div className="text-caption font-medium text-slate-600 mb-2 flex items-center gap-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 Tools Used ({message.toolExecutions.length})
               </div>
@@ -245,7 +245,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
                         style={{ maxHeight: '400px' }}
                       />
                       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Badge variant="secondary" className="text-xs bg-black/70 text-white border-0">
+                        <Badge variant="secondary" className="text-caption bg-black/70 text-white border-0">
                           {imageFormat}
                         </Badge>
                       </div>

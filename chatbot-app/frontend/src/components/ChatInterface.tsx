@@ -1104,23 +1104,12 @@ If the user asks to modify this document, use the update_artifact tool to find a
           <div className={`sticky top-0 z-10 flex items-center justify-between ${isEmbedded ? 'p-2' : 'p-4'} bg-background/70 backdrop-blur-md border-b border-border/30 shadow-sm`}>
             <div className="flex items-center gap-3">
               <SidebarTrigger />
-              {isConnected ? (
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-primary rounded-full animate-pulse"></div>
-                  <span className="text-xs font-medium text-muted-foreground">Connected</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-destructive rounded-full"></div>
-                  <span className="text-xs font-medium text-muted-foreground">Disconnected</span>
-                </div>
-              )}
 
               {/* Show iframe status if in embedded mode */}
               {isEmbedded && iframeAuth.isInIframe && (
                 <div className="flex items-center gap-2">
                   <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span className="text-xs font-medium text-muted-foreground">Embedded</span>
+                  <span className="text-caption font-medium text-muted-foreground">Embedded</span>
                 </div>
               )}
             </div>
@@ -1128,7 +1117,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
             <div className="flex items-center gap-2">
               {/* Tool count indicator (embedded mode only) */}
               {isEmbedded && totalCount > 0 && (
-                <div className="text-xs text-muted-foreground">
+                <div className="text-caption text-muted-foreground">
                   {enabledCount}/{totalCount} tools
                 </div>
               )}
@@ -1266,7 +1255,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
               className="rounded-full shadow-lg bg-primary/90 hover:bg-primary text-primary-foreground px-4 py-2 flex items-center gap-2"
             >
               <ArrowDown className="w-4 h-4" />
-              <span className="text-sm">Scroll to bottom</span>
+              <span className="text-label">Scroll to bottom</span>
             </Button>
           </div>
         )}
@@ -1290,12 +1279,12 @@ If the user asks to modify this document, use the update_artifact tool to find a
               {selectedFiles.map((file, index) => (
                 <Badge key={index} variant="secondary" className="flex items-center gap-1 max-w-[200px]">
                   {getFileIcon(file)}
-                  <span className="truncate text-xs">
+                  <span className="truncate text-caption">
                     {file.name.length > 20 ? `${file.name.substring(0, 20)}...` : file.name}
                   </span>
                   <button
                     onClick={() => removeFile(index)}
-                    className="ml-1 text-slate-500 hover:text-slate-700 text-sm"
+                    className="ml-1 text-slate-500 hover:text-slate-700 text-label"
                     type="button"
                   >
                     ×
@@ -1356,7 +1345,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
                       ? "Voice mode active - click mic to stop"
                       : "Ask me anything..."
                   }
-                  className="flex-1 min-h-[52px] max-h-36 border-0 focus:ring-0 resize-none py-2 px-1 text-lg leading-relaxed overflow-y-auto bg-transparent transition-all duration-200 placeholder:text-muted-foreground/60"
+                  className="flex-1 min-h-[52px] max-h-36 border-0 focus:ring-0 resize-none py-2 px-1 leading-relaxed overflow-y-auto bg-transparent transition-all duration-200 placeholder:text-muted-foreground/60"
                   disabled={agentStatus !== 'idle' || composer.showOutlineConfirm || composer.isComposing}
                   rows={1}
                 />

@@ -303,7 +303,7 @@ class ChatAgent(BaseAgent):
                 self.agent,
                 prompt,  # Can be str or list[ContentBlock]
                 file_paths=None,
-                session_id=session_id or "default",
+                session_id=self.session_id,
                 invocation_state=invocation_state
             ):
                 yield event

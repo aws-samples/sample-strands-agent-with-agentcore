@@ -88,92 +88,6 @@ class LocalStopSignalProvider(StopSignalProvider):
         logger.info(f"[StopSignal] Stop signal cleared for {key}")
 
 
-class DynamoDBStopSignalProvider(StopSignalProvider):
-    """
-    Cloud deployment: DynamoDB session metadata
-    Uses {PROJECT_NAME}-users-v2 table, SESSION# records
-    """
-
-    def __init__(self, table_name: str, region: str = 'us-west-2'):
-        self.table_name = table_name
-        self.region = region
-        self._dynamodb = None
-        self._table = None
-
-    def _get_table(self):
-        """Lazy initialization of DynamoDB table"""
-        if self._table is None:
-            import boto3
-            self._dynamodb = boto3.resource('dynamodb', region_name=self.region)
-            self._table = self._dynamodb.Table(self.table_name)
-        return self._table
-
-    def _get_key(self, user_id: str, session_id: str) -> dict:
-        """
-        DynamoDB key structure matches frontend schema:
-        - userId: user_id
-        - sk: SESSION#{session_id}
-        """
-        return {
-            'userId': user_id,
-            'sk': f'SESSION#{session_id}'
-        }
-
-    def is_stop_requested(self, user_id: str, session_id: str) -> bool:
-        try:
-            table = self._get_table()
-            key = self._get_key(user_id, session_id)
-
-            response = table.get_item(
-                Key=key,
-                ProjectionExpression='stopRequested'
-            )
-
-            if 'Item' in response:
-                result = response['Item'].get('stopRequested', False)
-                if result:
-                    logger.info(f"[StopSignal] ✅ Stop requested - table: {self.table_name}, key: {key}")
-                return bool(result)
-            return False
-
-        except Exception as e:
-            logger.warning(f"[StopSignal] Error checking stop signal: {e}")
-            return False
-
-    def request_stop(self, user_id: str, session_id: str) -> None:
-        try:
-            table = self._get_table()
-            table.update_item(
-                Key=self._get_key(user_id, session_id),
-                UpdateExpression='SET stopRequested = :val, stopRequestedAt = :ts',
-                ExpressionAttributeValues={
-                    ':val': True,
-                    ':ts': self._get_timestamp()
-                }
-            )
-            logger.info(f"[StopSignal] Stop signal set for {user_id}:{session_id}")
-
-        except Exception as e:
-            logger.error(f"[StopSignal] Error setting stop signal: {e}")
-            raise
-
-    def clear_stop_signal(self, user_id: str, session_id: str) -> None:
-        try:
-            table = self._get_table()
-            table.update_item(
-                Key=self._get_key(user_id, session_id),
-                UpdateExpression='REMOVE stopRequested, stopRequestedAt'
-            )
-            logger.info(f"[StopSignal] Stop signal cleared for {user_id}:{session_id}")
-
-        except Exception as e:
-            logger.warning(f"[StopSignal] Error clearing stop signal: {e}")
-
-    def _get_timestamp(self) -> str:
-        from datetime import datetime
-        return datetime.utcnow().isoformat() + 'Z'
-
-
 # Singleton instance cache
 _provider_instance: StopSignalProvider = None
 _provider_lock = threading.Lock()
@@ -184,30 +98,21 @@ def get_stop_signal_provider() -> StopSignalProvider:
     Factory function to get the appropriate StopSignalProvider
 
     Returns:
-        LocalStopSignalProvider for local development
-        DynamoDBStopSignalProvider for cloud deployment
+        LocalStopSignalProvider (in-memory) for both local and cloud deployments.
+
+    Note:
+        We always use in-memory provider because:
+        1. AgentCore Runtime guarantees session affinity (same session → same container)
+        2. Stop requests come through /invocations (same container as streaming)
+        3. In-memory is instant (no DynamoDB polling delay or cost)
     """
     global _provider_instance
 
     if _provider_instance is None:
         with _provider_lock:
             if _provider_instance is None:
-                # Determine mode by MEMORY_ID presence (local = no MEMORY_ID)
-                memory_id = os.environ.get('MEMORY_ID')
-                is_cloud = memory_id is not None
-                logger.info(f"[StopSignal] MEMORY_ID={'set' if memory_id else 'not set'} (cloud={is_cloud})")
-
-                if not is_cloud:
-                    logger.info("[StopSignal] Using LocalStopSignalProvider (in-memory)")
-                    _provider_instance = LocalStopSignalProvider()
-                else:
-                    project_name = os.environ.get('PROJECT_NAME', 'strands-agent-chatbot')
-                    table_name = f"{project_name}-users-v2"
-                    region = os.environ.get('AWS_REGION', 'us-west-2')
-                    logger.info(f"[StopSignal] Using DynamoDBStopSignalProvider")
-                    logger.info(f"[StopSignal]   PROJECT_NAME={project_name}")
-                    logger.info(f"[StopSignal]   Table: {table_name}")
-                    logger.info(f"[StopSignal]   Region: {region}")
-                    _provider_instance = DynamoDBStopSignalProvider(table_name, region)
+                logger.info("[StopSignal] Using LocalStopSignalProvider (in-memory)")
+                logger.info("[StopSignal] Session affinity ensures stop signals reach the same container")
+                _provider_instance = LocalStopSignalProvider()
 
     return _provider_instance

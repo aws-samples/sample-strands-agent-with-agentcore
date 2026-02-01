@@ -84,12 +84,12 @@ export function ComposeArtifact({
           {/* Content */}
           <div className="flex-1 bg-muted/30 rounded-lg p-4 group-hover:bg-muted/50 transition-colors border border-border/50">
             <div className="flex items-start justify-between gap-3 mb-2">
-              <h4 className="font-semibold text-base">{section.title}</h4>
-              <span className="text-sm font-medium text-muted-foreground bg-background/80 px-2 py-1 rounded whitespace-nowrap">
+              <h4 className="font-semibold text-body">{section.title}</h4>
+              <span className="text-label font-medium text-muted-foreground bg-background/80 px-2 py-1 rounded whitespace-nowrap">
                 ~{section.estimated_words}w
               </span>
             </div>
-            <p className="text-base text-muted-foreground leading-relaxed">{section.description}</p>
+            <p className="text-body text-muted-foreground leading-relaxed">{section.description}</p>
           </div>
         </div>
 
@@ -114,8 +114,8 @@ export function ComposeArtifact({
           <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse" />
           <Loader2 className="h-12 w-12 animate-spin text-primary relative" />
         </div>
-        <h3 className="text-base font-semibold mb-2">Composing Document</h3>
-        <p className="text-sm text-muted-foreground">{progress || 'Starting composition...'}</p>
+        <h3 className="text-body font-semibold mb-2">Composing Document</h3>
+        <p className="text-label text-muted-foreground">{progress || 'Starting composition...'}</p>
       </div>
     )
   }
@@ -130,14 +130,14 @@ export function ComposeArtifact({
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <FileText className="h-5 w-5 text-primary" />
-                <h2 className="text-lg font-semibold">Review Document Outline</h2>
+                <h2 className="text-heading font-semibold">Review Document Outline</h2>
               </div>
-              <p className="text-sm text-muted-foreground">
+              <p className="text-label text-muted-foreground">
                 Attempt {outlineAttempt} of {maxAttempts}. Please review the proposed structure.
               </p>
             </div>
             <div className="bg-primary/10 px-3 py-1 rounded-full">
-              <span className="text-xs font-semibold text-primary">
+              <span className="text-caption font-semibold text-primary">
                 {outlineAttempt}/{maxAttempts}
               </span>
             </div>
@@ -149,10 +149,10 @@ export function ComposeArtifact({
           <div className="space-y-6">
             {/* Title Card */}
             <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl p-5 border-2 border-primary/20">
-              <h3 className="text-lg font-semibold mb-2">{outline.title}</h3>
+              <h3 className="text-heading font-semibold mb-2">{outline.title}</h3>
               <div className="flex items-center gap-2 text-muted-foreground">
                 <FileText className="h-4 w-4" />
-                <span className="text-sm font-medium">
+                <span className="text-label font-medium">
                   Total: ~{outline.total_estimated_words} words
                 </span>
               </div>
@@ -172,7 +172,7 @@ export function ComposeArtifact({
         {/* Feedback textarea */}
         {showFeedback && (
           <div className="flex-shrink-0 p-6 border-t space-y-2">
-            <label className="text-sm font-medium">What changes would you like?</label>
+            <label className="text-label font-medium">What changes would you like?</label>
             <Textarea
               value={feedback}
               onChange={(e) => setFeedback(e.target.value)}
@@ -212,7 +212,7 @@ export function ComposeArtifact({
             </div>
           </div>
           {outlineAttempt >= maxAttempts && (
-            <p className="text-xs text-muted-foreground text-center mt-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md py-2">
+            <p className="text-caption text-muted-foreground text-center mt-3 bg-yellow-500/10 border border-yellow-500/20 rounded-md py-2">
               Maximum revision attempts reached. Please approve to continue.
             </p>
           )}
@@ -229,10 +229,10 @@ export function ComposeArtifact({
           <div className="absolute inset-0 bg-green-500/20 rounded-full blur-xl animate-pulse" />
           <Loader2 className="h-12 w-12 animate-spin text-green-500 relative" />
         </div>
-        <h3 className="text-base font-semibold mb-2">Writing Document</h3>
-        <p className="text-sm text-muted-foreground mb-3">{progress || 'Writing document...'}</p>
+        <h3 className="text-body font-semibold mb-2">Writing Document</h3>
+        <p className="text-label text-muted-foreground mb-3">{progress || 'Writing document...'}</p>
         {documentParts.length > 0 && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 px-4 py-2 rounded-full">
+          <div className="flex items-center gap-2 text-caption text-muted-foreground bg-muted/50 px-4 py-2 rounded-full">
             <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <span>{documentParts.length} parts received</span>
           </div>
@@ -250,12 +250,12 @@ export function ComposeArtifact({
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
-                <span className="text-xs font-medium text-green-600 dark:text-green-400 uppercase tracking-wide">
+                <span className="text-caption font-medium text-green-600 dark:text-green-400 uppercase tracking-wide">
                   Completed
                 </span>
               </div>
-              <h2 className="text-lg font-bold mb-1">{completedDocument.title}</h2>
-              <p className="text-sm text-muted-foreground">
+              <h2 className="text-heading font-bold mb-1">{completedDocument.title}</h2>
+              <p className="text-label text-muted-foreground">
                 {completedDocument.wordCount} words
               </p>
             </div>

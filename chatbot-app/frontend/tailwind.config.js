@@ -19,6 +19,18 @@ module.exports = {
       fontFamily: {
         sans: ['Lato', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       },
+      fontSize: {
+        // Semantic font sizes - use these instead of text-xs, text-sm, etc.
+        'caption': 'var(--font-caption)',       // 10.5px - timestamps, meta
+        'label': 'var(--font-label)',           // 12.25px - labels, secondary
+        'body': 'var(--font-body)',             // 14px - default body
+        'body-lg': 'var(--font-body-lg)',       // 15px - larger body
+        'input': 'var(--font-input)',           // 18px - chat input
+        'title': 'var(--font-title)',           // 16px - small titles
+        'heading': 'var(--font-heading)',       // 18px - headings
+        'heading-lg': 'var(--font-heading-lg)', // 20px - large headings
+        'display': 'var(--font-display)',       // 24px - display text
+      },
       lineHeight: {
         'relaxed-plus': '1.75',
         'loose-plus': '2.125',

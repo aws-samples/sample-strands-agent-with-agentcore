@@ -93,7 +93,7 @@ export function SuggestedQuestions({ onQuestionSubmit, enabledTools }: Suggested
               <div className="flex-shrink-0 mt-0.5">
                 <Sparkles className="w-4 h-4" />
               </div>
-              <span className="text-sm leading-relaxed">{question.text}</span>
+              <span className="text-label leading-relaxed">{question.text}</span>
             </div>
           </Button>
         ))}

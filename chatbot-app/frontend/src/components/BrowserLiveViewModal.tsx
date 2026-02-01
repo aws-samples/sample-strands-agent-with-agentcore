@@ -401,7 +401,7 @@ export function BrowserLiveViewModal({
         <DialogHeader className="px-4 py-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-b border-slate-200/50 dark:border-slate-700/50 flex-shrink-0">
           <div className="flex items-center gap-3">
             <Monitor className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-            <DialogTitle className="text-sm font-medium text-slate-700 dark:text-slate-300">
+            <DialogTitle className="text-label font-medium text-slate-700 dark:text-slate-300">
               Live View
             </DialogTitle>
             <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 dark:bg-green-400/10 rounded">
@@ -423,7 +423,7 @@ export function BrowserLiveViewModal({
                   <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-400 rounded-full animate-ping mx-auto opacity-20"></div>
                 </div>
                 <p className="text-slate-200 font-medium">Connecting to browser session...</p>
-                <p className="text-slate-400 text-sm mt-1">Please wait</p>
+                <p className="text-slate-400 text-label mt-1">Please wait</p>
               </div>
             </div>
           )}
@@ -436,8 +436,8 @@ export function BrowserLiveViewModal({
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                   </svg>
                 </div>
-                <p className="text-lg font-semibold text-red-400 mb-2">Connection Failed</p>
-                <p className="text-sm text-slate-300 mb-4">{error}</p>
+                <p className="text-heading font-semibold text-red-400 mb-2">Connection Failed</p>
+                <p className="text-label text-slate-300 mb-4">{error}</p>
                 <Button
                   variant="outline"
                   className="bg-slate-800 hover:bg-slate-700 text-white border-slate-600"

@@ -25,7 +25,8 @@ class InvocationInput(BaseModel):
     """
     user_id: str
     session_id: str
-    message: str
+    message: str = ""  # Optional for action-only requests (e.g., stop)
+    action: Optional[str] = None  # Action type: None (default chat), "stop"
     model_id: Optional[str] = None
     temperature: Optional[float] = None
     system_prompt: Optional[str] = None

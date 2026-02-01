@@ -50,7 +50,7 @@ function BarChartComponent({ data }: { data: ChartData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">{data.config.title}</CardTitle>
+        <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -81,7 +81,7 @@ function BarChartComponent({ data }: { data: ChartData }) {
           </BarChart>
         </ChartContainer>
       </CardContent>
-      <CardFooter className="flex-col items-start gap-2 text-sm">
+      <CardFooter className="flex-col items-start gap-2 text-label">
         {data.config.trend && (
           <div className="flex gap-2 font-medium leading-none">
             Trending {data.config.trend.direction} by{" "}
@@ -107,7 +107,7 @@ function MultiBarChartComponent({ data }: { data: ChartData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">{data.config.title}</CardTitle>
+        <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -141,7 +141,7 @@ function MultiBarChartComponent({ data }: { data: ChartData }) {
           </BarChart>
         </ChartContainer>
       </CardContent>
-      <CardFooter className="flex-col items-start gap-2 text-sm">
+      <CardFooter className="flex-col items-start gap-2 text-label">
         {data.config.trend && (
           <div className="flex gap-2 font-medium leading-none">
             Trending {data.config.trend.direction} by{" "}
@@ -167,7 +167,7 @@ function LineChartComponent({ data }: { data: ChartData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">{data.config.title}</CardTitle>
+        <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -217,7 +217,7 @@ function LineChartComponent({ data }: { data: ChartData }) {
           </LineChart>
         </ChartContainer>
       </CardContent>
-      <CardFooter className="flex-col items-start gap-2 text-sm">
+      <CardFooter className="flex-col items-start gap-2 text-label">
         {data.config.trend && (
           <div className="flex gap-2 font-medium leading-none">
             Trending {data.config.trend.direction} by{" "}
@@ -258,7 +258,7 @@ function PieChartComponent({ data }: { data: ChartData }) {
   return (
     <Card className="flex flex-col">
       <CardHeader className="items-center pb-0">
-        <CardTitle className="text-xl">{data.config.title}</CardTitle>
+        <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 pb-0">
@@ -291,7 +291,7 @@ function PieChartComponent({ data }: { data: ChartData }) {
                         <tspan
                           x={viewBox.cx}
                           y={viewBox.cy}
-                          className="fill-foreground text-3xl font-bold"
+                          className="fill-foreground text-display font-bold"
                         >
                           {totalValue.toLocaleString()}
                         </tspan>
@@ -312,7 +312,7 @@ function PieChartComponent({ data }: { data: ChartData }) {
           </PieChart>
         </ChartContainer>
       </CardContent>
-      <CardFooter className="flex-col gap-2 text-sm">
+      <CardFooter className="flex-col gap-2 text-label">
         {data.config.trend && (
           <div className="flex items-center gap-2 font-medium leading-none">
             Trending {data.config.trend.direction} by{" "}
@@ -344,7 +344,7 @@ function AreaChartComponent({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-xl">{data.config.title}</CardTitle>
+        <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
@@ -391,7 +391,7 @@ function AreaChartComponent({
         </ChartContainer>
       </CardContent>
       <CardFooter>
-        <div className="flex w-full items-start gap-2 text-sm">
+        <div className="flex w-full items-start gap-2 text-label">
           <div className="grid gap-2">
             {data.config.trend && (
               <div className="flex items-center gap-2 font-medium leading-none">
@@ -469,7 +469,7 @@ export const ChartRenderer = React.memo<ChartRendererProps>(({ chartData }) => {
   if (!chartData) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-sm text-red-600">No chart data provided</div>
+        <div className="text-label text-red-600">No chart data provided</div>
       </div>
     );
   }
@@ -540,7 +540,7 @@ export const ChartRenderer = React.memo<ChartRendererProps>(({ chartData }) => {
   if (!ChartComponent) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-sm text-red-600">Unsupported chart type: {chartData.chartType}</div>
+        <div className="text-label text-red-600">Unsupported chart type: {chartData.chartType}</div>
       </div>
     );
   }

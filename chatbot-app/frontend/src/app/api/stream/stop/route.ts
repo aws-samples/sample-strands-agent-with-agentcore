@@ -1,12 +1,50 @@
 /**
  * Stop Signal API endpoint
  * Sets stop signal for a specific user-session to gracefully stop AgentCore streaming
+ *
+ * Both local and cloud modes now use /invocations endpoint with action="stop"
+ * This leverages session affinity to ensure the stop signal reaches the same container
  */
 import { NextRequest, NextResponse } from 'next/server'
 import { extractUserFromRequest, getSessionId } from '@/lib/auth-utils'
 
 // Check if running in local mode
 const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
+const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080'
+
+// AWS configuration
+const AWS_REGION = process.env.AWS_REGION || 'us-west-2'
+const PROJECT_NAME = process.env.PROJECT_NAME || 'strands-agent-chatbot'
+const ENVIRONMENT = process.env.ENVIRONMENT || 'dev'
+
+// Cached runtime ARN
+let cachedRuntimeArn: string | null = null
+
+async function getAgentCoreRuntimeArn(): Promise<string> {
+  if (cachedRuntimeArn) return cachedRuntimeArn
+
+  // Try environment variable first
+  const envArn = process.env.AGENTCORE_RUNTIME_ARN
+  if (envArn) {
+    cachedRuntimeArn = envArn
+    return envArn
+  }
+
+  // Try Parameter Store
+  const { SSMClient, GetParameterCommand } = await import('@aws-sdk/client-ssm')
+  const ssmClient = new SSMClient({ region: AWS_REGION })
+  const paramPath = `/${PROJECT_NAME}/${ENVIRONMENT}/agentcore/runtime-arn`
+
+  const command = new GetParameterCommand({ Name: paramPath })
+  const response = await ssmClient.send(command)
+
+  if (response.Parameter?.Value) {
+    cachedRuntimeArn = response.Parameter.Value
+    return response.Parameter.Value
+  }
+
+  throw new Error('AGENTCORE_RUNTIME_ARN not configured')
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -33,14 +71,22 @@ export async function POST(request: NextRequest) {
 
     console.log(`[StopSignal] Setting stop signal for user=${userId}, session=${sessionId}`)
 
-    if (IS_LOCAL) {
-      // Local mode: Call local AgentCore endpoint
-      const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080'
+    // Prepare stop action payload
+    const payload = {
+      input: {
+        user_id: userId,
+        session_id: sessionId,
+        action: 'stop',
+        message: ''
+      }
+    }
 
-      const response = await fetch(`${AGENTCORE_URL}/stop`, {
+    if (IS_LOCAL) {
+      // Local mode: Call local AgentCore /invocations with action=stop
+      const response = await fetch(`${AGENTCORE_URL}/invocations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, session_id: sessionId })
+        body: JSON.stringify(payload)
       })
 
       if (!response.ok) {
@@ -52,38 +98,28 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      console.log(`[StopSignal] Local stop signal set successfully`)
+      const result = await response.json()
+      console.log(`[StopSignal] Local stop signal set successfully:`, result)
     } else {
-      // Cloud mode: Update DynamoDB directly
-      const { DynamoDBClient } = await import('@aws-sdk/client-dynamodb')
-      const { UpdateItemCommand } = await import('@aws-sdk/client-dynamodb')
-      const { marshall } = await import('@aws-sdk/util-dynamodb')
+      // Cloud mode: Call AgentCore Runtime via Bedrock SDK with action=stop
+      const { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } = await import('@aws-sdk/client-bedrock-agentcore')
+      const agentCoreClient = new BedrockAgentCoreClient({ region: AWS_REGION })
+      const runtimeArn = await getAgentCoreRuntimeArn()
 
-      const projectName = process.env.PROJECT_NAME || 'strands-agent-chatbot'
-      const tableName = `${projectName}-users-v2`
-      const region = process.env.AWS_REGION || 'us-west-2'
+      console.log(`[StopSignal] Invoking AgentCore Runtime with action=stop`)
+      console.log(`[StopSignal] Runtime ARN: ${runtimeArn}`)
 
-      const dynamoClient = new DynamoDBClient({ region })
-
-      const dynamoKey = {
-        userId: userId,
-        sk: `SESSION#${sessionId}`
-      }
-      console.log(`[StopSignal] DynamoDB key: ${JSON.stringify(dynamoKey)}`)
-      console.log(`[StopSignal] Table: ${tableName}`)
-
-      const command = new UpdateItemCommand({
-        TableName: tableName,
-        Key: marshall(dynamoKey),
-        UpdateExpression: 'SET stopRequested = :val, stopRequestedAt = :ts',
-        ExpressionAttributeValues: marshall({
-          ':val': true,
-          ':ts': new Date().toISOString()
-        })
+      const command = new InvokeAgentRuntimeCommand({
+        agentRuntimeArn: runtimeArn,
+        qualifier: 'DEFAULT',
+        contentType: 'application/json',
+        payload: Buffer.from(JSON.stringify(payload)),
+        runtimeUserId: userId,
+        runtimeSessionId: sessionId
       })
 
-      await dynamoClient.send(command)
-      console.log(`[StopSignal] DynamoDB stop signal set successfully for key: ${JSON.stringify(dynamoKey)}`)
+      const response = await agentCoreClient.send(command)
+      console.log(`[StopSignal] Cloud stop signal set successfully, traceId: ${response.traceId}`)
     }
 
     return NextResponse.json({

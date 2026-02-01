@@ -128,10 +128,10 @@ export const JsonDisplay = React.memo<JsonDisplayProps>(({
       {/* Header with label and copy button */}
       {label && (
         <div className="flex items-center justify-between px-3 py-2 bg-muted/50 border-b border-border rounded-t-lg">
-          <span className="text-sm font-medium text-foreground">{label}</span>
+          <span className="text-label font-medium text-foreground">{label}</span>
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted"
+            className="flex items-center gap-1 text-caption text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted"
             title="Copy JSON"
           >
             {isCopied ? (
@@ -151,7 +151,7 @@ export const JsonDisplay = React.memo<JsonDisplayProps>(({
       
       {/* JSON Content */}
       <div className="p-3 overflow-x-auto" style={{ maxWidth: '100%' }}>
-        <div className={`font-mono text-xs leading-relaxed ${needsTruncation && !isExpanded ? 'max-h-48 overflow-hidden' : ''}`}>
+        <div className={`font-mono text-caption leading-relaxed ${needsTruncation && !isExpanded ? 'max-h-48 overflow-hidden' : ''}`}>
           <pre className="whitespace-pre-wrap break-words" style={{ maxWidth: '100%', wordBreak: 'break-word', overflowWrap: 'anywhere' }}>
             {highlightedContent}
           </pre>
@@ -162,7 +162,7 @@ export const JsonDisplay = React.memo<JsonDisplayProps>(({
           <div className="mt-3 pt-2 border-t border-border">
             <button
               onClick={handleToggleExpand}
-              className="flex items-center gap-1 text-xs text-primary hover:text-primary/80 transition-colors font-medium"
+              className="flex items-center gap-1 text-caption text-primary hover:text-primary/80 transition-colors font-medium"
             >
               {isExpanded ? (
                 <>
@@ -190,7 +190,7 @@ export const KeyValueDisplay = React.memo<{ data: Record<string, any>, className
 }) => {
   if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
     return (
-      <div className={`text-sm text-muted-foreground italic p-3 bg-muted rounded ${className}`}>
+      <div className={`text-label text-muted-foreground italic p-3 bg-muted rounded ${className}`}>
         No parameters
       </div>
     )
@@ -200,14 +200,14 @@ export const KeyValueDisplay = React.memo<{ data: Record<string, any>, className
     <div className={`space-y-2 ${className}`}>
       {Object.entries(data).map(([key, value]) => (
         <div key={key} className="flex flex-col sm:flex-row sm:items-start gap-1 sm:gap-3">
-          <div className="text-sm font-semibold text-primary min-w-0 sm:w-32 flex-shrink-0">
+          <div className="text-label font-semibold text-primary min-w-0 sm:w-32 flex-shrink-0">
             {key}:
           </div>
-          <div className="text-sm text-foreground min-w-0 flex-1">
+          <div className="text-label text-foreground min-w-0 flex-1">
             {typeof value === 'object' ? (
               <JsonDisplay data={value} maxLines={3} className="mt-1" />
             ) : (
-              <span className="font-mono bg-muted px-2 py-1 rounded text-xs">
+              <span className="font-mono bg-muted px-2 py-1 rounded text-caption">
                 {typeof value === 'string' ? `"${value}"` : String(value)}
               </span>
             )}

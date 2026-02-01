@@ -278,17 +278,17 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
                 <ArrowLeft className="h-3 w-3" />
               </Button>
             )}
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <span className="text-caption font-semibold text-muted-foreground uppercase tracking-wide">
               Compose Mode
             </span>
           </div>
-          <span className="text-xs text-muted-foreground/60">
+          <span className="text-caption text-muted-foreground/60">
             Step {['type', 'length', 'confirm'].indexOf(step) + 1}/3
           </span>
         </div>
 
         <div className="px-4 py-2">
-          <div className="text-sm font-medium text-foreground">
+          <div className="text-label font-medium text-foreground">
             {getStepTitle()}
           </div>
         </div>
@@ -350,17 +350,17 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
                   </div>
                 )}
                 <div className="flex-1 min-w-0">
-                  <div className="font-medium text-sm text-foreground">
+                  <div className="font-medium text-label text-foreground">
                     {option.label}
                   </div>
                   {'description' in option && (
-                    <div className="text-xs text-muted-foreground mt-0.5">
+                    <div className="text-caption text-muted-foreground mt-0.5">
                       {option.description}
                     </div>
                   )}
                 </div>
                 {selectedIndex === index && (
-                  <div className="text-xs text-muted-foreground/40 mt-1">↵</div>
+                  <div className="text-caption text-muted-foreground/40 mt-1">↵</div>
                 )}
               </button>
               ))}
@@ -368,7 +368,7 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
           )
         ) : (
           <div className="px-4 py-3 space-y-3">
-            <div className="space-y-2 text-sm">
+            <div className="space-y-2 text-label">
               <div className="flex items-center justify-between">
                 <span className="text-muted-foreground">Type:</span>
                 <span className="font-medium">
@@ -385,7 +385,7 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
 
             {/* Topic Input */}
             <div className="space-y-3">
-              <label className="text-xs font-medium text-muted-foreground">
+              <label className="text-caption font-medium text-muted-foreground">
                 What's your topic?
               </label>
 
@@ -399,7 +399,7 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
                     className="mt-1"
                   />
                   <div className="flex-1">
-                    <div className="text-sm font-medium">Specific Topic</div>
+                    <div className="text-label font-medium">Specific Topic</div>
                     <Input
                       ref={topicInputRef}
                       type="text"
@@ -428,8 +428,8 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
                     className="mt-1"
                   />
                   <div className="flex-1">
-                    <div className="text-sm font-medium">Free Topic</div>
-                    <div className="text-xs text-muted-foreground mt-0.5">
+                    <div className="text-label font-medium">Free Topic</div>
+                    <div className="text-caption text-muted-foreground mt-0.5">
                       Let AI determine a relevant topic based on our conversation
                     </div>
                   </div>
@@ -461,7 +461,7 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
 
         {/* Footer */}
         <div className="px-3 py-2 bg-muted/30 border-t border-border">
-          <div className="text-xs text-muted-foreground flex items-center gap-2">
+          <div className="text-caption text-muted-foreground flex items-center gap-2">
             <kbd className="px-1.5 py-0.5 bg-background rounded text-[10px] font-mono border border-border">
               ↑↓
             </kbd>

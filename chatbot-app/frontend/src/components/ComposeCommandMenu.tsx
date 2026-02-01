@@ -133,10 +133,10 @@ export function ComposeCommandMenu({
       >
         <div className="px-3 py-2 bg-muted/50 border-b border-border">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            <span className="text-caption font-semibold text-muted-foreground uppercase tracking-wide">
               Compose Mode
             </span>
-            <span className="text-xs text-muted-foreground/60">
+            <span className="text-caption text-muted-foreground/60">
               Choose document type
             </span>
           </div>
@@ -158,14 +158,14 @@ export function ComposeCommandMenu({
                 {option.icon}
               </div>
               <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm text-foreground">
+                <div className="font-medium text-label text-foreground">
                   {option.label}
                 </div>
-                <div className="text-xs text-muted-foreground mt-0.5">
+                <div className="text-caption text-muted-foreground mt-0.5">
                   {option.description}
                 </div>
               </div>
-              <div className="text-xs text-muted-foreground/40 mt-1">
+              <div className="text-caption text-muted-foreground/40 mt-1">
                 {selectedIndex === index && '↵'}
               </div>
             </button>
@@ -173,7 +173,7 @@ export function ComposeCommandMenu({
         </div>
 
         <div className="px-3 py-2 bg-muted/30 border-t border-border">
-          <div className="text-xs text-muted-foreground flex items-center gap-2">
+          <div className="text-caption text-muted-foreground flex items-center gap-2">
             <kbd className="px-1.5 py-0.5 bg-background rounded text-[10px] font-mono border border-border">
               ↑↓
             </kbd>

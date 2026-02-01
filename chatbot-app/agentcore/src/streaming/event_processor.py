@@ -41,6 +41,7 @@ class StreamEventProcessor:
         self.stop_signal_provider = get_stop_signal_provider()
         self.last_stop_check_time = 0
         self.stop_check_interval = 1.0  # Check every 1 second (configurable)
+        self._stop_detected = False  # Cached stop state - once True, stops immediately
 
         # Initialize OpenTelemetry
         self.observability_enabled = os.getenv("AGENT_OBSERVABILITY_ENABLED", "false").lower() == "true"
@@ -86,12 +87,12 @@ class StreamEventProcessor:
         return False
 
     def _check_stop_signal(self) -> bool:
-        """Check if stop has been requested for current session"""
-        if not self.current_user_id or not self.current_session_id:
-            logger.debug(f"[StopSignal] Skipping check - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
-            return False
+        """Check if stop has been requested for current session."""
+        if self._stop_detected:
+            return True
 
-        if not self._should_check_stop_signal():
+        if not self.current_user_id or not self.current_session_id:
+            logger.debug(f"[StopSignal] No user/session: user={self.current_user_id}, session={self.current_session_id}")
             return False
 
         try:
@@ -100,10 +101,11 @@ class StreamEventProcessor:
                 self.current_session_id
             )
             if is_stopped:
-                logger.debug(f"[StopSignal] Stop signal detected for {self.current_user_id}:{self.current_session_id}")
+                self._stop_detected = True
+                logger.info(f"[StopSignal] ✅ Stop detected for {self.current_user_id}:{self.current_session_id}")
             return is_stopped
         except Exception as e:
-            logger.warning(f"[StopSignal] Error checking stop signal: {e}")
+            logger.warning(f"[StopSignal] Error: {e}")
             return False
 
     def _clear_stop_signal(self) -> None:
@@ -250,12 +252,12 @@ class StreamEventProcessor:
         # Extract user_id from invocation_state for stop signal checking
         self.current_user_id = self.invocation_state.get('user_id')
 
-        # Log stop signal provider info for debugging
-        logger.debug(f"[StopSignal] Stream started - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
-        logger.debug(f"[StopSignal] Provider: {type(self.stop_signal_provider).__name__}")
+        # Log stop signal info
+        logger.info(f"[StopSignal] Stream started - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
 
-        # Reset stop signal check timer
+        # Reset stop signal state for this stream
         self.last_stop_check_time = 0
+        self._stop_detected = False
 
         # Reset seen tool uses for each new stream
         self.seen_tool_uses.clear()
@@ -399,6 +401,12 @@ class StreamEventProcessor:
 
                     # Accumulate text for potential abort handling
                     self.partial_response_text += text_data
+
+                    # Check stop signal before yielding response (fast path using cached flag)
+                    if self._check_stop_signal():
+                        logger.info(f"[StopSignal] Stopping before response yield for session {session_id}")
+                        self._clear_stop_signal()
+                        raise StopRequestedException("Stop requested by user")
 
                     # Check if this is a raw XML tool call that needs parsing
                     tool_calls = self._parse_xml_tool_calls(text_data)

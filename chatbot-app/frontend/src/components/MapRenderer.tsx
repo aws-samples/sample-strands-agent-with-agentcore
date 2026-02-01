@@ -96,7 +96,7 @@ function MarkersList({ markers }: { markers: MapData['markers'] }) {
     <div className="mt-4 space-y-2">
       <div className="flex items-center gap-2 mb-2">
         <MapPin className="h-4 w-4 text-blue-500" />
-        <h4 className="text-sm font-semibold">Locations ({markers.length})</h4>
+        <h4 className="text-label font-semibold">Locations ({markers.length})</h4>
       </div>
       <div className="space-y-2 max-h-64 overflow-y-auto">
         {markers.map((marker, index) => (
@@ -105,23 +105,23 @@ function MarkersList({ markers }: { markers: MapData['markers'] }) {
             className="flex items-start gap-2 p-2 rounded-md bg-muted/50 hover:bg-muted transition-colors"
           >
             {marker.label && (
-              <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white text-xs flex items-center justify-center font-medium">
+              <div className="flex-shrink-0 w-6 h-6 rounded-full bg-blue-500 text-white text-caption flex items-center justify-center font-medium">
                 {marker.label}
               </div>
             )}
             <div className="flex-1 min-w-0">
               {marker.title && (
-                <div className="text-sm font-medium truncate">{marker.title}</div>
+                <div className="text-label font-medium truncate">{marker.title}</div>
               )}
               {marker.description && (
-                <div className="text-xs text-muted-foreground">{marker.description}</div>
+                <div className="text-caption text-muted-foreground">{marker.description}</div>
               )}
               {marker.place_id && (
                 <a
                   href={`https://www.google.com/maps/place/?q=place_id:${marker.place_id}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-xs text-blue-500 hover:underline inline-flex items-center gap-1 mt-1"
+                  className="text-caption text-blue-500 hover:underline inline-flex items-center gap-1 mt-1"
                 >
                   View on Google Maps
                   <ExternalLink className="h-3 w-3" />
@@ -142,33 +142,33 @@ function DirectionsInfo({ directions }: { directions: MapData['directions'] }) {
     <div className="mt-4">
       <div className="flex items-center gap-2 mb-2">
         <Navigation className="h-4 w-4 text-green-500" />
-        <h4 className="text-sm font-semibold">Route Details</h4>
+        <h4 className="text-label font-semibold">Route Details</h4>
       </div>
       <div className="space-y-2 p-3 rounded-md bg-muted/50">
         <div className="flex items-start gap-2">
-          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500 text-white text-xs flex items-center justify-center font-medium">
+          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-green-500 text-white text-caption flex items-center justify-center font-medium">
             A
           </div>
           <div className="flex-1">
-            <div className="text-sm font-medium">Origin</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-label font-medium">Origin</div>
+            <div className="text-caption text-muted-foreground">
               {directions.origin.address || `${directions.origin.lat}, ${directions.origin.lng}`}
             </div>
           </div>
         </div>
         <div className="flex items-start gap-2">
-          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-red-500 text-white text-xs flex items-center justify-center font-medium">
+          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-red-500 text-white text-caption flex items-center justify-center font-medium">
             B
           </div>
           <div className="flex-1">
-            <div className="text-sm font-medium">Destination</div>
-            <div className="text-xs text-muted-foreground">
+            <div className="text-label font-medium">Destination</div>
+            <div className="text-caption text-muted-foreground">
               {directions.destination.address || `${directions.destination.lat}, ${directions.destination.lng}`}
             </div>
           </div>
         </div>
         {(directions.distance || directions.duration || directions.mode) && (
-          <div className="pt-2 border-t border-border mt-2 flex flex-wrap gap-2 text-xs">
+          <div className="pt-2 border-t border-border mt-2 flex flex-wrap gap-2 text-caption">
             {directions.mode && (
               <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-background">
                 Mode: <strong>{directions.mode}</strong>
@@ -198,7 +198,7 @@ export const MapRenderer = React.memo<MapRendererProps>(({ mapData }) => {
   if (!mapData) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-sm text-red-600">No map data provided</div>
+        <div className="text-label text-red-600">No map data provided</div>
       </div>
     );
   }
@@ -224,7 +224,7 @@ export const MapRenderer = React.memo<MapRendererProps>(({ mapData }) => {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-xl flex items-center gap-2">
+            <CardTitle className="text-heading-lg flex items-center gap-2">
               {mapData.type === 'directions' ? (
                 <Navigation className="h-5 w-5 text-green-500" />
               ) : (
@@ -248,7 +248,7 @@ export const MapRenderer = React.memo<MapRendererProps>(({ mapData }) => {
         {/* Note about API key - only show if API key is not configured */}
         {!hasApiKey && (
           <div className="mb-4 p-3 rounded-md bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800">
-            <p className="text-xs text-yellow-800 dark:text-yellow-200">
+            <p className="text-caption text-yellow-800 dark:text-yellow-200">
               <strong>Note:</strong> To display the interactive map, set NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY in your environment.
               For now, you can view the locations using the links below.
             </p>
@@ -273,7 +273,7 @@ export const MapRenderer = React.memo<MapRendererProps>(({ mapData }) => {
           <div className="w-full h-96 bg-muted rounded-lg flex items-center justify-center border border-border">
             <div className="text-center space-y-2">
               <MapPin className="h-12 w-12 mx-auto text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
+              <p className="text-label text-muted-foreground">
                 {embedError ? 'Failed to load map' : hasApiKey ? 'Loading map...' : 'Map embed requires API key'}
               </p>
               <Button

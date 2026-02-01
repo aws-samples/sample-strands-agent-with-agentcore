@@ -67,7 +67,7 @@ const components: Partial<Components> = {
       const cleanChildren = String(children).replace(/^`+|`+$/g, '');
       return (
         <code
-          className="bg-zinc-100 dark:bg-zinc-800 py-0.5 px-1 rounded-md text-sm"
+          className="bg-zinc-100 dark:bg-zinc-800 py-0.5 px-1 rounded-md text-label"
           {...props}
         >
           {cleanChildren}

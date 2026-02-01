@@ -169,7 +169,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
 
   if (loading) {
     return (
-      <div className="h-8 px-3 flex items-center text-sm text-muted-foreground">
+      <div className="h-8 px-3 flex items-center text-label text-muted-foreground">
         Loading...
       </div>
     );
@@ -184,7 +184,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
         <div className="absolute -inset-[1px] rounded-lg bg-gradient-to-r from-violet-500 via-fuchsia-500 via-pink-500 via-rose-500 via-orange-500 via-amber-500 via-yellow-500 via-lime-500 via-green-500 via-emerald-500 via-teal-500 via-cyan-500 via-sky-500 via-blue-500 via-indigo-500 to-violet-500 opacity-50 animate-gradient-x" />
 
         {/* Content */}
-        <div className="relative h-8 px-3 flex items-center gap-2 text-sm font-semibold bg-background rounded-lg cursor-default">
+        <div className="relative h-8 px-3 flex items-center gap-2 text-label font-semibold bg-background rounded-lg cursor-default">
           <AudioWaveform className="w-4 h-4 text-fuchsia-500 animate-pulse" />
           <span className="bg-gradient-to-r from-violet-500 via-fuchsia-500 to-pink-500 bg-clip-text text-transparent">
             Nova Sonic 2
@@ -200,7 +200,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
         <Button
           variant="ghost"
           size="sm"
-          className="h-8 px-3 text-sm font-medium text-muted-foreground/70 hover:bg-muted-foreground/10 transition-all duration-200 flex items-center gap-2"
+          className="h-8 px-3 text-label font-medium text-muted-foreground/70 hover:bg-muted-foreground/10 transition-all duration-200 flex items-center gap-2"
         >
           <span className="truncate max-w-[200px]">
             {selectedModel ? selectedModel.name : 'Select model'}
@@ -217,11 +217,11 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
         {/* Header */}
         <div className="p-4 border-b shrink-0 bg-gradient-to-b from-slate-50/50 to-transparent dark:from-slate-900/50">
           <div className="flex items-center justify-between mb-3">
-            <h3 className="text-base font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
+            <h3 className="text-body font-semibold flex items-center gap-2 text-slate-900 dark:text-slate-100">
               <Cpu className="w-4.5 h-4.5 text-slate-700 dark:text-slate-300" />
               Select Model
             </h3>
-            <span className="text-xs font-medium px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+            <span className="text-caption font-medium px-2.5 py-1 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
               {availableModels.length} available
             </span>
           </div>
@@ -233,7 +233,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
               placeholder="Search models..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 h-9 text-sm bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-500"
+              className="pl-9 h-9 text-label bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 focus-visible:ring-2 focus-visible:ring-blue-500/20 focus-visible:border-blue-500"
             />
           </div>
         </div>
@@ -241,14 +241,14 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
         {/* Model List */}
         <div className="flex-1 overflow-y-auto p-3">
           {Object.entries(groupedModels).length === 0 ? (
-            <div className="flex items-center justify-center h-full text-sm text-muted-foreground">
+            <div className="flex items-center justify-center h-full text-label text-muted-foreground">
               No models found
             </div>
           ) : (
             <div className="space-y-4">
               {Object.entries(groupedModels).map(([provider, models]) => (
                 <div key={provider}>
-                  <div className="text-xs font-semibold text-muted-foreground/70 uppercase tracking-wide px-2 mb-2">
+                  <div className="text-caption font-semibold text-muted-foreground/70 uppercase tracking-wide px-2 mb-2">
                     {provider}
                   </div>
                   <div className="space-y-1">
@@ -272,14 +272,14 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus }: ModelConf
                             {isSelected && <Check className="w-3 h-3 text-white" />}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className={`text-sm font-medium ${
+                            <div className={`text-label font-medium ${
                               isSelected
                                 ? 'text-blue-900 dark:text-blue-100'
                                 : 'text-slate-700 dark:text-slate-300'
                             }`}>
                               {model.name}
                             </div>
-                            <div className="text-xs text-muted-foreground/70 mt-0.5 line-clamp-2">
+                            <div className="text-caption text-muted-foreground/70 mt-0.5 line-clamp-2">
                               {model.description}
                             </div>
                           </div>

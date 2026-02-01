@@ -175,7 +175,7 @@ export function ToolSidebar({
           <div className="flex flex-row justify-between items-center">
             <div className="flex items-center gap-2">
               <Settings className="h-5 w-5 text-sidebar-foreground" />
-              <span className="text-lg font-semibold text-sidebar-foreground">Chatbot</span>
+              <span className="text-heading font-semibold text-sidebar-foreground">Chatbot</span>
             </div>
             <div className="flex items-center gap-1">
               <Button
@@ -211,9 +211,9 @@ export function ToolSidebar({
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
               <Wrench className="h-4 w-4 text-sidebar-foreground" />
-              <span className="text-sm font-semibold text-sidebar-foreground">Tools</span>
+              <span className="text-label font-semibold text-sidebar-foreground">Tools</span>
             </div>
-            <span className="text-xs text-sidebar-foreground/60">
+            <span className="text-caption text-sidebar-foreground/60">
               {enabledCount}/{totalCount} enabled
             </span>
           </div>
@@ -289,12 +289,12 @@ export function ToolSidebar({
 
       {/* Footer */}
       <SidebarFooter className="flex-shrink-0 border-t border-sidebar-border/50">
-        <div className="text-xs text-sidebar-foreground/60 text-center">
+        <div className="text-caption text-sidebar-foreground/60 text-center">
           {isMobile ? (
             'Tap outside to close'
           ) : (
             <>
-              Press <kbd className="px-1.5 py-0.5 bg-sidebar-accent rounded text-xs font-mono">⌘B</kbd> to toggle
+              Press <kbd className="px-1.5 py-0.5 bg-sidebar-accent rounded text-caption font-mono">⌘B</kbd> to toggle
             </>
           )}
         </div>

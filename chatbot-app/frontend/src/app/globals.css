@@ -44,12 +44,12 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 /* Chart Renderer Styles */
 .chart-data-summary {
   @apply mt-4 p-3 bg-gray-50 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-md;
-  font-size: 0.75rem !important;
+  font-size: var(--font-chart-header);
 }
 
 .chart-data-summary-header {
   @apply font-medium text-gray-700 dark:text-gray-200 cursor-pointer flex items-center;
-  font-size: 0.75rem !important;
+  font-size: var(--font-chart-header);
 }
 
 .chart-data-summary-content {
@@ -58,7 +58,7 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 
 .chart-data-table {
   @apply min-w-full border-collapse;
-  font-size: 0.95rem !important;
+  font-size: var(--font-chart-cell);
 }
 
 .chart-data-table-header {
@@ -67,8 +67,8 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 
 .chart-data-table-header-cell {
   @apply px-2 py-1.5 text-left font-medium text-gray-700 dark:text-gray-200 border-b dark:border-gray-600;
-  font-size: 0.95rem !important;
-  padding: 0.75rem 1rem !important;
+  font-size: var(--font-chart-cell);
+  padding: 0.75rem 1rem;
 }
 
 .chart-data-table-row-even {
@@ -81,13 +81,13 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 
 .chart-data-table-cell {
   @apply px-2 py-1.5 border-b border-gray-100 dark:border-gray-700 tabular-nums;
-  font-size: 0.95rem !important;
-  padding: 0.75rem 1rem !important;
+  font-size: var(--font-chart-cell);
+  padding: 0.75rem 1rem;
 }
 
 .chart-data-count {
   @apply mr-1.5 tabular-nums;
-  font-size: 0.75rem !important;
+  font-size: var(--font-chart-header);
 }
 
 .details-icon {
@@ -98,6 +98,27 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 
 @layer base {
   :root {
+    /* Base font size - change this to scale all fonts */
+    --font-base: 14px;
+
+    /* Font sizes - centralized management */
+    /* All values relative to --font-base via rem */
+    --font-caption: 0.75rem;      /* 10.5px - timestamps, meta info */
+    --font-label: 0.875rem;       /* 12.25px - labels, secondary text */
+    --font-body: 1rem;            /* 14px - default body text */
+    --font-body-lg: 1.071rem;     /* 15px - slightly larger body */
+    --font-input: 1.285rem;       /* 18px - chat input */
+    --font-title: 1.143rem;       /* 16px - small titles */
+    --font-heading: 1.285rem;     /* 18px - headings */
+    --font-heading-lg: 1.428rem;  /* 20px - large headings */
+    --font-display: 1.714rem;     /* 24px - display text */
+
+    /* Special purpose font sizes */
+    --font-ai-message: 1.071rem;  /* 15px - AI message text */
+    --font-chart-header: 0.75rem; /* 10.5px - chart headers */
+    --font-chart-cell: 0.95rem;   /* 13.3px - chart table cells */
+    --font-citation: 0.785rem;    /* 11px - citation links */
+
     --background: 0 0% 100%;
     --foreground: 220 13% 29%;
     --card: 220 14% 98%;
@@ -174,9 +195,9 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
     @apply bg-background text-foreground;
   }
   
-  /* Slightly smaller base font size for better density */
+  /* Base font size for rem calculations */
   html {
-    font-size: 14px;
+    font-size: var(--font-base);
   }
 }
 
@@ -354,10 +375,10 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
   @apply text-base mb-4;
 }
 
-/* AI Message Typography - uses CSS custom property for font size */
+/* AI Message Typography - uses centralized font variable */
 .ai-message-text {
-  font-size: var(--ai-font-size, 15px) !important;
-  line-height: 1.8 !important;
+  font-size: var(--font-ai-message);
+  line-height: 1.8;
 }
 
 .ai-message-text p,
@@ -367,19 +388,19 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 .ai-message-text span,
 .ai-message-text ul,
 .ai-message-text ol {
-  font-size: var(--ai-font-size, 15px) !important;
-  line-height: 1.8 !important;
+  font-size: var(--font-ai-message);
+  line-height: 1.8;
 }
 
-/* Citation styling - override ai-message-text font size */
+/* Citation styling */
 .ai-message-text .citation-inline a {
-  font-size: 11px !important;
-  line-height: 1.3 !important;
+  font-size: var(--font-citation);
+  line-height: 1.3;
 }
 
 .ai-message-text .citation-inline a span {
-  font-size: 11px !important;
-  line-height: 1.3 !important;
+  font-size: var(--font-citation);
+  line-height: 1.3;
 }
 
 .ai-message-text .citation-inline a svg {

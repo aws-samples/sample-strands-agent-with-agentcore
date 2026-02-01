@@ -58,7 +58,7 @@ export function ToolItem({ tool, onToggleTool }: ToolItemProps) {
                 </div>
               )}
               {tool.icon && (
-                <div className="text-lg leading-none">
+                <div className="text-heading leading-none">
                   {tool.icon}
                 </div>
               )}
@@ -68,8 +68,8 @@ export function ToolItem({ tool, onToggleTool }: ToolItemProps) {
             </button>
           </TooltipTrigger>
           <TooltipContent side="right" className="max-w-xs">
-            <p className="text-sm mb-1">{tool.description}</p>
-            <p className="text-xs opacity-70">{nestedTools.length} tools included</p>
+            <p className="text-label mb-1">{tool.description}</p>
+            <p className="text-caption opacity-70">{nestedTools.length} tools included</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -95,7 +95,7 @@ export function ToolItem({ tool, onToggleTool }: ToolItemProps) {
                 </div>
               )}
               {tool.icon && (
-                <div className="text-lg leading-none">
+                <div className="text-heading leading-none">
                   {tool.icon}
                 </div>
               )}

@@ -212,8 +212,17 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
     def _append_message_tracked(self, message: Dict, agent: "Agent") -> None:
         """Append message with API call tracking."""
+        # Filter out empty content blocks before saving
+        filtered_message = self._filter_empty_text(message)
+
+        # Skip if content is completely empty after filtering
+        content = filtered_message.get("content", [])
+        if not content or (isinstance(content, list) and len(content) == 0):
+            logger.debug(f"[Save] Skipping message with empty content (likely from stop signal)")
+            return
+
         start = time.time()
-        super().append_message(message, agent)
+        super().append_message(filtered_message, agent)
         elapsed_ms = (time.time() - start) * 1000
         self._api_call_count += 1
         self._api_call_total_ms += elapsed_ms
@@ -228,7 +237,16 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
     def save_message_with_state(self, message: Dict, agent: "Agent") -> None:
         """Save message and agent state in a single API call using unified actorId."""
-        session_message = SessionMessage.from_message(message, 0)
+        # Filter out empty content blocks before saving (stop signal can leave incomplete messages)
+        filtered_message = self._filter_empty_text(message)
+
+        # Skip if content is completely empty after filtering
+        content = filtered_message.get("content", [])
+        if not content or (isinstance(content, list) and len(content) == 0):
+            logger.debug(f"[Save] Skipping message with empty content (likely from stop signal)")
+            return
+
+        session_message = SessionMessage.from_message(filtered_message, 0)
         message_payloads = AgentCoreMemoryConverter.message_to_payload(session_message)
 
         if not message_payloads:
@@ -348,13 +366,30 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
     @staticmethod
     def _filter_empty_text(message: dict) -> dict:
-        """Filter out empty text blocks from message content."""
+        """Filter out empty or invalid content blocks from message.
+
+        Removes:
+        - Blocks with empty text ("")
+        - Blocks with only whitespace text
+        - Blocks that don't have any valid content (text, toolUse, toolResult, etc.)
+        """
         if "content" not in message:
             return message
         content = message.get("content", [])
         if not isinstance(content, list):
             return message
-        filtered = [block for block in content if not (isinstance(block, dict) and block.get("text") == "")]
+
+        def is_valid_block(block):
+            if not isinstance(block, dict):
+                return False
+            # Check if text block has non-empty content
+            if "text" in block:
+                text = block.get("text", "")
+                return isinstance(text, str) and text.strip() != ""
+            # Check if block has other valid content (toolUse, toolResult, image, document)
+            return any(key in block for key in ["toolUse", "toolResult", "image", "document"])
+
+        filtered = [block for block in content if is_valid_block(block)]
         return {**message, "content": filtered}
 
     def _parse_message_from_payload(self, payload_item: dict) -> Optional[SessionMessage]:

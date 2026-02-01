@@ -13,10 +13,10 @@ export default function Loading() {
 
         {/* Loading text */}
         <div className="flex flex-col items-center gap-2">
-          <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+          <p className="text-heading font-medium text-gray-700 dark:text-gray-300">
             Loading Agent...
           </p>
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+          <p className="text-label text-gray-500 dark:text-gray-400">
             Preparing your AI assistant
           </p>
         </div>

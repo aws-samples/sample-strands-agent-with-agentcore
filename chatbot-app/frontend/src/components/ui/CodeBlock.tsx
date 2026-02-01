@@ -36,7 +36,7 @@ export function CodeBlock({
   return (
     <span className="not-prose block">
       <span className="flex items-center justify-between bg-zinc-800 text-zinc-200 px-4 py-2 rounded-t-lg">
-        <span className="text-sm font-medium">
+        <span className="text-label font-medium">
           {className?.replace('language-', '') || 'code'}
         </span>
         <Button
@@ -54,7 +54,7 @@ export function CodeBlock({
       </span>
       <code
         {...props}
-        className="block text-sm w-full overflow-x-auto bg-zinc-900 p-4 border border-zinc-200 dark:border-zinc-700 rounded-b-lg text-zinc-50 whitespace-pre-wrap break-words"
+        className="block text-label w-full overflow-x-auto bg-zinc-900 p-4 border border-zinc-200 dark:border-zinc-700 rounded-b-lg text-zinc-50 whitespace-pre-wrap break-words"
       >
         {children}
       </code>

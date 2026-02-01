@@ -317,9 +317,9 @@ export function Canvas({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-sidebar-foreground" />
-            <span className="text-lg font-semibold text-sidebar-foreground">Canvas</span>
+            <span className="text-heading font-semibold text-sidebar-foreground">Canvas</span>
             {artifacts.length > 0 && (
-              <span className="text-sm text-sidebar-foreground/60">({artifacts.length})</span>
+              <span className="text-label text-sidebar-foreground/60">({artifacts.length})</span>
             )}
           </div>
           <Button
@@ -347,10 +347,10 @@ export function Canvas({
               <div className="px-4 py-3 border-b border-sidebar-border/50">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-lg text-sidebar-foreground truncate mb-2">
+                    <h3 className="font-semibold text-heading text-sidebar-foreground truncate mb-2">
                       {selectedArtifact.title}
                     </h3>
-                    <div className="flex items-center gap-4 text-sm text-sidebar-foreground/60">
+                    <div className="flex items-center gap-4 text-label text-sidebar-foreground/60">
                       {/* Type */}
                       <div className="flex items-center gap-1.5">
                         <Tag className="h-3.5 w-3.5" />
@@ -414,12 +414,12 @@ export function Canvas({
                             (props as any).inline ? (
                               <code
                                 {...props}
-                                className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono"
+                                className="bg-muted px-1.5 py-0.5 rounded text-label font-mono"
                               />
                             ) : (
                               <code
                                 {...props}
-                                className="block bg-muted p-3 rounded-md text-sm font-mono overflow-x-auto"
+                                className="block bg-muted p-3 rounded-md text-label font-mono overflow-x-auto"
                               />
                             ),
                         }}
@@ -436,7 +436,7 @@ export function Canvas({
                       />
                     </div>
                   ) : (
-                    <div className="text-sm text-sidebar-foreground/60">
+                    <div className="text-label text-sidebar-foreground/60">
                       Preview not available for this artifact type
                     </div>
                   )}
@@ -448,7 +448,7 @@ export function Canvas({
             <div className="flex-1 flex items-center justify-center text-sidebar-foreground/50">
               <div className="text-center">
                 <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="text-sm">Select a canvas item to preview</p>
+                <p className="text-label">Select a canvas item to preview</p>
               </div>
             </div>
           )}
@@ -468,13 +468,13 @@ export function Canvas({
           </div>
 
           <div className="px-4 py-3 flex-1 flex flex-col min-h-0">
-            <div className="text-xs font-medium text-sidebar-foreground/60 uppercase tracking-wide mb-3">
+            <div className="text-caption font-medium text-sidebar-foreground/60 uppercase tracking-wide mb-3">
               Canvas Library ({displayArtifacts.length})
             </div>
             <div className="overflow-x-auto overflow-y-hidden flex-1">
               <div className="flex gap-4 pb-2 min-w-min h-full">
                 {displayArtifacts.length === 0 ? (
-                  <div className="px-4 py-8 text-center text-sm text-sidebar-foreground/50 w-full">
+                  <div className="px-4 py-8 text-center text-label text-sidebar-foreground/50 w-full">
                     No artifacts yet
                   </div>
                 ) : (
@@ -495,10 +495,10 @@ export function Canvas({
                             {getArtifactIcon(artifact.type)}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-sm truncate mb-1 text-sidebar-foreground">
+                            <div className="font-semibold text-label truncate mb-1 text-sidebar-foreground">
                               {artifact.title}
                             </div>
-                            <div className="flex items-center gap-2 text-xs text-sidebar-foreground/60">
+                            <div className="flex items-center gap-2 text-caption text-sidebar-foreground/60">
                               <span className="font-medium">{getArtifactTypeLabel(artifact.type)}</span>
                               <span>•</span>
                               <span>{formatTimestamp(artifact.timestamp)}</span>
@@ -506,12 +506,12 @@ export function Canvas({
                           </div>
                         </div>
                         {preview && (
-                          <p className="text-xs text-sidebar-foreground/60 line-clamp-2 leading-relaxed">
+                          <p className="text-caption text-sidebar-foreground/60 line-clamp-2 leading-relaxed">
                             {preview}
                           </p>
                         )}
                         {artifact.description && (
-                          <div className="mt-2 text-xs text-sidebar-foreground/50">
+                          <div className="mt-2 text-caption text-sidebar-foreground/50">
                             {artifact.description}
                           </div>
                         )}

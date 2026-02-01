@@ -37,11 +37,11 @@ const ArtifactNotification = ({ title, wordCount }: { title: string; wordCount: 
   return (
     <button
       onClick={handleClick}
-      className="inline-flex items-center gap-2.5 text-base text-muted-foreground hover:text-foreground transition-colors h-9"
+      className="inline-flex items-center gap-2.5 text-body text-muted-foreground hover:text-foreground transition-colors h-9"
     >
       <Sparkles className="w-4 h-4" />
       <span className="font-medium">{title}</span>
-      <span className="text-sm opacity-60">· {wordCount.toLocaleString()} words</span>
+      <span className="text-label opacity-60">· {wordCount.toLocaleString()} words</span>
     </button>
   )
 }
@@ -566,7 +566,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                               style={{ maxHeight: '400px' }}
                             />
                             <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <Badge variant="secondary" className="text-xs bg-black/70 text-white border-0">
+                              <Badge variant="secondary" className="text-caption bg-black/70 text-white border-0">
                                 {imageFormat}
                               </Badge>
                             </div>
@@ -585,7 +585,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
             <div className="mt-4 p-3 bg-gray-50/60 dark:bg-gray-800/30 rounded-lg border border-gray-200/60 dark:border-gray-700/40">
               <div className="flex items-center gap-2 mb-2">
                 <FileText className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
-                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">
+                <span className="text-caption font-medium text-gray-600 dark:text-gray-400">
                   {turnDocuments.length} {turnDocuments.length === 1 ? 'Document' : 'Documents'}
                 </span>
               </div>
@@ -601,7 +601,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       <div className="flex items-center justify-center w-7 h-7 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
                         <Icon className={`h-3.5 w-3.5 ${color}`} />
                       </div>
-                      <span className="text-sm font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
+                      <span className="text-label font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
                         {doc.filename}
                       </span>
                       <Download className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -617,13 +617,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
             <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -mt-2">
               {/* Latency Metrics */}
               {latencyMetrics?.timeToFirstToken && (
-                <Badge variant="secondary" className="text-xs bg-blue-100 text-blue-700 border-blue-200 flex items-center gap-1">
+                <Badge variant="secondary" className="text-caption bg-blue-100 text-blue-700 border-blue-200 flex items-center gap-1">
                   <Zap className="h-3 w-3" />
                   TTFT: {latencyMetrics.timeToFirstToken}ms
                 </Badge>
               )}
               {latencyMetrics?.endToEndLatency && (
-                <Badge variant="secondary" className="text-xs bg-green-100 text-green-700 border-green-200 flex items-center gap-1">
+                <Badge variant="secondary" className="text-caption bg-green-100 text-green-700 border-green-200 flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   E2E: {latencyMetrics.endToEndLatency}ms
                 </Badge>
@@ -631,7 +631,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
               {/* Token Usage Metrics */}
               {tokenUsage && (
-                <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700 border-purple-200 flex items-center gap-1">
+                <Badge variant="secondary" className="text-caption bg-purple-100 text-purple-700 border-purple-200 flex items-center gap-1">
                   <Coins className="h-3 w-3" />
                   Token: {tokenUsage.inputTokens.toLocaleString()} in / {tokenUsage.outputTokens.toLocaleString()} out
                   {((tokenUsage.cacheReadInputTokens && tokenUsage.cacheReadInputTokens > 0) ||

@@ -41,8 +41,7 @@ logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 # Suppress verbose logging from various modules
 logging.getLogger("strands.experimental.bidi").setLevel(logging.WARNING)
 
-# Suppress detailed streaming logs (too verbose during normal operation)
-# Set to DEBUG level to reduce noise; change to INFO for debugging streaming issues
+# Streaming logs (set to INFO to debug stop signal issues)
 logging.getLogger("streaming.event_processor").setLevel(logging.WARNING)
 
 # Suppress Gateway MCP client detailed logs (tool listing, filtering)

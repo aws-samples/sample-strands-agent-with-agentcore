@@ -104,6 +104,14 @@ async def invocations(request: InvocationRequest, http_request: Request):
 
         return {"status": "warm"}
 
+    # Handle stop action - set in-memory flag for immediate stop
+    if input_data.action == "stop":
+        from agent.stop_signal import get_stop_signal_provider
+        provider = get_stop_signal_provider()
+        provider.request_stop(input_data.user_id, input_data.session_id)
+        logger.info(f"[Stop] Stop signal set via /invocations for session={input_data.session_id}")
+        return {"status": "stop_requested", "session_id": input_data.session_id}
+
     # Add tracing attributes
     span = trace.get_current_span()
     span.set_attribute("user.id", input_data.user_id or "anonymous")

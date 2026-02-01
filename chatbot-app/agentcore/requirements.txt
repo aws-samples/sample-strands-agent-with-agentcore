@@ -35,8 +35,17 @@ aws-opentelemetry-distro>=0.10.1
 bedrock-agentcore>=1.1.5
 
 # Nova Act SDK (for natural language browser automation via AgentCore Browser)
-# Disabled: conflicts with strands-agents>=1.21.0 required for BidiAgent
-# nova-act>=3.0.0
+# NOTE: nova-act requires --no-deps due to strands-agents version conflict
+# Install with: pip install nova-act --no-deps
+# Dependencies below are for nova-act (excluding strands-agents)
+numpy<=2.2.6
+pandas
+pillow
+pytz
+retry
+fire
+playwright>=1.54.0,<=1.56.0
+install_playwright>=0.1.0,<1.0.0
 
 # Testing
 pytest>=7.0.0

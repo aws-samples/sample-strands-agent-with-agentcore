@@ -590,6 +590,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
   const stopGeneration = useCallback(() => {
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
+    // Send stop signal to backend (sets flag in DB/memory)
+    // Do NOT abort fetch - let backend handle graceful shutdown
+    // so that saved response matches what user sees
     sendStopSignal()
   }, [sendStopSignal])
 

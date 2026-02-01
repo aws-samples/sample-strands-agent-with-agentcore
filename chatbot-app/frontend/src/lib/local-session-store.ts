@@ -294,16 +294,16 @@ function readAgentMessages(
   agentId: string,
   baseDir: string
 ): Array<{ message: any; timestamp: string; source: string }> {
-  // Validate agentId to prevent path traversal
+  // Validate agentId (only allow known values)
   if (!validateAgentId(agentId)) {
     console.error(`[LocalSessionStore] Invalid agentId: ${agentId}`)
     return []
   }
 
-  const messagesDir = path.join(sessionDir, 'agents', `agent_${agentId}`, 'messages')
+  const messagesDir = path.resolve(sessionDir, 'agents', `agent_${agentId}`, 'messages')
 
   // Verify path stays within base directory
-  if (!isPathWithinBase(messagesDir, baseDir)) {
+  if (!messagesDir.startsWith(path.resolve(baseDir) + path.sep)) {
     console.error(`[LocalSessionStore] Path traversal attempt detected`)
     return []
   }
@@ -316,14 +316,14 @@ function readAgentMessages(
     .filter(f => f.startsWith('message_') && f.endsWith('.json'))
 
   return messageFiles.map(filename => {
-    // Validate filename to prevent path traversal via directory listing
+    // Validate filename format strictly
     if (!/^message_\d+\.json$/.test(filename)) {
       return null
     }
-    const filePath = path.join(messagesDir, filename)
+    const filePath = path.resolve(messagesDir, filename)
 
     // Double-check path stays within base
-    if (!isPathWithinBase(filePath, baseDir)) {
+    if (!filePath.startsWith(path.resolve(baseDir) + path.sep)) {
       return null
     }
 
@@ -347,19 +347,20 @@ function readAgentMessages(
  */
 export function getSessionMessages(sessionId: string): any[] {
   try {
-    // Validate sessionId to prevent path traversal
+    // Validate and sanitize sessionId to prevent path traversal
     if (!validateSessionId(sessionId)) {
       console.error(`[LocalSessionStore] Invalid sessionId format: ${sessionId}`)
       throw new Error('Invalid session ID format')
     }
+    const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '')
 
     // Path to AgentCore Runtime storage
-    const agentcoreSessionsDir = path.join(process.cwd(), '..', 'agentcore', 'sessions')
-    const sessionDir = path.join(agentcoreSessionsDir, `session_${sessionId}`)
+    const agentcoreSessionsDir = path.resolve(process.cwd(), '..', 'agentcore', 'sessions')
+    const sessionDir = path.resolve(agentcoreSessionsDir, `session_${sanitizedSessionId}`)
 
-    // Verify sessionDir stays within agentcoreSessionsDir
-    if (!isPathWithinBase(sessionDir, agentcoreSessionsDir)) {
-      console.error(`[LocalSessionStore] Path traversal attempt detected for sessionId: ${sessionId}`)
+    // Double-check path is within base
+    if (!sessionDir.startsWith(agentcoreSessionsDir + path.sep)) {
+      console.error(`[LocalSessionStore] Path traversal attempt detected`)
       return []
     }
 
@@ -403,19 +404,21 @@ export function getSessionMessages(sessionId: string): any[] {
  */
 export function getSessionArtifacts(sessionId: string): any[] {
   try {
-    // Validate sessionId to prevent path traversal
+    // Validate and sanitize sessionId to prevent path traversal
     if (!validateSessionId(sessionId)) {
       console.error(`[LocalSessionStore] Invalid sessionId format: ${sessionId}`)
       throw new Error('Invalid session ID format')
     }
+    // Sanitize: only keep alphanumeric, underscore, hyphen
+    const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '')
 
     // Path to AgentCore Runtime storage
-    const agentcoreSessionsDir = path.join(process.cwd(), '..', 'agentcore', 'sessions')
-    const sessionDir = path.join(agentcoreSessionsDir, `session_${sessionId}`)
+    const agentcoreSessionsDir = path.resolve(process.cwd(), '..', 'agentcore', 'sessions')
+    const sessionDir = path.resolve(agentcoreSessionsDir, `session_${sanitizedSessionId}`)
 
-    // Verify sessionDir stays within agentcoreSessionsDir
-    if (!isPathWithinBase(sessionDir, agentcoreSessionsDir)) {
-      console.error(`[LocalSessionStore] Path traversal attempt detected for sessionId: ${sessionId}`)
+    // Double-check path is within base (defense in depth)
+    if (!sessionDir.startsWith(agentcoreSessionsDir + path.sep)) {
+      console.error(`[LocalSessionStore] Path traversal attempt detected`)
       return []
     }
 
@@ -425,12 +428,11 @@ export function getSessionArtifacts(sessionId: string): any[] {
     }
 
     // Read agent.json from default agent (artifacts are stored in ChatAgent state)
-    const agentDir = path.join(sessionDir, 'agents', 'agent_default')
-    const agentJsonPath = path.join(agentDir, 'agent.json')
+    const agentJsonPath = path.resolve(sessionDir, 'agents', 'agent_default', 'agent.json')
 
-    // Verify agentJsonPath stays within agentcoreSessionsDir
-    if (!isPathWithinBase(agentJsonPath, agentcoreSessionsDir)) {
-      console.error(`[LocalSessionStore] Path traversal attempt detected for agent.json`)
+    // Double-check path is within base
+    if (!agentJsonPath.startsWith(agentcoreSessionsDir + path.sep)) {
+      console.error(`[LocalSessionStore] Path traversal attempt detected`)
       return []
     }
 

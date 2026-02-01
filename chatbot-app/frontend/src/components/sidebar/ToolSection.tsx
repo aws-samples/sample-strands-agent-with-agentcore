@@ -48,7 +48,7 @@ export function ToolSection({
               <ChevronRight className="h-4 w-4 transition-transform text-sidebar-foreground/70" />
           )}
           <Icon className="h-4 w-4 text-sidebar-foreground/80" />
-          <span className="font-semibold text-sm">{title}</span>
+          <span className="font-semibold text-label">{title}</span>
         </div>
       </SidebarGroupLabel>
       {expanded && (

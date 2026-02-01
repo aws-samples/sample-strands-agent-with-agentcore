@@ -412,12 +412,12 @@ export function ResearchModal({
             <div className="p-2 bg-blue-500/10 rounded-lg">
               <FlaskConical className="w-5 h-5 text-blue-500" />
             </div>
-            <DialogTitle className="text-lg font-semibold">{agentName}</DialogTitle>
+            <DialogTitle className="text-heading font-semibold">{agentName}</DialogTitle>
           </div>
 
           {/* Status bar */}
           {isLoading && (
-            <div className="mt-4 flex items-center gap-2 text-sm">
+            <div className="mt-4 flex items-center gap-2 text-label">
               <Loader2 className={`w-4 h-4 animate-spin ${getStatusColor()}`} />
               <span className={getStatusColor()}>{getStatusText()}</span>
             </div>
@@ -450,7 +450,7 @@ export function ResearchModal({
                         return (
                           <span className="flex items-center justify-center p-4 bg-muted rounded" style={{ display: 'flex' }}>
                             <Loader2 className="w-4 h-4 animate-spin mr-2" />
-                            <span className="text-sm text-muted-foreground">Loading image...</span>
+                            <span className="text-label text-muted-foreground">Loading image...</span>
                           </span>
                         )
                       }
@@ -462,7 +462,7 @@ export function ResearchModal({
                       // Fallback while resolving
                       return (
                         <span className="flex items-center justify-center p-4 bg-muted rounded" style={{ display: 'flex' }}>
-                          <span className="text-sm text-muted-foreground">Image pending...</span>
+                          <span className="text-label text-muted-foreground">Image pending...</span>
                         </span>
                       )
                     }
@@ -529,7 +529,7 @@ export function ResearchModal({
                           href={href}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 text-xs bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-700 dark:hover:text-blue-300 no-underline transition-colors"
+                          className="inline-flex items-center gap-1 px-2 py-0.5 mx-0.5 text-caption bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900 hover:text-blue-700 dark:hover:text-blue-300 no-underline transition-colors"
                           title={href}
                           {...props}
                         >
@@ -562,11 +562,11 @@ export function ResearchModal({
           ) : isLoading ? (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <Loader2 className="w-8 h-8 animate-spin mb-4" />
-              <p className="text-sm">Starting research...</p>
+              <p className="text-label">Starting research...</p>
             </div>
           ) : (
             <div className="flex items-center justify-center h-full text-muted-foreground">
-              <p className="text-sm">No results yet</p>
+              <p className="text-label">No results yet</p>
             </div>
           )}
         </div>
@@ -575,7 +575,7 @@ export function ResearchModal({
         {status === 'complete' && (
           <div className="px-6 py-4 border-t bg-muted/30">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-muted-foreground">
+              <p className="text-caption text-muted-foreground">
                 Research completed • {Math.round(result.length / 1000)}k characters
               </p>
               <div className="flex items-center gap-2">
