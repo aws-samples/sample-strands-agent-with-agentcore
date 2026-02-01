@@ -39,7 +39,7 @@
     "@smithy/protocol-http": "^4.0.0",
     "@smithy/signature-v4": "^4.0.0",
     "@tailwindcss/typography": "^0.5.16",
-    "aws-amplify": "^6.0.0",
+    "aws-amplify": "^6.16.0",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.0.0",
     "framer-motion": "^12.23.11",
