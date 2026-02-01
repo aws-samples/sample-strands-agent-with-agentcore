@@ -49,6 +49,7 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
   const [customInputValue, setCustomInputValue] = useState('')
   const [topicInput, setTopicInput] = useState('')
   const [useFreeTopic, setUseFreeTopic] = useState(false)
+  const [ignoreNextEnter, setIgnoreNextEnter] = useState(false)
   const customInputRef = React.useRef<HTMLInputElement>(null)
   const topicInputRef = React.useRef<HTMLInputElement>(null)
 
@@ -62,6 +63,7 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
       setCustomInputValue('')
       setTopicInput('')
       setUseFreeTopic(false)
+      setIgnoreNextEnter(true)
     }
   }, [isOpen])
 
@@ -98,6 +100,13 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
     if (!isOpen) return
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore the Enter key that opened the wizard
+      if (e.key === 'Enter' && ignoreNextEnter) {
+        e.preventDefault()
+        setIgnoreNextEnter(false)
+        return
+      }
+
       // Handle custom input mode
       if (showCustomInput) {
         if (e.key === 'Enter') {
@@ -138,7 +147,7 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isOpen, step, selectedIndex, currentOptions, showCustomInput, customInputValue])
+  }, [isOpen, step, selectedIndex, currentOptions, showCustomInput, customInputValue, ignoreNextEnter])
 
   const handleSelect = (option: any) => {
     // Check if custom option selected

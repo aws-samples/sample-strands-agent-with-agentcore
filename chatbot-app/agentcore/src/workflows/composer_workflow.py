@@ -1313,21 +1313,51 @@ Please address this feedback in the revised outline.
         except json.JSONDecodeError:
             pass
 
-        # Try to find JSON in markdown code block
-        json_match = re.search(r'```(?:json)?\s*\n?(.*?)\n?```', text, re.DOTALL)
-        if json_match:
+        # Strip markdown code fences if present
+        cleaned = text.strip()
+        if cleaned.startswith('```'):
+            # Remove opening fence (```json or ```)
+            cleaned = re.sub(r'^```(?:json)?\s*\n?', '', cleaned)
+            # Remove closing fence
+            cleaned = re.sub(r'\n?```\s*$', '', cleaned)
             try:
-                return json.loads(json_match.group(1))
+                return json.loads(cleaned)
             except json.JSONDecodeError:
                 pass
 
-        # Try to find JSON object pattern
-        json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', text, re.DOTALL)
-        if json_match:
-            try:
-                return json.loads(json_match.group(0))
-            except json.JSONDecodeError:
-                pass
+        # Find JSON object using bracket counting for nested structures
+        start_idx = text.find('{')
+        if start_idx != -1:
+            depth = 0
+            end_idx = start_idx
+            in_string = False
+            escape = False
+
+            for i, char in enumerate(text[start_idx:], start_idx):
+                if escape:
+                    escape = False
+                    continue
+                if char == '\\' and in_string:
+                    escape = True
+                    continue
+                if char == '"' and not escape:
+                    in_string = not in_string
+                    continue
+                if in_string:
+                    continue
+                if char == '{':
+                    depth += 1
+                elif char == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end_idx = i
+                        break
+
+            if depth == 0:
+                try:
+                    return json.loads(text[start_idx:end_idx + 1])
+                except json.JSONDecodeError:
+                    pass
 
         raise ValueError(f"Could not extract JSON from response: {text[:200]}...")
 

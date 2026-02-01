@@ -7,7 +7,7 @@ export default function Home() {
   return (
     <div className="min-h-screen gradient-subtle text-foreground transition-all duration-300">
       <SidebarProvider defaultOpen={false}>
-        <ChatInterface mode="standalone" />
+        <ChatInterface />
       </SidebarProvider>
     </div>
   )

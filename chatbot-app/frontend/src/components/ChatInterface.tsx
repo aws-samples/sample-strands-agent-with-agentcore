@@ -3,15 +3,14 @@
 import React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useChat } from "@/hooks/useChat"
-import { useIframeAuth, postAuthStatusToParent } from "@/hooks/useIframeAuth"
 import { useArtifacts } from "@/hooks/useArtifacts"
+import { useAgentExecutions } from "@/hooks/useAgentExecutions"
 import { ArtifactType } from "@/types/artifact"
 import { ChatMessage } from "@/components/chat/ChatMessage"
 import { AssistantTurn } from "@/components/chat/AssistantTurn"
 import { Greeting } from "@/components/Greeting"
 import { ChatSidebar } from "@/components/ChatSidebar"
 import { ToolsDropdown } from "@/components/ToolsDropdown"
-import { SuggestedQuestions } from "@/components/SuggestedQuestions"
 import { BrowserLiveViewButton } from "@/components/BrowserLiveViewButton"
 import { ResearchModal } from "@/components/ResearchModal"
 import { BrowserResultModal } from "@/components/BrowserResultModal"
@@ -20,6 +19,7 @@ import { SwarmProgress } from "@/components/SwarmProgress"
 import { Canvas } from "@/components/Canvas"
 import { VoiceAnimation } from "@/components/VoiceAnimation"
 import { ComposeWizard, ComposeConfig } from "@/components/ComposeWizard"
+import { ChatInputArea } from "@/components/chat/ChatInputArea"
 import { useComposer } from "@/hooks/useComposer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -35,9 +35,6 @@ import { apiGet } from "@/lib/api-client"
 import { useTheme } from "next-themes"
 import { useVoiceIntegration } from "@/hooks/useVoiceIntegration"
 
-interface ChatInterfaceProps {
-  mode: 'standalone' | 'embedded'
-}
 
 // Custom debounce hook
 function useDebounce<T extends (...args: any[]) => any>(
@@ -83,8 +80,7 @@ function useThrottle<T extends (...args: any[]) => any>(
   }, [callback, delay]) as T
 }
 
-export function ChatInterface({ mode }: ChatInterfaceProps) {
-  const isEmbedded = mode === 'embedded'
+export function ChatInterface() {
   const sidebarContext = useSidebar()
   const { setOpen, setOpenMobile, open } = sidebarContext
   const { theme, setTheme } = useTheme()
@@ -115,6 +111,13 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
 
   // Ref for artifact refresh callback (to avoid circular dependency)
   const refreshArtifactsRef = useRef<(() => void) | null>(null)
+
+  // Memoize the artifact update callback to prevent infinite loops
+  const handleArtifactUpdated = useCallback(() => {
+    if (refreshArtifactsRef.current) {
+      refreshArtifactsRef.current()
+    }
+  }, [])
 
   const {
     groupedMessages,
@@ -147,12 +150,7 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     finalizeVoiceMessage,
     addArtifactMessage,
   } = useChat({
-    onArtifactUpdated: () => {
-      // Call the ref function (set after useArtifacts initializes)
-      if (refreshArtifactsRef.current) {
-        refreshArtifactsRef.current()
-      }
-    }
+    onArtifactUpdated: handleArtifactUpdated
   })
 
   // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
@@ -188,35 +186,24 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
   // Stable sessionId reference to prevent unnecessary re-renders
   const stableSessionId = useMemo(() => sessionId || undefined, [sessionId])
 
-  // iframe auth (only for embedded mode)
-  const iframeAuth = isEmbedded ? useIframeAuth() : { isInIframe: false, isAuthenticated: false, user: null, isLoading: false, error: null }
-
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [suggestionKey, setSuggestionKey] = useState<string>("initial")
   const [currentModelName, setCurrentModelName] = useState<string>("")
   const [isResearchEnabled, setIsResearchEnabled] = useState<boolean>(false)
-  const [isResearchModalOpen, setIsResearchModalOpen] = useState<boolean>(false)
-  const [activeResearchId, setActiveResearchId] = useState<string | null>(null)
-  // Track each research execution independently
-  const [researchData, setResearchData] = useState<Map<string, {
-    query: string
-    result: string
-    status: 'idle' | 'searching' | 'analyzing' | 'generating' | 'complete' | 'error' | 'declined'
-    agentName: string
-  }>>(new Map())
-  // Browser modal state (separate from research)
-  const [isBrowserModalOpen, setIsBrowserModalOpen] = useState<boolean>(false)
-  const [activeBrowserId, setActiveBrowserId] = useState<string | null>(null)
-  // Track each browser execution independently
-  const [browserData, setBrowserData] = useState<Map<string, {
-    query: string
-    result: string
-    status: 'idle' | 'running' | 'complete' | 'error'
-    agentName: string
-  }>>(new Map())
   const messagesEndRef = useRef<HTMLDivElement>(null)
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const isComposingRef = useRef(false)
+
+  // Agent executions (research/browser)
+  const {
+    researchData,
+    browserData,
+    isResearchModalOpen,
+    isBrowserModalOpen,
+    activeResearchId,
+    activeBrowserId,
+    handleResearchClick,
+    handleBrowserClick,
+    closeResearchModal,
+    closeBrowserModal,
+  } = useAgentExecutions(groupedMessages)
 
   // Compose wizard state
   const [isComposeWizardOpen, setIsComposeWizardOpen] = useState(false)
@@ -500,127 +487,6 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     toggleSwarmHook(newValue)
   }, [toggleSwarmHook, swarmEnabled])
 
-  // Monitor messages for research_agent and browser_use_agent tool executions separately
-  // PERFORMANCE: Use useMemo to compute data, then sync to state only if changed
-  const { computedResearchData, computedBrowserData } = useMemo(() => {
-    const newResearchData = new Map<string, {
-      query: string
-      result: string
-      status: 'idle' | 'searching' | 'analyzing' | 'generating' | 'complete' | 'error' | 'declined'
-      agentName: string
-    }>()
-    const newBrowserData = new Map<string, {
-      query: string
-      result: string
-      status: 'idle' | 'running' | 'complete' | 'error'
-      agentName: string
-    }>()
-
-    // Process ALL research/browser executions to avoid missing historical data
-    // (User may click on old research results to view modal)
-    for (const group of groupedMessages) {
-      if (group.type === 'assistant_turn') {
-        for (const message of group.messages) {
-          const toolExecutions = message.toolExecutions
-          if (!toolExecutions || toolExecutions.length === 0) continue
-
-          // PERFORMANCE: Filter once instead of twice
-          for (const execution of toolExecutions) {
-            if (execution.toolName === 'research_agent') {
-              const executionId = execution.id
-              const query = execution.toolInput?.plan || "Research Task"
-
-              if (!execution.isComplete) {
-                newResearchData.set(executionId, {
-                  query: query,
-                  result: execution.streamingResponse || '',
-                  status: execution.streamingResponse ? 'generating' : 'searching',
-                  agentName: 'Research Agent'
-                })
-              } else if (execution.toolResult) {
-                const resultText = execution.toolResult.toLowerCase()
-                const isError = execution.isCancelled || resultText.includes('error:') || resultText.includes('failed:')
-                const isDeclined = resultText === 'user declined to proceed with research' ||
-                                  resultText === 'user declined to proceed with browser automation'
-
-                let status: 'complete' | 'error' | 'declined' = 'complete'
-                if (isError) status = 'error'
-                else if (isDeclined) status = 'declined'
-
-                newResearchData.set(executionId, {
-                  query: query,
-                  result: execution.toolResult,
-                  status: status,
-                  agentName: 'Research Agent'
-                })
-              }
-            } else if (execution.toolName === 'browser_use_agent') {
-              const executionId = execution.id
-              const query = execution.toolInput?.task || "Browser Task"
-
-              if (!execution.isComplete) {
-                newBrowserData.set(executionId, {
-                  query: query,
-                  result: execution.streamingResponse || '',
-                  status: 'running',
-                  agentName: 'Browser Use Agent'
-                })
-              } else if (execution.toolResult) {
-                const resultText = execution.toolResult.toLowerCase()
-                const isError = execution.isCancelled || resultText.includes('error:') || resultText.includes('failed:') || resultText.includes('browser automation failed')
-
-                newBrowserData.set(executionId, {
-                  query: query,
-                  result: execution.toolResult,
-                  status: isError ? 'error' : 'complete',
-                  agentName: 'Browser Use Agent'
-                })
-              }
-            }
-          }
-        }
-      }
-    }
-
-    return {
-      computedResearchData: newResearchData,
-      computedBrowserData: newBrowserData
-    }
-  }, [groupedMessages])
-
-  // Sync computed data to state only when it actually changes
-  useEffect(() => {
-    if (computedResearchData.size !== researchData.size ||
-        Array.from(computedResearchData.entries()).some(([id, data]) => {
-          const existing = researchData.get(id)
-          return !existing || existing.result !== data.result || existing.status !== data.status
-        })) {
-      setResearchData(computedResearchData)
-    }
-  }, [computedResearchData, researchData])
-
-  useEffect(() => {
-    if (computedBrowserData.size !== browserData.size ||
-        Array.from(computedBrowserData.entries()).some(([id, data]) => {
-          const existing = browserData.get(id)
-          return !existing || existing.result !== data.result || existing.status !== data.status
-        })) {
-      setBrowserData(computedBrowserData)
-    }
-  }, [computedBrowserData, browserData])
-
-  // Handle research container click
-  const handleResearchClick = useCallback((executionId: string) => {
-    setActiveResearchId(executionId)
-    setIsResearchModalOpen(true)
-  }, [])
-
-  // Handle browser container click
-  const handleBrowserClick = useCallback((executionId: string) => {
-    setActiveBrowserId(executionId)
-    setIsBrowserModalOpen(true)
-  }, [])
-
   // Export conversation to text file
   const exportConversation = useCallback(() => {
     if (groupedMessages.length === 0) return
@@ -713,34 +579,10 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     loadCurrentModel()
   }, [loadCurrentModel])
 
-  // Post authentication status to parent window (embedded mode only)
-  useEffect(() => {
-    if (isEmbedded && !iframeAuth.isLoading) {
-      postAuthStatusToParent(iframeAuth.isAuthenticated, iframeAuth.user)
-    }
-  }, [isEmbedded, iframeAuth.isAuthenticated, iframeAuth.user, iframeAuth.isLoading])
-
-  // Development helper - expose auth verification in console (embedded mode only)
-  useEffect(() => {
-    if (isEmbedded && typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
-      (window as any).runAuthVerification = async () => {
-        const { quickAuthVerification } = await import('@/utils/auth-verification')
-        return quickAuthVerification()
-      }
-      console.log('Development mode: Run window.runAuthVerification() to test authentication')
-    }
-  }, [isEmbedded])
-
-  const regenerateSuggestions = useCallback(() => {
-    setSuggestionKey(`suggestion-${Date.now()}`)
-  }, [])
-
   const handleNewChat = useCallback(async () => {
-    // Force disconnect voice chat before creating new session
     forceDisconnectVoice()
     await newChat()
-    regenerateSuggestions()
-  }, [newChat, regenerateSuggestions, forceDisconnectVoice])
+  }, [newChat, forceDisconnectVoice])
 
   // Wrapper for loadSession that disconnects voice first
   const handleLoadSession = useCallback(async (newSessionId: string) => {
@@ -748,14 +590,6 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     forceDisconnectVoice()
     await loadSession(newSessionId)
   }, [loadSession, forceDisconnectVoice])
-
-  const handleToggleTool = useCallback(
-    async (toolId: string) => {
-      await toggleTool(toolId)
-      regenerateSuggestions()
-    },
-    [toggleTool, regenerateSuggestions],
-  )
 
   // Compose wizard handlers
   const handleComposeComplete = useCallback(async (config: ComposeConfig) => {
@@ -794,19 +628,11 @@ export function ChatInterface({ mode }: ChatInterfaceProps) {
     await startCompose(composeMessage)
   }, [startCompose, open, setOpen, setOpenMobile, setInputMessage])
 
-  // Detect /compose command
-  useEffect(() => {
-    if (inputMessage.trim() === '/compose') {
-      // Get textarea rect for wizard positioning
-      if (textareaRef.current) {
-        const rect = textareaRef.current.getBoundingClientRect()
-        setInputRect(rect)
-        setIsComposeWizardOpen(true)
-      }
-    } else {
-      setIsComposeWizardOpen(false)
-    }
-  }, [inputMessage])
+  // Open compose wizard handler (called from ChatInputArea)
+  const handleOpenComposeWizard = useCallback((rect: DOMRect) => {
+    setInputRect(rect)
+    setIsComposeWizardOpen(true)
+  }, [])
 
   const handleSendMessage = async (e: React.FormEvent, files: File[]) => {
     if (open) {
@@ -935,112 +761,6 @@ If the user asks to modify this document, use the update_artifact tool to find a
     return hasActiveSwarmProgress && lastGroup?.type === 'assistant_turn';
   }, [swarmProgress, groupedMessages])
 
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files || [])
-    // Append new files to existing ones instead of replacing
-    setSelectedFiles((prev) => [...prev, ...files])
-    // Clear the input so the same file can be selected again if needed
-    event.target.value = ""
-  }
-
-  const removeFile = (index: number) => {
-    setSelectedFiles((prev) => prev.filter((_, i) => i !== index))
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Don't handle Enter/Escape when compose wizard is open (handled by wizard)
-    if (isComposeWizardOpen && (e.key === "Enter" || e.key === "Escape" || e.key === "ArrowUp" || e.key === "ArrowDown")) {
-      return
-    }
-
-    if (e.key === "Enter" && !e.shiftKey) {
-      // Don't submit if user is composing Korean/Chinese/Japanese
-      if (isComposingRef.current) {
-        return
-      }
-
-      // Detect touch-capable devices (mobile/tablet)
-      const isTouchDevice = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-
-      // On touch devices (iPad, mobile), allow Enter to create new line
-      // On desktop, Enter sends message (Shift+Enter for new line)
-      if (isTouchDevice) {
-        // Allow default behavior (new line) on touch devices
-        return
-      }
-
-      e.preventDefault()
-      // Don't submit if voice mode is active or compose workflow in progress
-      if (agentStatus === 'idle' && !composer.isComposing && (inputMessage.trim() || selectedFiles.length > 0)) {
-        const syntheticEvent = {
-          preventDefault: () => {},
-        } as React.FormEvent
-        handleSendMessage(syntheticEvent, selectedFiles)
-        setSelectedFiles([])
-      }
-    }
-  }
-
-  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const items = e.clipboardData?.items
-    if (!items) return
-
-    const imageFiles: File[] = []
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile()
-        if (file) {
-          // Create a new file with a proper name (clipboard images have no name)
-          const extension = item.type.split('/')[1] || 'png'
-          const namedFile = new File([file], `clipboard-image-${Date.now()}.${extension}`, {
-            type: file.type
-          })
-          imageFiles.push(namedFile)
-        }
-      }
-    }
-
-    if (imageFiles.length > 0) {
-      e.preventDefault() // Prevent default paste behavior for images
-      setSelectedFiles(prev => [...prev, ...imageFiles])
-    }
-  }
-
-  const adjustTextareaHeightImmediate = useCallback(() => {
-    const textarea = textareaRef.current
-    if (textarea) {
-      textarea.style.height = "auto"
-      const scrollHeight = textarea.scrollHeight
-      const maxHeight = 128 // max-h-32 = 8rem = 128px
-      textarea.style.height = `${Math.min(scrollHeight, maxHeight)}px`
-    }
-  }, [])
-
-  const adjustTextareaHeight = useDebounce(adjustTextareaHeightImmediate, 100)
-
-  const handleQuestionSubmit = useCallback(async (question: string) => {
-    setInputMessage(question)
-    const syntheticEvent = {
-      preventDefault: () => {},
-      target: { elements: { message: { value: question } } },
-    } as any
-    await handleSendMessage(syntheticEvent, [])
-  }, [setInputMessage, handleSendMessage])
-
-  useEffect(() => {
-    adjustTextareaHeight()
-  }, [inputMessage, adjustTextareaHeight])
-
-  const getFileIcon = (file: File) => {
-    if (file.type.startsWith("image/")) {
-      return <ImageIcon className="w-3 h-3" />
-    } else if (file.type === "application/pdf") {
-      return <FileText className="w-3 h-3" />
-    }
-    return <FileText className="w-3 h-3" />
-  }
-
   return (
     <>
       {/* Chat Sidebar */}
@@ -1101,27 +821,12 @@ If the user asks to modify this document, use the update_artifact tool to find a
 
         {/* Top Controls - Show when chat started */}
         {groupedMessages.length > 0 && (
-          <div className={`sticky top-0 z-10 flex items-center justify-between ${isEmbedded ? 'p-2' : 'p-4'} bg-background/70 backdrop-blur-md border-b border-border/30 shadow-sm`}>
+          <div className="sticky top-0 z-10 flex items-center justify-between p-4 bg-background/70 backdrop-blur-md border-b border-border/30 shadow-sm">
             <div className="flex items-center gap-3">
               <SidebarTrigger />
-
-              {/* Show iframe status if in embedded mode */}
-              {isEmbedded && iframeAuth.isInIframe && (
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                  <span className="text-caption font-medium text-muted-foreground">Embedded</span>
-                </div>
-              )}
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Tool count indicator (embedded mode only) */}
-              {isEmbedded && totalCount > 0 && (
-                <div className="text-caption text-muted-foreground">
-                  {enabledCount}/{totalCount} tools
-                </div>
-              )}
-
               {/* Browser Live View Button */}
               <BrowserLiveViewButton sessionId={sessionId} browserSession={browserSession} />
 
@@ -1260,264 +965,51 @@ If the user asks to modify this document, use the update_artifact tool to find a
           </div>
         )}
 
-        {/* Suggested Questions - Show only for embedded mode or when explicitly enabled */}
-        {isEmbedded && groupedMessages.length === 0 && availableTools.length > 0 && (
-          <div className={`mx-auto w-full max-w-4xl px-4 pb-2`}>
-            <SuggestedQuestions
-              key={suggestionKey}
-              onQuestionSelect={(question) => setInputMessage(question)}
-              onQuestionSubmit={handleQuestionSubmit}
-              enabledTools={availableTools.filter((tool) => tool.enabled && tool.id !== 'agentcore_research-agent').map((tool) => tool.id)}
-            />
-          </div>
-        )}
-
-        {/* File Upload Area - Above Input */}
-        {selectedFiles.length > 0 && (
-          <div className={`mx-auto px-4 w-full md:max-w-4xl mb-2`}>
-            <div className="flex flex-wrap gap-2">
-              {selectedFiles.map((file, index) => (
-                <Badge key={index} variant="secondary" className="flex items-center gap-1 max-w-[200px]">
-                  {getFileIcon(file)}
-                  <span className="truncate text-caption">
-                    {file.name.length > 20 ? `${file.name.substring(0, 20)}...` : file.name}
-                  </span>
-                  <button
-                    onClick={() => removeFile(index)}
-                    className="ml-1 text-slate-500 hover:text-slate-700 text-label"
-                    type="button"
-                  >
-                    ×
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Input Area */}
-        <div className={`mx-auto px-4 pb-4 md:pb-6 w-full md:max-w-4xl ${isEmbedded ? 'flex-shrink-0' : ''}`}>
-          {/* Show title when chat not started */}
-          {groupedMessages.length === 0 && (
+        {/* Greeting - Show when chat not started */}
+        {groupedMessages.length === 0 && (
+          <div className="mx-auto px-4 w-full md:max-w-4xl">
             <div className="flex flex-col items-center justify-center mb-16 animate-fade-in">
               <Greeting />
             </div>
-          )}
-
-          {/* Gemini-style Chat Panel */}
-          <div className="bg-muted/40 dark:bg-zinc-900 rounded-2xl p-3 shadow-sm border border-border/50">
-            <form
-              onSubmit={async (e) => {
-                e.preventDefault()
-                if (isVoiceActive) return
-                await handleSendMessage(e, selectedFiles)
-                setSelectedFiles([])
-              }}
-            >
-              <Input
-                type="file"
-                accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx"
-                multiple
-                onChange={handleFileSelect}
-                className="hidden"
-                id="file-upload"
-              />
-              {/* Input row with Voice/Send buttons */}
-              <div className="flex items-end gap-2">
-                <Textarea
-                  ref={textareaRef}
-                  value={inputMessage}
-                  onChange={(e) => setInputMessage(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  onCompositionStart={() => {
-                    isComposingRef.current = true
-                  }}
-                  onCompositionEnd={() => {
-                    isComposingRef.current = false
-                  }}
-                  placeholder={
-                    composer.showOutlineConfirm
-                      ? "Please review the outline in the Canvas"
-                      : composer.isComposing
-                      ? "Document is being composed..."
-                      : isVoiceActive
-                      ? "Voice mode active - click mic to stop"
-                      : "Ask me anything..."
-                  }
-                  className="flex-1 min-h-[52px] max-h-36 border-0 focus:ring-0 resize-none py-2 px-1 leading-relaxed overflow-y-auto bg-transparent transition-all duration-200 placeholder:text-muted-foreground/60"
-                  disabled={agentStatus !== 'idle' || composer.showOutlineConfirm || composer.isComposing}
-                  rows={1}
-                />
-                {/* Voice & Send buttons */}
-                <div className="flex items-center gap-1.5 pb-1.5">
-                  {/* Voice Mode Button */}
-                  {isVoiceSupported && !swarmEnabled && (agentStatus === 'idle' || isVoiceActive) && (
-                    <TooltipProvider delayDuration={300}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={async () => {
-                              if (composer.showOutlineConfirm) return
-                              if (!isVoiceActive) {
-                                await connectVoice()
-                              } else {
-                                disconnectVoice()
-                              }
-                            }}
-                            disabled={composer.showOutlineConfirm}
-                            className={`h-9 w-9 p-0 rounded-xl transition-all duration-200 ${
-                              composer.showOutlineConfirm
-                                ? 'opacity-40 cursor-not-allowed'
-                                : agentStatus === 'voice_listening'
-                                ? 'bg-red-500 hover:bg-red-600 text-white'
-                                : agentStatus === 'voice_speaking'
-                                ? 'bg-green-500 hover:bg-green-600 text-white'
-                                : agentStatus === 'voice_connecting' || agentStatus === 'voice_processing'
-                                ? 'bg-yellow-500 hover:bg-yellow-600 text-white'
-                                : 'hover:bg-muted-foreground/10 text-muted-foreground'
-                            }`}
-                          >
-                            {agentStatus === 'voice_connecting' ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : agentStatus === 'voice_listening' ? (
-                              <VoiceAnimation type="listening" />
-                            ) : agentStatus === 'voice_speaking' ? (
-                              <VoiceAnimation type="speaking" />
-                            ) : (
-                              <Mic className="w-4 h-4" />
-                            )}
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {!isVoiceActive
-                            ? 'Start voice chat'
-                            : agentStatus === 'voice_connecting'
-                            ? 'Connecting...'
-                            : agentStatus === 'voice_listening'
-                            ? 'Listening... (click to stop)'
-                            : agentStatus === 'voice_speaking'
-                            ? 'Speaking... (click to stop)'
-                            : 'Voice active (click to stop)'}
-                        </TooltipContent>
-                      </Tooltip>
-                    </TooltipProvider>
-                  )}
-
-                  {/* Send/Stop Button */}
-                  {agentStatus !== 'idle' && !isVoiceActive ? (
-                    <Button
-                      type="button"
-                      onClick={stopGeneration}
-                      variant="ghost"
-                      size="sm"
-                      className="h-9 w-9 p-0 rounded-xl hover:bg-muted-foreground/10 transition-all duration-200"
-                      title={agentStatus === 'stopping' ? "Stopping..." : "Stop generation"}
-                      disabled={agentStatus === 'researching' || agentStatus === 'browser_automation' || agentStatus === 'stopping'}
-                    >
-                      {agentStatus === 'stopping' ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : (
-                        <Square className="w-4 h-4" />
-                      )}
-                    </Button>
-                  ) : !isVoiceActive ? (
-                    <Button
-                      type="button"
-                      onClick={async (e) => {
-                        e.preventDefault()
-                        if (agentStatus !== 'idle' || composer.showOutlineConfirm || composer.isComposing || (!inputMessage.trim() && selectedFiles.length === 0)) return
-                        await handleSendMessage(e as any, selectedFiles)
-                        setSelectedFiles([])
-                      }}
-                      disabled={agentStatus !== 'idle' || composer.showOutlineConfirm || composer.isComposing || (!inputMessage.trim() && selectedFiles.length === 0)}
-                      size="sm"
-                      className="h-9 w-9 p-0 gradient-primary hover:opacity-90 text-primary-foreground rounded-xl transition-all duration-200 disabled:opacity-40"
-                    >
-                      <Send className="w-4 h-4" />
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            </form>
-
-            {/* Bottom Options Bar - Icon only */}
-            <div className="flex items-center justify-between mt-2 pt-2 border-t border-border/30">
-              {/* Left: Upload, Tools (with Auto), Research */}
-              <TooltipProvider delayDuration={300}>
-                <div className="flex items-center gap-1">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => document.getElementById("file-upload")?.click()}
-                        disabled={isVoiceActive || composer.showOutlineConfirm}
-                        className="h-9 w-9 p-0 hover:bg-muted-foreground/10 transition-all duration-200 disabled:opacity-40 text-muted-foreground"
-                      >
-                        <Upload className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Upload files</p>
-                    </TooltipContent>
-                  </Tooltip>
-
-                  <ToolsDropdown
-                    availableTools={availableTools}
-                    onToggleTool={toggleTool}
-                    disabled={isResearchEnabled || isVoiceActive || composer.showOutlineConfirm || isCanvasOpen}
-                    autoEnabled={swarmEnabled}
-                    onToggleAuto={toggleSwarm}
-                  />
-
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={toggleResearchAgent}
-                        disabled={isVoiceActive || composer.showOutlineConfirm}
-                        className={`h-9 w-9 p-0 transition-all duration-200 ${
-                          isResearchEnabled
-                            ? 'bg-blue-500/15 hover:bg-blue-500/25 text-blue-500'
-                            : (isVoiceActive || composer.showOutlineConfirm)
-                            ? 'opacity-40 cursor-not-allowed'
-                            : 'hover:bg-muted-foreground/10 text-muted-foreground'
-                        }`}
-                      >
-                        <FlaskConical className="w-4 h-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>{isResearchEnabled ? 'Research mode (click to disable)' : 'Enable Research mode'}</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              </TooltipProvider>
-
-              {/* Right: Model */}
-              <div className="flex items-center">
-                <ModelConfigDialog sessionId={sessionId} agentStatus={agentStatus} />
-              </div>
-            </div>
           </div>
-        </div>
+        )}
+
+        {/* Chat Input Area */}
+        <ChatInputArea
+          inputMessage={inputMessage}
+          setInputMessage={setInputMessage}
+          selectedFiles={selectedFiles}
+          setSelectedFiles={setSelectedFiles}
+          agentStatus={agentStatus}
+          isVoiceActive={isVoiceActive}
+          isVoiceSupported={isVoiceSupported}
+          swarmEnabled={swarmEnabled}
+          isResearchEnabled={isResearchEnabled}
+          isCanvasOpen={isCanvasOpen}
+          availableTools={availableTools}
+          sessionId={sessionId}
+          composerState={{
+            isComposing: composer.isComposing,
+            showOutlineConfirm: composer.showOutlineConfirm,
+          }}
+          onSendMessage={handleSendMessage}
+          onStopGeneration={stopGeneration}
+          onToggleTool={toggleTool}
+          onToggleSwarm={toggleSwarm}
+          onToggleResearch={toggleResearchAgent}
+          onConnectVoice={connectVoice}
+          onDisconnectVoice={disconnectVoice}
+          onOpenComposeWizard={handleOpenComposeWizard}
+          onExportConversation={exportConversation}
+          onNewChat={handleNewChat}
+        />
       </SidebarInset>
 
       {/* Research Modal */}
       {activeResearchId && researchData.get(activeResearchId) && (
         <ResearchModal
           isOpen={isResearchModalOpen}
-          onClose={() => {
-            setIsResearchModalOpen(false)
-            setActiveResearchId(null)
-          }}
+          onClose={closeResearchModal}
           query={researchData.get(activeResearchId)!.query}
           isLoading={(() => {
             const status = researchData.get(activeResearchId)!.status
@@ -1534,15 +1026,9 @@ If the user asks to modify this document, use the update_artifact tool to find a
       {activeBrowserId && browserData.get(activeBrowserId) && (
         <BrowserResultModal
           isOpen={isBrowserModalOpen}
-          onClose={() => {
-            setIsBrowserModalOpen(false)
-            setActiveBrowserId(null)
-          }}
+          onClose={closeBrowserModal}
           query={browserData.get(activeBrowserId)!.query}
-          isLoading={(() => {
-            const status = browserData.get(activeBrowserId)!.status
-            return status === 'running'
-          })()}
+          isLoading={browserData.get(activeBrowserId)!.status === 'running'}
           result={browserData.get(activeBrowserId)!.result}
           status={browserData.get(activeBrowserId)!.status}
           browserProgress={browserProgress}

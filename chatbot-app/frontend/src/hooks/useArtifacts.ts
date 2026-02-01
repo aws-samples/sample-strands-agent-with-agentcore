@@ -124,20 +124,28 @@ export function useArtifacts(
     })
 
     // Merge: Keep backend artifacts and add new message artifacts
-    setArtifacts(prev => {
-      const merged = [...prev]
-      messageArtifacts.forEach(newArtifact => {
-        const existingIndex = merged.findIndex(a => a.id === newArtifact.id)
-        if (existingIndex >= 0) {
-          // Update existing
-          merged[existingIndex] = newArtifact
-        } else {
-          // Add new
-          merged.push(newArtifact)
-        }
+    // Only update state if there are actual changes
+    if (messageArtifacts.length > 0) {
+      setArtifacts(prev => {
+        let hasChanges = false
+        const merged = [...prev]
+
+        messageArtifacts.forEach(newArtifact => {
+          const existingIndex = merged.findIndex(a => a.id === newArtifact.id)
+          if (existingIndex >= 0) {
+            // Update existing
+            merged[existingIndex] = newArtifact
+            hasChanges = true
+          } else {
+            // Add new
+            merged.push(newArtifact)
+            hasChanges = true
+          }
+        })
+
+        return hasChanges ? merged : prev
       })
-      return merged
-    })
+    }
   }, [groupedMessages, sessionId, loadedFromBackend])
 
   const toggleCanvas = useCallback(() => {
@@ -158,7 +166,7 @@ export function useArtifacts(
    * Manually add an artifact
    * Used by Composer, Research, Browser, etc.
    */
-  const addArtifact = (artifact: Artifact) => {
+  const addArtifact = useCallback((artifact: Artifact) => {
     setArtifacts(prev => {
       // Check if artifact already exists (by ID)
       const existingIndex = prev.findIndex(a => a.id === artifact.id)
@@ -171,40 +179,39 @@ export function useArtifacts(
       // Add new artifact
       return [...prev, artifact]
     })
-  }
+  }, [])
 
   /**
    * Remove an artifact by ID
    */
-  const removeArtifact = (artifactId: string) => {
+  const removeArtifact = useCallback((artifactId: string) => {
     setArtifacts(prev => prev.filter(a => a.id !== artifactId))
     // If removing currently selected artifact, clear selection
     if (selectedArtifactId === artifactId) {
       setSelectedArtifactId(null)
     }
-  }
+  }, [selectedArtifactId])
 
   /**
    * Update an existing artifact
    * Used when agent updates an artifact via update_artifact tool
    */
-  const updateArtifact = (artifactId: string, updates: Partial<Artifact>) => {
+  const updateArtifact = useCallback((artifactId: string, updates: Partial<Artifact>) => {
     setArtifacts(prev => prev.map(a => {
       if (a.id === artifactId) {
         return { ...a, ...updates }
       }
       return a
     }))
-  }
+  }, [])
 
   /**
    * Refresh artifacts from history API
    * Called when artifact is updated via update_artifact tool
    */
-  const refreshArtifacts = async () => {
+  const refreshArtifacts = useCallback(async () => {
     if (!sessionId) return
 
-    console.log('[useArtifacts] Refreshing artifacts from history API...')
     try {
       const response = await fetch(`/api/conversation/history?session_id=${sessionId}`)
       if (response.ok) {
@@ -234,7 +241,7 @@ export function useArtifacts(
     } catch (error) {
       console.error('[useArtifacts] ❌ Failed to refresh artifacts:', error)
     }
-  }
+  }, [sessionId])
 
   return {
     artifacts,
