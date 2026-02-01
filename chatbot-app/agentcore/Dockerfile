@@ -19,6 +19,10 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install nova-act separately with --no-deps to avoid strands-agents version conflict
+# Dependencies for nova-act are already in requirements.txt (numpy, pandas, pillow, playwright, etc.)
+RUN pip install --no-cache-dir --no-deps nova-act
+
 # Copy application code
 COPY src/ ./src/
 
