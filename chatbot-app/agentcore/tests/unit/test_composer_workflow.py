@@ -4,7 +4,7 @@ import pytest
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from models.writing_schemas import (
+from models.composer_schemas import (
     WritingTaskStatus,
     WritingWorkflowStatus,
     WritingRequirements,
@@ -23,11 +23,8 @@ from workflows.composer_workflow import ComposerWorkflow
 MOCK_REQUIREMENTS_RESPONSE = json.dumps({
     "document_type": "report",
     "topic": "Cloud Computing Benefits",
-    "target_audience": "business executives",
-    "tone": "professional",
     "length_guidance": "medium",
-    "key_points": ["Cost reduction", "Scalability", "Security"],
-    "constraints": ["Include case studies"]
+    "extracted_points": ["Cost reduction", "Scalability", "Security"]
 })
 
 MOCK_OUTLINE_RESPONSE = json.dumps({
@@ -69,9 +66,11 @@ MOCK_INTRO_OUTRO_RESPONSE = json.dumps({
 })
 
 MOCK_REVIEW_RESPONSE = json.dumps({
-    "final_document": "# The Business Case for Cloud Computing\n\n## Introduction\n\nCloud computing content...",
-    "total_word_count": 1200,
-    "changes_made": ["Improved transitions", "Fixed formatting", "Enhanced clarity"]
+    "edits": [
+        {"old_text": "teh", "new_text": "the"},
+        {"old_text": "recieve", "new_text": "receive"}
+    ],
+    "edit_count": 2
 })
 
 
@@ -248,7 +247,7 @@ class TestParsingMethods:
         req = writing_agent._parse_requirements(MOCK_REQUIREMENTS_RESPONSE)
         assert req.document_type == "report"
         assert req.topic == "Cloud Computing Benefits"
-        assert len(req.key_points) == 3
+        assert len(req.extracted_points) == 3
 
     def test_parse_outline(self, writing_agent):
         """Test outline parsing"""
@@ -269,8 +268,8 @@ class TestParsingMethods:
     def test_parse_review_result(self, writing_agent):
         """Test review result parsing"""
         result = writing_agent._parse_review_result(MOCK_REVIEW_RESPONSE)
-        assert result.total_word_count == 1200
-        assert len(result.changes_made) == 3
+        assert result.edit_count == 2
+        assert len(result.edits) == 2
 
 
 # ============================================================
@@ -299,7 +298,7 @@ class TestDocumentAssembly:
 
     def test_assemble_full_document(self, writing_agent):
         """Test assembly with all parts"""
-        from models.writing_schemas import (
+        from models.composer_schemas import (
             IntroOutroContent,
             BodyWriteProgress,
             SectionContent

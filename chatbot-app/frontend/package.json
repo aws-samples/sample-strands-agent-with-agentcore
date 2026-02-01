@@ -68,7 +68,8 @@
     "mdast-util-to-hast": "^13.2.1",
     "jspdf": "^4.0.0",
     "@smithy/config-resolver": "^4.4.0",
-    "lodash": "^4.17.23"
+    "lodash": "^4.17.23",
+    "fast-xml-parser": "^5.3.4"
   },
   "devDependencies": {
     "@next/bundle-analyzer": "^16.0.5",
@@ -90,8 +91,5 @@
     "typescript": "^5",
     "vitest": "^3.2.4",
     "ws": "^8.19.0"
-  },
-  "overrides": {
-    "fast-xml-parser": "^5.3.4"
   }
 }
