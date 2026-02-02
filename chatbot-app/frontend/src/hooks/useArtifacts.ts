@@ -59,15 +59,34 @@ export function useArtifacts(
         console.log('[useArtifacts] ✅ Loaded artifacts from sessionStorage:', data.length)
 
         // Convert backend artifact format to frontend format
-        const backendArtifacts = data.map((item: any) => ({
-          id: item.id,
-          type: item.type,
-          title: item.title,
-          content: item.content,
-          description: item.metadata?.description || '',
-          timestamp: new Date(item.created_at).toISOString(),
-          sessionId: sessionId,
-        }))
+        const backendArtifacts = data.map((item: any) => {
+          // Handle timestamp - could be created_at or timestamp field
+          let timestamp = item.timestamp || item.created_at
+          if (timestamp) {
+            try {
+              const date = new Date(timestamp)
+              if (!isNaN(date.getTime())) {
+                timestamp = date.toISOString()
+              } else {
+                timestamp = new Date().toISOString()
+              }
+            } catch {
+              timestamp = new Date().toISOString()
+            }
+          } else {
+            timestamp = new Date().toISOString()
+          }
+
+          return {
+            id: item.id,
+            type: item.type,
+            title: item.title,
+            content: item.content,
+            description: item.metadata?.description || item.description || '',
+            timestamp,
+            sessionId: sessionId,
+          }
+        })
 
         console.log('[useArtifacts] Setting artifacts:', backendArtifacts)
         setArtifacts(backendArtifacts)
@@ -95,22 +114,8 @@ export function useArtifacts(
         group.messages.forEach((message) => {
           if (message.toolExecutions) {
             message.toolExecutions.forEach((execution) => {
-              // Research Agent artifacts
-              if (execution.toolName === 'research_agent' && execution.isComplete && execution.toolResult) {
-                const artifactId = `research-${execution.id}`
-                if (!messageArtifacts.find(a => a.id === artifactId)) {
-                  messageArtifacts.push({
-                    id: artifactId,
-                    type: 'research',
-                    title: execution.toolInput?.plan || 'Research Result',
-                    content: execution.toolResult,
-                    description: 'Research Agent analysis',
-                    toolName: 'research_agent',
-                    timestamp: message.timestamp,
-                    sessionId: sessionId || '',
-                  })
-                }
-              }
+              // Research artifacts are created manually in ChatInterface when complete
+              // No automatic extraction needed here
 
               // TODO: Add other artifact types
               // - Browser automation results
@@ -150,6 +155,10 @@ export function useArtifacts(
 
   const toggleCanvas = useCallback(() => {
     setIsCanvasOpen(prev => !prev)
+  }, [])
+
+  const openCanvas = useCallback(() => {
+    setIsCanvasOpen(true)
   }, [])
 
   const openArtifact = useCallback((id: string) => {
@@ -208,9 +217,10 @@ export function useArtifacts(
   /**
    * Refresh artifacts from history API
    * Called when artifact is updated via update_artifact tool
+   * Returns the refreshed artifacts array for immediate use
    */
-  const refreshArtifacts = useCallback(async () => {
-    if (!sessionId) return
+  const refreshArtifacts = useCallback(async (options?: { skipFlashEffect?: boolean }): Promise<Artifact[]> => {
+    if (!sessionId) return []
 
     try {
       const response = await fetch(`/api/conversation/history?session_id=${sessionId}`)
@@ -218,7 +228,7 @@ export function useArtifacts(
         const data = await response.json()
         const artifactsData = data.artifacts || []
         if (Array.isArray(artifactsData) && artifactsData.length > 0) {
-          const backendArtifacts = artifactsData.map((item: any) => ({
+          const backendArtifacts: Artifact[] = artifactsData.map((item: any) => ({
             id: item.id,
             type: item.type,
             title: item.title,
@@ -230,17 +240,22 @@ export function useArtifacts(
           console.log('[useArtifacts] ✅ Refreshed artifacts:', backendArtifacts.length)
           setArtifacts(backendArtifacts)
 
-          // Trigger flash effect
-          setJustUpdated(true)
-          setTimeout(() => setJustUpdated(false), 1500)
+          // Trigger flash effect (skip for research completion to avoid re-render)
+          if (!options?.skipFlashEffect) {
+            setJustUpdated(true)
+            setTimeout(() => setJustUpdated(false), 1500)
+          }
 
           // Also update sessionStorage
           sessionStorage.setItem(`artifacts-${sessionId}`, JSON.stringify(artifactsData))
+
+          return backendArtifacts
         }
       }
     } catch (error) {
       console.error('[useArtifacts] ❌ Failed to refresh artifacts:', error)
     }
+    return []
   }, [sessionId])
 
   return {
@@ -248,6 +263,7 @@ export function useArtifacts(
     selectedArtifactId,
     isCanvasOpen,
     toggleCanvas,
+    openCanvas,
     openArtifact,
     closeCanvas,
     setSelectedArtifactId,

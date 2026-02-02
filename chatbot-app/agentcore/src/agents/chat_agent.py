@@ -281,11 +281,12 @@ class ChatAgent(BaseAgent):
             else:
                 logger.debug(f"Prompt is string: {prompt[:100]}")
 
-            # Prepare invocation_state with model_id, user_id, session_id, and uploaded files
+            # Prepare invocation_state with model_id, user_id, session_id, session_manager, and uploaded files
             invocation_state = {
                 "session_id": self.session_id,
                 "user_id": self.user_id,
-                "model_id": self.model_id
+                "model_id": self.model_id,
+                "session_manager": self.session_manager  # For tools that need to persist state (e.g., research artifacts)
             }
 
             # Add uploaded files to invocation_state (for tool access)

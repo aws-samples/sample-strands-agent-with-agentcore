@@ -6,10 +6,10 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { X, FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal } from 'lucide-react'
 import { Artifact } from '@/types/artifact'
 import { ComposeArtifact } from '@/components/ComposeArtifact'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import rehypeRaw from 'rehype-raw'
+import { ResearchArtifact } from '@/components/ResearchArtifact'
 import { marked } from 'marked'
+import { citationPrintCSS } from '@/components/ui/CitationLink'
+import { Markdown } from '@/components/ui/Markdown'
 
 interface CanvasProps {
   isOpen: boolean
@@ -18,7 +18,9 @@ interface CanvasProps {
   selectedArtifactId: string | null
   onSelectArtifact: (id: string) => void
   composeState?: any // Live composer state
+  researchState?: any // Live research state
   justUpdated?: boolean // Flash effect trigger when artifact is updated
+  sessionId?: string
 }
 
 const getArtifactIcon = (type: string) => {
@@ -63,6 +65,18 @@ const getArtifactTypeLabel = (type: string) => {
   }
 }
 
+// Helper to strip <research> tags and extract clean content
+const stripResearchTags = (content: string): string => {
+  if (!content) return ''
+  // Extract content from <research> tags if present
+  const match = content.match(/<research>([\s\S]*?)<\/research>/)
+  if (match && match[1]) {
+    return match[1].trim()
+  }
+  // Remove any remaining <research> or </research> tags
+  return content.replace(/<\/?research>/g, '')
+}
+
 // Helper to extract preview text from artifact content
 const getPreviewText = (artifact: Artifact): string => {
   if (typeof artifact.content === 'string') {
@@ -86,23 +100,30 @@ export function Canvas({
   selectedArtifactId,
   onSelectArtifact,
   composeState,
+  researchState,
   justUpdated = false,
+  sessionId,
 }: CanvasProps) {
   const selectedArtifact = artifacts.find(a => a.id === selectedArtifactId)
+  const previewContentRef = useRef<HTMLDivElement>(null)
 
-  // Filter out compose type artifacts from the list (only show completed artifacts)
+  // Filter out in-progress compose artifacts from the list
+  // Research artifacts are only added when complete, so no filtering needed
   const displayArtifacts = artifacts.filter(a => a.type !== 'compose')
 
-  // Handle close - if outline confirmation is showing, treat as cancel
+  // Handle close - if outline/plan confirmation is showing, treat as cancel
   const handleClose = useCallback(() => {
     if (composeState?.showOutlineConfirm && composeState?.onCancel) {
-      // Outline confirmation is showing, treat close as cancel
+      // Compose outline confirmation is showing, treat close as cancel
       composeState.onCancel()
+    } else if (researchState?.showPlanConfirm && researchState?.onCancel) {
+      // Research plan confirmation is showing, treat close as cancel
+      researchState.onCancel()
     } else {
       // Normal close
       onClose()
     }
-  }, [composeState, onClose])
+  }, [composeState, researchState, onClose])
 
   // Download artifact as Markdown
   const handleDownloadMarkdown = () => {
@@ -120,12 +141,40 @@ export function Canvas({
     URL.revokeObjectURL(url)
   }
 
-  // Export to PDF via print
+  // Export to PDF via print - uses rendered HTML with resolved image URLs
   const handlePrintPDF = () => {
     if (!selectedArtifact || typeof selectedArtifact.content !== 'string') return
 
-    // Convert markdown to HTML
-    const htmlContent = marked.parse(selectedArtifact.content)
+    // Use rendered HTML from DOM (images already have presigned URLs)
+    const htmlContent = previewContentRef.current?.innerHTML || marked.parse(selectedArtifact.content)
+
+    // Base document styles
+    const baseCSS = `
+      * { box-sizing: border-box; }
+      body { font-family: system-ui, -apple-system, sans-serif; line-height: 1.7; margin: 0; padding: 0; color: #333; }
+      .container { max-width: 100%; margin: 0 auto; padding: 30mm 25mm; }
+      h1 { font-size: 2.2em; margin-top: 0; margin-bottom: 0.8em; font-weight: 600; line-height: 1.2; }
+      h2 { font-size: 1.6em; margin-top: 1.8em; margin-bottom: 0.6em; font-weight: 600; line-height: 1.3; }
+      h3 { font-size: 1.3em; margin-top: 1.5em; margin-bottom: 0.5em; font-weight: 600; }
+      h4, h5, h6 { margin-top: 1.2em; margin-bottom: 0.5em; font-weight: 600; }
+      p { margin: 0.8em 0; text-align: justify; }
+      ul, ol { margin: 0.8em 0; padding-left: 2.5em; }
+      li { margin: 0.4em 0; }
+      code { background: #f5f5f5; padding: 0.2em 0.5em; border-radius: 3px; font-family: monospace; font-size: 0.9em; }
+      pre { background: #f8f8f8; padding: 1.2em; border-radius: 5px; overflow-x: auto; margin: 1.2em 0; border: 1px solid #e0e0e0; }
+      pre code { background: none; padding: 0; }
+      blockquote { border-left: 4px solid #ddd; padding-left: 1.2em; margin: 1.2em 0; color: #666; font-style: italic; }
+      table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+      th, td { border: 1px solid #ddd; padding: 0.6em; text-align: left; }
+      th { background: #f5f5f5; font-weight: 600; }
+      img { max-width: 70%; height: auto; margin: 1.5em auto; display: block; }
+      @media print {
+        body { margin: 0; padding: 0; }
+        .container { padding: 20mm 25mm; }
+        h1, h2, h3, h4, h5, h6 { page-break-after: avoid; }
+        p, li { orphans: 3; widows: 3; }
+      }
+    `
 
     const printContent = `
       <!DOCTYPE html>
@@ -134,124 +183,23 @@ export function Canvas({
         <meta charset="utf-8">
         <title>${selectedArtifact.title}</title>
         <style>
-          * {
-            box-sizing: border-box;
-          }
-          body {
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            line-height: 1.7;
-            margin: 0;
-            padding: 0;
-            color: #333;
-          }
-          .container {
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 30mm 25mm;
-          }
-          h1 {
-            font-size: 2.2em;
-            margin-top: 0;
-            margin-bottom: 0.8em;
-            font-weight: 600;
-            line-height: 1.2;
-          }
-          h2 {
-            font-size: 1.6em;
-            margin-top: 1.8em;
-            margin-bottom: 0.6em;
-            font-weight: 600;
-            line-height: 1.3;
-          }
-          h3 {
-            font-size: 1.3em;
-            margin-top: 1.5em;
-            margin-bottom: 0.5em;
-            font-weight: 600;
-          }
-          h4, h5, h6 {
-            margin-top: 1.2em;
-            margin-bottom: 0.5em;
-            font-weight: 600;
-          }
-          p {
-            margin: 0.8em 0;
-            text-align: justify;
-          }
-          ul, ol {
-            margin: 0.8em 0;
-            padding-left: 2.5em;
-          }
-          li {
-            margin: 0.4em 0;
-          }
-          code {
-            background: #f5f5f5;
-            padding: 0.2em 0.5em;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
-            font-size: 0.9em;
-          }
-          pre {
-            background: #f8f8f8;
-            padding: 1.2em;
-            border-radius: 5px;
-            overflow-x: auto;
-            margin: 1.2em 0;
-            border: 1px solid #e0e0e0;
-          }
-          pre code {
-            background: none;
-            padding: 0;
-          }
-          blockquote {
-            border-left: 4px solid #ddd;
-            padding-left: 1.2em;
-            margin: 1.2em 0;
-            color: #666;
-            font-style: italic;
-          }
-          table {
-            border-collapse: collapse;
-            width: 100%;
-            margin: 1em 0;
-          }
-          th, td {
-            border: 1px solid #ddd;
-            padding: 0.6em;
-            text-align: left;
-          }
-          th {
-            background: #f5f5f5;
-            font-weight: 600;
-          }
-          @media print {
-            body {
-              margin: 0;
-              padding: 0;
-            }
-            .container {
-              padding: 20mm 25mm;
-            }
-            h1, h2, h3, h4, h5, h6 {
-              page-break-after: avoid;
-            }
-            p, li {
-              orphans: 3;
-              widows: 3;
-            }
-          }
+          ${baseCSS}
+          ${citationPrintCSS}
+          .print-controls { position: fixed; top: 20px; right: 20px; display: flex; gap: 8px; z-index: 1000; }
+          .print-controls button { padding: 10px 20px; font-size: 14px; font-weight: 500; border: none; border-radius: 6px; cursor: pointer; }
+          .print-btn { background-color: #2563eb; color: white; }
+          .print-btn:hover { background-color: #1d4ed8; }
+          .close-btn { background-color: #e5e7eb; color: #374151; }
+          .close-btn:hover { background-color: #d1d5db; }
+          @media print { .print-controls { display: none; } }
         </style>
       </head>
       <body>
-        <div class="container">
-          ${htmlContent}
+        <div class="print-controls">
+          <button class="print-btn" onclick="window.print()">Save as PDF</button>
+          <button class="close-btn" onclick="window.close()">Close</button>
         </div>
-        <script>
-          window.onload = () => {
-            window.print();
-          };
-        </script>
+        <div class="container">${htmlContent}</div>
       </body>
       </html>
     `
@@ -318,8 +266,8 @@ export function Canvas({
           <div className="flex items-center gap-2">
             <Sparkles className="h-5 w-5 text-sidebar-foreground" />
             <span className="text-heading font-semibold text-sidebar-foreground">Canvas</span>
-            {artifacts.length > 0 && (
-              <span className="text-label text-sidebar-foreground/60">({artifacts.length})</span>
+            {displayArtifacts.length > 0 && (
+              <span className="text-label text-sidebar-foreground/60">({displayArtifacts.length})</span>
             )}
           </div>
           <Button
@@ -337,11 +285,13 @@ export function Canvas({
       <div className="flex-1 min-h-0 flex flex-col">
         {/* Preview Area */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {selectedArtifact ? (
-            selectedArtifact.type === 'compose' && composeState ? (
-              // Special rendering for compose type - full control with live state
-              <ComposeArtifact {...composeState} />
-            ) : (
+          {/* Research state takes priority - no artifact needed */}
+          {researchState ? (
+            <ResearchArtifact {...researchState} />
+          ) : composeState ? (
+            // Compose state - live workflow
+            <ComposeArtifact {...composeState} />
+          ) : selectedArtifact ? (
             <>
               {/* Preview Header */}
               <div className="px-4 py-3 border-b border-sidebar-border/50">
@@ -364,7 +314,7 @@ export function Canvas({
                     </div>
                   </div>
                   {/* Action Buttons */}
-                  {selectedArtifact.type === 'document' && typeof selectedArtifact.content === 'string' && (
+                  {(selectedArtifact.type === 'document' || selectedArtifact.type === 'research') && typeof selectedArtifact.content === 'string' && (
                     <div className="flex items-center gap-2">
                       <Button
                         variant="ghost"
@@ -395,37 +345,10 @@ export function Canvas({
               <ScrollArea className="flex-1">
                 <div className={`p-4 transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
                   {(selectedArtifact.type === 'markdown' || selectedArtifact.type === 'research' || selectedArtifact.type === 'document') && typeof selectedArtifact.content === 'string' ? (
-                    <div className="prose dark:prose-invert max-w-none">
-                      <ReactMarkdown
-                        remarkPlugins={[remarkGfm]}
-                        rehypePlugins={[rehypeRaw]}
-                        components={{
-                          // Style links
-                          a: ({ node, ...props }) => (
-                            <a
-                              {...props}
-                              className="text-blue-500 hover:text-blue-600 underline"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            />
-                          ),
-                          // Style code blocks
-                          code: ({ node, ...props }: any) =>
-                            (props as any).inline ? (
-                              <code
-                                {...props}
-                                className="bg-muted px-1.5 py-0.5 rounded text-label font-mono"
-                              />
-                            ) : (
-                              <code
-                                {...props}
-                                className="block bg-muted p-3 rounded-md text-label font-mono overflow-x-auto"
-                              />
-                            ),
-                        }}
-                      >
-                        {selectedArtifact.content}
-                      </ReactMarkdown>
+                    <div ref={previewContentRef}>
+                      <Markdown sessionId={sessionId}>
+                        {stripResearchTags(selectedArtifact.content)}
+                      </Markdown>
                     </div>
                   ) : selectedArtifact.type === 'image' ? (
                     <div className="flex items-center justify-center">
@@ -443,7 +366,6 @@ export function Canvas({
                 </div>
               </ScrollArea>
             </>
-            )
           ) : (
             <div className="flex-1 flex items-center justify-center text-sidebar-foreground/50">
               <div className="text-center">

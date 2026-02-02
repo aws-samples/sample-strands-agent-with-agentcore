@@ -139,23 +139,22 @@ async def write_markdown_section(
         # Prepare section content
         section_content = f"{prefix}{heading}\n\n{content}\n\n"
 
-        # Add citations if provided (simple icon links only)
+        # Add citations if provided (domain-based markdown links)
         if citations and len(citations) > 0:
-            section_content += '<div class="section-citations">\n'
+            from urllib.parse import urlparse
+            citation_links = []
             for citation in citations:
-                title = citation.get('title', 'Unknown Source')
                 url = citation.get('url', '#')
-
-                # Extract domain from URL for tooltip
-                from urllib.parse import urlparse
+                # Extract domain from URL
                 try:
                     domain = urlparse(url).netloc or url
+                    domain = domain.replace('www.', '')
                 except:
                     domain = url
+                # Use markdown link format with domain as text
+                citation_links.append(f'[{domain}]({url})')
 
-                # Generate simple icon link with domain tooltip
-                section_content += f'<span class="citation-chip"><a href="{url}" target="_blank" rel="noopener noreferrer" title="{domain}" aria-label="{title}">🔗</a></span> '
-            section_content += '\n</div>\n\n'
+            section_content += ' '.join(citation_links) + '\n\n'
             logger.info(f"Added {len(citations)} citations to section: {heading}")
 
         # Append to file (create if doesn't exist)

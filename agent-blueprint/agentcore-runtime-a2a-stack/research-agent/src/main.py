@@ -157,7 +157,7 @@ class MetadataAwareExecutor(StrandsA2AExecutor):
         self._current_tool_use_id = None
         self._step_counter = 0
 
-        # Extract metadata from RequestContext
+        # Extract metadata from RequestContext (need session_id early for file cleanup)
         # Try both params.metadata (MessageSendParams) and message.metadata (Message)
         # Streaming client may put metadata in Message.metadata
         metadata = context.metadata  # MessageSendParams.metadata
@@ -169,6 +169,18 @@ class MetadataAwareExecutor(StrandsA2AExecutor):
         user_id = metadata.get("user_id", "default_user") if metadata else "default_user"
 
         logger.info(f"[MetadataAwareExecutor] Extracted metadata - model_id: {model_id}, session_id: {session_id}, user_id: {user_id}")
+
+        # Clear previous research file for this session (prevent cumulative results)
+        if session_id:
+            try:
+                from report_manager import get_report_manager
+                manager = get_report_manager(session_id, user_id)
+                markdown_file = os.path.join(manager.workspace, "research_report.md")
+                if os.path.exists(markdown_file):
+                    os.remove(markdown_file)
+                    logger.info(f"[MetadataAwareExecutor] Cleared previous research file: {markdown_file}")
+            except Exception as e:
+                logger.warning(f"[MetadataAwareExecutor] Failed to clear previous research file: {e}")
 
         # Get or create agent with specified model_id
         if model_id and model_id in self.agent_cache:

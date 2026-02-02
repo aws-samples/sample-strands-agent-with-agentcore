@@ -1,7 +1,7 @@
 "use client"
 
 import React from 'react'
-import { FlaskConical, Loader2, Check, ArrowRight, Sparkles } from 'lucide-react'
+import { FlaskConical, Loader2, Check, ArrowRight, Sparkles, Library } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 interface ResearchContainerProps {
@@ -12,6 +12,8 @@ interface ResearchContainerProps {
   onClick: () => void
   agentName?: string  // Display name for the agent (e.g., "Research Agent" or "Browser Use Agent")
   currentStatus?: string  // Real-time status from research_progress events
+  showCanvasButton?: boolean  // Show "View in Canvas" instead of "Open"
+  onCanvasClick?: () => void  // Handler for "View in Canvas" button
 }
 
 export function ResearchContainer({
@@ -21,7 +23,9 @@ export function ResearchContainer({
   hasResult = true,
   onClick,
   agentName = 'Research Agent',
-  currentStatus
+  currentStatus,
+  showCanvasButton = false,
+  onCanvasClick
 }: ResearchContainerProps) {
   const getStatusText = () => {
     // Use real-time status if available and still loading
@@ -106,18 +110,33 @@ export function ResearchContainer({
                 {agentName}
               </h4>
               {showOpenButton && (
-                <Button
-                  variant="default"
-                  size="sm"
-                  className="h-8 px-4 gap-1.5 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200"
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onClick()
-                  }}
-                >
-                  Open
-                  <ArrowRight className="w-3.5 h-3.5" />
-                </Button>
+                showCanvasButton && onCanvasClick ? (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 px-4 gap-1.5 rounded-full bg-gradient-to-r from-blue-600 to-indigo-500 hover:from-blue-500 hover:to-indigo-400 transition-all duration-200"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onCanvasClick()
+                    }}
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    View in Canvas
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    className="h-8 px-4 gap-1.5 rounded-full bg-primary hover:bg-primary/90 transition-all duration-200"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      onClick()
+                    }}
+                  >
+                    Open
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </Button>
+                )
               )}
             </div>
 
