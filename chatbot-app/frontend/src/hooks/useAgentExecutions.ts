@@ -32,9 +32,7 @@ interface MessageGroup {
 export function useAgentExecutions(groupedMessages: MessageGroup[]) {
   const [researchData, setResearchData] = useState<Map<string, ResearchExecutionData>>(new Map())
   const [browserData, setBrowserData] = useState<Map<string, BrowserExecutionData>>(new Map())
-  const [isResearchModalOpen, setIsResearchModalOpen] = useState(false)
   const [isBrowserModalOpen, setIsBrowserModalOpen] = useState(false)
-  const [activeResearchId, setActiveResearchId] = useState<string | null>(null)
   const [activeBrowserId, setActiveBrowserId] = useState<string | null>(null)
 
   const { computedResearchData, computedBrowserData } = useMemo(() => {
@@ -136,19 +134,9 @@ export function useAgentExecutions(groupedMessages: MessageGroup[]) {
     })
   }, [computedBrowserData])
 
-  const handleResearchClick = useCallback((executionId: string) => {
-    setActiveResearchId(executionId)
-    setIsResearchModalOpen(true)
-  }, [])
-
   const handleBrowserClick = useCallback((executionId: string) => {
     setActiveBrowserId(executionId)
     setIsBrowserModalOpen(true)
-  }, [])
-
-  const closeResearchModal = useCallback(() => {
-    setIsResearchModalOpen(false)
-    setActiveResearchId(null)
   }, [])
 
   const closeBrowserModal = useCallback(() => {
@@ -159,13 +147,9 @@ export function useAgentExecutions(groupedMessages: MessageGroup[]) {
   return {
     researchData,
     browserData,
-    isResearchModalOpen,
     isBrowserModalOpen,
-    activeResearchId,
     activeBrowserId,
-    handleResearchClick,
     handleBrowserClick,
-    closeResearchModal,
     closeBrowserModal,
   }
 }

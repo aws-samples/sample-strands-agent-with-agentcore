@@ -159,7 +159,7 @@ Handoff context (REQUIRED): {"images": [{"filename": "actual_filename.png", "des
     "responder": """Responder - write the final user-facing response.
 
 Use create_visualization tool for simple charts if needed.
-Citation: When citations in shared context, wrap claims with <cite source="SOURCE" url="URL">text</cite>""",
+Citation: When citing sources from shared context, use markdown links: [source name](URL)""",
 }
 
 

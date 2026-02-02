@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { ChevronRight, Download, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronRight, Download, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
 import { ChartRenderer } from '@/components/ChartRenderer'
@@ -22,6 +22,7 @@ interface ToolExecutionContainerProps {
     tool_type?: string
   }>
   sessionId?: string
+  onOpenResearchArtifact?: (executionId: string) => void  // Open completed research in Canvas
 }
 
 // Collapsible Markdown component for tool results
@@ -79,7 +80,7 @@ const CollapsibleMarkdown = React.memo<{
          prevProps.sessionId === nextProps.sessionId
 })
 
-export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId }) => {
+export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
 
@@ -403,9 +404,9 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
             <React.Fragment key={toolExecution.id}>
               <div>
                 {/* Minimal header row */}
-                <button
+                <div
                   onClick={() => toggleToolExpansion(toolExecution.id)}
-                  className="flex items-center gap-2 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors w-full text-left group"
+                  className="flex items-center gap-2 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors w-full text-left group cursor-pointer"
                 >
                   <ChevronRight
                     className={cn(
@@ -450,7 +451,27 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                       <Download className="h-3.5 w-3.5 text-muted-foreground" />
                     </button>
                   )}
-                </button>
+                  {/* View in Canvas button for research_agent */}
+                  {toolExecution.toolName === 'research_agent' &&
+                    toolExecution.isComplete &&
+                    !toolExecution.isCancelled &&
+                    toolExecution.toolResult &&
+                    !['user declined to proceed with research', 'user declined to proceed with browser automation']
+                      .includes((toolExecution.toolResult || '').toLowerCase()) &&
+                    onOpenResearchArtifact && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenResearchArtifact(toolExecution.id);
+                      }}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
+                      title="View in Canvas"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Canvas</span>
+                    </button>
+                  )}
+                </div>
 
                 {/* Expanded detail section */}
                 {isExpanded && (

@@ -692,10 +692,73 @@ def create_a2a_tool(agent_id: str):
 
             logger.info(f"[{agent_id}] Sending to A2A with metadata: {metadata}")
 
+            # Track final result for artifact saving
+            final_result_text = None
+
             # Stream events from A2A agent (including research_step events for real-time UI updates)
             async for event in send_a2a_message(agent_id, plan, session_id, region, metadata=metadata):
+                # Capture final result for artifact saving
+                if isinstance(event, dict) and event.get("status") == "success":
+                    content = event.get("content", [])
+                    if content and len(content) > 0:
+                        final_result_text = content[0].get("text", "")
+
                 # Yield all events to allow real-time streaming (research_step, etc.)
                 yield event
+
+            # After streaming completes, save research result to agent.state
+            if final_result_text and tool_context and tool_context.agent:
+                try:
+                    from datetime import datetime, timezone
+
+                    # Extract title from research content (first H1 heading)
+                    import re
+                    title_match = re.search(r'^#\s+(.+)$', final_result_text, re.MULTILINE)
+                    title = title_match.group(1).strip() if title_match else "Research Results"
+
+                    # Generate artifact ID using toolUseId for frontend mapping
+                    tool_use_id = tool_context.tool_use.get('toolUseId', '')
+                    artifact_id = f"research-{tool_use_id}" if tool_use_id else f"research-{session_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+
+                    # Get current artifacts from agent.state
+                    artifacts = tool_context.agent.state.get("artifacts") or {}
+
+                    # Calculate word count
+                    word_count = len(final_result_text.split())
+
+                    # Add new artifact
+                    artifacts[artifact_id] = {
+                        "id": artifact_id,
+                        "type": "research",
+                        "title": title,
+                        "content": final_result_text,
+                        "tool_name": "research_agent",
+                        "metadata": {
+                            "word_count": word_count,
+                            "description": f"Research report: {title}"
+                        },
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "updated_at": datetime.now(timezone.utc).isoformat()
+                    }
+
+                    # Save to agent.state
+                    tool_context.agent.state.set("artifacts", artifacts)
+
+                    # Sync agent state to file system / AgentCore Memory
+                    # Try session_manager from invocation_state first (set by ChatAgent)
+                    session_manager = tool_context.invocation_state.get("session_manager")
+
+                    if not session_manager and hasattr(tool_context.agent, 'session_manager'):
+                        session_manager = tool_context.agent.session_manager
+
+                    if session_manager:
+                        session_manager.sync_agent(tool_context.agent)
+                        logger.info(f"[Research] ✅ Saved research artifact to agent.state: {artifact_id}")
+                    else:
+                        logger.warning(f"[Research] ⚠️ No session_manager found, artifact not persisted")
+
+                except Exception as e:
+                    logger.error(f"[Research] ❌ Failed to save artifact: {e}")
 
         # Set correct function name and docstring BEFORE decorating
         tool_impl.__name__ = correct_name

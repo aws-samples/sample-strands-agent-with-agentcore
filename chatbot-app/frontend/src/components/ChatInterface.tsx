@@ -1,6 +1,6 @@
 "use client"
 
-import React from "react"
+import React, { startTransition } from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useChat } from "@/hooks/useChat"
 import { useArtifacts } from "@/hooks/useArtifacts"
@@ -12,7 +12,6 @@ import { Greeting } from "@/components/Greeting"
 import { ChatSidebar } from "@/components/ChatSidebar"
 import { ToolsDropdown } from "@/components/ToolsDropdown"
 import { BrowserLiveViewButton } from "@/components/BrowserLiveViewButton"
-import { ResearchModal } from "@/components/ResearchModal"
 import { BrowserResultModal } from "@/components/BrowserResultModal"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
 import { SwarmProgress } from "@/components/SwarmProgress"
@@ -21,6 +20,7 @@ import { VoiceAnimation } from "@/components/VoiceAnimation"
 import { ComposeWizard, ComposeConfig } from "@/components/ComposeWizard"
 import { ChatInputArea } from "@/components/chat/ChatInputArea"
 import { useComposer } from "@/hooks/useComposer"
+import { useResearch } from "@/hooks/useResearch"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -195,13 +195,9 @@ export function ChatInterface() {
   const {
     researchData,
     browserData,
-    isResearchModalOpen,
     isBrowserModalOpen,
-    activeResearchId,
     activeBrowserId,
-    handleResearchClick,
     handleBrowserClick,
-    closeResearchModal,
     closeBrowserModal,
   } = useAgentExecutions(groupedMessages)
 
@@ -215,6 +211,7 @@ export function ChatInterface() {
     selectedArtifactId,
     isCanvasOpen,
     toggleCanvas: toggleCanvasBase,
+    openCanvas: openCanvasBase,
     openArtifact: openArtifactBase,
     closeCanvas: closeCanvasBase,
     setSelectedArtifactId,
@@ -231,6 +228,9 @@ export function ChatInterface() {
 
   // Composer artifact ID tracking
   const [composeArtifactId, setComposeArtifactId] = useState<string | null>(null)
+
+  // Research artifact ID tracking
+  const [researchArtifactId, setResearchArtifactId] = useState<string | null>(null)
 
   // Artifact editing state
   const [editingArtifact, setEditingArtifact] = useState<{
@@ -309,6 +309,12 @@ export function ChatInterface() {
     await composer.startCompose(message)
   }, [sessionId, composer, addArtifact, openArtifactBase])
 
+  // Research management
+  const research = useResearch({
+    sessionId,
+    respondToInterrupt,
+  })
+
   // Handle edit in chat - explicit mode via button
 
   // Auto-enable editing mode when canvas is open with a document
@@ -349,6 +355,52 @@ export function ChatInterface() {
     setEditingArtifact(null)
     closeCanvasBase()
   }, [closeCanvasBase])
+
+  const openCanvas = useCallback(() => {
+    // Opening canvas - close left sidebar
+    setOpen(false)
+    setOpenMobile(false)
+    openCanvasBase()
+  }, [openCanvasBase, setOpen, setOpenMobile])
+
+  // Research Canvas callbacks - use refs for stable references
+  const researchRef = useRef(research)
+  researchRef.current = research
+
+  const handleResearchConfirmPlan = useCallback((approved: boolean) => {
+    researchRef.current.confirmPlanResponse(approved)
+    // If declined, close canvas
+    if (!approved) {
+      researchRef.current.reset()
+      setResearchArtifactId(null)
+      closeCanvas()
+    }
+  }, [closeCanvas])
+
+  const handleResearchCancel = useCallback(() => {
+    // Send rejection response if plan confirmation is showing
+    if (researchRef.current.showPlanConfirm) {
+      researchRef.current.confirmPlanResponse(false)
+    }
+    researchRef.current.reset()
+    setResearchArtifactId(null)
+    closeCanvas()
+  }, [closeCanvas])
+
+  // Ref for artifacts to avoid stale closure in callbacks
+  const artifactsRef = useRef(artifacts)
+  artifactsRef.current = artifacts
+
+  // Handle "View in Canvas" from chat - open Canvas with the research artifact
+  const handleOpenResearchArtifact = useCallback((executionId: string) => {
+    // Artifact ID matches backend: research-{toolUseId} where toolUseId = executionId
+    const artifactId = `research-${executionId}`
+    // Check if artifact exists (use ref to get latest artifacts)
+    const artifact = artifactsRef.current.find(a => a.id === artifactId)
+    if (artifact) {
+      openArtifact(artifactId)
+    }
+  }, [openArtifact])
 
   // Close canvas when left sidebar opens
   useEffect(() => {
@@ -441,6 +493,177 @@ export function ChatInterface() {
       setIsResearchEnabled(researchTool.enabled)
     }
   }, [availableTools])
+
+  // Connect research_progress events to useResearch hook
+  useEffect(() => {
+    if (researchProgress && researchArtifactId) {
+      researchRef.current.handleProgressEvent(researchProgress)
+    }
+  }, [researchProgress, researchArtifactId])
+
+  // Track processed interrupt IDs to prevent duplicate handling
+  const processedInterruptRef = useRef<string | null>(null)
+
+  // Auto-open Canvas when research interrupt is received
+  useEffect(() => {
+    if (currentInterrupt && currentInterrupt.interrupts.length > 0) {
+      const interrupt = currentInterrupt.interrupts[0]
+
+      // Skip if already processed this interrupt
+      if (interrupt.name === "chatbot-research-approval" &&
+          !researchArtifactId &&
+          processedInterruptRef.current !== interrupt.id) {
+        console.log('[ChatInterface] Research interrupt detected, opening Canvas')
+
+        // Mark as processed
+        processedInterruptRef.current = interrupt.id
+
+        // Set research in progress flag (no temp artifact needed)
+        setResearchArtifactId('in-progress')
+
+        // Open canvas and pass interrupt to research hook
+        openCanvas()
+        researchRef.current.handleInterrupt(interrupt)
+      }
+    } else {
+      // Clear processed ref when no interrupt
+      processedInterruptRef.current = null
+    }
+  }, [currentInterrupt, researchArtifactId, openCanvas])
+
+  // Track which research executions we've already processed
+  const processedResearchIdsRef = useRef<Set<string>>(new Set())
+
+  // Extract clean research content using <research> XML tags (same as ResearchModal)
+  const extractResearchContent = useCallback((result: string): { title: string; content: string } => {
+    if (!result) return { title: 'Research Results', content: '' }
+
+    // Helper function to unescape JSON-escaped strings
+    const unescapeJsonString = (str: string): string => {
+      if (str.includes('\\n') || str.includes('\\u') || str.includes('\\t')) {
+        try {
+          const escaped = str.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+          return JSON.parse(`"${escaped}"`)
+        } catch (e) {
+          return str
+            .replace(/\\n/g, '\n')
+            .replace(/\\t/g, '\t')
+            .replace(/\\r/g, '\r')
+            .replace(/\\u([0-9a-fA-F]{4})/g, (_, code) => String.fromCharCode(parseInt(code, 16)))
+        }
+      }
+      return str
+    }
+
+    // Helper to extract title from content
+    const extractTitle = (content: string): string => {
+      const h1Match = content.match(/^#\s+(.+)$/m)
+      if (h1Match) return h1Match[1].trim()
+      const h2Match = content.match(/^##\s+(.+)$/m)
+      if (h2Match) return h2Match[1].trim()
+      return 'Research Results'
+    }
+
+    // 1. Check for <research> XML tag (primary method)
+    const researchMatch = result.match(/<research>([\s\S]*?)<\/research>/)
+    if (researchMatch && researchMatch[1]) {
+      const content = unescapeJsonString(researchMatch[1].trim())
+      return { title: extractTitle(content), content }
+    }
+
+    // 2. Try to parse as JSON (legacy format)
+    try {
+      const parsed = JSON.parse(result)
+      if (parsed.content && typeof parsed.content === 'string') {
+        const content = unescapeJsonString(parsed.content)
+        return { title: extractTitle(content), content }
+      }
+      if (parsed.text && typeof parsed.text === 'string') {
+        const innerMatch = parsed.text.match(/<research>([\s\S]*?)<\/research>/)
+        if (innerMatch && innerMatch[1]) {
+          const content = unescapeJsonString(innerMatch[1].trim())
+          return { title: extractTitle(content), content }
+        }
+        const content = unescapeJsonString(parsed.text)
+        return { title: extractTitle(content), content }
+      }
+    } catch (e) {
+      // Not JSON, continue with other methods
+    }
+
+    // 3. Fallback: Look for first H1 heading (skip progress lines before it)
+    const h1Match = result.match(/^#\s+.+$/m)
+    if (h1Match && h1Match.index !== undefined) {
+      const content = unescapeJsonString(result.substring(h1Match.index))
+      return { title: extractTitle(content), content }
+    }
+
+    // 4. Last resort: return as is
+    return { title: 'Research Results', content: unescapeJsonString(result) }
+  }, [])
+
+
+  // Clean up when research completes - detect via researchData status changes
+  useEffect(() => {
+    // Only process if we have an active research in progress
+    if (!researchArtifactId) return
+
+    // Check if any research execution has completed
+    for (const [executionId, data] of researchData) {
+      // Skip already processed
+      if (processedResearchIdsRef.current.has(executionId)) continue
+
+      if (data.status === 'complete' && data.result) {
+        processedResearchIdsRef.current.add(executionId)
+
+        // Extract clean content from research result
+        const { title, content } = extractResearchContent(data.result)
+
+        // Call research.handleComplete to update ResearchArtifact UI
+        researchRef.current.handleComplete({ title, content })
+
+        // Artifact ID is research-{toolUseId} where toolUseId = executionId
+        const targetArtifactId = `research-${executionId}`
+
+        // Backend saves artifact to agent.state - refresh to load it
+        // Short delay to ensure backend has finished saving
+        setTimeout(async () => {
+          if (sessionId) {
+            const refreshedArtifacts = await refreshArtifacts({ skipFlashEffect: true })
+            // Find artifact by ID (mapped via toolUseId/executionId)
+            const researchArtifact = refreshedArtifacts.find(
+              a => a.id === targetArtifactId
+            )
+            // Use startTransition for lower-priority state updates
+            // This prevents interrupting the main chat UI rendering
+            startTransition(() => {
+              if (researchArtifact) {
+                setSelectedArtifactId(researchArtifact.id)
+              }
+              setResearchArtifactId(null)
+              researchRef.current.reset()
+            })
+          } else {
+            // No sessionId - just clean up
+            startTransition(() => {
+              setResearchArtifactId(null)
+              researchRef.current.reset()
+            })
+          }
+        }, 500)
+      } else if (data.status === 'error' || data.status === 'declined') {
+        processedResearchIdsRef.current.add(executionId)
+        // Just clean up research state
+        if (researchArtifactId) {
+          startTransition(() => {
+            setResearchArtifactId(null)
+            researchRef.current.reset()
+          })
+          closeCanvas()
+        }
+      }
+    }
+  }, [researchData, researchArtifactId, closeCanvas, openArtifact, refreshArtifacts, sessionId, extractResearchContent])
 
   // Toggle Research Agent
   const toggleResearchAgent = useCallback(async () => {
@@ -671,7 +894,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
     await sendMessage(e, files, additionalTools, artifactContext, selectedArtifactId)
   }
 
-  // Interrupt approval handlers
+  // Interrupt approval handlers (for browser interrupts - research is handled via useEffect/Canvas)
   const handleApproveInterrupt = useCallback(() => {
     if (currentInterrupt && currentInterrupt.interrupts.length > 0) {
       const interrupt = currentInterrupt.interrupts[0]
@@ -920,8 +1143,8 @@ If the user asks to modify this document, use the update_artifact tool to find a
                         currentReasoning={currentReasoning}
                         availableTools={availableTools}
                         sessionId={stableSessionId}
-                        onResearchClick={handleResearchClick}
                         onBrowserClick={handleBrowserClick}
+                        onOpenResearchArtifact={handleOpenResearchArtifact}
                         researchProgress={researchProgress}
                         hideAvatar={isSwarmFinalResponse || hasHistorySwarm}
                       />
@@ -1005,23 +1228,6 @@ If the user asks to modify this document, use the update_artifact tool to find a
         />
       </SidebarInset>
 
-      {/* Research Modal */}
-      {activeResearchId && researchData.get(activeResearchId) && (
-        <ResearchModal
-          isOpen={isResearchModalOpen}
-          onClose={closeResearchModal}
-          query={researchData.get(activeResearchId)!.query}
-          isLoading={(() => {
-            const status = researchData.get(activeResearchId)!.status
-            return status !== 'idle' && status !== 'complete' && status !== 'error' && status !== 'declined'
-          })()}
-          result={researchData.get(activeResearchId)!.result}
-          status={researchData.get(activeResearchId)!.status}
-          sessionId={stableSessionId}
-          agentName={researchData.get(activeResearchId)!.agentName}
-        />
-      )}
-
       {/* Browser Result Modal */}
       {activeBrowserId && browserData.get(activeBrowserId) && (
         <BrowserResultModal
@@ -1035,8 +1241,9 @@ If the user asks to modify this document, use the update_artifact tool to find a
         />
       )}
 
-      {/* Interrupt Approval Modal */}
-      {currentInterrupt && currentInterrupt.interrupts.length > 0 && (
+      {/* Interrupt Approval Modal - only for browser (research handled via Canvas) */}
+      {currentInterrupt && currentInterrupt.interrupts.length > 0 &&
+       currentInterrupt.interrupts[0].name !== "chatbot-research-approval" && (
         <InterruptApprovalModal
           isOpen={true}
           onApprove={handleApproveInterrupt}
@@ -1080,6 +1287,18 @@ If the user asks to modify this document, use the update_artifact tool to find a
             closeCanvas()
           },
         } : undefined}
+        researchState={researchArtifactId ? {
+          isResearching: research.isResearching,
+          progress: research.progress,
+          plan: research.plan,
+          showPlanConfirm: research.showPlanConfirm,
+          resultParts: research.resultParts,
+          completedResult: research.completedResult,
+          onConfirmPlan: handleResearchConfirmPlan,
+          onCancel: handleResearchCancel,
+          sessionId: sessionId || undefined,
+        } : undefined}
+        sessionId={sessionId || undefined}
       />
     </>
   )

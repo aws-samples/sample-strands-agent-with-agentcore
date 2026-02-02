@@ -38,17 +38,12 @@ export async function POST(request: NextRequest) {
       expiresIn: 3600  // 1 hour
     })
 
-    console.log(`[S3] Generated pre-signed URL for ${s3Key}`)
-
     return NextResponse.json({ url })
 
   } catch (error) {
     console.error('[S3] Error generating pre-signed URL:', error)
     return NextResponse.json(
-      {
-        error: 'Failed to generate pre-signed URL',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Failed to generate pre-signed URL' },
       { status: 500 }
     )
   }

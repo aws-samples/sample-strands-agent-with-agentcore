@@ -55,17 +55,16 @@ interface AssistantTurnProps {
     tool_type?: string
   }>
   sessionId?: string
-  onResearchClick?: (executionId: string) => void
   onBrowserClick?: (executionId: string) => void
+  onOpenResearchArtifact?: (executionId: string) => void
   researchProgress?: {
     stepNumber: number
     content: string
   }
-  // Hide avatar when this turn is part of a Swarm response (SwarmProgress shows the avatar)
   hideAvatar?: boolean
 }
 
-export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onResearchClick, onBrowserClick, researchProgress, hideAvatar = false }) => {
+export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onBrowserClick, onOpenResearchArtifact, researchProgress, hideAvatar = false }) => {
   // Get initial feedback state from first message
   const initialFeedback = messages[0]?.feedback || null
 
@@ -369,58 +368,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
               const message = item.content as Message
               const toolExecutions = message.toolExecutions || []
 
-              // Separate research_agent, browser_use_agent, and other tool executions
-              const researchExecution = toolExecutions.find(te => te.toolName === 'research_agent')
+              // Separate browser_use_agent (still uses special container for live view)
               const browserExecution = toolExecutions.find(te => te.toolName === 'browser_use_agent')
-              const otherExecutions = toolExecutions.filter(te => te.toolName !== 'research_agent' && te.toolName !== 'browser_use_agent')
+              const otherExecutions = toolExecutions.filter(te => te.toolName !== 'browser_use_agent')
 
               return (
                 <div key={item.key} className="animate-fade-in space-y-4">
-                  {/* Research Agent Container */}
-                  {researchExecution && (
-                    <ResearchContainer
-                      query={researchExecution.toolInput?.plan || 'Research Task'}
-                      agentName='Research Agent'
-                      status={
-                        researchExecution.isComplete
-                          ? (() => {
-                              // Check both isCancelled flag and exact declined message from ResearchApprovalHook
-                              if (researchExecution.isCancelled) return 'declined'
-                              const resultText = (researchExecution.toolResult || '').toLowerCase()
-                              if (resultText === 'user declined to proceed with research' ||
-                                  resultText === 'user declined to proceed with browser automation') {
-                                return 'declined'
-                              }
-                              return 'complete'
-                            })()
-                          : researchExecution.streamingResponse
-                          ? 'generating'
-                          : 'searching'
-                      }
-                      isLoading={!researchExecution.isComplete}
-                      hasResult={(() => {
-                        if (!researchExecution.toolResult) return false
-                        if (researchExecution.isCancelled) return false
-                        const resultText = (researchExecution.toolResult || '').toLowerCase()
-                        return !(resultText === 'user declined to proceed with research' ||
-                                resultText === 'user declined to proceed with browser automation')
-                      })()}
-                      currentStatus={researchProgress?.content}
-                      onClick={() => {
-                        if (!onResearchClick || !researchExecution.toolResult) return
-
-                        // Check both isCancelled flag and exact declined message
-                        if (researchExecution.isCancelled) return
-                        const resultText = (researchExecution.toolResult || '').toLowerCase()
-                        if (resultText === 'user declined to proceed with research' ||
-                            resultText === 'user declined to proceed with browser automation') return
-
-                        onResearchClick(researchExecution.id)
-                      }}
-                    />
-                  )}
-
-                  {/* Browser Use Agent Container */}
+                  {/* Browser Use Agent Container - still uses special container for live view */}
                   {browserExecution && (
                     <ResearchContainer
                       query={browserExecution.toolInput?.task || 'Browser Task'}
@@ -492,12 +446,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                     />
                   )}
 
-                  {/* Other Tool Executions */}
+                  {/* Tool Executions */}
                   {otherExecutions.length > 0 && (
                     <ToolExecutionContainer
                       toolExecutions={otherExecutions}
                       availableTools={availableTools}
                       sessionId={sessionId}
+                      onOpenResearchArtifact={onOpenResearchArtifact}
                     />
                   )}
                 </div>
@@ -750,13 +705,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
     })
 
   const reasoningEqual = prevProps.currentReasoning?.text === nextProps.currentReasoning?.text
-  const callbackEqual = prevProps.onResearchClick === nextProps.onResearchClick && prevProps.onBrowserClick === nextProps.onBrowserClick
+  const callbackEqual = prevProps.onBrowserClick === nextProps.onBrowserClick &&
+    prevProps.onOpenResearchArtifact === nextProps.onOpenResearchArtifact
 
   // Compare researchProgress for real-time status updates
   const researchProgressEqual = prevProps.researchProgress?.stepNumber === nextProps.researchProgress?.stepNumber &&
     prevProps.researchProgress?.content === nextProps.researchProgress?.content
 
   const hideAvatarEqual = prevProps.hideAvatar === nextProps.hideAvatar
-
   return messagesEqual && reasoningEqual && prevProps.sessionId === nextProps.sessionId && callbackEqual && researchProgressEqual && hideAvatarEqual
 })
