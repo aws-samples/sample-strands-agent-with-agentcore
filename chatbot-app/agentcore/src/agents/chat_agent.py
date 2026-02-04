@@ -12,6 +12,7 @@ from typing import AsyncGenerator, Dict, Any, List, Optional
 from pathlib import Path
 from strands import Agent
 from strands.models import BedrockModel, CacheConfig
+from strands.tools.executors import SequentialToolExecutor
 from agents.base import BaseAgent
 from streaming.event_processor import StreamEventProcessor
 from agent.hooks import ResearchApprovalHook
@@ -219,6 +220,35 @@ class ChatAgent(BaseAgent):
                 "hooks": hooks if hooks else None,
                 "agent_id": "default"  # Fixed agent_id for state persistence across requests
             }
+
+            # Use SequentialToolExecutor when artifact-saving tools are enabled
+            # This prevents race conditions when multiple tools try to save to agent.state.artifacts
+            ARTIFACT_SAVING_TOOLS = {
+                'create_word_document', 'modify_word_document',
+                'create_excel_spreadsheet', 'modify_excel_spreadsheet',
+                'create_presentation', 'update_slide_content', 'add_slide',
+                'delete_slides', 'move_slide', 'duplicate_slide', 'update_slide_notes'
+            }
+            # Get tool names from _tool_name attribute (set by @tool decorator)
+            enabled_tool_names = set()
+            for tool in self.tools:
+                tool_name = None
+                if hasattr(tool, '_tool_name'):
+                    tool_name = tool._tool_name
+                elif hasattr(tool, '__name__'):
+                    tool_name = tool.__name__
+                if tool_name:
+                    enabled_tool_names.add(tool_name)
+                logger.debug(f"[ToolExecutor] Tool: {tool}, _tool_name={getattr(tool, '_tool_name', 'N/A')}, __name__={getattr(tool, '__name__', 'N/A')}")
+
+            logger.info(f"[ToolExecutor] Enabled tools: {enabled_tool_names}")
+            logger.info(f"[ToolExecutor] Artifact-saving tools intersection: {ARTIFACT_SAVING_TOOLS & enabled_tool_names}")
+
+            if ARTIFACT_SAVING_TOOLS & enabled_tool_names:
+                agent_kwargs["tool_executor"] = SequentialToolExecutor()
+                logger.info(f"[ToolExecutor] Using SequentialToolExecutor")
+            else:
+                logger.info(f"[ToolExecutor] Using default ConcurrentToolExecutor")
 
             # Use NullConversationManager if requested (disables Strands' default sliding window)
             if self.use_null_conversation_manager:

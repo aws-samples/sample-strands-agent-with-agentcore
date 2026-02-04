@@ -36,6 +36,8 @@ interface UseStreamEventsProps {
   }>
   onArtifactUpdated?: () => void  // Callback when artifact is updated via update_artifact tool
   onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
+  onExcelDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Excel documents are created
+  onPptDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when PowerPoint documents are created
 }
 
 export const useStreamEvents = ({
@@ -51,7 +53,9 @@ export const useStreamEvents = ({
   sessionId,
   availableTools = [],
   onArtifactUpdated,
-  onWordDocumentsCreated
+  onWordDocumentsCreated,
+  onExcelDocumentsCreated,
+  onPptDocumentsCreated
 }: UseStreamEventsProps) => {
   // Refs to track streaming state synchronously (avoid React batching issues)
   const streamingStartedRef = useRef(false)
@@ -610,8 +614,60 @@ export const useStreamEvents = ({
               }
             }
 
+            // Extract output filenames from Excel tool results (only newly created/modified files)
+            const excelOutputFilenames = new Set<string>()
+            for (const toolExec of currentToolExecutionsRef.current) {
+              if (toolExec.toolName === 'create_excel_spreadsheet' || toolExec.toolName === 'modify_excel_spreadsheet') {
+                if (toolExec.toolResult) {
+                  // For create: look for "filename.xlsx" pattern
+                  // For modify: look for "Saved as: filename.xlsx" pattern (output file)
+                  const savedAsMatch = toolExec.toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.xlsx)/i)
+                  if (savedAsMatch) {
+                    excelOutputFilenames.add(savedAsMatch[1])
+                  } else {
+                    // Fallback: find any .xlsx filename
+                    const filenameMatch = toolExec.toolResult.match(/([a-zA-Z0-9\-]+\.xlsx)/i)
+                    if (filenameMatch) {
+                      excelOutputFilenames.add(filenameMatch[1])
+                    }
+                  }
+                }
+              }
+            }
+
+            // Extract output filenames from PowerPoint tool results (only newly created/modified files)
+            const pptOutputFilenames = new Set<string>()
+            const PPT_TOOLS = ['create_presentation', 'update_slide_content', 'add_slide', 'delete_slides', 'move_slide', 'duplicate_slide', 'update_slide_notes']
+            for (const toolExec of currentToolExecutionsRef.current) {
+              if (PPT_TOOLS.includes(toolExec.toolName)) {
+                if (toolExec.toolResult) {
+                  // For update tools: look for "Updated: filename.pptx" pattern
+                  const updatedMatch = toolExec.toolResult.match(/\*\*Updated\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
+                  if (updatedMatch) {
+                    pptOutputFilenames.add(updatedMatch[1])
+                  } else {
+                    // For create: look for "Filename: filename.pptx" pattern
+                    const filenameMatch = toolExec.toolResult.match(/\*\*Filename\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
+                    if (filenameMatch) {
+                      pptOutputFilenames.add(filenameMatch[1])
+                    } else {
+                      // Fallback: find any .pptx filename
+                      const pptxMatch = toolExec.toolResult.match(/([a-zA-Z0-9\-]+\.pptx)/i)
+                      if (pptxMatch) {
+                        pptOutputFilenames.add(pptxMatch[1])
+                      }
+                    }
+                  }
+                }
+              }
+            }
+
             // Track Word documents separately for artifact creation
             let wordDocumentsForArtifact: WorkspaceDocument[] = []
+            // Track Excel documents separately for artifact creation
+            let excelDocumentsForArtifact: WorkspaceDocument[] = []
+            // Track PowerPoint documents separately for artifact creation
+            let pptDocumentsForArtifact: WorkspaceDocument[] = []
 
             const fetchPromises = Array.from(usedDocTypes).map(async (docType) => {
               const response = await fetch(`/api/workspace/files?docType=${docType}`, {
@@ -635,6 +691,20 @@ export const useStreamEvents = ({
                     )
                   }
 
+                  // Collect only newly created/modified Excel documents for artifact creation
+                  if (docType === 'excel' && excelOutputFilenames.size > 0) {
+                    excelDocumentsForArtifact = files.filter((f: WorkspaceDocument) =>
+                      excelOutputFilenames.has(f.filename)
+                    )
+                  }
+
+                  // Collect only newly created/modified PowerPoint documents for artifact creation
+                  if (docType === 'powerpoint' && pptOutputFilenames.size > 0) {
+                    pptDocumentsForArtifact = files.filter((f: WorkspaceDocument) =>
+                      pptOutputFilenames.has(f.filename)
+                    )
+                  }
+
                   return files
                 }
               }
@@ -647,6 +717,16 @@ export const useStreamEvents = ({
             // Trigger Word document artifact creation callback (only for output files)
             if (wordDocumentsForArtifact.length > 0 && onWordDocumentsCreated) {
               onWordDocumentsCreated(wordDocumentsForArtifact)
+            }
+
+            // Trigger Excel document artifact creation callback (only for output files)
+            if (excelDocumentsForArtifact.length > 0 && onExcelDocumentsCreated) {
+              onExcelDocumentsCreated(excelDocumentsForArtifact)
+            }
+
+            // Trigger PowerPoint document artifact creation callback (only for output files)
+            if (pptDocumentsForArtifact.length > 0 && onPptDocumentsCreated) {
+              onPptDocumentsCreated(pptDocumentsForArtifact)
             }
           } catch (error) {
             // Failed to fetch workspace files - non-critical, will use backend-provided documents

@@ -1,7 +1,7 @@
 """
 PowerPoint Presentation Tools - Modern high-level API for PowerPoint management.
 
-Available Tools (10):
+Available Tools (11):
 1. list_my_powerpoint_presentations - List workspace presentations
 2. get_presentation_layouts - Get all available slide layouts
 3. analyze_presentation - Analyze presentation structure
@@ -12,6 +12,7 @@ Available Tools (10):
 8. move_slide - Reorder slides
 9. duplicate_slide - Copy slides
 10. update_slide_notes - Update speaker notes
+11. preview_presentation_slides - Get slide screenshots for visual inspection
 
 Features:
 - Safe high-level API (no python-pptx code needed)
@@ -165,6 +166,72 @@ def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
 
     logger.info(f"Extracted IDs: user_id={user_id}, session_id={session_id}")
     return user_id, session_id
+
+
+def _save_ppt_artifact(
+    tool_context: ToolContext,
+    filename: str,
+    s3_url: str,
+    size_kb: str,
+    tool_name: str,
+    user_id: str,
+    session_id: str
+) -> None:
+    """Save PowerPoint presentation as artifact to agent.state for Canvas display.
+
+    Args:
+        tool_context: Strands ToolContext
+        filename: Presentation filename (e.g., "sales-deck.pptx")
+        s3_url: Full S3 URL (e.g., "s3://bucket/path/sales-deck.pptx")
+        size_kb: File size string (e.g., "1.2 MB")
+        tool_name: Tool that created this
+        user_id: User ID
+        session_id: Session ID
+    """
+    from datetime import datetime, timezone
+
+    try:
+        # Generate artifact ID using filename (without extension)
+        ppt_name = filename.replace('.pptx', '')
+        artifact_id = f"ppt-{ppt_name}"
+
+        # Get current artifacts from agent.state
+        artifacts = tool_context.agent.state.get("artifacts") or {}
+
+        # Create/update artifact
+        artifacts[artifact_id] = {
+            "id": artifact_id,
+            "type": "powerpoint_presentation",
+            "title": filename,
+            "content": s3_url,  # Full S3 URL for OfficeViewer
+            "tool_name": tool_name,
+            "metadata": {
+                "filename": filename,
+                "s3_url": s3_url,
+                "size_kb": size_kb,
+                "user_id": user_id,
+                "session_id": session_id
+            },
+            "created_at": artifacts.get(artifact_id, {}).get("created_at", datetime.now(timezone.utc).isoformat()),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Save to agent.state
+        tool_context.agent.state.set("artifacts", artifacts)
+
+        # Sync agent state to persistence
+        session_manager = tool_context.invocation_state.get("session_manager")
+        if not session_manager and hasattr(tool_context.agent, 'session_manager'):
+            session_manager = tool_context.agent.session_manager
+
+        if session_manager:
+            session_manager.sync_agent(tool_context.agent)
+            logger.info(f"Saved PPT artifact: {artifact_id}")
+        else:
+            logger.warning(f"No session_manager found, PPT artifact not persisted: {artifact_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to save PPT artifact: {e}")
 
 
 def _get_file_compatibility_error_response(filename: str, error_msg: str, operation: str) -> Dict[str, Any]:
@@ -1006,6 +1073,17 @@ def update_slide_content(
             # Save to S3
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
+            # Save as artifact for Canvas display
+            _save_ppt_artifact(
+                tool_context=tool_context,
+                filename=output_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='update_slide_content',
+                user_id=user_id,
+                session_id=session_id
+            )
+
             # Get updated workspace list
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
@@ -1247,6 +1325,17 @@ def add_slide(
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
+            # Save as artifact for Canvas display
+            _save_ppt_artifact(
+                tool_context=tool_context,
+                filename=output_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='add_slide',
+                user_id=user_id,
+                session_id=session_id
+            )
+
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
@@ -1369,6 +1458,17 @@ def delete_slides(
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
+            # Save as artifact for Canvas display
+            _save_ppt_artifact(
+                tool_context=tool_context,
+                filename=output_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='delete_slides',
+                user_id=user_id,
+                session_id=session_id
+            )
+
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
@@ -1489,6 +1589,17 @@ def move_slide(
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
+            # Save as artifact for Canvas display
+            _save_ppt_artifact(
+                tool_context=tool_context,
+                filename=output_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='move_slide',
+                user_id=user_id,
+                session_id=session_id
+            )
+
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
@@ -1608,6 +1719,17 @@ def duplicate_slide(
                 return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
+
+            # Save as artifact for Canvas display
+            _save_ppt_artifact(
+                tool_context=tool_context,
+                filename=output_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='duplicate_slide',
+                user_id=user_id,
+                session_id=session_id
+            )
 
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
@@ -1737,6 +1859,17 @@ def update_slide_notes(
                 return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
+
+            # Save as artifact for Canvas display
+            _save_ppt_artifact(
+                tool_context=tool_context,
+                filename=output_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='update_slide_notes',
+                user_id=user_id,
+                session_id=session_id
+            )
 
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
@@ -2101,6 +2234,17 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
             # Save to S3
             s3_info = ppt_manager.save_to_s3(presentation_filename, file_bytes)
 
+            # Save as artifact for Canvas display
+            _save_ppt_artifact(
+                tool_context=tool_context,
+                filename=presentation_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='create_presentation',
+                user_id=user_id,
+                session_id=session_id
+            )
+
             # Get updated workspace list
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != presentation_filename])
@@ -2165,3 +2309,177 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
     except Exception as e:
         logger.error(f"create_presentation error: {e}", exc_info=True)
         return {"content": [{"text": f"❌ **Error:** {str(e)}"}], "status": "error"}
+
+
+@tool(context=True)
+def preview_presentation_slides(
+    presentation_name: str,
+    slide_numbers: list[int],
+    tool_context: ToolContext
+) -> Dict[str, Any]:
+    """Get slide screenshots for YOU (the agent) to visually inspect before editing.
+
+    This tool is for YOUR internal use - to see the actual layout, formatting,
+    and content of slides before making modifications. Images are sent to you,
+    not displayed to the user.
+
+    Args:
+        presentation_name: Presentation name without extension (e.g., "sales-deck")
+        slide_numbers: List of slide numbers to preview (1-indexed).
+                      Use empty list [] for all slides.
+                      Example: [1, 3, 5] or []
+
+    Use BEFORE modifying a presentation to:
+    - See exact slide layout and formatting
+    - Identify images, charts, or animations
+    - Understand placeholder positions
+    - Plan precise edits based on visual layout
+    """
+    import subprocess
+    import tempfile
+    import io
+    from pdf2image import convert_from_path
+
+    # Get user and session IDs
+    user_id, session_id = _get_user_session_ids(tool_context)
+
+    # Validate and prepare filename
+    presentation_filename = f"{presentation_name}.pptx"
+    logger.info(f"preview_presentation_slides: {presentation_filename}, slides {slide_numbers}")
+
+    try:
+        # Initialize presentation manager
+        ppt_manager = PowerPointManager(user_id, session_id)
+
+        # Check if presentation exists
+        documents = ppt_manager.list_s3_documents()
+        doc_info = next((d for d in documents if d['filename'] == presentation_filename), None)
+
+        if not doc_info:
+            available = [d['filename'] for d in documents if d['filename'].endswith('.pptx')]
+            return {
+                "content": [{
+                    "text": f"Presentation not found: {presentation_filename}\n\n"
+                           f"Available presentations: {', '.join(available) if available else 'None'}"
+                }],
+                "status": "error"
+            }
+
+        # Download presentation from S3
+        pptx_bytes = ppt_manager.load_from_s3(presentation_filename)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save presentation to temp file
+            pptx_path = os.path.join(temp_dir, presentation_filename)
+            with open(pptx_path, 'wb') as f:
+                f.write(pptx_bytes)
+
+            # Convert PPTX to PDF using LibreOffice
+            logger.info(f"Converting {presentation_filename} to PDF...")
+            result = subprocess.run(
+                ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, pptx_path],
+                capture_output=True,
+                text=True,
+                timeout=120  # 120 second timeout for large presentations
+            )
+
+            if result.returncode != 0:
+                logger.error(f"LibreOffice conversion failed: {result.stderr}")
+                return {
+                    "content": [{
+                        "text": f"PDF conversion failed\n\n{result.stderr}"
+                    }],
+                    "status": "error"
+                }
+
+            pdf_path = os.path.join(temp_dir, presentation_filename.replace('.pptx', '.pdf'))
+
+            if not os.path.exists(pdf_path):
+                return {
+                    "content": [{
+                        "text": "PDF file not created\n\nLibreOffice conversion may have failed silently."
+                    }],
+                    "status": "error"
+                }
+
+            # Get total pages in PDF (each slide becomes a page)
+            from pdf2image import pdfinfo_from_path
+            pdf_info = pdfinfo_from_path(pdf_path)
+            total_slides = pdf_info.get('Pages', 1)
+
+            # Determine which slides to preview
+            if not slide_numbers:
+                # Empty list means all slides
+                target_slides = list(range(1, total_slides + 1))
+            else:
+                # Validate requested slide numbers
+                invalid_slides = [s for s in slide_numbers if s < 1 or s > total_slides]
+                if invalid_slides:
+                    return {
+                        "content": [{
+                            "text": f"Invalid slide number(s): {invalid_slides}\n\n"
+                                   f"Presentation has {total_slides} slides (1 to {total_slides})"
+                        }],
+                        "status": "error"
+                    }
+                target_slides = slide_numbers
+
+            # Build content with images
+            content = [{
+                "text": f"**{presentation_filename}** - {len(target_slides)} slide(s) of {total_slides} total"
+            }]
+
+            for slide_num in target_slides:
+                logger.info(f"Converting slide {slide_num} to image...")
+                images = convert_from_path(
+                    pdf_path,
+                    first_page=slide_num,
+                    last_page=slide_num,
+                    dpi=150
+                )
+
+                if images:
+                    img_buffer = io.BytesIO()
+                    images[0].save(img_buffer, format='PNG')
+                    img_bytes = img_buffer.getvalue()
+
+                    content.append({"text": f"**Slide {slide_num}**"})
+                    content.append({
+                        "image": {
+                            "format": "png",
+                            "source": {"bytes": img_bytes}
+                        }
+                    })
+
+            logger.info(f"Successfully generated {len(target_slides)} preview(s)")
+
+            return {
+                "content": content,
+                "status": "success",
+                "metadata": {
+                    "filename": presentation_filename,
+                    "slide_numbers": target_slides,
+                    "total_slides": total_slides,
+                    "tool_type": "powerpoint_presentation",
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "hideImageInChat": True
+                }
+            }
+
+    except subprocess.TimeoutExpired:
+        logger.error("LibreOffice conversion timed out")
+        return {
+            "content": [{
+                "text": "Conversion timed out\n\nThe presentation may be too large or complex."
+            }],
+            "status": "error"
+        }
+    except Exception as e:
+        logger.error(f"preview_presentation_slides failed: {e}")
+        return {
+            "content": [{
+                "text": f"Failed to generate preview\n\n{str(e)}"
+            }],
+            "status": "error"
+        }

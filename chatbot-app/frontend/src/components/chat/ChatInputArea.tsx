@@ -395,7 +395,7 @@ export function ChatInputArea({
                 <ToolsDropdown
                   availableTools={availableTools}
                   onToggleTool={onToggleTool}
-                  disabled={isResearchEnabled || isVoiceActive || composerState.showOutlineConfirm || isCanvasOpen}
+                  disabled={isVoiceActive || composerState.showOutlineConfirm}
                   autoEnabled={swarmEnabled}
                   onToggleAuto={onToggleSwarm}
                 />

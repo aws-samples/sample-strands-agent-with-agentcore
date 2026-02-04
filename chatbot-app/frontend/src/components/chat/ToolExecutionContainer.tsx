@@ -15,6 +15,10 @@ import type { ImageData } from '@/utils/imageExtractor'
 
 // Word document tool names
 const WORD_DOCUMENT_TOOLS = ['create_word_document', 'modify_word_document']
+// Excel spreadsheet tool names
+const EXCEL_SPREADSHEET_TOOLS = ['create_excel_spreadsheet', 'modify_excel_spreadsheet']
+// PowerPoint presentation tool names
+const POWERPOINT_TOOLS = ['create_presentation', 'update_slide_content', 'add_slide', 'delete_slides', 'move_slide', 'duplicate_slide', 'update_slide_notes']
 
 interface ToolExecutionContainerProps {
   toolExecutions: ToolExecution[]
@@ -27,6 +31,8 @@ interface ToolExecutionContainerProps {
   sessionId?: string
   onOpenResearchArtifact?: (executionId: string) => void  // Open completed research in Canvas
   onOpenWordArtifact?: (filename: string) => void  // Open Word document in Canvas
+  onOpenExcelArtifact?: (filename: string) => void  // Open Excel spreadsheet in Canvas
+  onOpenPptArtifact?: (filename: string) => void  // Open PowerPoint presentation in Canvas
 }
 
 // Collapsible Markdown component for tool results
@@ -84,7 +90,7 @@ const CollapsibleMarkdown = React.memo<{
          prevProps.sessionId === nextProps.sessionId
 })
 
-export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact }) => {
+export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
 
@@ -98,6 +104,35 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     if (savedAsMatch) return savedAsMatch[1]
     // Fallback: find any .docx filename
     const match = toolResult.match(/([a-zA-Z0-9\-]+\.docx)/i)
+    return match ? match[1] : null
+  }
+
+  // Extract output filename from Excel tool result
+  // For modify_excel_spreadsheet: extracts the "Saved as" filename (output)
+  // For create_excel_spreadsheet: extracts the created filename
+  const extractExcelFilename = (toolResult: string): string | null => {
+    if (!toolResult) return null
+    // First try to find "Saved as: filename.xlsx" pattern (for modify_excel_spreadsheet)
+    const savedAsMatch = toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.xlsx)/i)
+    if (savedAsMatch) return savedAsMatch[1]
+    // Fallback: find any .xlsx filename
+    const match = toolResult.match(/([a-zA-Z0-9\-]+\.xlsx)/i)
+    return match ? match[1] : null
+  }
+
+  // Extract output filename from PowerPoint tool result
+  // For create_presentation: extracts "Filename: xxx.pptx" pattern
+  // For update tools: extracts "Updated: xxx.pptx" pattern
+  const extractPptFilename = (toolResult: string): string | null => {
+    if (!toolResult) return null
+    // Try to find "Updated: filename.pptx" pattern (for update/modify tools)
+    const updatedMatch = toolResult.match(/\*\*Updated\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
+    if (updatedMatch) return updatedMatch[1]
+    // Try to find "Filename: filename.pptx" pattern (for create_presentation)
+    const filenameMatch = toolResult.match(/\*\*Filename\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
+    if (filenameMatch) return filenameMatch[1]
+    // Fallback: find any .pptx filename
+    const match = toolResult.match(/([a-zA-Z0-9\-]+\.pptx)/i)
     return match ? match[1] : null
   }
 
@@ -500,6 +535,46 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                         e.stopPropagation();
                         const filename = extractWordFilename(toolExecution.toolResult || '');
                         if (filename) onOpenWordArtifact(filename);
+                      }}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
+                      title="View in Canvas"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Canvas</span>
+                    </button>
+                  )}
+                  {/* View in Canvas button for Excel spreadsheet tools */}
+                  {EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) &&
+                    toolExecution.isComplete &&
+                    !toolExecution.isCancelled &&
+                    toolExecution.toolResult &&
+                    extractExcelFilename(toolExecution.toolResult) &&
+                    onOpenExcelArtifact && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const filename = extractExcelFilename(toolExecution.toolResult || '');
+                        if (filename) onOpenExcelArtifact(filename);
+                      }}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
+                      title="View in Canvas"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Canvas</span>
+                    </button>
+                  )}
+                  {/* View in Canvas button for PowerPoint presentation tools */}
+                  {POWERPOINT_TOOLS.includes(toolExecution.toolName) &&
+                    toolExecution.isComplete &&
+                    !toolExecution.isCancelled &&
+                    toolExecution.toolResult &&
+                    extractPptFilename(toolExecution.toolResult) &&
+                    onOpenPptArtifact && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const filename = extractPptFilename(toolExecution.toolResult || '');
+                        if (filename) onOpenPptArtifact(filename);
                       }}
                       className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
                       title="View in Canvas"

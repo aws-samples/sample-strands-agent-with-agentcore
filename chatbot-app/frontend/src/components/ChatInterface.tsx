@@ -4,6 +4,7 @@ import React, { startTransition } from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useChat } from "@/hooks/useChat"
 import { useArtifacts } from "@/hooks/useArtifacts"
+import { useCanvasHandlers } from "@/hooks/useCanvasHandlers"
 import { useAgentExecutions } from "@/hooks/useAgentExecutions"
 import { ArtifactType } from "@/types/artifact"
 import { ChatMessage } from "@/components/chat/ChatMessage"
@@ -109,51 +110,18 @@ export function ChatInterface() {
   const [isUserScrolledUp, setIsUserScrolledUp] = useState(false)
   const isAutoScrollingRef = useRef(false)
 
-  // Ref for artifact refresh callback (to avoid circular dependency)
-  const refreshArtifactsRef = useRef<(() => void) | null>(null)
-  // Refs for Word document artifact creation (to avoid circular dependency with useChat)
-  const addArtifactRef = useRef<((artifact: any) => void) | null>(null)
-  const openArtifactRef = useRef<((id: string) => void) | null>(null)
-
-  // Memoize the artifact update callback to prevent infinite loops
-  const handleArtifactUpdated = useCallback(() => {
-    if (refreshArtifactsRef.current) {
-      refreshArtifactsRef.current()
-    }
-  }, [])
-
-  // Callback for Word document creation - creates artifacts and opens Canvas
-  const handleWordDocumentsCreated = useCallback((documents: Array<{
-    filename: string
-    size_kb: string
-    last_modified: string
-    s3_key: string
-    tool_type: string
-  }>) => {
-    if (!addArtifactRef.current || !openArtifactRef.current || documents.length === 0) return
-
-    // Generate artifact IDs first (for consistency)
-    const timestamp = Date.now()
-    const artifactIds = documents.map((doc, index) => `word-${doc.filename}-${timestamp}-${index}`)
-
-    // Create artifacts for each Word document
-    documents.forEach((doc, index) => {
-      addArtifactRef.current!({
-        id: artifactIds[index],
-        type: 'document' as ArtifactType,
-        title: doc.filename,
-        content: doc.s3_key,  // S3 URL for OfficeViewer
-        description: doc.size_kb,
-        timestamp: doc.last_modified || new Date().toISOString(),
-      })
-    })
-
-    // Open Canvas and select the most recent document (first in sorted list)
-    // Small delay to ensure artifact is added before selecting
-    setTimeout(() => {
-      openArtifactRef.current!(artifactIds[0])
-    }, 100)
-  }, [])
+  // Canvas handlers (centralized document artifact handling)
+  const {
+    handleArtifactUpdated,
+    handleWordDocumentsCreated,
+    handleExcelDocumentsCreated,
+    handlePptDocumentsCreated,
+    handleOpenResearchArtifact,
+    handleOpenWordArtifact,
+    handleOpenExcelArtifact,
+    handleOpenPptArtifact,
+    setArtifactMethods,
+  } = useCanvasHandlers()
 
   const {
     groupedMessages,
@@ -187,7 +155,9 @@ export function ChatInterface() {
     addArtifactMessage,
   } = useChat({
     onArtifactUpdated: handleArtifactUpdated,
-    onWordDocumentsCreated: handleWordDocumentsCreated
+    onWordDocumentsCreated: handleWordDocumentsCreated,
+    onExcelDocumentsCreated: handleExcelDocumentsCreated,
+    onPptDocumentsCreated: handlePptDocumentsCreated
   })
 
   // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
@@ -258,18 +228,15 @@ export function ChatInterface() {
     justUpdated: artifactJustUpdated,
   } = useArtifacts(groupedMessages, sessionId)
 
-  // Update refs after useArtifacts initializes (to avoid circular dependency with useChat)
+  // Connect artifact methods to canvas handlers (to avoid circular dependency with useChat)
   useEffect(() => {
-    refreshArtifactsRef.current = refreshArtifacts
-  }, [refreshArtifacts])
-
-  useEffect(() => {
-    addArtifactRef.current = addArtifact
-  }, [addArtifact])
-
-  useEffect(() => {
-    openArtifactRef.current = openArtifactBase
-  }, [openArtifactBase])
+    setArtifactMethods({
+      artifacts,
+      refreshArtifacts,
+      addArtifact,
+      openArtifact: openArtifactBase,
+    })
+  }, [artifacts, refreshArtifacts, addArtifact, openArtifactBase, setArtifactMethods])
 
   // Composer artifact ID tracking
   const [composeArtifactId, setComposeArtifactId] = useState<string | null>(null)
@@ -433,32 +400,6 @@ export function ChatInterface() {
     processedInterruptRef.current = null  // Reset to allow new interrupts
     closeCanvas()
   }, [closeCanvas])
-
-  // Ref for artifacts to avoid stale closure in callbacks
-  const artifactsRef = useRef(artifacts)
-  artifactsRef.current = artifacts
-
-  // Handle "View in Canvas" from chat - open Canvas with the research artifact
-  const handleOpenResearchArtifact = useCallback((executionId: string) => {
-    // Artifact ID matches backend: research-{toolUseId} where toolUseId = executionId
-    const artifactId = `research-${executionId}`
-    // Check if artifact exists (use ref to get latest artifacts)
-    const artifact = artifactsRef.current.find(a => a.id === artifactId)
-    if (artifact) {
-      openArtifact(artifactId)
-    }
-  }, [openArtifact])
-
-  // Handle "View in Canvas" from Word tool - find artifact by filename
-  const handleOpenWordArtifact = useCallback((filename: string) => {
-    // Find artifact with matching filename in title (type is 'word_document')
-    const artifact = artifactsRef.current.find(a =>
-      a.type === 'word_document' && a.title === filename
-    )
-    if (artifact) {
-      openArtifact(artifact.id)
-    }
-  }, [openArtifact])
 
   // Close canvas when left sidebar opens
   useEffect(() => {
@@ -787,6 +728,19 @@ export function ChatInterface() {
       setIsResearchEnabled(willBeEnabled)
     }
   }, [availableTools, toggleTool, toggleSwarmHook])
+
+  // Handle tool toggle - disable research if a non-research tool is toggled
+  const handleToggleTool = useCallback(async (toolId: string) => {
+    // If research is enabled and we're toggling a non-research tool, disable research
+    if (isResearchEnabled && toolId !== 'agentcore_research-agent') {
+      const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
+      if (researchTool && researchTool.enabled) {
+        await toggleTool('agentcore_research-agent')
+        setIsResearchEnabled(false)
+      }
+    }
+    await toggleTool(toolId)
+  }, [toggleTool, isResearchEnabled, availableTools])
 
   // Toggle Swarm (using hook from useChat)
   const toggleSwarm = useCallback((enabled?: boolean) => {
@@ -1230,6 +1184,8 @@ If the user asks to modify this document, use the update_artifact tool to find a
                         onBrowserClick={handleBrowserClick}
                         onOpenResearchArtifact={handleOpenResearchArtifact}
                         onOpenWordArtifact={handleOpenWordArtifact}
+                        onOpenExcelArtifact={handleOpenExcelArtifact}
+                        onOpenPptArtifact={handleOpenPptArtifact}
                         researchProgress={researchProgress}
                         hideAvatar={isSwarmFinalResponse || hasHistorySwarm}
                       />
@@ -1302,7 +1258,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
           }}
           onSendMessage={handleSendMessage}
           onStopGeneration={stopGeneration}
-          onToggleTool={toggleTool}
+          onToggleTool={handleToggleTool}
           onToggleSwarm={toggleSwarm}
           onToggleResearch={toggleResearchAgent}
           onConnectVoice={connectVoice}
