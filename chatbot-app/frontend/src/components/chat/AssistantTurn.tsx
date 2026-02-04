@@ -57,6 +57,7 @@ interface AssistantTurnProps {
   sessionId?: string
   onBrowserClick?: (executionId: string) => void
   onOpenResearchArtifact?: (executionId: string) => void
+  onOpenWordArtifact?: (filename: string) => void
   researchProgress?: {
     stepNumber: number
     content: string
@@ -64,7 +65,7 @@ interface AssistantTurnProps {
   hideAvatar?: boolean
 }
 
-export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onBrowserClick, onOpenResearchArtifact, researchProgress, hideAvatar = false }) => {
+export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onBrowserClick, onOpenResearchArtifact, onOpenWordArtifact, researchProgress, hideAvatar = false }) => {
   // Get initial feedback state from first message
   const initialFeedback = messages[0]?.feedback || null
 
@@ -336,11 +337,17 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
   const tokenUsage = sortedMessages.find(msg => msg.tokenUsage)?.tokenUsage
 
   // Collect all documents from the turn (for rendering at the bottom)
+  // Word documents are excluded - they are shown in Canvas via tool execution button
   const turnDocuments = useMemo(() => {
     const docs: Array<{ filename: string; tool_type: string }> = []
     sortedMessages.forEach(msg => {
       if (msg.documents && msg.documents.length > 0) {
-        docs.push(...msg.documents)
+        // Filter out Word documents (.docx, .doc) - they're handled in Canvas
+        const nonWordDocs = msg.documents.filter(doc => {
+          const ext = doc.filename.toLowerCase().split('.').pop()
+          return ext !== 'docx' && ext !== 'doc'
+        })
+        docs.push(...nonWordDocs)
       }
     })
     return docs
@@ -453,6 +460,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       availableTools={availableTools}
                       sessionId={sessionId}
                       onOpenResearchArtifact={onOpenResearchArtifact}
+                      onOpenWordArtifact={onOpenWordArtifact}
                     />
                   )}
                 </div>
@@ -706,7 +714,8 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
   const reasoningEqual = prevProps.currentReasoning?.text === nextProps.currentReasoning?.text
   const callbackEqual = prevProps.onBrowserClick === nextProps.onBrowserClick &&
-    prevProps.onOpenResearchArtifact === nextProps.onOpenResearchArtifact
+    prevProps.onOpenResearchArtifact === nextProps.onOpenResearchArtifact &&
+    prevProps.onOpenWordArtifact === nextProps.onOpenWordArtifact
 
   // Compare researchProgress for real-time status updates
   const researchProgressEqual = prevProps.researchProgress?.stepNumber === nextProps.researchProgress?.stepNumber &&

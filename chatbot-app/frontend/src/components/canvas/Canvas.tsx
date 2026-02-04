@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { X, FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal } from 'lucide-react'
 import { Artifact } from '@/types/artifact'
-import { ComposeArtifact } from '@/components/ComposeArtifact'
-import { ResearchArtifact } from '@/components/ResearchArtifact'
+import { ComposeArtifact } from './ComposeArtifact'
+import { ResearchArtifact } from './ResearchArtifact'
+import { OfficeViewer, isOfficeFileUrl, getFilenameFromS3Url } from './OfficeViewer'
 import { marked } from 'marked'
 import { citationPrintCSS } from '@/components/ui/CitationLink'
 import { Markdown } from '@/components/ui/Markdown'
@@ -28,6 +29,7 @@ const getArtifactIcon = (type: string) => {
     case 'markdown':
     case 'research':
     case 'document':
+    case 'word_document':
       return <FileText className="h-4 w-4" />
     case 'image':
       return <ImageIcon className="h-4 w-4" />
@@ -59,6 +61,7 @@ const getArtifactTypeLabel = (type: string) => {
     case 'image': return 'Image'
     case 'code': return 'Code'
     case 'document': return 'Document'
+    case 'word_document': return 'Word Document'
     case 'browser': return 'Browser'
     case 'compose': return 'Compose'
     default: return 'Artifact'
@@ -75,22 +78,6 @@ const stripResearchTags = (content: string): string => {
   }
   // Remove any remaining <research> or </research> tags
   return content.replace(/<\/?research>/g, '')
-}
-
-// Helper to extract preview text from artifact content
-const getPreviewText = (artifact: Artifact): string => {
-  if (typeof artifact.content === 'string') {
-    // Remove markdown formatting for preview
-    const text = artifact.content
-      .replace(/#{1,6}\s/g, '') // Remove headers
-      .replace(/\*\*(.+?)\*\*/g, '$1') // Remove bold
-      .replace(/\*(.+?)\*/g, '$1') // Remove italic
-      .replace(/\[(.+?)\]\(.+?\)/g, '$1') // Remove links
-      .replace(/\n+/g, ' ') // Replace newlines with space
-      .trim()
-    return text.substring(0, 80) + (text.length > 80 ? '...' : '')
-  }
-  return ''
 }
 
 export function Canvas({
@@ -212,7 +199,7 @@ export function Canvas({
   }
 
   // Resizable bottom panel
-  const [bottomPanelHeight, setBottomPanelHeight] = useState(200) // Initial height: 200px
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(130) // Initial height: 130px
   const [isResizing, setIsResizing] = useState(false)
   const resizeStartY = useRef(0)
   const resizeStartHeight = useRef(0)
@@ -313,8 +300,10 @@ export function Canvas({
                       </div>
                     </div>
                   </div>
-                  {/* Action Buttons */}
-                  {(selectedArtifact.type === 'document' || selectedArtifact.type === 'research') && typeof selectedArtifact.content === 'string' && (
+                  {/* Action Buttons - hidden for Office files (they have their own buttons in OfficeViewer) */}
+                  {(selectedArtifact.type === 'document' || selectedArtifact.type === 'research') &&
+                    typeof selectedArtifact.content === 'string' &&
+                    !isOfficeFileUrl(selectedArtifact.content) && (
                     <div className="flex items-center gap-2">
                       <Button
                         variant="ghost"
@@ -342,29 +331,39 @@ export function Canvas({
               </div>
 
               {/* Preview Content */}
-              <ScrollArea className="flex-1">
-                <div className={`p-4 transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
-                  {(selectedArtifact.type === 'markdown' || selectedArtifact.type === 'research' || selectedArtifact.type === 'document') && typeof selectedArtifact.content === 'string' ? (
-                    <div ref={previewContentRef}>
-                      <Markdown sessionId={sessionId}>
-                        {stripResearchTags(selectedArtifact.content)}
-                      </Markdown>
-                    </div>
-                  ) : selectedArtifact.type === 'image' ? (
-                    <div className="flex items-center justify-center">
-                      <img
-                        src={selectedArtifact.content}
-                        alt={selectedArtifact.title}
-                        className="max-w-full h-auto rounded-lg shadow-lg"
-                      />
-                    </div>
-                  ) : (
-                    <div className="text-label text-sidebar-foreground/60">
-                      Preview not available for this artifact type
-                    </div>
-                  )}
+              {(selectedArtifact.type === 'word_document' || (selectedArtifact.type === 'document' && typeof selectedArtifact.content === 'string' && isOfficeFileUrl(selectedArtifact.content))) ? (
+                // Office document viewer (Word/Excel/PowerPoint) - full height, no ScrollArea
+                <div className={`flex-1 min-h-0 transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
+                  <OfficeViewer
+                    s3Url={selectedArtifact.type === 'word_document' ? (selectedArtifact.content || selectedArtifact.metadata?.s3_url || '') : selectedArtifact.content}
+                    filename={selectedArtifact.type === 'word_document' ? selectedArtifact.title : getFilenameFromS3Url(selectedArtifact.content)}
+                  />
                 </div>
-              </ScrollArea>
+              ) : (
+                <ScrollArea className="flex-1">
+                  <div className={`p-4 transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
+                    {(selectedArtifact.type === 'markdown' || selectedArtifact.type === 'research' || selectedArtifact.type === 'document') && typeof selectedArtifact.content === 'string' ? (
+                      <div ref={previewContentRef}>
+                        <Markdown sessionId={sessionId}>
+                          {stripResearchTags(selectedArtifact.content)}
+                        </Markdown>
+                      </div>
+                    ) : selectedArtifact.type === 'image' ? (
+                      <div className="flex items-center justify-center">
+                        <img
+                          src={selectedArtifact.content}
+                          alt={selectedArtifact.title}
+                          className="max-w-full h-auto rounded-lg shadow-lg"
+                        />
+                      </div>
+                    ) : (
+                      <div className="text-label text-sidebar-foreground/60">
+                        Preview not available for this artifact type
+                      </div>
+                    )}
+                  </div>
+                </ScrollArea>
+              )}
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-sidebar-foreground/50">
@@ -401,42 +400,31 @@ export function Canvas({
                   </div>
                 ) : (
                   displayArtifacts.map((artifact) => {
-                    const preview = getPreviewText(artifact)
                     return (
                       <button
                         key={artifact.id}
                         onClick={() => onSelectArtifact(artifact.id)}
-                        className={`flex-shrink-0 w-72 text-left p-4 rounded-xl border-2 transition-all ${
+                        className={`flex-shrink-0 text-left p-3 rounded-xl border-2 transition-all ${
                           selectedArtifactId === artifact.id
                             ? 'bg-primary/5 border-primary shadow-md ring-1 ring-primary/20'
                             : 'bg-sidebar-background border-sidebar-border hover:border-primary/50 hover:bg-sidebar-accent/30 hover:shadow-sm'
                         }`}
                       >
-                        <div className="flex items-start gap-3 mb-3">
-                          <div className="mt-0.5 flex-shrink-0 p-2 rounded-lg bg-primary/10">
+                        <div className="flex items-center gap-3">
+                          <div className="flex-shrink-0 p-2 rounded-lg bg-primary/10">
                             {getArtifactIcon(artifact.type)}
                           </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-label truncate mb-1 text-sidebar-foreground">
+                          <div className="min-w-0">
+                            <div className="font-semibold text-label truncate text-sidebar-foreground whitespace-nowrap">
                               {artifact.title}
                             </div>
-                            <div className="flex items-center gap-2 text-caption text-sidebar-foreground/60">
-                              <span className="font-medium">{getArtifactTypeLabel(artifact.type)}</span>
+                            <div className="flex items-center gap-1.5 text-caption text-sidebar-foreground/60 whitespace-nowrap">
+                              <span>{getArtifactTypeLabel(artifact.type)}</span>
                               <span>•</span>
                               <span>{formatTimestamp(artifact.timestamp)}</span>
                             </div>
                           </div>
                         </div>
-                        {preview && (
-                          <p className="text-caption text-sidebar-foreground/60 line-clamp-2 leading-relaxed">
-                            {preview}
-                          </p>
-                        )}
-                        {artifact.description && (
-                          <div className="mt-2 text-caption text-sidebar-foreground/50">
-                            {artifact.description}
-                          </div>
-                        )}
                       </button>
                     )
                   })

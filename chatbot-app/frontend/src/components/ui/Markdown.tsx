@@ -4,8 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import rehypeRaw from 'rehype-raw';
 import { CodeBlock } from './CodeBlock';
-import { ChartRenderer } from '../ChartRenderer';
-import { ImageRenderer } from '../ImageRenderer';
+import { ChartRenderer, ImageRenderer } from '../canvas';
 import { CitationLink } from './CitationLink';
 import { Loader2 } from 'lucide-react';
 

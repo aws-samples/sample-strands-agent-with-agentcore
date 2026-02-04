@@ -9,9 +9,12 @@ import { getApiUrl } from '@/config/environment'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { apiPost } from '@/lib/api-client'
 
+import { WorkspaceDocument } from './useStreamEvents'
+
 interface UseChatProps {
   onSessionCreated?: () => void
   onArtifactUpdated?: () => void  // Callback when artifact is updated via update_artifact tool
+  onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
 }
 
 interface UseChatReturn {
@@ -182,7 +185,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     stopPollingRef,
     sessionId,
     availableTools,
-    onArtifactUpdated: props?.onArtifactUpdated
+    onArtifactUpdated: props?.onArtifactUpdated,
+    onWordDocumentsCreated: props?.onWordDocumentsCreated
   })
 
   // ==================== CHAT API HOOK ====================

@@ -32,7 +32,8 @@ from .word_document_tool import (
     create_word_document,
     modify_word_document,
     list_my_word_documents,
-    read_word_document
+    read_word_document,
+    preview_word_page
 )
 from .excel_spreadsheet_tool import (
     create_excel_spreadsheet,
@@ -67,6 +68,7 @@ __all__ = [
     'modify_word_document',
     'list_my_word_documents',
     'read_word_document',
+    'preview_word_page',
     'create_excel_spreadsheet',
     'modify_excel_spreadsheet',
     'list_my_excel_spreadsheets',
@@ -92,6 +94,7 @@ BUILTIN_TOOLS = [
     modify_word_document,
     list_my_word_documents,
     read_word_document,
+    preview_word_page,
     create_excel_spreadsheet,
     modify_excel_spreadsheet,
     list_my_excel_spreadsheets,

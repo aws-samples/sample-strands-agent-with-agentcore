@@ -97,7 +97,18 @@ export const StreamingText = React.memo<StreamingTextProps>(({
   }, [])
 
   // Slice text to displayed length during streaming
-  const displayedText = isStreaming ? text.slice(0, displayedLength) : text
+  let displayedText = isStreaming ? text.slice(0, displayedLength) : text
+
+  // During streaming, avoid showing incomplete HTML tags to prevent raw HTML display
+  if (isStreaming && displayedText.length > 0) {
+    // Check for incomplete opening tags (no closing >)
+    // Matches: <tagname, <tagname , <tagname attr="value, etc.
+    const incompleteTagMatch = displayedText.match(/<[a-zA-Z][a-zA-Z0-9]*(?:\s+[^>]*)?$/)
+    if (incompleteTagMatch && incompleteTagMatch.index !== undefined) {
+      // Remove incomplete tag from displayed text to prevent raw HTML display
+      displayedText = displayedText.slice(0, incompleteTagMatch.index)
+    }
+  }
 
   return (
     <Markdown sessionId={sessionId} toolUseId={toolUseId} size={size} preserveLineBreaks>

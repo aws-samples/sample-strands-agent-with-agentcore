@@ -43,8 +43,11 @@ export function createToolExecution(
   // Extract text from toolResult
   let toolResultString = toolResult ? extractToolResultText(toolResult) : ''
 
-  // Extract images from toolResult.content
-  const images = extractToolResultImages(toolResult)
+  // Check if images should be hidden (e.g., preview_word_page)
+  const hideImageInChat = toolResult?.metadata?.hideImageInChat === true
+
+  // Extract images from toolResult.content (unless hideImageInChat is set)
+  const images = hideImageInChat ? [] : extractToolResultImages(toolResult)
 
   const execution: ToolExecution = {
     id: toolUseId,

@@ -5,6 +5,7 @@ WORKDIR /app
 
 # Install system dependencies
 # Note: Playwright needs minimal libs even for remote CDP connection
+# LibreOffice and poppler for Word document preview (Word → PDF → Image)
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
@@ -12,6 +13,9 @@ RUN apt-get update && apt-get install -y \
     libnss3 \
     libnspr4 \
     libdbus-1-3 \
+    libreoffice-writer \
+    poppler-utils \
+    fonts-nanum \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
