@@ -85,8 +85,10 @@ export function useArtifacts(
             title: item.title,
             content: item.content,
             description: item.metadata?.description || item.description || '',
+            toolName: item.tool_name,
             timestamp,
             sessionId: sessionId,
+            metadata: item.metadata,
           }
         })
 
@@ -233,8 +235,10 @@ export function useArtifacts(
             title: item.title,
             content: item.content,
             description: item.metadata?.description || '',
+            toolName: item.tool_name,
             timestamp: new Date(item.created_at || Date.now()).toISOString(),
             sessionId: sessionId,
+            metadata: item.metadata,
           }))
           setArtifacts(backendArtifacts)
 

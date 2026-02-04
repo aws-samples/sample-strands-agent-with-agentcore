@@ -9,6 +9,15 @@ import { fetchAuthSession } from 'aws-amplify/auth'
 import { updateLastActivity } from '@/config/session'
 import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, DocumentType } from '@/config/document-tools'
 
+// Word document info from workspace API
+export interface WorkspaceDocument {
+  filename: string
+  size_kb: string
+  last_modified: string
+  s3_key: string
+  tool_type: string
+}
+
 interface UseStreamEventsProps {
   sessionState: ChatSessionState
   setSessionState: React.Dispatch<React.SetStateAction<ChatSessionState>>
@@ -26,6 +35,7 @@ interface UseStreamEventsProps {
     tool_type?: string
   }>
   onArtifactUpdated?: () => void  // Callback when artifact is updated via update_artifact tool
+  onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
 }
 
 export const useStreamEvents = ({
@@ -40,7 +50,8 @@ export const useStreamEvents = ({
   stopPollingRef,
   sessionId,
   availableTools = [],
-  onArtifactUpdated
+  onArtifactUpdated,
+  onWordDocumentsCreated
 }: UseStreamEventsProps) => {
   // Refs to track streaming state synchronously (avoid React batching issues)
   const streamingStartedRef = useRef(false)
@@ -410,9 +421,13 @@ export const useStreamEvents = ({
       }
 
       // Update tool execution with result
+      // Filter out images if hideImageInChat metadata is set
+      const shouldHideImages = data.metadata?.hideImageInChat === true
+      const toolImages = shouldHideImages ? [] : data.images
+
       const updatedExecutions = currentToolExecutionsRef.current.map(tool =>
         tool.id === data.toolUseId
-          ? { ...tool, toolResult: data.result, images: data.images, isComplete: true, isCancelled }
+          ? { ...tool, toolResult: data.result, images: toolImages, isComplete: true, isCancelled }
           : tool
       )
 
@@ -471,7 +486,7 @@ export const useStreamEvents = ({
         if (msg.isToolMessage && msg.toolExecutions) {
           const updatedToolExecutions = msg.toolExecutions.map(tool =>
             tool.id === data.toolUseId
-              ? { ...tool, toolResult: data.result, images: data.images, isComplete: true }
+              ? { ...tool, toolResult: data.result, images: toolImages, isComplete: true }
               : tool
           )
           return {
@@ -574,6 +589,30 @@ export const useStreamEvents = ({
               // No auth session available - continue without auth header
             }
 
+            // Extract output filenames from Word tool results (only newly created/modified files)
+            const wordOutputFilenames = new Set<string>()
+            for (const toolExec of currentToolExecutionsRef.current) {
+              if (toolExec.toolName === 'create_word_document' || toolExec.toolName === 'modify_word_document') {
+                if (toolExec.toolResult) {
+                  // For create: look for "filename.docx" pattern
+                  // For modify: look for "Saved as: filename.docx" pattern (output file)
+                  const savedAsMatch = toolExec.toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.docx)/i)
+                  if (savedAsMatch) {
+                    wordOutputFilenames.add(savedAsMatch[1])
+                  } else {
+                    // Fallback: find any .docx filename
+                    const filenameMatch = toolExec.toolResult.match(/([a-zA-Z0-9\-]+\.docx)/i)
+                    if (filenameMatch) {
+                      wordOutputFilenames.add(filenameMatch[1])
+                    }
+                  }
+                }
+              }
+            }
+
+            // Track Word documents separately for artifact creation
+            let wordDocumentsForArtifact: WorkspaceDocument[] = []
+
             const fetchPromises = Array.from(usedDocTypes).map(async (docType) => {
               const response = await fetch(`/api/workspace/files?docType=${docType}`, {
                 headers: workspaceHeaders
@@ -581,10 +620,22 @@ export const useStreamEvents = ({
               if (response.ok) {
                 const data = await response.json()
                 if (data.files && Array.isArray(data.files)) {
-                  return data.files.map((file: any) => ({
+                  const files = data.files.map((file: any) => ({
                     filename: file.filename,
+                    size_kb: file.size_kb,
+                    last_modified: file.last_modified,
+                    s3_key: file.s3_key,
                     tool_type: DOC_TYPE_TO_TOOL_TYPE[docType] || file.tool_type
                   }))
+
+                  // Collect only newly created/modified Word documents for artifact creation
+                  if (docType === 'word' && wordOutputFilenames.size > 0) {
+                    wordDocumentsForArtifact = files.filter((f: WorkspaceDocument) =>
+                      wordOutputFilenames.has(f.filename)
+                    )
+                  }
+
+                  return files
                 }
               }
               return []
@@ -592,6 +643,11 @@ export const useStreamEvents = ({
 
             const results = await Promise.all(fetchPromises)
             workspaceDocuments = results.flat()
+
+            // Trigger Word document artifact creation callback (only for output files)
+            if (wordDocumentsForArtifact.length > 0 && onWordDocumentsCreated) {
+              onWordDocumentsCreated(wordDocumentsForArtifact)
+            }
           } catch (error) {
             // Failed to fetch workspace files - non-critical, will use backend-provided documents
           }

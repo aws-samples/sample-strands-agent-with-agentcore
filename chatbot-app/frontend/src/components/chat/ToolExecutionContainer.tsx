@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo } from 'react'
 import { ChevronRight, Download, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
-import { ChartRenderer } from '@/components/ChartRenderer'
+import { ChartRenderer } from '@/components/canvas'
 import { ChartToolResult } from '@/types/chart'
 import { MapRenderer } from '@/components/MapRenderer'
 import { MapToolResult } from '@/types/map'
@@ -12,6 +12,9 @@ import { LazyImage } from '@/components/ui/LazyImage'
 import { getApiUrl } from '@/config/environment'
 import { cn } from '@/lib/utils'
 import type { ImageData } from '@/utils/imageExtractor'
+
+// Word document tool names
+const WORD_DOCUMENT_TOOLS = ['create_word_document', 'modify_word_document']
 
 interface ToolExecutionContainerProps {
   toolExecutions: ToolExecution[]
@@ -23,6 +26,7 @@ interface ToolExecutionContainerProps {
   }>
   sessionId?: string
   onOpenResearchArtifact?: (executionId: string) => void  // Open completed research in Canvas
+  onOpenWordArtifact?: (filename: string) => void  // Open Word document in Canvas
 }
 
 // Collapsible Markdown component for tool results
@@ -80,9 +84,22 @@ const CollapsibleMarkdown = React.memo<{
          prevProps.sessionId === nextProps.sessionId
 })
 
-export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact }) => {
+export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
+
+  // Extract output filename from Word tool result
+  // For modify_word_document: extracts the "Saved as" filename (output)
+  // For create_word_document: extracts the created filename
+  const extractWordFilename = (toolResult: string): string | null => {
+    if (!toolResult) return null
+    // First try to find "Saved as: filename.docx" pattern (for modify_word_document)
+    const savedAsMatch = toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.docx)/i)
+    if (savedAsMatch) return savedAsMatch[1]
+    // Fallback: find any .docx filename
+    const match = toolResult.match(/([a-zA-Z0-9\-]+\.docx)/i)
+    return match ? match[1] : null
+  }
 
   const containsMarkdown = (text: string): boolean => {
     if (typeof text !== 'string') return false
@@ -463,6 +480,26 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                       onClick={(e) => {
                         e.stopPropagation();
                         onOpenResearchArtifact(toolExecution.id);
+                      }}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
+                      title="View in Canvas"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Canvas</span>
+                    </button>
+                  )}
+                  {/* View in Canvas button for Word document tools */}
+                  {WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) &&
+                    toolExecution.isComplete &&
+                    !toolExecution.isCancelled &&
+                    toolExecution.toolResult &&
+                    extractWordFilename(toolExecution.toolResult) &&
+                    onOpenWordArtifact && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const filename = extractWordFilename(toolExecution.toolResult || '');
+                        if (filename) onOpenWordArtifact(filename);
                       }}
                       className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
                       title="View in Canvas"

@@ -68,12 +68,12 @@
     {
       "id": "word_document_tools",
       "name": "Word Documents",
-      "description": "Create, modify, and manage Word documents with automatic storage (4 tools)",
+      "description": "Create, modify, and manage Word documents with automatic storage (5 tools)",
       "category": "code_execution_tools",
       "icon": "📝",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Word Document Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_word_document: User asks to create/generate a NEW Word document\n- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document\n- list_my_word_documents: User asks what documents are available\n- read_word_document: User wants to download a document\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Available Libraries:**\n- python-docx (document creation)\n- matplotlib, pandas, numpy (charts and data)\n- Note: seaborn NOT available - use matplotlib instead\n\n**Images:** If workspace has relevant images, include them: `run.add_picture('file.png', width=Inches(6))`\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
+      "systemPromptGuidance": "Word Document Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_word_document: User asks to create/generate a NEW Word document\n- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document\n- list_my_word_documents: User asks what documents are available\n- read_word_document: User wants to download a document\n- preview_word_page: YOUR tool to visually inspect a page before editing (image sent to you, not user)\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Available Libraries:**\n- python-docx (document creation)\n- matplotlib, pandas, numpy (charts and data)\n- Note: seaborn NOT available - use matplotlib instead\n\n**Images:** If workspace has relevant images, include them: `run.add_picture('file.png', width=Inches(6))`\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
       "tags": ["report", "business", "document", "writing"],
       "tools": [
         {
@@ -99,6 +99,12 @@
           "name": "Read Document",
           "description": "Read and download document from workspace",
           "displayName": { "running": "Reading document", "complete": "Read document" }
+        },
+        {
+          "id": "preview_word_page",
+          "name": "Preview Pages",
+          "description": "Agent-only: Get screenshots of multiple pages to inspect layout before editing",
+          "displayName": { "running": "Previewing pages", "complete": "Previewed pages" }
         }
       ]
     },

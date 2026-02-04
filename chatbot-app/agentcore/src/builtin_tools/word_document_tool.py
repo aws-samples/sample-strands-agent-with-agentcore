@@ -1,11 +1,12 @@
 """
-Word Document Tools - 4 essential tools for Word document management.
+Word Document Tools - 5 essential tools for Word document management.
 
 Tools:
 1. create_word_document - Create new Word document from Python code
 2. modify_word_document - Modify existing Word document with python-docx code
 3. list_my_word_documents - List all Word documents in workspace
 4. read_word_document - Retrieve document for download
+5. preview_word_page - Get page screenshot for visual inspection
 
 Note: Uploaded .docx files are automatically stored to workspace by agent.py
 Pattern follows diagram_tool for Code Interpreter usage.
@@ -142,6 +143,70 @@ def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
     return user_id, session_id
 
 
+def _save_word_artifact(
+    tool_context: ToolContext,
+    filename: str,
+    s3_url: str,
+    size_kb: str,
+    tool_name: str,
+    user_id: str,
+    session_id: str
+) -> None:
+    """Save Word document as artifact to agent.state for Canvas display.
+
+    Args:
+        tool_context: Strands ToolContext
+        filename: Document filename (e.g., "report.docx")
+        s3_url: Full S3 URL (e.g., "s3://bucket/path/report.docx")
+        size_kb: File size string (e.g., "45.2 KB")
+        tool_name: Tool that created this ("create_word_document" or "modify_word_document")
+        user_id: User ID
+        session_id: Session ID
+    """
+    from datetime import datetime, timezone
+
+    try:
+        # Generate artifact ID using filename (without extension) for easy lookup
+        doc_name = filename.replace('.docx', '')
+        artifact_id = f"word-{doc_name}"
+
+        # Get current artifacts from agent.state
+        artifacts = tool_context.agent.state.get("artifacts") or {}
+
+        # Create/update artifact
+        artifacts[artifact_id] = {
+            "id": artifact_id,
+            "type": "word_document",
+            "title": filename,
+            "content": s3_url,  # Full S3 URL for OfficeViewer
+            "tool_name": tool_name,
+            "metadata": {
+                "filename": filename,
+                "s3_url": s3_url,
+                "size_kb": size_kb,
+                "user_id": user_id,
+                "session_id": session_id
+            },
+            "created_at": artifacts.get(artifact_id, {}).get("created_at", datetime.now(timezone.utc).isoformat()),
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        }
+
+        # Save to agent.state
+        tool_context.agent.state.set("artifacts", artifacts)
+
+        # Sync agent state to persistence
+        session_manager = tool_context.invocation_state.get("session_manager")
+        if not session_manager and hasattr(tool_context.agent, 'session_manager'):
+            session_manager = tool_context.agent.session_manager
+
+        if session_manager:
+            session_manager.sync_agent(tool_context.agent)
+            logger.info(f"Saved Word artifact: {artifact_id}")
+        else:
+            logger.warning(f"No session_manager found, Word artifact not persisted: {artifact_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to save Word artifact: {e}")
 
 
 @tool(context=True)
@@ -355,6 +420,17 @@ print(f"Document created: {ci_path}")
                 document_filename,
                 file_bytes,
                 metadata={'source': 'python_code_creation'}
+            )
+
+            # Save as artifact for Canvas display
+            _save_word_artifact(
+                tool_context=tool_context,
+                filename=document_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='create_word_document',
+                user_id=user_id,
+                session_id=session_id
             )
 
             # Get current workspace list
@@ -635,6 +711,17 @@ print(f"Document modified and saved: {output_ci_path}")
                     'source_filename': source_filename,
                     'modified_at': 'timestamp'
                 }
+            )
+
+            # Save as artifact for Canvas display
+            _save_word_artifact(
+                tool_context=tool_context,
+                filename=output_filename,
+                s3_url=s3_info['s3_url'],
+                size_kb=s3_info['size_kb'],
+                tool_name='modify_word_document',
+                user_id=user_id,
+                session_id=session_id
             )
 
             # Get current workspace list
@@ -1010,6 +1097,198 @@ print(json.dumps(result, ensure_ascii=False))
         return {
             "content": [{
                 "text": f"❌ **Failed to read document**\n\n{str(e)}"
+            }],
+            "status": "error"
+        }
+
+
+@tool(context=True)
+def preview_word_page(
+    document_name: str,
+    page_numbers: list[int],
+    tool_context: ToolContext
+) -> Dict[str, Any]:
+    """Get page screenshots for YOU (the agent) to visually inspect before editing.
+
+    This tool is for YOUR internal use - to see the actual layout, formatting,
+    and content of pages before making modifications. Images are sent to you,
+    not displayed to the user.
+
+    Args:
+        document_name: Document name without extension (e.g., "report")
+        page_numbers: List of page numbers to preview (1-indexed, e.g., [1, 2, 3])
+
+    Use BEFORE modifying a document to:
+    - See exact text positions and formatting
+    - Identify tables, images, or charts on pages
+    - Plan precise edits based on visual layout
+    """
+    import subprocess
+    import tempfile
+    import base64
+    from pdf2image import convert_from_path
+
+    # Get user and session IDs
+    user_id, session_id = _get_user_session_ids(tool_context)
+
+    # Validate page numbers
+    if not page_numbers:
+        return {
+            "content": [{"text": "❌ At least one page number is required"}],
+            "status": "error"
+        }
+
+    if any(p < 1 for p in page_numbers):
+        return {
+            "content": [{"text": "❌ All page numbers must be 1 or greater"}],
+            "status": "error"
+        }
+
+    # Validate and prepare filename
+    is_valid, error_msg = _validate_document_name(document_name)
+    if not is_valid:
+        # Try sanitizing existing filename
+        document_name = _sanitize_document_name_for_bedrock(document_name)
+
+    document_filename = f"{document_name}.docx"
+    logger.info(f"preview_word_page: {document_filename}, pages {page_numbers}")
+
+    try:
+        # Initialize document manager
+        doc_manager = WordManager(user_id, session_id)
+
+        # Check if document exists
+        documents = doc_manager.list_s3_documents()
+        doc_info = next((d for d in documents if d['filename'] == document_filename), None)
+
+        if not doc_info:
+            available = [d['filename'] for d in documents]
+            return {
+                "content": [{
+                    "text": f"❌ **Document not found**: {document_filename}\n\n"
+                           f"Available documents: {', '.join(available) if available else 'None'}"
+                }],
+                "status": "error"
+            }
+
+        # Download Word document from S3
+        docx_bytes = doc_manager.load_from_s3(document_filename)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Save Word document to temp file
+            docx_path = os.path.join(temp_dir, document_filename)
+            with open(docx_path, 'wb') as f:
+                f.write(docx_bytes)
+
+            # Convert Word to PDF using LibreOffice
+            logger.info(f"Converting {document_filename} to PDF...")
+            result = subprocess.run(
+                ['soffice', '--headless', '--convert-to', 'pdf', '--outdir', temp_dir, docx_path],
+                capture_output=True,
+                text=True,
+                timeout=60  # 60 second timeout
+            )
+
+            if result.returncode != 0:
+                logger.error(f"LibreOffice conversion failed: {result.stderr}")
+                return {
+                    "content": [{
+                        "text": f"❌ **PDF conversion failed**\n\n{result.stderr}"
+                    }],
+                    "status": "error"
+                }
+
+            pdf_path = os.path.join(temp_dir, document_filename.replace('.docx', '.pdf'))
+
+            if not os.path.exists(pdf_path):
+                return {
+                    "content": [{
+                        "text": "❌ **PDF conversion failed**: Output file not created"
+                    }],
+                    "status": "error"
+                }
+
+            # Get total page count using pdfinfo (much faster than converting all pages)
+            pdfinfo_result = subprocess.run(
+                ['pdfinfo', pdf_path],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            total_pages = 1  # default
+            for line in pdfinfo_result.stdout.split('\n'):
+                if line.startswith('Pages:'):
+                    total_pages = int(line.split(':')[1].strip())
+                    break
+
+            # Validate all page numbers
+            invalid_pages = [p for p in page_numbers if p > total_pages]
+            if invalid_pages:
+                return {
+                    "content": [{
+                        "text": f"❌ **Invalid page(s): {invalid_pages}**\n\n"
+                               f"Document has {total_pages} page(s)."
+                    }],
+                    "status": "error"
+                }
+
+            # Convert requested pages to images
+            import io
+            content = [{
+                "text": f"**{document_filename}** - {len(page_numbers)} page(s) of {total_pages} total"
+            }]
+
+            for page_num in sorted(set(page_numbers)):  # Remove duplicates and sort
+                logger.info(f"Converting page {page_num} to image...")
+                images = convert_from_path(
+                    pdf_path,
+                    first_page=page_num,
+                    last_page=page_num,
+                    dpi=150
+                )
+
+                if images:
+                    img_buffer = io.BytesIO()
+                    images[0].save(img_buffer, format='PNG')
+                    img_bytes = img_buffer.getvalue()
+
+                    content.append({"text": f"**Page {page_num}:**"})
+                    content.append({
+                        "image": {
+                            "format": "png",
+                            "source": {"bytes": img_bytes}
+                        }
+                    })
+
+            logger.info(f"Successfully generated {len(page_numbers)} preview(s)")
+
+            return {
+                "content": content,
+                "status": "success",
+                "metadata": {
+                    "filename": document_filename,
+                    "page_numbers": sorted(set(page_numbers)),
+                    "total_pages": total_pages,
+                    "tool_type": "word_document",
+                    "user_id": user_id,
+                    "session_id": session_id,
+                    "hideImageInChat": True
+                }
+            }
+
+    except subprocess.TimeoutExpired:
+        logger.error("LibreOffice conversion timed out")
+        return {
+            "content": [{
+                "text": "❌ **Conversion timed out**\n\nThe document may be too large or complex."
+            }],
+            "status": "error"
+        }
+    except Exception as e:
+        logger.error(f"preview_word_page failed: {e}")
+        return {
+            "content": [{
+                "text": f"❌ **Failed to generate preview**\n\n{str(e)}"
             }],
             "status": "error"
         }

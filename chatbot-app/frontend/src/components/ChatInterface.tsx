@@ -15,7 +15,7 @@ import { BrowserLiveViewButton } from "@/components/BrowserLiveViewButton"
 import { BrowserResultModal } from "@/components/BrowserResultModal"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
 import { SwarmProgress } from "@/components/SwarmProgress"
-import { Canvas } from "@/components/Canvas"
+import { Canvas } from "@/components/canvas"
 import { VoiceAnimation } from "@/components/VoiceAnimation"
 import { ComposeWizard, ComposeConfig } from "@/components/ComposeWizard"
 import { ChatInputArea } from "@/components/chat/ChatInputArea"
@@ -111,12 +111,48 @@ export function ChatInterface() {
 
   // Ref for artifact refresh callback (to avoid circular dependency)
   const refreshArtifactsRef = useRef<(() => void) | null>(null)
+  // Refs for Word document artifact creation (to avoid circular dependency with useChat)
+  const addArtifactRef = useRef<((artifact: any) => void) | null>(null)
+  const openArtifactRef = useRef<((id: string) => void) | null>(null)
 
   // Memoize the artifact update callback to prevent infinite loops
   const handleArtifactUpdated = useCallback(() => {
     if (refreshArtifactsRef.current) {
       refreshArtifactsRef.current()
     }
+  }, [])
+
+  // Callback for Word document creation - creates artifacts and opens Canvas
+  const handleWordDocumentsCreated = useCallback((documents: Array<{
+    filename: string
+    size_kb: string
+    last_modified: string
+    s3_key: string
+    tool_type: string
+  }>) => {
+    if (!addArtifactRef.current || !openArtifactRef.current || documents.length === 0) return
+
+    // Generate artifact IDs first (for consistency)
+    const timestamp = Date.now()
+    const artifactIds = documents.map((doc, index) => `word-${doc.filename}-${timestamp}-${index}`)
+
+    // Create artifacts for each Word document
+    documents.forEach((doc, index) => {
+      addArtifactRef.current!({
+        id: artifactIds[index],
+        type: 'document' as ArtifactType,
+        title: doc.filename,
+        content: doc.s3_key,  // S3 URL for OfficeViewer
+        description: doc.size_kb,
+        timestamp: doc.last_modified || new Date().toISOString(),
+      })
+    })
+
+    // Open Canvas and select the most recent document (first in sorted list)
+    // Small delay to ensure artifact is added before selecting
+    setTimeout(() => {
+      openArtifactRef.current!(artifactIds[0])
+    }, 100)
   }, [])
 
   const {
@@ -150,7 +186,8 @@ export function ChatInterface() {
     finalizeVoiceMessage,
     addArtifactMessage,
   } = useChat({
-    onArtifactUpdated: handleArtifactUpdated
+    onArtifactUpdated: handleArtifactUpdated,
+    onWordDocumentsCreated: handleWordDocumentsCreated
   })
 
   // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
@@ -221,10 +258,18 @@ export function ChatInterface() {
     justUpdated: artifactJustUpdated,
   } = useArtifacts(groupedMessages, sessionId)
 
-  // Update ref after useArtifacts initializes (to avoid circular dependency with useChat)
+  // Update refs after useArtifacts initializes (to avoid circular dependency with useChat)
   useEffect(() => {
     refreshArtifactsRef.current = refreshArtifacts
   }, [refreshArtifacts])
+
+  useEffect(() => {
+    addArtifactRef.current = addArtifact
+  }, [addArtifact])
+
+  useEffect(() => {
+    openArtifactRef.current = openArtifactBase
+  }, [openArtifactBase])
 
   // Composer artifact ID tracking
   const [composeArtifactId, setComposeArtifactId] = useState<string | null>(null)
@@ -369,10 +414,11 @@ export function ChatInterface() {
 
   const handleResearchConfirmPlan = useCallback((approved: boolean) => {
     researchRef.current.confirmPlanResponse(approved)
-    // If declined, close canvas
+    // If declined, close canvas and reset state
     if (!approved) {
       researchRef.current.reset()
       setResearchArtifactId(null)
+      processedInterruptRef.current = null  // Reset to allow new interrupts
       closeCanvas()
     }
   }, [closeCanvas])
@@ -384,6 +430,7 @@ export function ChatInterface() {
     }
     researchRef.current.reset()
     setResearchArtifactId(null)
+    processedInterruptRef.current = null  // Reset to allow new interrupts
     closeCanvas()
   }, [closeCanvas])
 
@@ -399,6 +446,17 @@ export function ChatInterface() {
     const artifact = artifactsRef.current.find(a => a.id === artifactId)
     if (artifact) {
       openArtifact(artifactId)
+    }
+  }, [openArtifact])
+
+  // Handle "View in Canvas" from Word tool - find artifact by filename
+  const handleOpenWordArtifact = useCallback((filename: string) => {
+    // Find artifact with matching filename in title (type is 'word_document')
+    const artifact = artifactsRef.current.find(a =>
+      a.type === 'word_document' && a.title === filename
+    )
+    if (artifact) {
+      openArtifact(artifact.id)
     }
   }, [openArtifact])
 
@@ -1171,6 +1229,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
                         sessionId={stableSessionId}
                         onBrowserClick={handleBrowserClick}
                         onOpenResearchArtifact={handleOpenResearchArtifact}
+                        onOpenWordArtifact={handleOpenWordArtifact}
                         researchProgress={researchProgress}
                         hideAvatar={isSwarmFinalResponse || hasHistorySwarm}
                       />
