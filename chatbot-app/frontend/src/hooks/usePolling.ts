@@ -48,7 +48,6 @@ export const usePolling = ({
       pollingIntervalRef.current = null
       isPollingActiveRef.current = false
       pollingSessionIdRef.current = null
-      console.log('[usePolling] Polling stopped')
     }
   }, [])
 
@@ -58,7 +57,6 @@ export const usePolling = ({
       clearInterval(pollingIntervalRef.current)
     }
 
-    console.log(`[usePolling] Starting polling for session: ${targetSessionId}`)
     isPollingActiveRef.current = true
     pollingSessionIdRef.current = targetSessionId
 
@@ -66,23 +64,19 @@ export const usePolling = ({
       try {
         // Check if we're still polling the same session
         if (pollingSessionIdRef.current !== targetSessionId) {
-          console.log(`[usePolling] Session mismatch, stopping poll`)
           return
         }
 
         // Check if target session is still the current active session
         if (currentSessionIdRef.current !== targetSessionId) {
-          console.log(`[usePolling] Target session ${targetSessionId} is no longer active, stopping poll`)
           stopPolling()
           return
         }
 
-        console.log(`[usePolling] Polling: reloading session ${targetSessionId}...`)
         await loadSession(targetSessionId)
 
         // Double-check after async operation
         if (currentSessionIdRef.current !== targetSessionId) {
-          console.log(`[usePolling] Session changed during load, stopping poll`)
           stopPolling()
           return
         }
@@ -112,10 +106,8 @@ export const usePolling = ({
     )
 
     if (hasOngoingA2ATools && !isPollingActiveRef.current) {
-      console.log('[usePolling] Detected ongoing A2A agent executions, starting polling')
       startPolling(targetSessionId)
     } else if (!hasOngoingA2ATools && isPollingActiveRef.current) {
-      console.log('[usePolling] No ongoing A2A agent executions, stopping polling')
       stopPolling()
     }
   }, [startPolling, stopPolling])

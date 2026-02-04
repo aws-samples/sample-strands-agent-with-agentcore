@@ -167,6 +167,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   // ==================== POLLING HOOK ====================
   // Note: Initialize polling first, then pass startPolling to useStreamEvents
   const startPollingRef = useRef<((sessionId: string) => void) | null>(null)
+  const stopPollingRef = useRef<(() => void) | null>(null)
 
   // ==================== STREAM EVENTS HOOK ====================
   const { handleStreamEvent, resetStreamingState } = useStreamEvents({
@@ -178,6 +179,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     currentToolExecutionsRef,
     currentTurnIdRef,
     startPollingRef,
+    stopPollingRef,
     sessionId,
     availableTools,
     onArtifactUpdated: props?.onArtifactUpdated
@@ -212,10 +214,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     loadSession: apiLoadSession
   })
 
-  // Update startPollingRef so useStreamEvents can use it
+  // Update polling refs so useStreamEvents can use them
   useEffect(() => {
     startPollingRef.current = startPolling
-  }, [startPolling])
+    stopPollingRef.current = stopPolling
+  }, [startPolling, stopPolling])
 
   // ==================== A2A AGENT UI STATE MANAGEMENT ====================
   // Update UI status based on ongoing A2A agents (research/browser)

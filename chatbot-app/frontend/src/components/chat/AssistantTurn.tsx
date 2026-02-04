@@ -567,9 +567,9 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
             </div>
           )}
 
-          {/* Metrics Badges - Shows on hover at bottom right */}
+          {/* Metrics Badges - Shows on hover at bottom right (hidden on mobile) */}
           {((latencyMetrics && (latencyMetrics.timeToFirstToken || latencyMetrics.endToEndLatency)) || tokenUsage) && (
-            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -mt-2">
+            <div className="hidden md:flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 -mt-2">
               {/* Latency Metrics */}
               {latencyMetrics?.timeToFirstToken && (
                 <Badge variant="secondary" className="text-caption bg-blue-100 text-blue-700 border-blue-200 flex items-center gap-1">

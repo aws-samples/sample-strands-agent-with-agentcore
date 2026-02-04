@@ -35,7 +35,7 @@ def load_tools_config() -> Dict[str, Any]:
 
         with open(config_path, 'r') as f:
             config = json.load(f)
-            logger.info(f"✅ Loaded tools config from {config_path}")
+            logger.debug(f" Loaded tools config from {config_path}")
             logger.info(f"   - local_tools: {len(config.get('local_tools', []))}")
             logger.info(f"   - builtin_tools: {len(config.get('builtin_tools', []))}")
             logger.info(f"   - gateway_targets: {len(config.get('gateway_targets', []))}")

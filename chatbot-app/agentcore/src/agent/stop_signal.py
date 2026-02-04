@@ -79,13 +79,13 @@ class LocalStopSignalProvider(StopSignalProvider):
         key = self._get_key(user_id, session_id)
         with self._signals_lock:
             self._signals[key] = True
-        logger.info(f"[StopSignal] Stop signal set for {key}")
+        logger.debug(f"Stop signal set for {key}")
 
     def clear_stop_signal(self, user_id: str, session_id: str) -> None:
         key = self._get_key(user_id, session_id)
         with self._signals_lock:
             self._signals.pop(key, None)
-        logger.info(f"[StopSignal] Stop signal cleared for {key}")
+        logger.debug(f"Stop signal cleared for {key}")
 
 
 # Singleton instance cache
@@ -111,8 +111,6 @@ def get_stop_signal_provider() -> StopSignalProvider:
     if _provider_instance is None:
         with _provider_lock:
             if _provider_instance is None:
-                logger.info("[StopSignal] Using LocalStopSignalProvider (in-memory)")
-                logger.info("[StopSignal] Session affinity ensures stop signals reach the same container")
                 _provider_instance = LocalStopSignalProvider()
 
     return _provider_instance

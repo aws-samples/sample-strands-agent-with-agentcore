@@ -258,7 +258,7 @@ print("✅ presentation_editor.py and ppt_helpers.py modules loaded successfully
                     logger.error(f"Failed to upload ppt_helpers: {error_msg[:200]}")
                     return
 
-            logger.info("✅ Uploaded presentation_editor.py and ppt_helpers.py to Code Interpreter")
+            logger.debug(" Uploaded presentation_editor.py and ppt_helpers.py to Code Interpreter")
         else:
             logger.warning(f"ppt_helpers.py not found at {helpers_path}")
 

@@ -18,6 +18,7 @@ interface UseStreamEventsProps {
   currentToolExecutionsRef: React.MutableRefObject<ToolExecution[]>
   currentTurnIdRef: React.MutableRefObject<string | null>
   startPollingRef: React.MutableRefObject<((sessionId: string) => void) | null>
+  stopPollingRef: React.MutableRefObject<(() => void) | null>
   sessionId: string | null
   availableTools?: Array<{
     id: string
@@ -36,6 +37,7 @@ export const useStreamEvents = ({
   currentToolExecutionsRef,
   currentTurnIdRef,
   startPollingRef,
+  stopPollingRef,
   sessionId,
   availableTools = [],
   onArtifactUpdated
@@ -745,6 +747,11 @@ export const useStreamEvents = ({
 
   const handleInterruptEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'interrupt') {
+      // Stop polling when interrupt occurs (agent is waiting for user input)
+      if (stopPollingRef.current) {
+        stopPollingRef.current()
+      }
+
       setSessionState(prev => ({
         ...prev,
         interrupt: {
@@ -759,7 +766,7 @@ export const useStreamEvents = ({
         agentStatus: 'idle'
       }))
     }
-  }, [setSessionState, setUIState])
+  }, [setSessionState, setUIState, stopPollingRef])
 
   const handleBrowserProgressEvent = useCallback((event: StreamEvent) => {
     if (event.type === 'browser_progress') {
