@@ -30,6 +30,8 @@ const getArtifactIcon = (type: string) => {
     case 'research':
     case 'document':
     case 'word_document':
+    case 'excel_spreadsheet':
+    case 'powerpoint_presentation':
       return <FileText className="h-4 w-4" />
     case 'image':
       return <ImageIcon className="h-4 w-4" />
@@ -62,6 +64,8 @@ const getArtifactTypeLabel = (type: string) => {
     case 'code': return 'Code'
     case 'document': return 'Document'
     case 'word_document': return 'Word Document'
+    case 'excel_spreadsheet': return 'Excel Spreadsheet'
+    case 'powerpoint_presentation': return 'PowerPoint'
     case 'browser': return 'Browser'
     case 'compose': return 'Compose'
     default: return 'Artifact'
@@ -331,12 +335,12 @@ export function Canvas({
               </div>
 
               {/* Preview Content */}
-              {(selectedArtifact.type === 'word_document' || (selectedArtifact.type === 'document' && typeof selectedArtifact.content === 'string' && isOfficeFileUrl(selectedArtifact.content))) ? (
+              {(selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation' || (selectedArtifact.type === 'document' && typeof selectedArtifact.content === 'string' && isOfficeFileUrl(selectedArtifact.content))) ? (
                 // Office document viewer (Word/Excel/PowerPoint) - full height, no ScrollArea
                 <div className={`flex-1 min-h-0 transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
                   <OfficeViewer
-                    s3Url={selectedArtifact.type === 'word_document' ? (selectedArtifact.content || selectedArtifact.metadata?.s3_url || '') : selectedArtifact.content}
-                    filename={selectedArtifact.type === 'word_document' ? selectedArtifact.title : getFilenameFromS3Url(selectedArtifact.content)}
+                    s3Url={(selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation') ? (selectedArtifact.content || selectedArtifact.metadata?.s3_url || '') : selectedArtifact.content}
+                    filename={(selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation') ? selectedArtifact.title : getFilenameFromS3Url(selectedArtifact.content)}
                   />
                 </div>
               ) : (

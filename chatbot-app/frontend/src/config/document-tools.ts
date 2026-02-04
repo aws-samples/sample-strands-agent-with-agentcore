@@ -33,6 +33,7 @@ export const TOOL_TO_DOC_TYPE: Record<string, DocumentType> = {
   'modify_excel_spreadsheet': 'excel',
   'read_excel_spreadsheet': 'excel',
   'list_my_excel_spreadsheets': 'excel',
+  'preview_excel_sheets': 'excel',
 
   // PowerPoint tools (from powerpoint_presentation_tools)
   'create_presentation': 'powerpoint',
@@ -45,6 +46,7 @@ export const TOOL_TO_DOC_TYPE: Record<string, DocumentType> = {
   'analyze_presentation': 'powerpoint',
   'get_presentation_layouts': 'powerpoint',
   'list_my_powerpoint_presentations': 'powerpoint',
+  'preview_presentation_slides': 'powerpoint',
 }
 
 /**

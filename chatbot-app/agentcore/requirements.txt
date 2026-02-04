@@ -32,8 +32,9 @@ ddgs>=9.0.0
 # OpenTelemetry (for observability)
 aws-opentelemetry-distro>=0.10.1
 
-# Word document preview (PDF to image conversion)
+# Document preview (PDF to image conversion)
 pdf2image>=1.16.0
+openpyxl>=3.1.0  # Excel sheet name extraction for preview
 
 bedrock-agentcore>=1.1.5
 

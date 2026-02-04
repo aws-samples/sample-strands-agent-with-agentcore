@@ -161,7 +161,7 @@ def _is_tool_group_enabled(tool_group_id: str, tool_group: Dict, enabled_tools: 
 # Tool Guidance Loading
 # =============================================================================
 
-def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[str]:
+def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[Dict[str, str]]:
     """
     Load tool-specific system prompt guidance based on enabled tools.
 
@@ -175,7 +175,7 @@ def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[str]:
         enabled_tools: List of enabled tool IDs
 
     Returns:
-        List of guidance strings for each enabled tool group
+        List of {"id": tool_id, "guidance": guidance_text} dicts for each enabled tool group
     """
     if not enabled_tools or len(enabled_tools) == 0:
         return []
@@ -215,7 +215,7 @@ def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[str]:
                     if tool_id and _is_tool_group_enabled(tool_id, tool_group, enabled_tools):
                         guidance = tool_group.get('systemPromptGuidance')
                         if guidance:
-                            guidance_sections.append(guidance)
+                            guidance_sections.append({"id": tool_id, "guidance": guidance})
                             logger.debug(f"Added guidance for tool group: {tool_id}")
 
                         # Check if this tool needs citation
@@ -259,7 +259,7 @@ def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[str]:
                         if tool_id and _is_tool_group_enabled(tool_id, tool_group, enabled_tools):
                             guidance = tool_group.get('systemPromptGuidance')
                             if guidance:
-                                guidance_sections.append(guidance)
+                                guidance_sections.append({"id": tool_id, "guidance": guidance})
                                 logger.debug(f"Added guidance for tool group: {tool_id}")
 
                             # Check if this tool needs citation
@@ -273,7 +273,7 @@ def load_tool_guidance(enabled_tools: Optional[List[str]]) -> List[str]:
 
     # Add citation instructions if any citation-enabled tool is active
     if needs_citation and 'citation_instructions' in shared_guidance:
-        guidance_sections.append(shared_guidance['citation_instructions'])
+        guidance_sections.append({"id": "citation", "guidance": shared_guidance['citation_instructions']})
         logger.info("Added citation instructions (citation-enabled tool active)")
     elif needs_citation:
         logger.warning("Citation needed but citation_instructions not found in shared_guidance")
@@ -308,11 +308,14 @@ def build_text_system_prompt(
     # Block 1: Base system prompt
     system_prompt_blocks.append({"text": BASE_TEXT_PROMPT})
 
-    # Blocks 2-N: Tool-specific guidance (each tool guidance as separate block)
+    # Blocks 2-N: Tool-specific guidance (each tool guidance as separate block with XML tags)
     tool_guidance_list = load_tool_guidance(enabled_tools)
-    for i, guidance in enumerate(tool_guidance_list):
-        system_prompt_blocks.append({"text": guidance})
-        logger.debug(f"Added tool guidance block {i+1}: {guidance[:50]}...")
+    for i, item in enumerate(tool_guidance_list):
+        tool_id = item["id"]
+        guidance = item["guidance"]
+        xml_wrapped = f"<{tool_id}_guidance>\n{guidance}\n</{tool_id}_guidance>"
+        system_prompt_blocks.append({"text": xml_wrapped})
+        logger.debug(f"Added tool guidance block {i+1}: {tool_id}")
 
     # Final block: Current date
     current_date = get_current_date_pacific()
@@ -347,9 +350,13 @@ def build_voice_system_prompt(enabled_tools: Optional[List[str]] = None) -> str:
     tool_guidance = load_tool_guidance(enabled_tools) if enabled_tools else []
 
     if tool_guidance:
-        # Add compact tool section
-        tool_section = "Tools available:\n" + "\n\n".join(tool_guidance)
-        prompt_sections.append(tool_section)
+        # Add compact tool section with XML tags
+        guidance_parts = []
+        for item in tool_guidance:
+            tool_id = item["id"]
+            guidance = item["guidance"]
+            guidance_parts.append(f"<{tool_id}_guidance>\n{guidance}\n</{tool_id}_guidance>")
+        prompt_sections.append("\n\n".join(guidance_parts))
 
     # Add current date/time
     current_date = get_current_date_pacific()

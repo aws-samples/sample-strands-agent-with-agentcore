@@ -39,7 +39,8 @@ from .excel_spreadsheet_tool import (
     create_excel_spreadsheet,
     modify_excel_spreadsheet,
     list_my_excel_spreadsheets,
-    read_excel_spreadsheet
+    read_excel_spreadsheet,
+    preview_excel_sheets
 )
 from .powerpoint_presentation_tool import (
     list_my_powerpoint_presentations,
@@ -51,7 +52,8 @@ from .powerpoint_presentation_tool import (
     delete_slides,
     move_slide,
     duplicate_slide,
-    update_slide_notes
+    update_slide_notes,
+    preview_presentation_slides
 )
 
 __all__ = [
@@ -73,6 +75,7 @@ __all__ = [
     'modify_excel_spreadsheet',
     'list_my_excel_spreadsheets',
     'read_excel_spreadsheet',
+    'preview_excel_sheets',
     # PowerPoint tools
     'list_my_powerpoint_presentations',
     'get_presentation_layouts',
@@ -83,7 +86,8 @@ __all__ = [
     'delete_slides',
     'move_slide',
     'duplicate_slide',
-    'update_slide_notes'
+    'update_slide_notes',
+    'preview_presentation_slides'
 ]
 
 # Collection of all builtin tools for registry sync
@@ -99,6 +103,7 @@ BUILTIN_TOOLS = [
     modify_excel_spreadsheet,
     list_my_excel_spreadsheets,
     read_excel_spreadsheet,
+    preview_excel_sheets,
     list_my_powerpoint_presentations,
     get_presentation_layouts,
     analyze_presentation,
@@ -108,7 +113,8 @@ BUILTIN_TOOLS = [
     delete_slides,
     move_slide,
     duplicate_slide,
-    update_slide_notes
+    update_slide_notes,
+    preview_presentation_slides
 ]
 
 # Nova Act browser tools

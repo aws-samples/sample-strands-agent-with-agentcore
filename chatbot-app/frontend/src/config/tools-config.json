@@ -24,7 +24,7 @@
       "enabled": true,
       "isDynamic": false,
       "displayName": { "running": "Creating chart", "complete": "Created chart" },
-      "systemPromptGuidance": "Visualization Best Practices:\n\n**Data Format:**\n- Bar/Line charts: [{\"x\": label, \"y\": value}]\n- Pie charts: [{\"segment\": name, \"value\": number}]\n- Optional colors: \"color\": \"hsl(210, 100%, 50%)\"",
+      "systemPromptGuidance": "**Data Format:**\n- Bar/Line charts: [{\"x\": label, \"y\": value}]\n- Pie charts: [{\"segment\": name, \"value\": number}]\n- Optional colors: \"color\": \"hsl(210, 100%, 50%)\"",
       "tags": ["report", "analysis", "business", "presentation", "data"]
     },
     {
@@ -62,7 +62,7 @@
       "enabled": true,
       "isDynamic": false,
       "displayName": { "running": "Generating diagram", "complete": "Generated diagram" },
-      "systemPromptGuidance": "Diagram Generator Best Practices:\n\n**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability",
+      "systemPromptGuidance": "**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability",
       "tags": ["report", "presentation", "analysis", "business", "data"]
     },
     {
@@ -73,7 +73,7 @@
       "icon": "📝",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Word Document Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_word_document: User asks to create/generate a NEW Word document\n- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document\n- list_my_word_documents: User asks what documents are available\n- read_word_document: User wants to download a document\n- preview_word_page: YOUR tool to visually inspect a page before editing (image sent to you, not user)\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Available Libraries:**\n- python-docx (document creation)\n- matplotlib, pandas, numpy (charts and data)\n- Note: seaborn NOT available - use matplotlib instead\n\n**Images:** If workspace has relevant images, include them: `run.add_picture('file.png', width=Inches(6))`\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
+      "systemPromptGuidance": "**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_word_document: User asks to create/generate a NEW Word document\n- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document\n- list_my_word_documents: User asks what documents are available\n- read_word_document: User wants to download a document\n- preview_word_page: Check actual page appearance when editing (charts, images, complex layouts)\n\n**Before Modifying:** Always use preview_word_page first to see the current layout.\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Available Libraries:**\n- python-docx (document creation)\n- matplotlib, pandas, numpy (charts and data)\n- Note: seaborn NOT available - use matplotlib instead\n\n**Images:** If workspace has relevant images, include them: `run.add_picture('file.png', width=Inches(6))`\n\n**Formatting:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting",
       "tags": ["report", "business", "document", "writing"],
       "tools": [
         {
@@ -111,12 +111,12 @@
     {
       "id": "excel_spreadsheet_tools",
       "name": "Excel Spreadsheets",
-      "description": "Create, modify, and manage Excel spreadsheets with automatic storage (4 tools)",
+      "description": "Create, modify, and manage Excel spreadsheets with automatic storage (5 tools)",
       "category": "code_execution_tools",
       "icon": "📊",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Excel Spreadsheet Best Practices:\n\n**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_excel_spreadsheet: User asks to create/generate a NEW Excel spreadsheet\n- modify_excel_spreadsheet: User asks to edit/modify/update an EXISTING spreadsheet or add sheets/data to existing spreadsheet\n- list_my_excel_spreadsheets: User asks what spreadsheets are available\n- read_excel_spreadsheet: User wants to download a spreadsheet\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"Q4-sales.xlsx\")\n\n**Available Libraries:**\n- openpyxl (spreadsheet creation)\n- matplotlib, pandas, numpy (charts and data)\n\n**Images:** If workspace has relevant images: `from openpyxl.drawing.image import Image; ws.add_image(Image('file.png'), 'E1')`\n\n**Data Structure:**\n- Use tables for structured data (TableStyleInfo)\n- Add charts for visualization (BarChart, LineChart, PieChart)\n- Format cells appropriately (Font, PatternFill, Alignment)\n- Use multiple sheets for organization\n\n**Formulas:**\n- Use Excel formulas instead of hardcoded values: '=SUM(B2:B10)', '=AVERAGE(C2:C50)'\n- Avoid circular references (A1='=A1+1' or A1='=B1' and B1='=A1')",
+      "systemPromptGuidance": "**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_excel_spreadsheet: User asks to create/generate a NEW Excel spreadsheet\n- modify_excel_spreadsheet: User asks to edit/modify/update an EXISTING spreadsheet or add sheets/data to existing spreadsheet\n- list_my_excel_spreadsheets: User asks what spreadsheets are available\n- read_excel_spreadsheet: User wants to download a spreadsheet\n- preview_excel_sheets: Check actual sheet appearance when editing (charts, formatting, data layout)\n\n**Before Modifying:** Always use preview_excel_sheets first to see the current layout.\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"Q4-sales.xlsx\")\n\n**Available Libraries:**\n- openpyxl (spreadsheet creation)\n- matplotlib, pandas, numpy (charts and data)\n\n**Images:** If workspace has relevant images: `from openpyxl.drawing.image import Image; ws.add_image(Image('file.png'), 'E1')`\n\n**Data Structure:**\n- Use tables for structured data (TableStyleInfo)\n- Add charts for visualization (BarChart, LineChart, PieChart)\n- Format cells appropriately (Font, PatternFill, Alignment)\n- Use multiple sheets for organization\n\n**Formulas:**\n- Use Excel formulas instead of hardcoded values: '=SUM(B2:B10)', '=AVERAGE(C2:C50)'\n- Avoid circular references (A1='=A1+1' or A1='=B1' and B1='=A1')",
       "tags": ["report", "business", "finance", "data", "analysis"],
       "tools": [
         {
@@ -142,18 +142,24 @@
           "name": "Read Spreadsheet",
           "description": "Read and download spreadsheet from workspace",
           "displayName": { "running": "Reading spreadsheet", "complete": "Read spreadsheet" }
+        },
+        {
+          "id": "preview_excel_sheets",
+          "name": "Preview Sheets",
+          "description": "Agent-only: Get screenshots of sheets to inspect layout before editing",
+          "displayName": { "running": "Previewing sheets", "complete": "Previewed sheets" }
         }
       ]
     },
     {
       "id": "powerpoint_presentation_tools",
       "name": "PPT Presentations",
-      "description": "Create, modify, and manage PPT presentations with high-level operations (10 tools)",
+      "description": "Create, modify, and manage PPT presentations with high-level operations (11 tools)",
       "category": "code_execution_tools",
       "icon": "📊",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "PowerPoint Best Practices:\n\n**CRITICAL Rules:**\n- Batch required: 1 call for all slides (parallel calls = data loss)\n- Operations: update_text, update_image only\n- update_text: replaces entire element (use \\n for multi-line)\n- Output name must differ from source\n\n**Images:** If workspace has relevant images: `slide.shapes.add_picture('file.png', Inches(1), Inches(2), width=Inches(8))`\n\n**Text Editing:**\n- Preserve original text length when possible\n- Long existing text often indicates design constraints\n- Be concise - not all improvements need longer text\n- Consider layout: expanding text can break visual design\n\n**Position Info:**\n- analyze shows element positions: (left\", top\", width\"×height\")\n- Helps understand layout: titles ~top:0.3\", bodies ~top:1.5\"\n\n**Speaker Notes:**\n- analyze shows existing notes\n- Use update_slide_notes when user wants to review/modify notes\n\n**File Handling:**\n- Existing/uploaded files: use modify tools only (create_presentation destroys layout)\n- New files: create_presentation(name, outline, template_name)\n\n**Rules:**\n- Names: letters, numbers, hyphens only\n- Indices: 0-based (slides & elements)",
+      "systemPromptGuidance": "**CRITICAL Rules:**\n- Batch required: 1 call for all slides (parallel calls = data loss)\n- Operations: update_text, update_image only\n- update_text: replaces entire element (use \\n for multi-line)\n- Output name must differ from source\n\n**Images:** If workspace has relevant images: `slide.shapes.add_picture('file.png', Inches(1), Inches(2), width=Inches(8))`\n\n**Text Editing:**\n- Preserve original text length when possible\n- Long existing text often indicates design constraints\n- Be concise - not all improvements need longer text\n- Consider layout: expanding text can break visual design\n\n**Visual Inspection:**\n- preview_presentation_slides: Check actual slide appearance when editing (charts, images, complex layouts)\n- analyze shows element positions: (left\", top\", width\"×height\")\n\n**Speaker Notes:**\n- analyze shows existing notes\n- Use update_slide_notes when user wants to review/modify notes\n\n**File Handling:**\n- Existing/uploaded files: use modify tools only (create_presentation destroys layout)\n- New files: create_presentation(name, outline, template_name)\n\n**Rules:**\n- Names: letters, numbers, hyphens only\n- Indices: 0-based (slides & elements)",
       "tags": ["presentation", "business", "report", "pitch"],
       "tools": [
         {
@@ -215,6 +221,12 @@
           "name": "Update Notes",
           "description": "Update speaker notes for a specific slide",
           "displayName": { "running": "Updating notes", "complete": "Updated notes" }
+        },
+        {
+          "id": "preview_presentation_slides",
+          "name": "Preview Slides",
+          "description": "Get slide screenshots for visual inspection before editing",
+          "displayName": { "running": "Previewing slides", "complete": "Previewed slides" }
         }
       ]
     }
@@ -228,7 +240,7 @@
       "icon": "🌐",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "Browser Automation Best Practices:\n\n**When to Use Browser Tools:**\n- Target a SPECIFIC website/URL\n- Analyze web UI elements, layout, or interactive features\n- Tasks requiring login, form submission, or multi-step navigation\n- Extract data visible only after user interactions (clicks, scrolls, filters)\n\n**Tool Selection:**\n- navigate + act: UI interactions (click, type, scroll, form fill)\n- extract: Structured data from visible content (auto-scrolls)\n- get_page_info: Fast page structure check\n- drag: For drawing, drag-and-drop, resizing, sliders. Requires coordinates - use get_page_info first to understand viewport size.\n- save_screenshot: Capture visual evidence for documents or reports\n\n**On Failure:** Simplify instruction, reduce schema complexity, or pivot to search APIs.",
+      "systemPromptGuidance": "**When to Use Browser Tools:**\n- Target a SPECIFIC website/URL\n- Analyze web UI elements, layout, or interactive features\n- Tasks requiring login, form submission, or multi-step navigation\n- Extract data visible only after user interactions (clicks, scrolls, filters)\n\n**Tool Selection:**\n- navigate + act: UI interactions (click, type, scroll, form fill)\n- extract: Structured data from visible content (auto-scrolls)\n- get_page_info: Fast page structure check\n- drag: For drawing, drag-and-drop, resizing, sliders. Requires coordinates - use get_page_info first to understand viewport size.\n- save_screenshot: Capture visual evidence for documents or reports\n\n**On Failure:** Simplify instruction, reduce schema complexity, or pivot to search APIs.",
       "tags": ["shopping", "automation", "scraping", "research"],
       "tools": [
         {
@@ -409,7 +421,7 @@
       "icon": "🗺️",
       "enabled": false,
       "isDynamic": true,
-      "systemPromptGuidance": "Google Maps Best Practices:\n\n**When to Use:**\n- ALWAYS call show_on_map after collecting location data - visual maps are the primary value\n- Use for: search results, directions, comparisons, or any location-based query\n\n**Response Pattern (DO NOT call show_on_map in parallel):**\n1. Text: Introduce what you'll show (\"Here are the top restaurants:\")\n2. show_on_map: Display the map\n3. Text: Explain the results (\"These restaurants are rated 4.5+ stars\")\n\nExample:\n- \"Let me show you restaurants in Gangnam:\" → show_on_map(restaurants) → \"All 5 restaurants above have excellent reviews.\"\n- For multiple categories: Text → Map 1 → Text → Map 2 (sequential, not parallel)\n\n**Map Organization:**\n- Separate maps for different categories (restaurants vs hotels)\n- Show 1-5 most relevant places per map\n\n**Tool Selection:**\n- search_places: text queries | search_nearby_places: coordinates\n- Preserve place_id for details | Infer direction mode from context",
+      "systemPromptGuidance": "**When to Use:**\n- ALWAYS call show_on_map after collecting location data - visual maps are the primary value\n- Use for: search results, directions, comparisons, or any location-based query\n\n**Response Pattern (DO NOT call show_on_map in parallel):**\n1. Text: Introduce what you'll show (\"Here are the top restaurants:\")\n2. show_on_map: Display the map\n3. Text: Explain the results (\"These restaurants are rated 4.5+ stars\")\n\nExample:\n- \"Let me show you restaurants in Gangnam:\" → show_on_map(restaurants) → \"All 5 restaurants above have excellent reviews.\"\n- For multiple categories: Text → Map 1 → Text → Map 2 (sequential, not parallel)\n\n**Map Organization:**\n- Separate maps for different categories (restaurants vs hotels)\n- Show 1-5 most relevant places per map\n\n**Tool Selection:**\n- search_places: text queries | search_nearby_places: coordinates\n- Preserve place_id for details | Infer direction mode from context",
       "tags": ["travel", "navigation", "planning", "directions", "location"],
       "tools": [
         {
@@ -518,7 +530,7 @@
       "isDynamic": false,
       "displayName": { "running": "Researching", "complete": "Researched" },
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
-      "systemPromptGuidance": "Research Agent Best Practices:\n\n**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
+      "systemPromptGuidance": "**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
     }
   ]
 }

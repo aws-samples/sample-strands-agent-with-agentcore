@@ -15,6 +15,8 @@ interface UseChatProps {
   onSessionCreated?: () => void
   onArtifactUpdated?: () => void  // Callback when artifact is updated via update_artifact tool
   onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
+  onExcelDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Excel documents are created
+  onPptDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when PowerPoint documents are created
 }
 
 interface UseChatReturn {
@@ -186,7 +188,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     sessionId,
     availableTools,
     onArtifactUpdated: props?.onArtifactUpdated,
-    onWordDocumentsCreated: props?.onWordDocumentsCreated
+    onWordDocumentsCreated: props?.onWordDocumentsCreated,
+    onExcelDocumentsCreated: props?.onExcelDocumentsCreated,
+    onPptDocumentsCreated: props?.onPptDocumentsCreated
   })
 
   // ==================== CHAT API HOOK ====================
@@ -351,38 +355,16 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     console.log(`[useChat] Swarm mode restored: ${swarmRestored}`)
   }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
-  // ==================== PROGRESS EVENTS ====================
-  const clearProgressEvents = useCallback(async () => {
-    const currentSessionId = sessionStorage.getItem('chat-session-id')
-    if (!currentSessionId) return
-
-    try {
-      const response = await fetch(getApiUrl(`stream/tools/clear?session_id=${currentSessionId}`), {
-        method: 'POST',
-      })
-      if (response.ok) {
-        console.log('Progress events cleared for session:', currentSessionId)
-      }
-    } catch (error) {
-      console.warn('Failed to clear progress events:', error)
-    }
-  }, [])
-
   // ==================== INITIALIZATION EFFECTS ====================
   // Load tools when backend is ready
   useEffect(() => {
     if (uiState.isConnected) {
       const timeoutId = setTimeout(async () => {
-        const isFirstLoad = sessionStorage.getItem('chat-first-load') !== 'false'
-        if (isFirstLoad) {
-          await clearProgressEvents()
-          sessionStorage.setItem('chat-first-load', 'false')
-        }
         await loadTools()
       }, 1000)
       return () => clearTimeout(timeoutId)
     }
-  }, [uiState.isConnected, clearProgressEvents, loadTools])
+  }, [uiState.isConnected, loadTools])
 
   // Restore last session on page load
   useEffect(() => {
