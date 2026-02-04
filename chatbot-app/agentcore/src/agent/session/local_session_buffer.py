@@ -43,7 +43,7 @@ class LocalSessionBuffer:
         self.pending_messages: List[Dict[str, Any]] = []
         self._last_agent = None  # Store agent reference for flush
 
-        logger.info(f"✅ LocalSessionBuffer initialized (batch_size={batch_size})")
+        logger.debug(f" LocalSessionBuffer initialized (batch_size={batch_size})")
 
     def append_message(self, message, agent, **kwargs):
         """
@@ -138,14 +138,14 @@ class LocalSessionBuffer:
                 with open(message_path, 'w', encoding='utf-8') as f:
                     json.dump(encoded_message, f, indent=2, ensure_ascii=False)
 
-                logger.info(f"✅ Written message_{next_index}.json (role={message_dict['role']})")
+                logger.debug(f" Written message_{next_index}.json (role={message_dict['role']})")
 
             except Exception as e:
                 logger.error(f"Failed to write message to file: {e}")
 
         # Clear buffer
         self.pending_messages = []
-        logger.debug(f"✅ Buffer flushed")
+        logger.debug(f" Buffer flushed")
 
     # Delegate all other methods to base manager
     def __getattr__(self, name):

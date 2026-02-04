@@ -81,7 +81,7 @@ async def list_gateway_tools() -> Dict[str, Any]:
 
                 tools_list.append(tool_info)
 
-            logger.info(f"✅ Retrieved {len(tools_list)} tools from Gateway")
+            logger.debug(f" Retrieved {len(tools_list)} tools from Gateway")
 
             return {
                 "success": True,
@@ -91,7 +91,7 @@ async def list_gateway_tools() -> Dict[str, Any]:
             }
 
     except Exception as e:
-        logger.error(f"❌ Failed to list Gateway tools: {e}")
+        logger.error(f" Failed to list Gateway tools: {e}")
         import traceback
         logger.error(traceback.format_exc())
 
@@ -137,7 +137,7 @@ async def get_gateway_status() -> Dict[str, Any]:
             }
 
     except Exception as e:
-        logger.error(f"❌ Failed to check Gateway status: {e}")
+        logger.error(f" Failed to check Gateway status: {e}")
 
         return {
             "available": False,

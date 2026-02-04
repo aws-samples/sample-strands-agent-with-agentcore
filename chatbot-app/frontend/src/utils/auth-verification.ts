@@ -167,7 +167,7 @@ export class AuthVerification {
  * Quick verification function for use in console or components
  */
 export async function quickAuthVerification(): Promise<void> {
-    console.log('🔍 Running authentication verification...');
+    console.log(' Running authentication verification...');
 
     const verifier = new AuthVerification();
     const results = await verifier.runAllTests();

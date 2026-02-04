@@ -198,7 +198,7 @@ def _parse_message(message: str, request_type: str) -> tuple[str, dict]:
                 first_item = parsed[0]
                 if isinstance(first_item, dict) and "interruptResponse" in first_item:
                     interrupt_data = first_item["interruptResponse"]
-                    logger.info(f"🔔 Interrupt response: {interrupt_data}")
+                    logger.debug(f"Interrupt response received: {interrupt_data.get('interruptId', 'unknown')[:50]}")
                     # Return interrupt prompt as-is (agent expects this format)
                     return [first_item], {}
         except (json.JSONDecodeError, TypeError, KeyError):

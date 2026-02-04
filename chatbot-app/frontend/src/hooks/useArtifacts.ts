@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Artifact } from '@/types/artifact'
 import { Message } from '@/types/chat'
 
@@ -25,29 +25,32 @@ export function useArtifacts(
   const [loadedFromBackend, setLoadedFromBackend] = useState<boolean>(false)
   const [justUpdated, setJustUpdated] = useState<boolean>(false)  // Flash effect trigger
 
-  // Reset artifacts and loaded flag when session changes
+  // Track previous sessionId to only reset on actual session change
+  const prevSessionIdRef = useRef<string | null>(null)
+
+  // Reset artifacts and loaded flag only when switching to a DIFFERENT session
   useEffect(() => {
-    setArtifacts([])  // Clear artifacts when switching sessions
-    setSelectedArtifactId(null)  // Clear selection
-    setLoadedFromBackend(false)
+    // Skip if sessionId hasn't actually changed (prevents unnecessary resets)
+    if (prevSessionIdRef.current === sessionId) {
+      return
+    }
+
+    // Only clear if switching from one valid session to another
+    if (prevSessionIdRef.current && sessionId && prevSessionIdRef.current !== sessionId) {
+      setArtifacts([])
+      setSelectedArtifactId(null)
+      setLoadedFromBackend(false)
+    }
+
+    prevSessionIdRef.current = sessionId
   }, [sessionId])
 
   // Load artifacts from sessionStorage (populated by history API)
   useEffect(() => {
-    console.log('[useArtifacts] Effect triggered - sessionId:', sessionId, 'loadedFromBackend:', loadedFromBackend)
-
-    // Skip if no valid sessionId
+    // Skip if no valid sessionId or already loaded
     if (!sessionId || sessionId === 'undefined' || loadedFromBackend) {
-      if (sessionId === 'undefined') {
-        console.warn('[useArtifacts] Invalid sessionId: undefined')
-      }
-      if (loadedFromBackend) {
-        console.log('[useArtifacts] Already loaded, skipping')
-      }
       return
     }
-
-    console.log('[useArtifacts] Loading artifacts for session:', sessionId)
 
     // Artifacts are loaded by history API and stored in sessionStorage
     const artifactsKey = `artifacts-${sessionId}`
@@ -56,7 +59,6 @@ export function useArtifacts(
     if (storedArtifacts) {
       try {
         const data = JSON.parse(storedArtifacts)
-        console.log('[useArtifacts] ✅ Loaded artifacts from sessionStorage:', data.length)
 
         // Convert backend artifact format to frontend format
         const backendArtifacts = data.map((item: any) => {
@@ -88,13 +90,10 @@ export function useArtifacts(
           }
         })
 
-        console.log('[useArtifacts] Setting artifacts:', backendArtifacts)
         setArtifacts(backendArtifacts)
       } catch (error) {
-        console.error('[useArtifacts] ❌ Failed to parse artifacts from sessionStorage:', error)
+        console.error('[useArtifacts] Failed to parse artifacts:', error)
       }
-    } else {
-      console.log('[useArtifacts] ⚠️ No artifacts found in sessionStorage')
     }
 
     setLoadedFromBackend(true)
@@ -237,7 +236,6 @@ export function useArtifacts(
             timestamp: new Date(item.created_at || Date.now()).toISOString(),
             sessionId: sessionId,
           }))
-          console.log('[useArtifacts] ✅ Refreshed artifacts:', backendArtifacts.length)
           setArtifacts(backendArtifacts)
 
           // Trigger flash effect (skip for research completion to avoid re-render)
@@ -253,7 +251,7 @@ export function useArtifacts(
         }
       }
     } catch (error) {
-      console.error('[useArtifacts] ❌ Failed to refresh artifacts:', error)
+      console.error('[useArtifacts] Failed to refresh artifacts:', error)
     }
     return []
   }, [sessionId])

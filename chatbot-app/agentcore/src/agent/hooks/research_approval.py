@@ -30,7 +30,7 @@ class ResearchApprovalHook(HookProvider):
 
         if tool_name == "research_agent":
             plan = tool_input.get("plan", "No plan provided")
-            logger.info(f"🔍 Requesting approval for research_agent: {plan[:100]}...")
+            logger.debug(f"Requesting approval for research_agent")
 
             approval = event.interrupt(
                 f"{self.app_name}-research-approval",
@@ -44,7 +44,7 @@ class ResearchApprovalHook(HookProvider):
 
         elif tool_name == "browser_use_agent":
             task = tool_input.get("task", "No task provided")
-            logger.info(f"🌐 Requesting approval for browser_use_agent: {task[:100]}...")
+            logger.debug(f"Requesting approval for browser_use_agent")
 
             approval = event.interrupt(
                 f"{self.app_name}-browser-approval",
@@ -57,8 +57,8 @@ class ResearchApprovalHook(HookProvider):
             action = "browser automation"
 
         if approval and approval.lower() in ["y", "yes", "approve", "approved"]:
-            logger.info(f"✅ {action.capitalize()} approved by user")
+            logger.debug(f"{action.capitalize()} approved by user")
             return
         else:
-            logger.info(f"❌ {action.capitalize()} rejected by user")
+            logger.info(f"{action.capitalize()} rejected by user")
             event.cancel_tool = f"User declined to proceed with {action}"

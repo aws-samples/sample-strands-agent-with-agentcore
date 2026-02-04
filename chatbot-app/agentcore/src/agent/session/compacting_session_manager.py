@@ -100,7 +100,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         user_id: Optional[str] = None,
         summarization_strategy_id: Optional[str] = None,
         metrics_only: bool = False,
-        enable_api_optimization: bool = True,
         **kwargs: Any,
     ):
         """
@@ -115,8 +114,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
             user_id: User ID for DynamoDB operations
             summarization_strategy_id: Strategy ID for LTM summarization (optional)
             metrics_only: If True, only track metrics without applying compaction (for baseline testing)
-            enable_api_optimization: If True (default), use unified actorId + batch storage for reduced API calls.
-                                     If False, use original separate callbacks (for A/B testing).
             **kwargs: Additional arguments passed to parent
         """
         super().__init__(
@@ -132,7 +129,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         self.region_name = region_name
         self.summarization_strategy_id = summarization_strategy_id
         self.metrics_only = metrics_only
-        self.enable_api_optimization = enable_api_optimization
 
         # Current compaction state (loaded from DynamoDB in initialize)
         self.compaction_state: Optional[CompactionState] = None
@@ -148,16 +144,12 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         # All messages loaded at initialize (for summary generation)
         self._all_messages_for_summary: List[Dict] = []
 
-        # Track last synced state to avoid redundant API calls (API optimization)
-        self._last_synced_state: Dict[str, dict] = {}
-
         # API call metrics for performance measurement
         self._api_call_count = 0
         self._api_call_total_ms = 0.0
 
         mode_str = "metrics_only" if metrics_only else "full_compaction"
-        api_mode = "optimized" if enable_api_optimization else "legacy"
-        logger.debug(f"CompactingSessionManager: mode={mode_str}, api={api_mode}")
+        logger.debug(f"CompactingSessionManager: mode={mode_str}")
 
     def reset_api_metrics(self):
         """Reset API call metrics."""
@@ -183,27 +175,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
     @override
     def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
-        """Register hooks for session management.
-
-        Behavior depends on `enable_api_optimization`:
-        - True (default): Unified actorId + batch storage (2 API calls per turn instead of 7+)
-        - False (legacy): Separate callbacks matching parent implementation (for A/B testing)
-        """
-        if self.enable_api_optimization:
-            self._register_optimized_hooks(registry, **kwargs)
-        else:
-            self._register_legacy_hooks(registry, **kwargs)
-
-    def _register_optimized_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
-        """Register optimized hooks - single callback saves message+state in one API call."""
-
-        registry.add_callback(AgentInitializedEvent, lambda event: self.initialize(event.agent))
-        registry.add_callback(MessageAddedEvent, lambda event: self.save_message_with_state(event.message, event.agent))
-        registry.add_callback(MessageAddedEvent, lambda event: self.retrieve_customer_context(event))
-        registry.add_callback(AfterInvocationEvent, lambda event: self._sync_if_conversation_manager_changed(event.agent))
-
-    def _register_legacy_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
-        """Register legacy hooks - separate callbacks for A/B testing comparison."""
+        """Register hooks for session management."""
         registry.add_callback(AgentInitializedEvent, lambda event: self.initialize(event.agent))
         registry.add_callback(MessageAddedEvent, lambda event: self._append_message_tracked(event.message, event.agent))
         registry.add_callback(MessageAddedEvent, lambda event: self._sync_agent_tracked(event.agent))
@@ -234,89 +206,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         elapsed_ms = (time.time() - start) * 1000
         self._api_call_count += 1
         self._api_call_total_ms += elapsed_ms
-
-    def save_message_with_state(self, message: Dict, agent: "Agent") -> None:
-        """Save message and agent state in a single API call using unified actorId."""
-        # Filter out empty content blocks before saving (stop signal can leave incomplete messages)
-        filtered_message = self._filter_empty_text(message)
-
-        # Skip if content is completely empty after filtering
-        content = filtered_message.get("content", [])
-        if not content or (isinstance(content, list) and len(content) == 0):
-            logger.debug(f"[Save] Skipping message with empty content (likely from stop signal)")
-            return
-
-        session_message = SessionMessage.from_message(filtered_message, 0)
-        message_payloads = AgentCoreMemoryConverter.message_to_payload(session_message)
-
-        if not message_payloads:
-            return
-
-        session_agent = SessionAgent.from_agent(agent)
-        agent_data = session_agent.to_dict()
-        agent_data["_payload_type"] = PAYLOAD_TYPE_AGENT_STATE
-        agent_data["_agent_id"] = agent.agent_id
-
-        payloads = []
-        message_tuple = message_payloads[0]
-        message_data = json.loads(message_tuple[0])
-        message_data["_payload_type"] = PAYLOAD_TYPE_MESSAGE
-
-        if not AgentCoreMemoryConverter.exceeds_conversational_limit(message_tuple):
-            payloads.append({
-                "conversational": {
-                    "content": {"text": json.dumps(message_data)},
-                    "role": message_tuple[1].upper(),
-                }
-            })
-        else:
-            payloads.append({"blob": json.dumps(message_data)})
-
-        payloads.append({"blob": json.dumps(agent_data)})
-
-        event = self._track_api_call(
-            self.memory_client.gmdp_client.create_event,
-            memoryId=self.config.memory_id,
-            actorId=self.config.actor_id,
-            sessionId=self.session_id,
-            payload=payloads,
-            eventTimestamp=self._get_monotonic_timestamp(),
-        )
-
-        event_id = event.get("event", {}).get("eventId")
-        session_message = SessionMessage.from_message(message, event_id)
-        self._latest_agent_message[agent.agent_id] = session_message
-        self._last_synced_state[agent.agent_id] = agent_data
-
-    def _sync_if_conversation_manager_changed(self, agent: "Agent") -> None:
-        """Sync agent state only if conversation_manager state changed."""
-        current_state = SessionAgent.from_agent(agent).to_dict()
-        last_state = self._last_synced_state.get(agent.agent_id)
-
-        if last_state is None:
-            return
-
-        current_cm_state = current_state.get("conversation_manager_state", {})
-        last_cm_state = last_state.get("conversation_manager_state", {})
-
-        if current_cm_state != last_cm_state:
-            self._save_agent_state_only(agent)
-
-    def _save_agent_state_only(self, agent: "Agent") -> None:
-        """Save only agent state (for AfterInvocationEvent when CM state changed)."""
-        session_agent = SessionAgent.from_agent(agent)
-        agent_data = session_agent.to_dict()
-        agent_data["_payload_type"] = PAYLOAD_TYPE_AGENT_STATE
-        agent_data["_agent_id"] = agent.agent_id
-
-        self.memory_client.gmdp_client.create_event(
-            memoryId=self.config.memory_id,
-            actorId=self.config.actor_id,
-            sessionId=self.session_id,
-            payload=[{"blob": json.dumps(agent_data)}],
-            eventTimestamp=self._get_monotonic_timestamp(),
-        )
-        self._last_synced_state[agent.agent_id] = agent_data
 
     @override
     def list_messages(
@@ -507,7 +396,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
             eventTimestamp=self._get_monotonic_timestamp(),
         )
 
-        self._last_synced_state[session_agent.agent_id] = agent_data
         logger.info(f"Created agent (unified): {session_agent.agent_id}")
 
     @override

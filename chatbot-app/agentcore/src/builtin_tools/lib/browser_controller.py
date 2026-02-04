@@ -163,7 +163,7 @@ class BrowserController:
                 viewport={'width': 1600, 'height': 900}
             )
 
-            logger.info(f"✅ Browser session started: {session_id}")
+            logger.debug(f" Browser session started: {session_id}")
             ws_url, headers = self.browser_session_client.generate_ws_headers()
 
             # Initialize Nova Act client with AgentCore Browser CDP connection
@@ -243,7 +243,7 @@ class BrowserController:
             logger.info("Taking screenshot...")
             screenshot_data = self._take_screenshot()
 
-            logger.info(f"✅ Successfully navigated to: {current_url}")
+            logger.debug(f" Successfully navigated to: {current_url}")
             logger.info(f"   Page title: {page_title}")
 
             return {
@@ -316,7 +316,7 @@ class BrowserController:
                 end_time = getattr(metadata, 'end_time', None)
 
                 # Log detailed metadata
-                logger.info(f"✅ Act completed:")
+                logger.debug(f" Act completed:")
                 if session_id:
                     logger.info(f"   Session ID: {session_id}")
                 if act_id:
@@ -343,7 +343,7 @@ class BrowserController:
 
         except ActInvalidModelGenerationError as e:
             # Schema validation failed or model generated invalid output
-            logger.error(f"❌ Invalid model generation: {e}")
+            logger.error(f" Invalid model generation: {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -354,7 +354,7 @@ class BrowserController:
 
         except ActExceededMaxStepsError as e:
             # Task too complex for the given max_steps
-            logger.error(f"❌ Exceeded max steps ({max_steps}): {e}")
+            logger.error(f" Exceeded max steps ({max_steps}): {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -365,7 +365,7 @@ class BrowserController:
 
         except ActTimeoutError as e:
             # Operation timed out
-            logger.error(f"❌ Timeout ({timeout}s): {e}")
+            logger.error(f" Timeout ({timeout}s): {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -376,7 +376,7 @@ class BrowserController:
 
         except (ActAgentError, ActClientError) as e:
             # Retriable errors - agent failed or invalid request
-            logger.error(f"❌ Act error: {e}")
+            logger.error(f" Act error: {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -387,7 +387,7 @@ class BrowserController:
 
         except Exception as e:
             # Unknown error
-            logger.error(f"❌ Unexpected error: {e}")
+            logger.error(f" Unexpected error: {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -454,7 +454,7 @@ class BrowserController:
                 end_time = getattr(metadata, 'end_time', None)
 
                 # Log detailed metadata
-                logger.info(f"✅ Extraction completed:")
+                logger.debug(f" Extraction completed:")
                 if session_id:
                     logger.info(f"   Session ID: {session_id}")
                 if act_id:
@@ -480,7 +480,7 @@ class BrowserController:
 
         except ActInvalidModelGenerationError as e:
             # Schema validation failed - this is the error you experienced!
-            logger.error(f"❌ Schema validation failed: {e}")
+            logger.error(f" Schema validation failed: {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -491,7 +491,7 @@ class BrowserController:
 
         except ActExceededMaxStepsError as e:
             # Extraction too complex
-            logger.error(f"❌ Exceeded max steps ({max_steps}): {e}")
+            logger.error(f" Exceeded max steps ({max_steps}): {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -502,7 +502,7 @@ class BrowserController:
 
         except ActTimeoutError as e:
             # Extraction timed out
-            logger.error(f"❌ Timeout ({timeout}s): {e}")
+            logger.error(f" Timeout ({timeout}s): {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -513,7 +513,7 @@ class BrowserController:
 
         except (ActAgentError, ActClientError) as e:
             # Retriable errors
-            logger.error(f"❌ Extraction error: {e}")
+            logger.error(f" Extraction error: {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -524,7 +524,7 @@ class BrowserController:
 
         except Exception as e:
             # Unknown error
-            logger.error(f"❌ Unexpected error: {e}")
+            logger.error(f" Unexpected error: {e}")
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
@@ -703,7 +703,7 @@ class BrowserController:
                 "breadcrumbs": breadcrumbs
             }
 
-            logger.info(f"✅ Page info collected: {len(buttons)} buttons, {len(links)} links, {len(inputs)} inputs")
+            logger.debug(f" Page info collected: {len(buttons)} buttons, {len(links)} links, {len(inputs)} inputs")
 
             return {
                 "status": "success",
@@ -755,7 +755,7 @@ class BrowserController:
 
                 duration = time.time() - start_time
                 size_kb = len(screenshot_bytes) / 1024
-                logger.info(f"📸 Screenshot: {duration:.2f}s, {size_kb:.1f}KB")
+                logger.debug(f" Screenshot: {duration:.2f}s, {size_kb:.1f}KB")
 
                 return screenshot_bytes
             finally:

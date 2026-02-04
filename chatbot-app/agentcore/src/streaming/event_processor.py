@@ -102,7 +102,7 @@ class StreamEventProcessor:
             )
             if is_stopped:
                 self._stop_detected = True
-                logger.info(f"[StopSignal] ✅ Stop detected for {self.current_user_id}:{self.current_session_id}")
+                logger.debug(f"Stop signal detected for session {self.current_session_id}")
             return is_stopped
         except Exception as e:
             logger.warning(f"[StopSignal] Error: {e}")
@@ -252,8 +252,6 @@ class StreamEventProcessor:
         # Extract user_id from invocation_state for stop signal checking
         self.current_user_id = self.invocation_state.get('user_id')
 
-        # Log stop signal info
-        logger.info(f"[StopSignal] Stream started - user_id: {self.current_user_id}, session_id: {self.current_session_id}")
 
         # Reset stop signal state for this stream
         self.last_stop_check_time = 0
@@ -333,18 +331,27 @@ class StreamEventProcessor:
 
                 # Handle final result
                 if "result" in event:
-                    logger.debug("[Final Result] Received final result event from agent")
+                    logger.info("[Final Result] Received final result event from agent")
                     final_result = event["result"]
+                    logger.info(f"[Final Result] stop_reason={getattr(final_result, 'stop_reason', 'NO_ATTR')}, has_interrupts={hasattr(final_result, 'interrupts')}")
 
                     # Check for interrupt (HITL - Human-in-the-loop)
                     if hasattr(final_result, 'stop_reason') and final_result.stop_reason == "interrupt":
                         if hasattr(final_result, 'interrupts') and final_result.interrupts:
-                            logger.debug(f"[Interrupt] Detected {len(final_result.interrupts)} interrupt(s)")
+                            logger.info(f"[Interrupt] Detected {len(final_result.interrupts)} interrupt(s), sending to frontend")
 
                             # Send interrupt event to frontend
                             interrupt_event = self.formatter.create_interrupt_event(final_result.interrupts)
+                            logger.info(f"[Interrupt] Created interrupt event: {interrupt_event[:200]}")
                             yield interrupt_event
-                            return
+                            # FIX: Don't return here! Let the stream continue so agent's finally block runs
+                            # This ensures AfterInvocationEvent fires and interrupt state gets saved
+                            logger.info("[Interrupt] Continuing stream to allow agent cleanup")
+                            continue
+                        else:
+                            logger.warning("[Interrupt] stop_reason is interrupt but no interrupts attribute!")
+                    else:
+                        logger.info(f"[Interrupt] Not an interrupt event (stop_reason={getattr(final_result, 'stop_reason', 'NONE')})")
 
                     images, result_text = self.formatter.extract_final_result_data(final_result)
                     logger.debug(f"[Final Result] Extracted data - has images: {bool(images)}, text length: {len(result_text) if result_text else 0}")
@@ -404,7 +411,7 @@ class StreamEventProcessor:
 
                     # Check stop signal before yielding response (fast path using cached flag)
                     if self._check_stop_signal():
-                        logger.info(f"[StopSignal] Stopping before response yield for session {session_id}")
+                        logger.debug(f"Stopping stream for session {session_id}")
                         self._clear_stop_signal()
                         raise StopRequestedException("Stop requested by user")
 
@@ -688,7 +695,7 @@ class StreamEventProcessor:
                         async for result in self._process_single_tool_result(tool_result, tool_use_id):
                             yield result
                     except Exception as e:
-                        logger.error(f"[Tool Result] ❌ Error processing tool_result {tool_use_id}: {e}")
+                        logger.error(f"[Tool Result] Error processing tool_result {tool_use_id}: {e}")
                         # Emit error as tool_result so agent can self-recover
                         error_tool_result = {
                             "toolUseId": tool_use_id or "unknown",

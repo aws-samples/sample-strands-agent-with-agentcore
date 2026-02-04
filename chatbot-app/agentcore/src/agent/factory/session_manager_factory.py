@@ -157,7 +157,6 @@ def create_compacting_session_manager(
     compaction_config: Optional[CompactionConfig] = None,
     summarization_strategy_id: Optional[str] = None,
     enable_prompt_caching: bool = True,
-    enable_api_optimization: bool = True,
 ) -> Any:
     """
     Create CompactingSessionManager for cloud mode.
@@ -169,7 +168,6 @@ def create_compacting_session_manager(
         compaction_config: Compaction settings
         summarization_strategy_id: Strategy ID for LTM summarization
         enable_prompt_caching: Whether to enable prompt caching
-        enable_api_optimization: Whether to use unified API format
 
     Returns:
         CompactingSessionManager instance
@@ -200,7 +198,6 @@ def create_compacting_session_manager(
         user_id=user_id,
         summarization_strategy_id=summarization_strategy_id,
         metrics_only=config.metrics_only,
-        enable_api_optimization=enable_api_optimization,
     )
 
 
@@ -355,7 +352,6 @@ def _create_cloud_session_manager(
             protected_turns=100,
             user_id=user_id,
             metrics_only=True,
-            enable_api_optimization=True,
         )
 
     elif mode == "swarm":

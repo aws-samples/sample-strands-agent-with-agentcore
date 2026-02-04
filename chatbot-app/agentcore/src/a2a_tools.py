@@ -172,7 +172,7 @@ async def send_a2a_message(
         if local_runtime_url:
             # Local testing: use localhost URL
             runtime_url = local_runtime_url
-            logger.info(f"🧪 LOCAL TEST MODE: Using local Research Agent at {runtime_url}")
+            logger.debug(f"Local test mode: {runtime_url}")
         else:
             # Production: use AgentCore Runtime
             agent_arn = get_cached_agent_arn(agent_id, region)
@@ -186,9 +186,7 @@ async def send_a2a_message(
             escaped_arn = quote(agent_arn, safe='')
             runtime_url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{escaped_arn}/invocations/"
 
-        logger.info(f"Invoking A2A agent {agent_id}")
-        logger.info(f"  Runtime URL: {runtime_url}")
-        logger.info(f"  Message: {message[:100]}...")
+        logger.debug(f"Invoking A2A agent {agent_id}")
 
         # Get HTTP client with SigV4 IAM auth
         httpx_client = get_http_client(region)
@@ -205,31 +203,27 @@ async def send_a2a_message(
             'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': session_id
         }
         httpx_client.headers.update(headers)
-        logger.info(f"  Session ID: {session_id}")
 
         # Get or cache agent card (skip for local testing)
         if agent_arn and agent_arn not in _cache['agent_cards']:
-            logger.info(f"Fetching agent card for ARN: {agent_arn}")
+            logger.debug(f"Fetching agent card for ARN: {agent_arn}")
 
             try:
-                # ✅ Use boto3 SDK to get agent card directly (already contains all info)
+                # Use boto3 SDK to get agent card directly
                 bedrock_agentcore = boto3.client('bedrock-agentcore', region_name=region)
                 response = await asyncio.get_event_loop().run_in_executor(
                     None,
                     lambda: bedrock_agentcore.get_agent_card(agentRuntimeArn=agent_arn)
                 )
 
-                # boto3 returns complete agent card - no need for A2ACardResolver!
                 agent_card_dict = response.get('agentCard', {})
 
                 if not agent_card_dict:
                     raise ValueError(f"No agent card found in boto3 response")
 
-                logger.info(f"✅ Retrieved agent card from boto3 for {agent_id}")
-                logger.info(f"   URL: {agent_card_dict.get('url')}")
-                logger.info(f"   Capabilities: {agent_card_dict.get('capabilities')}")
+                logger.debug(f"Retrieved agent card for {agent_id}")
 
-                # ✅ Convert dict to AgentCard object
+                # Convert dict to AgentCard object
                 agent_card = AgentCard(**agent_card_dict)
 
                 # Cache the agent card object
@@ -260,8 +254,6 @@ async def send_a2a_message(
             metadata=metadata
         )
 
-        if metadata:
-            logger.info(f"  Message metadata: {metadata}")
 
         response_text = ""
         browser_session_arn = None  # For browser-use agent live view
@@ -282,7 +274,7 @@ async def send_a2a_message(
                             elif hasattr(part, 'root') and hasattr(part.root, 'text'):
                                 response_text += part.root.text
 
-                    logger.info(f"✅ A2A Message received ({len(response_text)} chars)")
+                    logger.debug(f"A2A Message received ({len(response_text)} chars)")
                     break
 
                 elif isinstance(event, tuple) and len(event) == 2:
@@ -323,7 +315,7 @@ async def send_a2a_message(
                                         elif hasattr(part, 'text'):
                                             browser_session_arn = part.text
                                         if browser_session_arn:
-                                            logger.info(f"🔴 [Live View] Extracted browser_session_arn IMMEDIATELY: {browser_session_arn}")
+                                            logger.debug(f"Extracted browser_session_arn: {browser_session_arn[:50]}...")
                                             break
 
                             # Extract browser_id (required for validation) - if not yet extracted
@@ -335,19 +327,18 @@ async def send_a2a_message(
                                         elif hasattr(part, 'text'):
                                             browser_id_from_stream = part.text
                                         if browser_id_from_stream:
-                                            logger.info(f"🔴 [Live View] Extracted browser_id IMMEDIATELY: {browser_id_from_stream}")
+                                            logger.debug(f"Extracted browser_id: {browser_id_from_stream}")
                                             break
 
                         # If we have browser_session_arn AND browser_id, send event once
                         if browser_session_arn and browser_id_from_stream and not browser_session_event_sent:
-                            # ✅ SEND BROWSER SESSION EVENT ONCE (when we have both session and ID)
                             event_data = {
                                 "type": "browser_session_detected",
                                 "browserSessionId": browser_session_arn,
                                 "browserId": browser_id_from_stream,
                                 "message": "Browser session started - Live View available"
                             }
-                            logger.info(f"🔴 [Live View] Sending browser session event with both session and ID: {browser_id_from_stream}")
+                            logger.debug(f"Browser session detected: {browser_id_from_stream}")
                             yield event_data
                             browser_session_event_sent = True
 
@@ -359,10 +350,9 @@ async def send_a2a_message(
                             if artifact_name.startswith('screenshot_'):
                                 # Skip if already processed (avoid duplicates)
                                 if artifact_name in sent_screenshots:
-                                    logger.debug(f"📸 [Screenshot] Skipping duplicate: {artifact_name}")
                                     continue
 
-                                logger.info(f"📸 [Screenshot] Found new screenshot artifact: {artifact_name}")
+                                logger.debug(f"Found screenshot artifact: {artifact_name}")
 
                                 # Extract metadata
                                 artifact_metadata = artifact.metadata if hasattr(artifact, 'metadata') else {}
@@ -380,7 +370,6 @@ async def send_a2a_message(
                                             screenshot_b64 = part.text
 
                                         if screenshot_b64:
-                                            logger.info(f"📸 [Screenshot] Processing {artifact_name}: {filename} - {description}")
 
                                             try:
                                                 # Decode base64 to bytes
@@ -398,22 +387,20 @@ async def send_a2a_message(
                                                     or (metadata.get('user_id') if metadata else None)
                                                     or os.environ.get('USER_ID', 'default_user')
                                                 )
-                                                logger.info(f"📸 [Screenshot] Using user_id: {screenshot_user_id}, session_id: {screenshot_session_id}")
-
                                                 image_manager = ImageManager(user_id=screenshot_user_id, session_id=screenshot_session_id)
                                                 image_manager.save_to_s3(filename, screenshot_bytes)
 
                                                 # Mark as sent to avoid duplicate processing (by artifact name)
                                                 sent_screenshots.add(artifact_name)
-                                                logger.info(f"📸 [Screenshot] ✅ Saved {artifact_name} to workspace: {filename}")
+                                                logger.debug(f"Saved screenshot: {filename}")
 
                                                 # Add text notification to response_text for LLM context
-                                                screenshot_notification = f"\n\n**📸 Screenshot Saved**\n- **Filename**: {filename}\n- **Description**: {description}\n"
+                                                screenshot_notification = f"\n\n**Screenshot Saved**\n- **Filename**: {filename}\n- **Description**: {description}\n"
                                                 response_text += screenshot_notification
 
                                             except Exception as e:
-                                                logger.error(f"📸 [Screenshot] ❌ Failed to save {artifact_name}: {str(e)}")
-                                                error_notification = f"\n\n**📸 Screenshot Error**: Failed to save {filename}\n"
+                                                logger.error(f"Failed to save screenshot {artifact_name}: {str(e)}")
+                                                error_notification = f"\n\n**Screenshot Error**: Failed to save {filename}\n"
                                                 response_text += error_notification
 
                                             break
@@ -450,14 +437,14 @@ async def send_a2a_message(
                                                 "content": step_text
                                             }
                                             sent_browser_steps.add(step_number)
-                                            logger.info(f"🔴 [{step_type}] Yielded {artifact_name}")
+                                            logger.debug(f"Yielded {artifact_name}")
                                 except (ValueError, IndexError):
                                     # Invalid step number format, skip
                                     pass
 
                     # Check if task failed
                     if str(state) == 'TaskState.failed' or state == 'failed':
-                        logger.warning(f"❌ Task failed!")
+                        logger.warning(f"Task failed")
 
                         # Extract error message from task status
                         error_message = "Agent task failed"
@@ -487,7 +474,7 @@ async def send_a2a_message(
                                             elif artifact_name == 'research_markdown':
                                                 response_text += artifact_text
 
-                        logger.warning(f"❌ Task failed with error: {error_message}")
+                        logger.warning(f"Task failed: {error_message}")
 
                         # Yield error with any partial results
                         yield {
@@ -500,7 +487,7 @@ async def send_a2a_message(
 
                     # Check if task completed
                     if str(state) == 'TaskState.completed' or state == 'completed':
-                        logger.info(f"✅ Task completed, extracting artifacts...")
+                        logger.debug(f"Task completed, extracting artifacts")
 
                         # Extract all artifacts from completed task
                         if hasattr(task, 'artifacts') and task.artifacts:
@@ -530,7 +517,7 @@ async def send_a2a_message(
                                                 # Include other artifacts (agent_response, browser_result, etc.) in LLM context
                                                 response_text += artifact_text
 
-                        logger.info(f"✅ Total response with artifacts: {len(response_text)} chars")
+                        logger.debug(f"Total response: {len(response_text)} chars")
                         break
 
                     # Break on final event
@@ -538,7 +525,7 @@ async def send_a2a_message(
                         break
 
         # Yield final result
-        logger.info(f"✅ Final A2A response: {len(response_text)} chars")
+        logger.debug(f"Final A2A response: {len(response_text)} chars")
         yield {
             "status": "success",
             "content": [{
@@ -587,9 +574,7 @@ def create_a2a_tool(agent_id: str):
     agent_name = config['name']
     agent_description = config['description']
 
-    logger.info(f"Creating A2A tool: {agent_id}")
-    logger.info(f"  Name: {agent_name}")
-    logger.info(f"  Description: {agent_description}")
+    logger.debug(f"Creating A2A tool: {agent_id}")
 
     # Preload ARN into cache
     region = os.environ.get('AWS_REGION', 'us-west-2')
@@ -651,9 +636,7 @@ def create_a2a_tool(agent_id: str):
                 "model_id": model_id,
             }
 
-            logger.info(f"[browser_use_agent] Sending to A2A with metadata: {metadata}")
-
-            # ✅ Stream events from A2A agent
+            # Stream events from A2A agent
             async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata):
                 # Store browser_session_arn and browser_id in invocation_state for frontend access
                 if isinstance(event, dict):
@@ -663,8 +646,6 @@ def create_a2a_tool(agent_id: str):
                         if browser_session_id and tool_context:
                             tool_context.invocation_state['browser_session_arn'] = browser_session_id
                             tool_context.invocation_state['browser_id'] = browser_id
-                            logger.info(f"🔴 [Live View] Stored browser_session_arn in invocation_state: {browser_session_id}")
-                            logger.info(f"🔴 [Live View] Stored browser_id in invocation_state: {browser_id}")
 
                 yield event
 
@@ -690,75 +671,75 @@ def create_a2a_tool(agent_id: str):
                 "language": "en",
             }
 
-            logger.info(f"[{agent_id}] Sending to A2A with metadata: {metadata}")
 
             # Track final result for artifact saving
             final_result_text = None
 
             # Stream events from A2A agent (including research_step events for real-time UI updates)
             async for event in send_a2a_message(agent_id, plan, session_id, region, metadata=metadata):
-                # Capture final result for artifact saving
+                # Yield event FIRST to maintain proper stream order
+                yield event
+
+                # After yielding, check if this was the final success event and save artifact
+                # This happens after the event is sent to agent, so won't interfere with interrupt
                 if isinstance(event, dict) and event.get("status") == "success":
                     content = event.get("content", [])
                     if content and len(content) > 0:
                         final_result_text = content[0].get("text", "")
 
-                # Yield all events to allow real-time streaming (research_step, etc.)
-                yield event
+                        # Save research result to agent.state (after yielding final event)
+                        if final_result_text and tool_context and tool_context.agent:
+                            try:
+                                from datetime import datetime, timezone
 
-            # After streaming completes, save research result to agent.state
-            if final_result_text and tool_context and tool_context.agent:
-                try:
-                    from datetime import datetime, timezone
+                                # Extract title from research content (first H1 heading)
+                                import re
+                                title_match = re.search(r'^#\s+(.+)$', final_result_text, re.MULTILINE)
+                                title = title_match.group(1).strip() if title_match else "Research Results"
 
-                    # Extract title from research content (first H1 heading)
-                    import re
-                    title_match = re.search(r'^#\s+(.+)$', final_result_text, re.MULTILINE)
-                    title = title_match.group(1).strip() if title_match else "Research Results"
+                                # Generate artifact ID using toolUseId for frontend mapping
+                                tool_use_id = tool_context.tool_use.get('toolUseId', '')
+                                artifact_id = f"research-{tool_use_id}" if tool_use_id else f"research-{session_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
 
-                    # Generate artifact ID using toolUseId for frontend mapping
-                    tool_use_id = tool_context.tool_use.get('toolUseId', '')
-                    artifact_id = f"research-{tool_use_id}" if tool_use_id else f"research-{session_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+                                # Get current artifacts from agent.state
+                                artifacts = tool_context.agent.state.get("artifacts") or {}
 
-                    # Get current artifacts from agent.state
-                    artifacts = tool_context.agent.state.get("artifacts") or {}
+                                # Calculate word count
+                                word_count = len(final_result_text.split())
 
-                    # Calculate word count
-                    word_count = len(final_result_text.split())
+                                # Add new artifact
+                                artifacts[artifact_id] = {
+                                    "id": artifact_id,
+                                    "type": "research",
+                                    "title": title,
+                                    "content": final_result_text,
+                                    "tool_name": "research_agent",
+                                    "metadata": {
+                                        "word_count": word_count,
+                                        "description": f"Research report: {title}"
+                                    },
+                                    "created_at": datetime.now(timezone.utc).isoformat(),
+                                    "updated_at": datetime.now(timezone.utc).isoformat()
+                                }
 
-                    # Add new artifact
-                    artifacts[artifact_id] = {
-                        "id": artifact_id,
-                        "type": "research",
-                        "title": title,
-                        "content": final_result_text,
-                        "tool_name": "research_agent",
-                        "metadata": {
-                            "word_count": word_count,
-                            "description": f"Research report: {title}"
-                        },
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                        "updated_at": datetime.now(timezone.utc).isoformat()
-                    }
+                                # Save to agent.state
+                                tool_context.agent.state.set("artifacts", artifacts)
 
-                    # Save to agent.state
-                    tool_context.agent.state.set("artifacts", artifacts)
+                                # Sync agent state to file system / AgentCore Memory
+                                # Try session_manager from invocation_state first (set by ChatAgent)
+                                session_manager = tool_context.invocation_state.get("session_manager")
 
-                    # Sync agent state to file system / AgentCore Memory
-                    # Try session_manager from invocation_state first (set by ChatAgent)
-                    session_manager = tool_context.invocation_state.get("session_manager")
+                                if not session_manager and hasattr(tool_context.agent, 'session_manager'):
+                                    session_manager = tool_context.agent.session_manager
 
-                    if not session_manager and hasattr(tool_context.agent, 'session_manager'):
-                        session_manager = tool_context.agent.session_manager
+                                if session_manager:
+                                    session_manager.sync_agent(tool_context.agent)
+                                    logger.debug(f"Saved research artifact: {artifact_id}")
+                                else:
+                                    logger.warning(f"No session_manager found, artifact not persisted")
 
-                    if session_manager:
-                        session_manager.sync_agent(tool_context.agent)
-                        logger.info(f"[Research] ✅ Saved research artifact to agent.state: {artifact_id}")
-                    else:
-                        logger.warning(f"[Research] ⚠️ No session_manager found, artifact not persisted")
-
-                except Exception as e:
-                    logger.error(f"[Research] ❌ Failed to save artifact: {e}")
+                            except Exception as e:
+                                logger.error(f"Failed to save research artifact: {e}")
 
         # Set correct function name and docstring BEFORE decorating
         tool_impl.__name__ = correct_name
@@ -767,7 +748,7 @@ def create_a2a_tool(agent_id: str):
         # Now apply the decorator to get the tool
         agent_tool = tool(context=True)(tool_impl)
 
-    logger.info(f"✅ A2A tool created: {agent_tool.__name__}")
+    logger.debug(f"A2A tool created: {agent_tool.__name__}")
     return agent_tool
 
 

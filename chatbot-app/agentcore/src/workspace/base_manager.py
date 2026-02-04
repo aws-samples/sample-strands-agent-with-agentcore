@@ -120,7 +120,7 @@ class BaseDocumentManager:
             )
 
             size_kb = len(file_bytes) / 1024
-            logger.info(f"✅ Saved to S3: {s3_key} ({size_kb:.1f} KB)")
+            logger.debug(f" Saved to S3: {s3_key} ({size_kb:.1f} KB)")
 
             return {
                 's3_key': s3_key,
@@ -152,7 +152,7 @@ class BaseDocumentManager:
 
             file_bytes = response['Body'].read()
             size_kb = len(file_bytes) / 1024
-            logger.info(f"✅ Loaded from S3: {s3_key} ({size_kb:.1f} KB)")
+            logger.debug(f" Loaded from S3: {s3_key} ({size_kb:.1f} KB)")
 
             return file_bytes
 
@@ -213,7 +213,7 @@ class BaseDocumentManager:
                 Key=s3_key
             )
 
-            logger.info(f"✅ Deleted from S3: {s3_key}")
+            logger.debug(f" Deleted from S3: {s3_key}")
             return True
 
         except Exception as e:
@@ -267,7 +267,7 @@ print(f"File written: {ci_path} ({{len(file_bytes)}} bytes)")
                     raise Exception(f"Failed to write file: {error_msg[:500]}")
 
             size_kb = len(file_bytes) / 1024
-            logger.info(f"✅ Uploaded to Code Interpreter: {ci_path} ({size_kb:.1f} KB)")
+            logger.debug(f" Uploaded to Code Interpreter: {ci_path} ({size_kb:.1f} KB)")
 
             return ci_path
 
@@ -313,7 +313,7 @@ print(f"File written: {ci_path} ({{len(file_bytes)}} bytes)")
                 raise Exception(f"No file content returned for {ci_path}")
 
             size_kb = len(file_bytes) / 1024
-            logger.info(f"✅ Downloaded from Code Interpreter: {ci_path} ({size_kb:.1f} KB)")
+            logger.debug(f" Downloaded from Code Interpreter: {ci_path} ({size_kb:.1f} KB)")
 
             return file_bytes
 
@@ -346,7 +346,7 @@ print(f"File written: {ci_path} ({{len(file_bytes)}} bytes)")
             # Save to S3 for persistence
             s3_info = self.save_to_s3(filename, file_bytes, metadata)
 
-            logger.info(f"✅ Synced to both: {filename}")
+            logger.debug(f" Synced to both: {filename}")
 
             return {
                 's3_info': s3_info,
@@ -383,7 +383,7 @@ print(f"File written: {ci_path} ({{len(file_bytes)}} bytes)")
             file_bytes = self.load_from_s3(filename)
             ci_path = self.upload_to_code_interpreter(code_interpreter, filename, file_bytes)
 
-            logger.info(f"✅ File loaded from S3 to Code Interpreter: {filename}")
+            logger.debug(f" File loaded from S3 to Code Interpreter: {filename}")
 
             return ci_path
 
@@ -461,7 +461,7 @@ print(f"File written: {ci_path} ({{len(file_bytes)}} bytes)")
                     self._upload_image_to_ci(code_interpreter, filename, file_bytes)
 
                     loaded_filenames.append(filename)
-                    logger.info(f"✅ Loaded image from S3 workspace: {filename}")
+                    logger.debug(f" Loaded image from S3 workspace: {filename}")
 
                 except Exception as e:
                     logger.error(f"Failed to load image {filename} from workspace: {e}")
@@ -510,7 +510,7 @@ print(f"Image uploaded: {filename} ({{len(file_bytes)}} bytes)")
                     logger.error(f"Failed to upload image {filename}: {error_msg[:200]}")
                     raise Exception(f"Failed to upload image: {error_msg[:200]}")
 
-            logger.info(f"✅ Uploaded image to Code Interpreter: {filename}")
+            logger.debug(f" Uploaded image to Code Interpreter: {filename}")
 
         except Exception as e:
             logger.error(f"Failed to upload image {filename}: {e}")
