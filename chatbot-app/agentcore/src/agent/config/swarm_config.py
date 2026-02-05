@@ -74,7 +74,6 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
         "browser_extract",
         "browser_get_page_info",
         "browser_manage_tabs",
-        "browser_drag",
         "browser_save_screenshot",
     ],
     "weather_agent": [

@@ -3,14 +3,23 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { X, FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal } from 'lucide-react'
+import { X, FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal, Monitor, Database } from 'lucide-react'
 import { Artifact } from '@/types/artifact'
 import { ComposeArtifact } from './ComposeArtifact'
 import { ResearchArtifact } from './ResearchArtifact'
+import { BrowserLiveView } from './BrowserLiveView'
 import { OfficeViewer, isOfficeFileUrl, getFilenameFromS3Url } from './OfficeViewer'
 import { marked } from 'marked'
 import { citationPrintCSS } from '@/components/ui/CitationLink'
 import { Markdown } from '@/components/ui/Markdown'
+
+interface BrowserState {
+  sessionId: string
+  browserId: string
+  isActive: boolean
+  onConnectionError: () => void
+  onValidationFailed: () => void
+}
 
 interface CanvasProps {
   isOpen: boolean
@@ -20,6 +29,7 @@ interface CanvasProps {
   onSelectArtifact: (id: string) => void
   composeState?: any // Live composer state
   researchState?: any // Live research state
+  browserState?: BrowserState // Live browser state
   justUpdated?: boolean // Flash effect trigger when artifact is updated
   sessionId?: string
 }
@@ -39,6 +49,10 @@ const getArtifactIcon = (type: string) => {
       return <Code className="h-4 w-4" />
     case 'compose':
       return <Sparkles className="h-4 w-4" />
+    case 'browser':
+      return <Monitor className="h-4 w-4" />
+    case 'extracted_data':
+      return <Database className="h-4 w-4" />
     default:
       return <Sparkles className="h-4 w-4" />
   }
@@ -67,6 +81,7 @@ const getArtifactTypeLabel = (type: string) => {
     case 'excel_spreadsheet': return 'Excel Spreadsheet'
     case 'powerpoint_presentation': return 'PowerPoint'
     case 'browser': return 'Browser'
+    case 'extracted_data': return 'Extracted Data'
     case 'compose': return 'Compose'
     default: return 'Artifact'
   }
@@ -92,6 +107,7 @@ export function Canvas({
   onSelectArtifact,
   composeState,
   researchState,
+  browserState,
   justUpdated = false,
   sessionId,
 }: CanvasProps) {
@@ -244,12 +260,16 @@ export function Canvas({
     }
   }, [isResizing, handleResizeMove, handleResizeEnd])
 
-  if (!isOpen) return null
+  // Keep Canvas mounted (but hidden) when browser session exists to preserve DCV connection
+  const shouldStayMounted = browserState !== undefined
+
+  if (!isOpen && !shouldStayMounted) return null
 
   return (
     <div
-      className="fixed top-0 right-0 h-screen w-full md:w-[950px] md:max-w-[80vw] bg-sidebar-background border-l border-sidebar-border text-sidebar-foreground flex flex-col z-40 shadow-2xl"
-      style={{ transition: 'transform 0.3s ease-in-out' }}
+      className={`fixed top-0 right-0 h-screen w-full md:w-[950px] md:max-w-[80vw] bg-sidebar-background border-l border-sidebar-border text-sidebar-foreground flex flex-col z-40 shadow-2xl transition-transform duration-300 ${
+        isOpen ? 'translate-x-0' : 'translate-x-full'
+      }`}
     >
       {/* Header */}
       <div className="flex-shrink-0 px-4 py-3 border-b border-sidebar-border/50">
@@ -276,13 +296,22 @@ export function Canvas({
       <div className="flex-1 min-h-0 flex flex-col">
         {/* Preview Area */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Research state takes priority - no artifact needed */}
-          {researchState ? (
-            <ResearchArtifact {...researchState} />
-          ) : composeState ? (
-            // Compose state - live workflow
-            <ComposeArtifact {...composeState} />
-          ) : selectedArtifact ? (
+          {/* Priority: selectedArtifact first, then live states (research/compose/browser) */}
+          {selectedArtifact ? (
+            // User selected an artifact - show it
+            selectedArtifact.type === 'compose' && composeState ? (
+              // Compose artifact selected - show live compose state
+              <ComposeArtifact {...composeState} />
+            ) : selectedArtifact.type === 'browser' && browserState ? (
+              // Browser artifact selected - show live browser view
+              <BrowserLiveView
+                sessionId={browserState.sessionId}
+                browserId={browserState.browserId}
+                isActive={browserState.isActive}
+                onConnectionError={browserState.onConnectionError}
+                onValidationFailed={browserState.onValidationFailed}
+              />
+            ) : (
             <>
               {/* Preview Header */}
               <div className="px-4 py-3 border-b border-sidebar-border/50">
@@ -360,6 +389,14 @@ export function Canvas({
                           className="max-w-full h-auto rounded-lg shadow-lg"
                         />
                       </div>
+                    ) : selectedArtifact.type === 'extracted_data' ? (
+                      <div className="bg-slate-900 rounded-lg p-4 overflow-auto">
+                        <pre className="text-sm text-slate-100 whitespace-pre-wrap font-mono">
+                          {typeof selectedArtifact.content === 'string'
+                            ? selectedArtifact.content
+                            : JSON.stringify(selectedArtifact.content, null, 2)}
+                        </pre>
+                      </div>
                     ) : (
                       <div className="text-label text-sidebar-foreground/60">
                         Preview not available for this artifact type
@@ -369,6 +406,22 @@ export function Canvas({
                 </ScrollArea>
               )}
             </>
+            )
+          ) : researchState ? (
+            // No artifact selected, show live research state
+            <ResearchArtifact {...researchState} />
+          ) : composeState ? (
+            // No artifact selected, show live compose state
+            <ComposeArtifact {...composeState} />
+          ) : browserState ? (
+            // No artifact selected, show live browser view
+            <BrowserLiveView
+              sessionId={browserState.sessionId}
+              browserId={browserState.browserId}
+              isActive={browserState.isActive}
+              onConnectionError={browserState.onConnectionError}
+              onValidationFailed={browserState.onValidationFailed}
+            />
           ) : (
             <div className="flex-1 flex items-center justify-center text-sidebar-foreground/50">
               <div className="text-center">

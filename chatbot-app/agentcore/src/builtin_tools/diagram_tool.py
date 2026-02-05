@@ -79,7 +79,7 @@ def generate_diagram_and_validate(
         Diagram as image in ToolResult format:
         {
             "content": [
-                {"text": "✅ Diagram generated: ..."},
+                {"text": "Diagram generated: ..."},
                 {"image": {"format": "png", "source": {"bytes": b"..."}}}
             ],
             "status": "success"
@@ -94,7 +94,7 @@ def generate_diagram_and_validate(
     if not diagram_filename or not diagram_filename.endswith('.png'):
         return {
             "content": [{
-                "text": f"❌ Invalid filename. Must end with .png (e.g., 'my_diagram.png')\nYou provided: {diagram_filename}"
+                "text": f"Invalid filename. Must end with .png (e.g., 'my_diagram.png')\nYou provided: {diagram_filename}"
             }],
             "status": "error"
         }
@@ -108,7 +108,7 @@ def generate_diagram_and_validate(
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": """❌ Custom Code Interpreter ID not found.
+                    "text": """Custom Code Interpreter ID not found.
 
 Code Interpreter tools require Custom Code Interpreter.
 Please deploy AgentCore Runtime Stack to create Custom Code Interpreter."""
@@ -147,7 +147,7 @@ Please deploy AgentCore Runtime Stack to create Custom Code Interpreter."""
 
                 return {
                     "content": [{
-                        "text": f"""❌ Python code execution failed
+                        "text": f"""Python code execution failed
 
 **Error Output:**
 ```
@@ -172,7 +172,7 @@ Please fix the error and try again."""
             code_interpreter.stop()
             return {
                 "content": [{
-                    "text": """❌ No result from Bedrock Code Interpreter
+                    "text": """No result from Bedrock Code Interpreter
 
 The code was sent but no result was returned.
 Please try again or simplify your code."""
@@ -236,7 +236,7 @@ Please try again or simplify your code."""
 
             return {
                 "content": [{
-                    "text": f"""❌ Failed to download diagram file
+                    "text": f"""Failed to download diagram file
 
 **Error:** Could not download '{diagram_filename}'
 **Exception:** {str(e)}
@@ -269,7 +269,7 @@ plt.savefig('{diagram_filename}', dpi=300, bbox_inches='tight')
         return {
             "content": [
                 {
-                    "text": f"""✅ **Diagram generated: {diagram_filename}**
+                    "text": f"""**Diagram generated: {diagram_filename}**
 
 Saved to workspace for reuse in documents.
 **Size:** {file_size_kb:.1f} KB
@@ -295,7 +295,7 @@ Saved to workspace for reuse in documents.
 
         return {
             "content": [{
-                "text": f"""❌ Failed to generate diagram
+                "text": f"""Failed to generate diagram
 
 **Error:** {str(e)}
 

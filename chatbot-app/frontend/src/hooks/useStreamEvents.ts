@@ -8,6 +8,7 @@ import { A2A_TOOLS_REQUIRING_POLLING, isA2ATool, getAgentStatusForTool } from '.
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { updateLastActivity } from '@/config/session'
 import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, DocumentType } from '@/config/document-tools'
+import { ExtractedDataInfo } from './useCanvasHandlers'
 
 // Word document info from workspace API
 export interface WorkspaceDocument {
@@ -38,6 +39,8 @@ interface UseStreamEventsProps {
   onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
   onExcelDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Excel documents are created
   onPptDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when PowerPoint documents are created
+  onBrowserSessionDetected?: (browserSessionId: string, browserId: string) => void  // Callback when browser session is first detected
+  onExtractedDataCreated?: (data: ExtractedDataInfo) => void  // Callback when browser_extract creates artifact
 }
 
 export const useStreamEvents = ({
@@ -55,7 +58,9 @@ export const useStreamEvents = ({
   onArtifactUpdated,
   onWordDocumentsCreated,
   onExcelDocumentsCreated,
-  onPptDocumentsCreated
+  onPptDocumentsCreated,
+  onBrowserSessionDetected,
+  onExtractedDataCreated
 }: UseStreamEventsProps) => {
   // Refs to track streaming state synchronously (avoid React batching issues)
   const streamingStartedRef = useRef(false)
@@ -424,6 +429,24 @@ export const useStreamEvents = ({
         onArtifactUpdated()
       }
 
+      // If browser_extract tool completed successfully with artifact, open Canvas
+      if (toolName === 'browser_extract' && !isCancelled && data.metadata?.artifactId && onExtractedDataCreated) {
+        console.log('[useStreamEvents] browser_extract completed, creating artifact:', data.metadata.artifactId)
+        // Parse extracted data from tool result
+        const extractedDataMatch = data.result?.match(/\*\*Extracted Data\*\*:\s*```json\n([\s\S]*?)```/)
+        const extractedContent = extractedDataMatch ? extractedDataMatch[1].trim() : '{}'
+        const descriptionMatch = data.result?.match(/\*\*Description\*\*:\s*(.+)/)
+        const title = descriptionMatch ? descriptionMatch[1].substring(0, 50) : 'Extracted Data'
+
+        onExtractedDataCreated({
+          artifactId: data.metadata.artifactId,
+          title,
+          content: extractedContent,
+          sourceUrl: data.metadata.source_url || '',
+          sourceTitle: data.metadata.source_title || ''
+        })
+      }
+
       // Update tool execution with result
       // Filter out images if hideImageInChat metadata is set
       const shouldHideImages = data.metadata?.hideImageInChat === true
@@ -447,6 +470,11 @@ export const useStreamEvents = ({
         }
 
         browserSessionUpdate.browserSession = browserSession
+
+        // Notify parent about browser session detection (for Canvas integration)
+        if (onBrowserSessionDetected) {
+          onBrowserSessionDetected(browserSession.sessionId, browserSession.browserId || '')
+        }
 
         // Save to sessionStorage and DynamoDB (only on first set)
         const currentSessionId = sessionStorage.getItem('chat-session-id')
@@ -883,7 +911,6 @@ export const useStreamEvents = ({
 
   const handleInterruptEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'interrupt') {
-      // Stop polling when interrupt occurs (agent is waiting for user input)
       if (stopPollingRef.current) {
         stopPollingRef.current()
       }
@@ -1324,6 +1351,11 @@ export const useStreamEvents = ({
               browserId: metadata.browserId || null
             }
 
+            // Notify parent about browser session detection (for Canvas integration)
+            if (onBrowserSessionDetected && browserSession.sessionId) {
+              onBrowserSessionDetected(browserSession.sessionId, browserSession.browserId || '')
+            }
+
             // Save to sessionStorage (only on first set)
             const currentSessionId = sessionStorage.getItem('chat-session-id')
             if (currentSessionId) {
@@ -1354,7 +1386,8 @@ export const useStreamEvents = ({
     handleSwarmNodeStopEvent,
     handleSwarmHandoffEvent,
     handleSwarmCompleteEvent,
-    setSessionState
+    setSessionState,
+    onBrowserSessionDetected
   ])
 
   // Reset streaming state (called when user stops generation)

@@ -247,7 +247,7 @@ def _get_file_compatibility_error_response(filename: str, error_msg: str, operat
     """
     return {
         "content": [{
-            "text": f"❌ **Cannot {operation} presentation: File compatibility issue**\n\n"
+            "text": f"**Cannot {operation} presentation: File compatibility issue**\n\n"
                    f"**The file `{filename}` is not compatible with the editing tools.**\n\n"
                    f"**Please ask the user to choose one of these options:**\n\n"
                    f"**Option 1: Preserve design (Recommended for editing)**\n"
@@ -308,7 +308,7 @@ with open('presentation_editor.py', 'wb') as f:
 with open('ppt_helpers.py', 'wb') as f:
     f.write(module_content)
 
-print("✅ presentation_editor.py and ppt_helpers.py modules loaded successfully")
+print("presentation_editor.py and ppt_helpers.py modules loaded successfully")
 '''
 
             response = code_interpreter.invoke("executeCode", {
@@ -368,7 +368,7 @@ def list_my_powerpoint_presentations(tool_context: ToolContext) -> Dict[str, Any
         logger.error(f"list_my_powerpoint_presentations error: {e}", exc_info=True)
         return {
             "content": [{
-                "text": f"❌ **Error listing presentations:** {str(e)}"
+                "text": f"**Error listing presentations:** {str(e)}"
             }],
             "status": "error"
         }
@@ -412,7 +412,7 @@ def get_presentation_layouts(
             available = [doc['filename'] for doc in documents if doc['filename'].endswith('.pptx')]
             return {
                 "content": [{
-                    "text": f"❌ **Presentation not found**: {presentation_filename}\n\n**Available presentations:**\n" + "\n".join([f"- {f}" for f in available]) if available else "No presentations found in workspace."
+                    "text": f"**Presentation not found**: {presentation_filename}\n\n**Available presentations:**\n" + "\n".join([f"- {f}" for f in available]) if available else "No presentations found in workspace."
                 }],
                 "status": "error"
             }
@@ -422,7 +422,7 @@ def get_presentation_layouts(
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -479,7 +479,7 @@ except Exception as e:
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Failed to list layouts**\n\n```\n{error_msg[:1000]}\n```"
+                            "text": f"**Failed to list layouts**\n\n```\n{error_msg[:1000]}\n```"
                         }],
                         "status": "error"
                     }
@@ -522,7 +522,7 @@ except Exception as e:
         logger.error(f"get_presentation_layouts error: {e}", exc_info=True)
         return {
             "content": [{
-                "text": f"❌ **Error getting layouts:** {str(e)}"
+                "text": f"**Error getting layouts:** {str(e)}"
             }],
             "status": "error"
         }
@@ -589,7 +589,7 @@ def analyze_presentation(
             available = [doc['filename'] for doc in documents if doc['filename'].endswith('.pptx')]
             return {
                 "content": [{
-                    "text": f"❌ **Presentation not found**: {presentation_filename}\n\n**Available presentations:**\n" + "\n".join([f"- {f}" for f in available]) if available else "No presentations found in workspace."
+                    "text": f"**Presentation not found**: {presentation_filename}\n\n**Available presentations:**\n" + "\n".join([f"- {f}" for f in available]) if available else "No presentations found in workspace."
                 }],
                 "status": "error"
             }
@@ -599,7 +599,7 @@ def analyze_presentation(
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -642,7 +642,7 @@ def analyze_presentation(
                     # Other errors
                     return {
                         "content": [{
-                            "text": f"❌ **Analysis failed**\n\n```\n{error_msg[:1000]}\n```"
+                            "text": f"**Analysis failed**\n\n```\n{error_msg[:1000]}\n```"
                         }],
                         "status": "error"
                     }
@@ -658,12 +658,12 @@ def analyze_presentation(
             # Format output text with detailed structure
             if slide_index is not None:
                 # Single slide analysis
-                output_text = f"""📊 **Slide Analysis**: {presentation_filename} - Slide {slide_index + 1}
+                output_text = f"""**Slide Analysis**: {presentation_filename} - Slide {slide_index + 1}
 
 """
             else:
                 # Full presentation analysis
-                output_text = f"""📊 **Presentation Analysis**: {presentation_filename}
+                output_text = f"""**Presentation Analysis**: {presentation_filename}
 
 **Total slides:** {analysis['total_slides']}
 
@@ -837,7 +837,7 @@ def analyze_presentation(
         logger.error(f"analyze_presentation error: {e}", exc_info=True)
         return {
             "content": [{
-                "text": f"❌ **Error analyzing presentation:** {str(e)}"
+                "text": f"**Error analyzing presentation:** {str(e)}"
             }],
             "status": "error"
         }
@@ -916,7 +916,7 @@ def update_slide_content(
         if not is_valid_source:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid source name**: {presentation_name}\n\n{error_msg_source}"
+                    "text": f"**Invalid source name**: {presentation_name}\n\n{error_msg_source}"
                 }],
                 "status": "error"
             }
@@ -925,7 +925,7 @@ def update_slide_content(
         if not is_valid_output:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg_output}"
+                    "text": f"**Invalid output name**: {output_name}\n\n{error_msg_output}"
                 }],
                 "status": "error"
             }
@@ -933,7 +933,7 @@ def update_slide_content(
         if presentation_name == output_name:
             return {
                 "content": [{
-                    "text": f"❌ **Output name must be different from source name**\n\nSource: {presentation_name}\nOutput: {output_name}\n\nThis preserves the original file."
+                    "text": f"**Output name must be different from source name**\n\nSource: {presentation_name}\nOutput: {output_name}\n\nThis preserves the original file."
                 }],
                 "status": "error"
             }
@@ -942,7 +942,7 @@ def update_slide_content(
         if not slide_updates or not isinstance(slide_updates, list):
             return {
                 "content": [{
-                    "text": "❌ **Invalid slide_updates**: Must provide a non-empty list of slide update dicts"
+                    "text": "**Invalid slide_updates**: Must provide a non-empty list of slide update dicts"
                 }],
                 "status": "error"
             }
@@ -952,7 +952,7 @@ def update_slide_content(
             if not isinstance(update, dict):
                 return {
                     "content": [{
-                        "text": f"❌ **Invalid slide_updates[{idx}]**: Must be a dict with 'slide_index' and 'operations'"
+                        "text": f"**Invalid slide_updates[{idx}]**: Must be a dict with 'slide_index' and 'operations'"
                     }],
                     "status": "error"
                 }
@@ -960,7 +960,7 @@ def update_slide_content(
             if 'slide_index' not in update or 'operations' not in update:
                 return {
                     "content": [{
-                        "text": f"❌ **Invalid slide_updates[{idx}]**: Must have 'slide_index' and 'operations' keys"
+                        "text": f"**Invalid slide_updates[{idx}]**: Must have 'slide_index' and 'operations' keys"
                     }],
                     "status": "error"
                 }
@@ -968,7 +968,7 @@ def update_slide_content(
             if not isinstance(update['operations'], list) or not update['operations']:
                 return {
                     "content": [{
-                        "text": f"❌ **Invalid slide_updates[{idx}]['operations']**: Must be a non-empty list"
+                        "text": f"**Invalid slide_updates[{idx}]['operations']**: Must be a non-empty list"
                     }],
                     "status": "error"
                 }
@@ -991,7 +991,7 @@ def update_slide_content(
             available = [doc['filename'] for doc in documents if doc['filename'].endswith('.pptx')]
             return {
                 "content": [{
-                    "text": f"❌ **Source presentation not found**: {source_filename}\n\n**Available:**\n" + "\n".join([f"- {f}" for f in available])
+                    "text": f"**Source presentation not found**: {source_filename}\n\n**Available:**\n" + "\n".join([f"- {f}" for f in available])
                 }],
                 "status": "error"
             }
@@ -1001,7 +1001,7 @@ def update_slide_content(
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**"
+                    "text": "**Code Interpreter not configured**"
                 }],
                 "status": "error"
             }
@@ -1052,7 +1052,7 @@ def update_slide_content(
                     # Other errors
                     return {
                         "content": [{
-                            "text": f"❌ **Slide update failed**\n\n**Error:**\n```\n{error_msg[:1000]}\n```"
+                            "text": f"**Slide update failed**\n\n**Error:**\n```\n{error_msg[:1000]}\n```"
                         }],
                         "status": "error"
                     }
@@ -1065,7 +1065,7 @@ def update_slide_content(
                 code_interpreter.stop()
                 return {
                     "content": [{
-                        "text": "❌ **Failed to retrieve updated presentation**"
+                        "text": "**Failed to retrieve updated presentation**"
                     }],
                     "status": "error"
                 }
@@ -1094,7 +1094,7 @@ def update_slide_content(
 
             # Success message
             if len(slide_updates) == 1:
-                success_msg = f"""✅ **Slide updated successfully!**
+                success_msg = f"""**Slide updated successfully!**
 
 **Original:** {source_filename} (preserved)
 **Updated:** {output_filename}
@@ -1109,7 +1109,7 @@ def update_slide_content(
 """
             else:
                 slides_str = ", ".join(str(n) for n in sorted(slide_numbers))
-                success_msg = f"""✅ **Slides updated successfully!**
+                success_msg = f"""**Slides updated successfully!**
 
 **Original:** {source_filename} (preserved)
 **Updated:** {output_filename}
@@ -1145,7 +1145,7 @@ def update_slide_content(
             logger.error(f"Slide update error: {e}", exc_info=True)
             return {
                 "content": [{
-                    "text": f"❌ **Slide update failed**\n\n**Error:** {str(e)}"
+                    "text": f"**Slide update failed**\n\n**Error:** {str(e)}"
                 }],
                 "status": "error"
             }
@@ -1154,7 +1154,7 @@ def update_slide_content(
         logger.error(f"update_slide_content error: {e}", exc_info=True)
         return {
             "content": [{
-                "text": f"❌ **Error:** {str(e)}"
+                "text": f"**Error:** {str(e)}"
             }],
             "status": "error"
         }
@@ -1262,14 +1262,14 @@ def add_slide(
         # Validate names
         is_valid_source, error_msg_source = _validate_presentation_name(presentation_name)
         if not is_valid_source:
-            return {"content": [{"text": f"❌ **Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
 
         is_valid_output, error_msg_output = _validate_presentation_name(output_name)
         if not is_valid_output:
-            return {"content": [{"text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
 
         if presentation_name == output_name:
-            return {"content": [{"text": "❌ **Output name must be different from source name**"}], "status": "error"}
+            return {"content": [{"text": "**Output name must be different from source name**"}], "status": "error"}
 
         source_filename = f"{presentation_name}.pptx"
         output_filename = f"{output_name}.pptx"
@@ -1280,11 +1280,11 @@ def add_slide(
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
         except FileNotFoundError:
-            return {"content": [{"text": f"❌ **Source presentation not found**: {source_filename}"}], "status": "error"}
+            return {"content": [{"text": f"**Source presentation not found**: {source_filename}"}], "status": "error"}
 
         code_interpreter_id = _get_code_interpreter_id()
         if not code_interpreter_id:
-            return {"content": [{"text": "❌ **Code Interpreter not configured**"}], "status": "error"}
+            return {"content": [{"text": "**Code Interpreter not configured**"}], "status": "error"}
 
         region = os.getenv('AWS_REGION', 'us-west-2')
         code_interpreter = CodeInterpreter(region)
@@ -1314,14 +1314,14 @@ def add_slide(
                         return _get_file_compatibility_error_response(source_filename, error_msg, "add slide to")
 
                     # Other errors
-                    return {"content": [{"text": f"❌ **Failed to add slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+                    return {"content": [{"text": f"**Failed to add slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
 
             if not file_bytes:
                 code_interpreter.stop()
-                return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
+                return {"content": [{"text": "**Failed to retrieve presentation**"}], "status": "error"}
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
@@ -1339,7 +1339,7 @@ def add_slide(
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
-            success_msg = f"""✅ **Slide added successfully!**
+            success_msg = f"""**Slide added successfully!**
 
 **Original:** {source_filename} (preserved)
 **Updated:** {output_filename}
@@ -1370,7 +1370,7 @@ def add_slide(
 
     except Exception as e:
         logger.error(f"add_slide error: {e}", exc_info=True)
-        return {"content": [{"text": f"❌ **Error:** {str(e)}"}], "status": "error"}
+        return {"content": [{"text": f"**Error:** {str(e)}"}], "status": "error"}
 
 
 @tool(context=True)
@@ -1396,17 +1396,17 @@ def delete_slides(
 
         is_valid_source, error_msg_source = _validate_presentation_name(presentation_name)
         if not is_valid_source:
-            return {"content": [{"text": f"❌ **Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
 
         is_valid_output, error_msg_output = _validate_presentation_name(output_name)
         if not is_valid_output:
-            return {"content": [{"text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
 
         if presentation_name == output_name:
-            return {"content": [{"text": "❌ **Output name must be different from source name**"}], "status": "error"}
+            return {"content": [{"text": "**Output name must be different from source name**"}], "status": "error"}
 
         if not slide_indices or not isinstance(slide_indices, list):
-            return {"content": [{"text": "❌ **Invalid slide_indices**: Must provide a non-empty list"}], "status": "error"}
+            return {"content": [{"text": "**Invalid slide_indices**: Must provide a non-empty list"}], "status": "error"}
 
         source_filename = f"{presentation_name}.pptx"
         output_filename = f"{output_name}.pptx"
@@ -1417,11 +1417,11 @@ def delete_slides(
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
         except FileNotFoundError:
-            return {"content": [{"text": f"❌ **Source presentation not found**: {source_filename}"}], "status": "error"}
+            return {"content": [{"text": f"**Source presentation not found**: {source_filename}"}], "status": "error"}
 
         code_interpreter_id = _get_code_interpreter_id()
         if not code_interpreter_id:
-            return {"content": [{"text": "❌ **Code Interpreter not configured**"}], "status": "error"}
+            return {"content": [{"text": "**Code Interpreter not configured**"}], "status": "error"}
 
         region = os.getenv('AWS_REGION', 'us-west-2')
         code_interpreter = CodeInterpreter(region)
@@ -1447,14 +1447,14 @@ def delete_slides(
                         return _get_file_compatibility_error_response(source_filename, error_msg, "delete slides from")
 
                     # Other errors
-                    return {"content": [{"text": f"❌ **Failed to delete slides**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+                    return {"content": [{"text": f"**Failed to delete slides**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
 
             if not file_bytes:
                 code_interpreter.stop()
-                return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
+                return {"content": [{"text": "**Failed to retrieve presentation**"}], "status": "error"}
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
@@ -1472,7 +1472,7 @@ def delete_slides(
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
-            success_msg = f"""✅ **Slides deleted successfully!**
+            success_msg = f"""**Slides deleted successfully!**
 
 **Original:** {source_filename} (preserved)
 **Updated:** {output_filename}
@@ -1502,7 +1502,7 @@ def delete_slides(
 
     except Exception as e:
         logger.error(f"delete_slides error: {e}", exc_info=True)
-        return {"content": [{"text": f"❌ **Error:** {str(e)}"}], "status": "error"}
+        return {"content": [{"text": f"**Error:** {str(e)}"}], "status": "error"}
 
 
 @tool(context=True)
@@ -1530,14 +1530,14 @@ def move_slide(
 
         is_valid_source, error_msg_source = _validate_presentation_name(presentation_name)
         if not is_valid_source:
-            return {"content": [{"text": f"❌ **Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
 
         is_valid_output, error_msg_output = _validate_presentation_name(output_name)
         if not is_valid_output:
-            return {"content": [{"text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
 
         if presentation_name == output_name:
-            return {"content": [{"text": "❌ **Output name must be different from source name**"}], "status": "error"}
+            return {"content": [{"text": "**Output name must be different from source name**"}], "status": "error"}
 
         source_filename = f"{presentation_name}.pptx"
         output_filename = f"{output_name}.pptx"
@@ -1548,11 +1548,11 @@ def move_slide(
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
         except FileNotFoundError:
-            return {"content": [{"text": f"❌ **Source presentation not found**: {source_filename}"}], "status": "error"}
+            return {"content": [{"text": f"**Source presentation not found**: {source_filename}"}], "status": "error"}
 
         code_interpreter_id = _get_code_interpreter_id()
         if not code_interpreter_id:
-            return {"content": [{"text": "❌ **Code Interpreter not configured**"}], "status": "error"}
+            return {"content": [{"text": "**Code Interpreter not configured**"}], "status": "error"}
 
         region = os.getenv('AWS_REGION', 'us-west-2')
         code_interpreter = CodeInterpreter(region)
@@ -1578,14 +1578,14 @@ def move_slide(
                         return _get_file_compatibility_error_response(source_filename, error_msg, "move slide in")
 
                     # Other errors
-                    return {"content": [{"text": f"❌ **Failed to move slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+                    return {"content": [{"text": f"**Failed to move slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
 
             if not file_bytes:
                 code_interpreter.stop()
-                return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
+                return {"content": [{"text": "**Failed to retrieve presentation**"}], "status": "error"}
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
@@ -1603,7 +1603,7 @@ def move_slide(
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
-            success_msg = f"""✅ **Slide moved successfully!**
+            success_msg = f"""**Slide moved successfully!**
 
 **Original:** {source_filename} (preserved)
 **Updated:** {output_filename}
@@ -1633,7 +1633,7 @@ def move_slide(
 
     except Exception as e:
         logger.error(f"move_slide error: {e}", exc_info=True)
-        return {"content": [{"text": f"❌ **Error:** {str(e)}"}], "status": "error"}
+        return {"content": [{"text": f"**Error:** {str(e)}"}], "status": "error"}
 
 
 @tool(context=True)
@@ -1661,14 +1661,14 @@ def duplicate_slide(
 
         is_valid_source, error_msg_source = _validate_presentation_name(presentation_name)
         if not is_valid_source:
-            return {"content": [{"text": f"❌ **Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
 
         is_valid_output, error_msg_output = _validate_presentation_name(output_name)
         if not is_valid_output:
-            return {"content": [{"text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
 
         if presentation_name == output_name:
-            return {"content": [{"text": "❌ **Output name must be different from source name**"}], "status": "error"}
+            return {"content": [{"text": "**Output name must be different from source name**"}], "status": "error"}
 
         source_filename = f"{presentation_name}.pptx"
         output_filename = f"{output_name}.pptx"
@@ -1679,11 +1679,11 @@ def duplicate_slide(
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
         except FileNotFoundError:
-            return {"content": [{"text": f"❌ **Source presentation not found**: {source_filename}"}], "status": "error"}
+            return {"content": [{"text": f"**Source presentation not found**: {source_filename}"}], "status": "error"}
 
         code_interpreter_id = _get_code_interpreter_id()
         if not code_interpreter_id:
-            return {"content": [{"text": "❌ **Code Interpreter not configured**"}], "status": "error"}
+            return {"content": [{"text": "**Code Interpreter not configured**"}], "status": "error"}
 
         region = os.getenv('AWS_REGION', 'us-west-2')
         code_interpreter = CodeInterpreter(region)
@@ -1709,14 +1709,14 @@ def duplicate_slide(
                         return _get_file_compatibility_error_response(source_filename, error_msg, "duplicate slide in")
 
                     # Other errors
-                    return {"content": [{"text": f"❌ **Failed to duplicate slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+                    return {"content": [{"text": f"**Failed to duplicate slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
 
             if not file_bytes:
                 code_interpreter.stop()
-                return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
+                return {"content": [{"text": "**Failed to retrieve presentation**"}], "status": "error"}
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
@@ -1734,7 +1734,7 @@ def duplicate_slide(
             documents = ppt_manager.list_s3_documents()
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
-            success_msg = f"""✅ **Slide duplicated successfully!**
+            success_msg = f"""**Slide duplicated successfully!**
 
 **Original:** {source_filename} (preserved)
 **Updated:** {output_filename}
@@ -1767,7 +1767,7 @@ def duplicate_slide(
         logger.error(f"duplicate_slide error: {e}", exc_info=True)
         return {
             "content": [{
-                "text": f"❌ **Error duplicating slide:** {str(e)}"
+                "text": f"**Error duplicating slide:** {str(e)}"
             }],
             "status": "error"
         }
@@ -1803,14 +1803,14 @@ def update_slide_notes(
 
         is_valid_source, error_msg_source = _validate_presentation_name(presentation_name)
         if not is_valid_source:
-            return {"content": [{"text": f"❌ **Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid source name**: {presentation_name}\n\n{error_msg_source}"}], "status": "error"}
 
         is_valid_output, error_msg_output = _validate_presentation_name(output_name)
         if not is_valid_output:
-            return {"content": [{"text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid output name**: {output_name}\n\n{error_msg_output}"}], "status": "error"}
 
         if presentation_name == output_name:
-            return {"content": [{"text": "❌ **Output name must be different from source name**"}], "status": "error"}
+            return {"content": [{"text": "**Output name must be different from source name**"}], "status": "error"}
 
         source_filename = f"{presentation_name}.pptx"
         output_filename = f"{output_name}.pptx"
@@ -1821,11 +1821,11 @@ def update_slide_notes(
         try:
             source_bytes = ppt_manager.load_from_s3(source_filename)
         except FileNotFoundError:
-            return {"content": [{"text": f"❌ **Source presentation not found**: {source_filename}"}], "status": "error"}
+            return {"content": [{"text": f"**Source presentation not found**: {source_filename}"}], "status": "error"}
 
         code_interpreter_id = _get_code_interpreter_id()
         if not code_interpreter_id:
-            return {"content": [{"text": "❌ **Code Interpreter not configured**"}], "status": "error"}
+            return {"content": [{"text": "**Code Interpreter not configured**"}], "status": "error"}
 
         region = os.getenv('AWS_REGION', 'us-west-2')
         code_interpreter = CodeInterpreter(region)
@@ -1849,14 +1849,14 @@ def update_slide_notes(
                     if "AttributeError" in error_msg or "Cannot access" in error_msg:
                         return _get_file_compatibility_error_response(source_filename, error_msg, "update notes in")
 
-                    return {"content": [{"text": f"❌ **Failed to update notes**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+                    return {"content": [{"text": f"**Failed to update notes**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
 
             if not file_bytes:
                 code_interpreter.stop()
-                return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
+                return {"content": [{"text": "**Failed to retrieve presentation**"}], "status": "error"}
 
             s3_info = ppt_manager.save_to_s3(output_filename, file_bytes)
 
@@ -1875,7 +1875,7 @@ def update_slide_notes(
             other_files_count = len([d for d in documents if d['filename'] != output_filename])
 
             notes_preview = notes_text[:100] + "..." if len(notes_text) > 100 else notes_text
-            success_msg = f"""✅ **Slide notes updated successfully!**
+            success_msg = f"""**Slide notes updated successfully!**
 
 **Original:** {source_filename} (preserved)
 **Updated:** {output_filename}
@@ -1907,7 +1907,7 @@ def update_slide_notes(
         logger.error(f"update_slide_notes error: {e}", exc_info=True)
         return {
             "content": [{
-                "text": f"❌ **Error updating slide notes:** {str(e)}"
+                "text": f"**Error updating slide notes:** {str(e)}"
             }],
             "status": "error"
         }
@@ -2052,7 +2052,7 @@ chart = slide.shapes.add_chart(
 
                     return {
                         "content": [{
-                            "text": f"❌ **Invalid JSON format for outline**\n\nError: {str(e2)}\n\n**Position**: Line {e2.lineno}, Column {e2.colno}\n\n**Hint**: Check for trailing commas, unescaped quotes, or invalid characters around the error position.\n\nPlease provide a valid JSON object."
+                            "text": f"**Invalid JSON format for outline**\n\nError: {str(e2)}\n\n**Position**: Line {e2.lineno}, Column {e2.colno}\n\n**Hint**: Check for trailing commas, unescaped quotes, or invalid characters around the error position.\n\nPlease provide a valid JSON object."
                         }],
                         "status": "error"
                     }
@@ -2060,7 +2060,7 @@ chart = slide.shapes.add_chart(
         # Validate name
         is_valid, error_msg = _validate_presentation_name(presentation_name)
         if not is_valid:
-            return {"content": [{"text": f"❌ **Invalid presentation name**: {presentation_name}\n\n{error_msg}"}], "status": "error"}
+            return {"content": [{"text": f"**Invalid presentation name**: {presentation_name}\n\n{error_msg}"}], "status": "error"}
 
         presentation_filename = f"{presentation_name}.pptx"
 
@@ -2072,7 +2072,7 @@ chart = slide.shapes.add_chart(
             ppt_manager.load_from_s3(presentation_filename)
             return {
                 "content": [{
-                    "text": f"❌ **Presentation already exists**: {presentation_filename}\n\nPlease use a different name or delete the existing file first."
+                    "text": f"**Presentation already exists**: {presentation_filename}\n\nPlease use a different name or delete the existing file first."
                 }],
                 "status": "error"
             }
@@ -2081,7 +2081,7 @@ chart = slide.shapes.add_chart(
 
         code_interpreter_id = _get_code_interpreter_id()
         if not code_interpreter_id:
-            return {"content": [{"text": "❌ **Code Interpreter not configured**"}], "status": "error"}
+            return {"content": [{"text": "**Code Interpreter not configured**"}], "status": "error"}
 
         region = os.getenv('AWS_REGION', 'us-west-2')
         code_interpreter = CodeInterpreter(region)
@@ -2101,7 +2101,7 @@ chart = slide.shapes.add_chart(
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Template not found**: {template_filename}"
+                            "text": f"**Template not found**: {template_filename}"
                         }],
                         "status": "error"
                     }
@@ -2155,7 +2155,7 @@ print(f"Outline file saved: {outline_filename}")
                         logger.error(f"Failed to upload outline: {error_msg[:200]}")
                         code_interpreter.stop()
                         return {
-                            "content": [{"text": f"❌ **Failed to prepare outline**: {error_msg[:500]}"}],
+                            "content": [{"text": f"**Failed to prepare outline**: {error_msg[:500]}"}],
                             "status": "error"
                         }
 
@@ -2178,7 +2178,7 @@ generate_ppt_structure(prs, outline, theme_name={f"'{theme}'" if theme and not t
 # Save
 prs.save('{presentation_filename}')
 
-print(f"✅ Created presentation with {{len(prs.slides)}} slides")
+print(f"Created presentation with {{len(prs.slides)}} slides")
 """.strip()
             else:
                 # Create blank presentation
@@ -2209,7 +2209,7 @@ if len(prs.slides) == 0:
 # Save
 prs.save('{presentation_filename}')
 
-print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
+print(f"Created blank presentation with {{len(prs.slides)}} slide(s)")
 """.strip()
 
             response = code_interpreter.invoke("executeCode", {"code": code, "language": "python", "clearContext": False})
@@ -2221,7 +2221,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
                     error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
                     logger.error(f"Create presentation failed: {error_msg[:500]}")
                     code_interpreter.stop()
-                    return {"content": [{"text": f"❌ **Failed to create presentation**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+                    return {"content": [{"text": f"**Failed to create presentation**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
 
             # Download result
             output_ci_path = ppt_manager.get_ci_path(presentation_filename)
@@ -2229,7 +2229,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
 
             if not file_bytes:
                 code_interpreter.stop()
-                return {"content": [{"text": "❌ **Failed to retrieve presentation**"}], "status": "error"}
+                return {"content": [{"text": "**Failed to retrieve presentation**"}], "status": "error"}
 
             # Save to S3
             s3_info = ppt_manager.save_to_s3(presentation_filename, file_bytes)
@@ -2260,7 +2260,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
 
             if outline:
                 slide_count = len(outline.get('slides', [])) + 1  # +1 for title slide
-                success_msg = f"""✅ **Presentation created from outline!**
+                success_msg = f"""**Presentation created from outline!**
 
 **Filename:** {presentation_filename}
 **Title:** {outline.get('title', 'Untitled')}
@@ -2274,7 +2274,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
 - Use `update_slide_content` to refine content
 """
             else:
-                success_msg = f"""✅ **Blank presentation created!**
+                success_msg = f"""**Blank presentation created!**
 
 **Filename:** {presentation_filename}
 **Theme:** {theme_display}
@@ -2308,7 +2308,7 @@ print(f"✅ Created blank presentation with {{len(prs.slides)}} slide(s)")
 
     except Exception as e:
         logger.error(f"create_presentation error: {e}", exc_info=True)
-        return {"content": [{"text": f"❌ **Error:** {str(e)}"}], "status": "error"}
+        return {"content": [{"text": f"**Error:** {str(e)}"}], "status": "error"}
 
 
 @tool(context=True)

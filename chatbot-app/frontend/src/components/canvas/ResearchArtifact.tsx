@@ -148,50 +148,30 @@ export function ResearchArtifact({
 
         {/* Plan content */}
         <ScrollArea className="flex-1 p-6">
-          <div className="space-y-4">
-            {/* Plan Card */}
-            <div className="bg-gradient-to-br from-blue-500/10 to-blue-500/5 rounded-xl p-5 border-2 border-blue-500/20">
-              <h3 className="text-body font-semibold mb-3 flex items-center gap-2">
-                <FlaskConical className="h-4 w-4 text-blue-500" />
-                Research Plan
-              </h3>
-              <div className="prose prose-sm dark:prose-invert max-w-none">
-                <pre className="whitespace-pre-wrap font-sans text-label leading-relaxed text-foreground/90 bg-transparent border-0 p-0 m-0">
-                  {plan.plan}
-                </pre>
-              </div>
-            </div>
-
+          <div className="prose prose-lg dark:prose-invert max-w-none">
+            <pre className="whitespace-pre-wrap font-sans text-[15px] leading-7 text-foreground bg-transparent border-0 p-0 m-0">
+              {plan.plan}
+            </pre>
           </div>
         </ScrollArea>
 
         {/* Actions */}
-        <div className="flex-shrink-0 p-6 border-t bg-muted/20">
-          <div className="flex justify-between gap-3">
-            <Button
-              variant="ghost"
-              onClick={onCancel}
-              className="px-6"
+        <div className="flex-shrink-0 px-6 py-4 border-t border-border/50">
+          <div className="flex justify-end items-center gap-2">
+            <button
+              onClick={handleDecline}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-all"
             >
-              Cancel
-            </Button>
-            <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={handleDecline}
-                className="px-6"
-              >
-                <X className="h-4 w-4 mr-2" />
-                Decline
-              </Button>
-              <Button
-                onClick={handleApprove}
-                className="px-8 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 shadow-md"
-              >
-                <Check className="h-4 w-4 mr-2" />
-                Approve & Start Research
-              </Button>
-            </div>
+              <X className="h-3.5 w-3.5" />
+              Decline
+            </button>
+            <button
+              onClick={handleApprove}
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-all shadow-sm hover:shadow"
+            >
+              <Check className="h-3.5 w-3.5" />
+              Approve & Start
+            </button>
           </div>
         </div>
       </div>

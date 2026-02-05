@@ -334,7 +334,7 @@ doc.add_paragraph('Summary text...')
         if not is_valid:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid document name**: {document_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report\n- Q4-analysis\n- report-final-v2"
+                    "text": f"**Invalid document name**: {document_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report\n- Q4-analysis\n- report-final-v2"
                 }],
                 "status": "error"
             }
@@ -354,7 +354,7 @@ doc.add_paragraph('Summary text...')
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -405,7 +405,7 @@ print(f"Document created: {ci_path}")
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Failed to create document**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your python-docx code for syntax errors or incorrect API usage."
+                            "text": f"**Failed to create document**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your python-docx code for syntax errors or incorrect API usage."
                         }],
                         "status": "error"
                     }
@@ -437,7 +437,7 @@ print(f"Document created: {ci_path}")
             workspace_docs = doc_manager.list_s3_documents()
             other_files_count = len([d for d in workspace_docs if d['filename'] != document_filename])
 
-            message = f"""✅ **Document created successfully**
+            message = f"""**Document created successfully**
 
 **File**: {document_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} document{'s' if other_files_count != 1 else ''}"""
@@ -461,7 +461,7 @@ print(f"Document created: {ci_path}")
         logger.error(f"create_word_document failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to create document**\n\n{str(e)}"
+                "text": f"**Failed to create document**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -608,7 +608,7 @@ if len(doc.paragraphs) > 0:
         if not is_valid:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report-v2\n- Q4-analysis-final\n- report-revised"
+                    "text": f"**Invalid output name**: {output_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report-v2\n- Q4-analysis-final\n- report-revised"
                 }],
                 "status": "error"
             }
@@ -617,7 +617,7 @@ if len(doc.paragraphs) > 0:
         if source_name == output_name:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid name**\n\nOutput name must be different from source name to preserve the original.\n\nSource: {source_name}\nOutput: {output_name}\n\n💡 Try: \"{source_name}-v2\""
+                    "text": f"**Invalid name**\n\nOutput name must be different from source name to preserve the original.\n\nSource: {source_name}\nOutput: {output_name}\n\nTip:Try: \"{source_name}-v2\""
                 }],
                 "status": "error"
             }
@@ -638,7 +638,7 @@ if len(doc.paragraphs) > 0:
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -692,7 +692,7 @@ print(f"Document modified and saved: {output_ci_path}")
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your python-docx code for syntax errors or incorrect API usage."
+                            "text": f"**Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your python-docx code for syntax errors or incorrect API usage."
                         }],
                         "status": "error"
                     }
@@ -729,7 +729,7 @@ print(f"Document modified and saved: {output_ci_path}")
             other_files_count = len([d for d in workspace_docs if d['filename'] != output_filename])
 
             # Build success message
-            message = f"""✅ **Document modified successfully**
+            message = f"""**Document modified successfully**
 
 **Source**: {source_filename}
 **Saved as**: {output_filename} ({s3_info['size_kb']})
@@ -754,7 +754,7 @@ print(f"Document modified and saved: {output_ci_path}")
         logger.error(f"Document not found: {e}")
         return {
             "content": [{
-                "text": f"❌ **Document not found**: {source_filename}"
+                "text": f"**Document not found**: {source_filename}"
             }],
             "status": "error"
         }
@@ -762,7 +762,7 @@ print(f"Document modified and saved: {output_ci_path}")
         logger.error(f"modify_word_document failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to modify document**\n\n{str(e)}"
+                "text": f"**Failed to modify document**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -803,7 +803,7 @@ def list_my_word_documents(
             AI: "I found these documents: ... Which one should I modify?"
 
     Example Output:
-        📁 Workspace (3 documents):
+        Workspace (3 documents):
           - q4_report.docx (45.6 KB) - Modified: 2025-01-15
           - proposal.docx (32.1 KB) - Modified: 2025-01-14
           - analysis.docx (78.4 KB) - Modified: 2025-01-13
@@ -855,7 +855,7 @@ def list_my_word_documents(
         logger.error(f"list_my_word_documents failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to list documents**\n\n{str(e)}"
+                "text": f"**Failed to list documents**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -934,7 +934,7 @@ def read_word_document(
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -1007,7 +1007,7 @@ print(json.dumps(result, ensure_ascii=False))
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Failed to read document**\n\n```\n{error_msg[:1000]}\n```"
+                            "text": f"**Failed to read document**\n\n```\n{error_msg[:1000]}\n```"
                         }],
                         "status": "error"
                     }
@@ -1088,7 +1088,7 @@ print(json.dumps(result, ensure_ascii=False))
         logger.error(f"Document not found: {e}")
         return {
             "content": [{
-                "text": f"❌ **Document not found**: {document_filename}"
+                "text": f"**Document not found**: {document_filename}"
             }],
             "status": "error"
         }
@@ -1096,7 +1096,7 @@ print(json.dumps(result, ensure_ascii=False))
         logger.error(f"read_word_document failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to read document**\n\n{str(e)}"
+                "text": f"**Failed to read document**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -1134,13 +1134,13 @@ def preview_word_page(
     # Validate page numbers
     if not page_numbers:
         return {
-            "content": [{"text": "❌ At least one page number is required"}],
+            "content": [{"text": "At least one page number is required"}],
             "status": "error"
         }
 
     if any(p < 1 for p in page_numbers):
         return {
-            "content": [{"text": "❌ All page numbers must be 1 or greater"}],
+            "content": [{"text": "All page numbers must be 1 or greater"}],
             "status": "error"
         }
 
@@ -1165,7 +1165,7 @@ def preview_word_page(
             available = [d['filename'] for d in documents]
             return {
                 "content": [{
-                    "text": f"❌ **Document not found**: {document_filename}\n\n"
+                    "text": f"**Document not found**: {document_filename}\n\n"
                            f"Available documents: {', '.join(available) if available else 'None'}"
                 }],
                 "status": "error"
@@ -1193,7 +1193,7 @@ def preview_word_page(
                 logger.error(f"LibreOffice conversion failed: {result.stderr}")
                 return {
                     "content": [{
-                        "text": f"❌ **PDF conversion failed**\n\n{result.stderr}"
+                        "text": f"**PDF conversion failed**\n\n{result.stderr}"
                     }],
                     "status": "error"
                 }
@@ -1203,7 +1203,7 @@ def preview_word_page(
             if not os.path.exists(pdf_path):
                 return {
                     "content": [{
-                        "text": "❌ **PDF conversion failed**: Output file not created"
+                        "text": "**PDF conversion failed**: Output file not created"
                     }],
                     "status": "error"
                 }
@@ -1226,7 +1226,7 @@ def preview_word_page(
             if invalid_pages:
                 return {
                     "content": [{
-                        "text": f"❌ **Invalid page(s): {invalid_pages}**\n\n"
+                        "text": f"**Invalid page(s): {invalid_pages}**\n\n"
                                f"Document has {total_pages} page(s)."
                     }],
                     "status": "error"
@@ -1280,7 +1280,7 @@ def preview_word_page(
         logger.error("LibreOffice conversion timed out")
         return {
             "content": [{
-                "text": "❌ **Conversion timed out**\n\nThe document may be too large or complex."
+                "text": "**Conversion timed out**\n\nThe document may be too large or complex."
             }],
             "status": "error"
         }
@@ -1288,7 +1288,7 @@ def preview_word_page(
         logger.error(f"preview_word_page failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to generate preview**\n\n{str(e)}"
+                "text": f"**Failed to generate preview**\n\n{str(e)}"
             }],
             "status": "error"
         }

@@ -33,6 +33,7 @@ interface ToolExecutionContainerProps {
   onOpenWordArtifact?: (filename: string) => void  // Open Word document in Canvas
   onOpenExcelArtifact?: (filename: string) => void  // Open Excel spreadsheet in Canvas
   onOpenPptArtifact?: (filename: string) => void  // Open PowerPoint presentation in Canvas
+  onOpenExtractedDataArtifact?: (artifactId: string) => void  // Open extracted data in Canvas
 }
 
 // Collapsible Markdown component for tool results
@@ -90,7 +91,7 @@ const CollapsibleMarkdown = React.memo<{
          prevProps.sessionId === nextProps.sessionId
 })
 
-export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact }) => {
+export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
 
@@ -133,6 +134,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     if (filenameMatch) return filenameMatch[1]
     // Fallback: find any .pptx filename
     const match = toolResult.match(/([a-zA-Z0-9\-]+\.pptx)/i)
+    return match ? match[1] : null
+  }
+
+  // Extract artifact ID from browser_extract tool result
+  const extractArtifactId = (toolResult: string): string | null => {
+    if (!toolResult) return null
+    // Look for "Saved as artifact: artifact-id" pattern
+    const match = toolResult.match(/\*\*Saved as artifact\*\*:\s*(extracted-[\w-]+)/)
     return match ? match[1] : null
   }
 
@@ -583,6 +592,26 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                       <span>Canvas</span>
                     </button>
                   )}
+                  {/* View in Canvas button for browser_extract */}
+                  {toolExecution.toolName === 'browser_extract' &&
+                    toolExecution.isComplete &&
+                    !toolExecution.isCancelled &&
+                    toolExecution.toolResult &&
+                    extractArtifactId(toolExecution.toolResult) &&
+                    onOpenExtractedDataArtifact && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const artifactId = extractArtifactId(toolExecution.toolResult || '');
+                        if (artifactId) onOpenExtractedDataArtifact(artifactId);
+                      }}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
+                      title="View in Canvas"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Canvas</span>
+                    </button>
+                  )}
                 </div>
 
                 {/* Expanded detail section */}
@@ -622,88 +651,88 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                         )}
                       </div>
                     )}
+
+                    {/* Tool Images - Inside expanded section */}
+                    {toolExecution.images && toolExecution.images.length > 0 && (
+                      <div className="mt-2">
+                        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
+                          {toolExecution.images
+                            .filter((image) => {
+                              const isUrlImage = 'type' in image && image.type === 'url';
+                              const hasValidSource = isUrlImage
+                                ? (image.thumbnail || image.url)
+                                : ('data' in image && image.data);
+                              return !!hasValidSource;
+                            })
+                            .slice(0, 5)
+                            .map((image: ImageData, idx: number) => {
+                              const isUrlImage = 'type' in image && image.type === 'url';
+
+                              let imageSrc: string = '';
+                              if (isUrlImage) {
+                                imageSrc = image.url || image.thumbnail || '';
+                              } else if ('data' in image && 'format' in image) {
+                                const imageData = typeof image.data === 'string'
+                                  ? image.data
+                                  : btoa(String.fromCharCode(...new Uint8Array(image.data as ArrayBuffer)));
+                                imageSrc = `data:image/${image.format};base64,${imageData}`;
+                              }
+
+                              let imageTitle: string = `Tool generated image ${idx + 1}`;
+                              if (isUrlImage && 'title' in image && typeof image.title === 'string') {
+                                imageTitle = image.title;
+                              }
+
+                              let imageFormat: string = 'IMG';
+                              if (isUrlImage) {
+                                imageFormat = 'WEB';
+                              } else if ('format' in image && typeof image.format === 'string') {
+                                imageFormat = image.format.toUpperCase();
+                              }
+
+                              const handleClick = () => {
+                                if (isUrlImage && 'url' in image && image.url) {
+                                  window.open(image.url, '_blank', 'noopener,noreferrer');
+                                } else {
+                                  setSelectedImage({ src: imageSrc, alt: imageTitle });
+                                }
+                              };
+
+                              return (
+                                <div key={idx} className="relative flex-shrink-0 h-[140px]">
+                                  <div
+                                    className="relative h-full rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900"
+                                    onClick={handleClick}
+                                  >
+                                    <LazyImage
+                                      src={imageSrc}
+                                      alt={imageTitle}
+                                      className="h-full w-auto object-cover"
+                                    />
+
+                                    <div className="absolute top-2 right-2">
+                                      <div className="text-[10px] font-medium bg-black/70 text-white backdrop-blur-sm px-1.5 py-0.5 rounded">
+                                        {String(imageFormat)}
+                                      </div>
+                                    </div>
+
+                                    {isUrlImage && 'title' in image && image.title && (
+                                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
+                                        <p className="text-[11px] font-medium text-white line-clamp-2 leading-tight max-w-[200px]">
+                                          {image.title}
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-
-              {/* Tool Images - Horizontal Scroll Gallery */}
-              {toolExecution.images && toolExecution.images.length > 0 && (
-                <div className="mt-3 mb-2 -mx-2">
-                  <div className="flex gap-2 overflow-x-auto px-2 pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-                    {toolExecution.images
-                      .filter((image) => {
-                        const isUrlImage = 'type' in image && image.type === 'url';
-                        const hasValidSource = isUrlImage
-                          ? (image.thumbnail || image.url)
-                          : ('data' in image && image.data);
-                        return !!hasValidSource;
-                      })
-                      .slice(0, 5)
-                      .map((image: ImageData, idx: number) => {
-                        const isUrlImage = 'type' in image && image.type === 'url';
-
-                        let imageSrc: string = '';
-                        if (isUrlImage) {
-                          imageSrc = image.url || image.thumbnail || '';
-                        } else if ('data' in image && 'format' in image) {
-                          const imageData = typeof image.data === 'string'
-                            ? image.data
-                            : btoa(String.fromCharCode(...new Uint8Array(image.data as ArrayBuffer)));
-                          imageSrc = `data:image/${image.format};base64,${imageData}`;
-                        }
-
-                        let imageTitle: string = `Tool generated image ${idx + 1}`;
-                        if (isUrlImage && 'title' in image && typeof image.title === 'string') {
-                          imageTitle = image.title;
-                        }
-
-                        let imageFormat: string = 'IMG';
-                        if (isUrlImage) {
-                          imageFormat = 'WEB';
-                        } else if ('format' in image && typeof image.format === 'string') {
-                          imageFormat = image.format.toUpperCase();
-                        }
-
-                        const handleClick = () => {
-                          if (isUrlImage && 'url' in image && image.url) {
-                            window.open(image.url, '_blank', 'noopener,noreferrer');
-                          } else {
-                            setSelectedImage({ src: imageSrc, alt: imageTitle });
-                          }
-                        };
-
-                        return (
-                          <div key={idx} className="relative flex-shrink-0 h-[180px]">
-                            <div
-                              className="relative h-full rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900"
-                              onClick={handleClick}
-                            >
-                              <LazyImage
-                                src={imageSrc}
-                                alt={imageTitle}
-                                className="h-full w-auto object-cover"
-                              />
-
-                              <div className="absolute top-2 right-2">
-                                <div className="text-[10px] font-medium bg-black/70 text-white backdrop-blur-sm px-1.5 py-0.5 rounded">
-                                  {String(imageFormat)}
-                                </div>
-                              </div>
-
-                              {isUrlImage && 'title' in image && image.title && (
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
-                                  <p className="text-[11px] font-medium text-white line-clamp-2 leading-tight max-w-[200px]">
-                                    {image.title}
-                                  </p>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
-              )}
             </React.Fragment>
           )
         })}

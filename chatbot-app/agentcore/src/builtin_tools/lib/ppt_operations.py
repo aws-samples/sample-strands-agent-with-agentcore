@@ -112,7 +112,7 @@ editor = PresentationEditor(prs)
 prs.save('{output_filename}')
 
 # Print summary
-print(f"✅ Successfully updated {len(slide_updates)} slide(s)")
+print(f"Successfully updated {len(slide_updates)} slide(s)")
 print(f"Applied {total_operations} total operation(s)")
 """.strip()
 
@@ -268,7 +268,7 @@ try:
     # Save
     prs.save('{output_filename}')
 
-    print(f"✅ Added slide with layout '{{layout.name}}' at position {{{position} if {position} >= 0 else 'end'}}")
+    print(f"Added slide with layout '{{layout.name}}' at position {{{position} if {position} >= 0 else 'end'}}")
 
 except ValueError as e:
     # Re-raise with original message
@@ -328,7 +328,7 @@ try:
     # Save
     prs.save('{output_filename}')
 
-    print(f"✅ Deleted {{len(indices_to_delete)}} slide(s)")
+    print(f"Deleted {{len(indices_to_delete)}} slide(s)")
     print(f"Remaining slides: {{len(prs.slides)}}")
 
 except ValueError as e:
@@ -392,7 +392,7 @@ try:
     # Save
     prs.save('{output_filename}')
 
-    print(f"✅ Moved slide from position {{{from_index} + 1}} to {{{to_index} + 1}}")
+    print(f"Moved slide from position {{{from_index} + 1}} to {{{to_index} + 1}}")
 
 except ValueError as e:
     raise
@@ -486,7 +486,7 @@ try:
     # Save
     prs.save('{output_filename}')
 
-    print(f"✅ Duplicated slide {{{slide_index} + 1}} to position {{insert_pos + 1}}")
+    print(f"Duplicated slide {{{slide_index} + 1}} to position {{insert_pos + 1}}")
 
 except ValueError as e:
     raise
@@ -549,7 +549,7 @@ try:
     # Save
     prs.save('{output_filename}')
 
-    print(f"✅ Updated notes for slide {{{slide_index} + 1}}")
+    print(f"Updated notes for slide {{{slide_index} + 1}}")
 
 except ValueError as e:
     raise

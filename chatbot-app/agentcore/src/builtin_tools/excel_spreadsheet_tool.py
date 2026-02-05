@@ -354,7 +354,7 @@ ws3['A1'] = 'Detailed Analysis'
         if not is_valid:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid spreadsheet name**: {spreadsheet_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report\n- Q4-data\n- inventory-2024"
+                    "text": f"**Invalid spreadsheet name**: {spreadsheet_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report\n- Q4-data\n- inventory-2024"
                 }],
                 "status": "error"
             }
@@ -374,7 +374,7 @@ ws3['A1'] = 'Detailed Analysis'
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -427,7 +427,7 @@ print(f"Spreadsheet created: {ci_path}")
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Failed to create spreadsheet**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your openpyxl code for syntax errors or incorrect API usage."
+                            "text": f"**Failed to create spreadsheet**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your openpyxl code for syntax errors or incorrect API usage."
                         }],
                         "status": "error"
                     }
@@ -459,7 +459,7 @@ print(f"Spreadsheet created: {ci_path}")
             workspace_docs = doc_manager.list_s3_documents()
             other_files_count = len([d for d in workspace_docs if d['filename'] != spreadsheet_filename])
 
-            message = f"""✅ **Spreadsheet created successfully**
+            message = f"""**Spreadsheet created successfully**
 
 **File**: {spreadsheet_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} spreadsheet{'s' if other_files_count != 1 else ''}"""
@@ -483,7 +483,7 @@ print(f"Spreadsheet created: {ci_path}")
         logger.error(f"create_excel_spreadsheet failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to create spreadsheet**\n\n{str(e)}"
+                "text": f"**Failed to create spreadsheet**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -595,7 +595,7 @@ if images:
         if not is_valid:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid output name**: {output_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report-v2\n- Q4-data-final\n- report-revised"
+                    "text": f"**Invalid output name**: {output_name}\n\n{error_msg}\n\n**Examples of valid names:**\n- sales-report-v2\n- Q4-data-final\n- report-revised"
                 }],
                 "status": "error"
             }
@@ -604,7 +604,7 @@ if images:
         if source_name == output_name:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid name**\n\nOutput name must be different from source name to preserve the original.\n\nSource: {source_name}\nOutput: {output_name}\n\n💡 Try: \"{source_name}-v2\""
+                    "text": f"**Invalid name**\n\nOutput name must be different from source name to preserve the original.\n\nSource: {source_name}\nOutput: {output_name}\n\nTip:Try: \"{source_name}-v2\""
                 }],
                 "status": "error"
             }
@@ -625,7 +625,7 @@ if images:
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -680,7 +680,7 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\n💡 Check your openpyxl code for syntax errors or incorrect API usage."
+                            "text": f"**Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your openpyxl code for syntax errors or incorrect API usage."
                         }],
                         "status": "error"
                     }
@@ -717,7 +717,7 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
             other_files_count = len([d for d in workspace_docs if d['filename'] != output_filename])
 
             # Build success message
-            message = f"""✅ **Spreadsheet modified successfully**
+            message = f"""**Spreadsheet modified successfully**
 
 **Source**: {source_filename}
 **Saved as**: {output_filename} ({s3_info['size_kb']})
@@ -742,7 +742,7 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
         logger.error(f"Spreadsheet not found: {e}")
         return {
             "content": [{
-                "text": f"❌ **Spreadsheet not found**: {source_filename}"
+                "text": f"**Spreadsheet not found**: {source_filename}"
             }],
             "status": "error"
         }
@@ -750,7 +750,7 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
         logger.error(f"modify_excel_spreadsheet failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to modify spreadsheet**\n\n{str(e)}"
+                "text": f"**Failed to modify spreadsheet**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -791,7 +791,7 @@ def list_my_excel_spreadsheets(
             AI: "I found these spreadsheets: ... Which one should I modify?"
 
     Example Output:
-        📁 Workspace (3 spreadsheets):
+        Workspace (3 spreadsheets):
           - sales-report.xlsx (52.3 KB) - Modified: 2025-01-15
           - inventory.xlsx (41.8 KB) - Modified: 2025-01-14
           - Q4-analysis.xlsx (89.2 KB) - Modified: 2025-01-13
@@ -843,7 +843,7 @@ def list_my_excel_spreadsheets(
         logger.error(f"list_my_excel_spreadsheets failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to list spreadsheets**\n\n{str(e)}"
+                "text": f"**Failed to list spreadsheets**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -922,7 +922,7 @@ def read_excel_spreadsheet(
         if not code_interpreter_id:
             return {
                 "content": [{
-                    "text": "❌ **Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
+                    "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
@@ -993,7 +993,7 @@ print(json.dumps(result, ensure_ascii=False))
                     code_interpreter.stop()
                     return {
                         "content": [{
-                            "text": f"❌ **Failed to read spreadsheet**\n\n```\n{error_msg[:1000]}\n```"
+                            "text": f"**Failed to read spreadsheet**\n\n```\n{error_msg[:1000]}\n```"
                         }],
                         "status": "error"
                     }
@@ -1009,7 +1009,7 @@ print(json.dumps(result, ensure_ascii=False))
             # Format output text
             output_parts = []
             props = spreadsheet_content.get("properties", {})
-            output_parts.append(f"📊 **Spreadsheet Content**: {spreadsheet_filename} ({doc_info['size_kb']})")
+            output_parts.append(f"**Spreadsheet Content**: {spreadsheet_filename} ({doc_info['size_kb']})")
             output_parts.append(f"**Sheets**: {', '.join(props.get('sheet_names', []))}")
             output_parts.append("")
 
@@ -1069,7 +1069,7 @@ print(json.dumps(result, ensure_ascii=False))
         logger.error(f"Spreadsheet not found: {e}")
         return {
             "content": [{
-                "text": f"❌ **Spreadsheet not found**: {spreadsheet_filename}"
+                "text": f"**Spreadsheet not found**: {spreadsheet_filename}"
             }],
             "status": "error"
         }
@@ -1077,7 +1077,7 @@ print(json.dumps(result, ensure_ascii=False))
         logger.error(f"read_excel_spreadsheet failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to read spreadsheet**\n\n{str(e)}"
+                "text": f"**Failed to read spreadsheet**\n\n{str(e)}"
             }],
             "status": "error"
         }
@@ -1132,7 +1132,7 @@ def preview_excel_sheets(
             available = [d['filename'] for d in documents]
             return {
                 "content": [{
-                    "text": f"❌ **Spreadsheet not found**: {spreadsheet_filename}\n\n"
+                    "text": f"**Spreadsheet not found**: {spreadsheet_filename}\n\n"
                            f"Available spreadsheets: {', '.join(available) if available else 'None'}"
                 }],
                 "status": "error"
@@ -1162,7 +1162,7 @@ def preview_excel_sheets(
                 if invalid_sheets:
                     return {
                         "content": [{
-                            "text": f"❌ **Sheet(s) not found**: {', '.join(invalid_sheets)}\n\n"
+                            "text": f"**Sheet(s) not found**: {', '.join(invalid_sheets)}\n\n"
                                    f"Available sheets: {', '.join(all_sheet_names)}"
                         }],
                         "status": "error"
@@ -1182,7 +1182,7 @@ def preview_excel_sheets(
                 logger.error(f"LibreOffice conversion failed: {result.stderr}")
                 return {
                     "content": [{
-                        "text": f"❌ **PDF conversion failed**\n\n{result.stderr}"
+                        "text": f"**PDF conversion failed**\n\n{result.stderr}"
                     }],
                     "status": "error"
                 }
@@ -1192,7 +1192,7 @@ def preview_excel_sheets(
             if not os.path.exists(pdf_path):
                 return {
                     "content": [{
-                        "text": "❌ **PDF file not created**\n\nLibreOffice conversion may have failed silently."
+                        "text": "**PDF file not created**\n\nLibreOffice conversion may have failed silently."
                     }],
                     "status": "error"
                 }
@@ -1260,7 +1260,7 @@ def preview_excel_sheets(
         logger.error("LibreOffice conversion timed out")
         return {
             "content": [{
-                "text": "❌ **Conversion timed out**\n\nThe spreadsheet may be too large or complex."
+                "text": "**Conversion timed out**\n\nThe spreadsheet may be too large or complex."
             }],
             "status": "error"
         }
@@ -1268,7 +1268,7 @@ def preview_excel_sheets(
         logger.error(f"preview_excel_sheets failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Failed to generate preview**\n\n{str(e)}"
+                "text": f"**Failed to generate preview**\n\n{str(e)}"
             }],
             "status": "error"
         }

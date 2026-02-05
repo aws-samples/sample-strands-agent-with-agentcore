@@ -26,18 +26,29 @@ interface ArtifactMethods {
   openArtifact: (id: string) => void
 }
 
+// Extracted data info from browser_extract
+export interface ExtractedDataInfo {
+  artifactId: string
+  title: string
+  content: string  // JSON string
+  sourceUrl: string
+  sourceTitle: string
+}
+
 interface UseCanvasHandlersReturn {
   // Callbacks for useChat (can be used before useArtifacts is initialized)
   handleArtifactUpdated: () => void
   handleWordDocumentsCreated: (documents: WorkspaceDocument[]) => void
   handleExcelDocumentsCreated: (documents: WorkspaceDocument[]) => void
   handlePptDocumentsCreated: (documents: WorkspaceDocument[]) => void
+  handleExtractedDataCreated: (data: ExtractedDataInfo) => void
 
   // Handlers for opening artifacts from chat
   handleOpenResearchArtifact: (executionId: string) => void
   handleOpenWordArtifact: (filename: string) => void
   handleOpenExcelArtifact: (filename: string) => void
   handleOpenPptArtifact: (filename: string) => void
+  handleOpenExtractedDataArtifact: (artifactId: string) => void
 
   // Connect artifact methods after useArtifacts is initialized
   setArtifactMethods: (methods: ArtifactMethods) => void
@@ -145,15 +156,38 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     }, 100)
   }, [])
 
+  // Callback for extracted data creation - creates artifact and opens Canvas
+  const handleExtractedDataCreated = useCallback((data: ExtractedDataInfo) => {
+    if (!addArtifactRef.current || !openArtifactRef.current) return
+
+    // Create artifact for extracted data
+    addArtifactRef.current({
+      id: data.artifactId,
+      type: 'extracted_data' as ArtifactType,
+      title: data.title,
+      content: data.content,
+      description: `Extracted from ${data.sourceTitle}`,
+      timestamp: new Date().toISOString(),
+      metadata: {
+        source_url: data.sourceUrl,
+        source_title: data.sourceTitle,
+      },
+    })
+
+    // Open Canvas and select the artifact
+    setTimeout(() => {
+      openArtifactRef.current!(data.artifactId)
+    }, 100)
+  }, [])
+
   // ==================== HANDLERS FOR OPENING ARTIFACTS ====================
 
   // Handle "View in Canvas" from chat - open Canvas with the research artifact
   const handleOpenResearchArtifact = useCallback((executionId: string) => {
     // Artifact ID matches backend: research-{toolUseId} where toolUseId = executionId
     const artifactId = `research-${executionId}`
-    // Check if artifact exists (use ref to get latest artifacts)
-    const artifact = artifactsRef.current.find(a => a.id === artifactId)
-    if (artifact && openArtifactRef.current) {
+    // Open artifact directly - Canvas will find it from current state
+    if (openArtifactRef.current) {
       openArtifactRef.current(artifactId)
     }
   }, [])
@@ -191,18 +225,27 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     }
   }, [])
 
+  // Handle "View in Canvas" from browser_extract - open artifact by ID
+  const handleOpenExtractedDataArtifact = useCallback((artifactId: string) => {
+    if (openArtifactRef.current) {
+      openArtifactRef.current(artifactId)
+    }
+  }, [])
+
   return {
     // Callbacks for useChat
     handleArtifactUpdated,
     handleWordDocumentsCreated,
     handleExcelDocumentsCreated,
     handlePptDocumentsCreated,
+    handleExtractedDataCreated,
 
     // Handlers for opening artifacts
     handleOpenResearchArtifact,
     handleOpenWordArtifact,
     handleOpenExcelArtifact,
     handleOpenPptArtifact,
+    handleOpenExtractedDataArtifact,
 
     // Connect artifact methods
     setArtifactMethods,

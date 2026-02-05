@@ -616,7 +616,7 @@ class StreamEventProcessor:
                             # Update last LLM input tokens (overwrite, not accumulate)
                             # Each LLM call sends metadata at the end, so this captures the most recent call
                             self.last_llm_input_tokens = input_tokens
-                            logger.debug(f"📊 [Metadata] Captured LLM inputTokens: {input_tokens:,}")
+                            logger.debug(f"[Metadata] Captured LLM inputTokens: {input_tokens:,}")
 
                 # Handle tool results from message events
                 elif event.get("message"):

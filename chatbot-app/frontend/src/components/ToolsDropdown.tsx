@@ -110,16 +110,19 @@ export function ToolsDropdown({
     return count;
   }, [availableTools]);
 
-  // Get all tools (excluding Research Agent)
+  // Get all tools (excluding Research Agent and Browser-Use Agent)
   const allTools = useMemo(() => {
-    return availableTools.filter(tool => tool.id !== 'agentcore_research-agent');
+    return availableTools.filter(tool =>
+      tool.id !== 'agentcore_research-agent' &&
+      tool.id !== 'agentcore_browser-use-agent'
+    );
   }, [availableTools]);
 
-  // Get all enabled tools (excluding Research Agent)
+  // Get all enabled tools (excluding Research Agent and Browser-Use Agent)
   const enabledTools = useMemo(() => {
     const enabled: Tool[] = [];
     availableTools.forEach(tool => {
-      if (tool.id === 'agentcore_research-agent') return;
+      if (tool.id === 'agentcore_research-agent' || tool.id === 'agentcore_browser-use-agent') return;
 
       const isDynamic = (tool as any).isDynamic === true;
       const nestedTools = (tool as any).tools || [];

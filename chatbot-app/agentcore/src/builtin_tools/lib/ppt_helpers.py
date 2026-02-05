@@ -369,7 +369,7 @@ def populate_slide(slide, slide_info: dict) -> None:
 
             # Execute the custom code
             exec(custom_code, local_namespace)
-            print(f"✅ Executed custom code for slide")
+            print(f"Executed custom code for slide")
         except Exception as e:
             print(f"Warning: Failed to execute custom code: {e}")
         return
@@ -1065,7 +1065,7 @@ def apply_theme_to_presentation(prs: Presentation, theme_name: str = 'modern-blu
         # Note: Full theme application requires XML manipulation
         # Here we apply basic styling that's safely accessible
 
-        print(f"✅ Applied theme: {theme['name']}")
+        print(f"Applied theme: {theme['name']}")
         print(f"   Primary color: RGB{colors['primary']}")
         print(f"   Accent color: RGB{colors['accent']}")
         print(f"   Fonts: {fonts['title']} / {fonts['body']}")
@@ -1127,7 +1127,7 @@ def apply_theme_to_slide(slide, theme_name: str = 'modern-blue') -> None:
                     for run in paragraph.runs:
                         run.font.name = fonts['body']
 
-        print(f"✅ Applied {theme['name']} theme to slide")
+        print(f"Applied {theme['name']} theme to slide")
 
     except Exception as e:
         print(f"Warning: Could not fully apply theme to slide: {e}")
@@ -1523,7 +1523,7 @@ class PresentationEditor:
             container_width_pts = shape_width_inches * 72 * 0.9  # 90% of available width
 
             if estimated_width > container_width_pts:
-                print(f"⚠️  Warning: Text may overflow. Consider shorter text.")
+                print(f"Warning: Text may overflow. Consider shorter text.")
                 print(f"   Estimated width: {estimated_width:.0f}pts, Available: {container_width_pts:.0f}pts")
 
                 # Auto-wrap if too long (for single-line text)
@@ -1629,9 +1629,9 @@ class PresentationEditor:
                     # Run formatting (color, bold, italic, font) is automatically preserved
 
         if replacement_count > 0:
-            print(f"✅ Replaced {replacement_count} occurrence(s) of '{find}' with '{replace}'")
+            print(f"Replaced {replacement_count} occurrence(s) of '{find}' with '{replace}'")
         else:
-            print(f"⚠️  Warning: Text '{find}' not found in element {element_id}")
+            print(f"Warning: Text '{find}' not found in element {element_id}")
 
     def replace_image(self, slide_index: int, element_id: int, image_path: str):
         """Replace an image with a new one

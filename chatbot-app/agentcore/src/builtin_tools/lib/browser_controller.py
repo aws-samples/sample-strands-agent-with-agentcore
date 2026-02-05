@@ -64,7 +64,7 @@ class BrowserController:
         # Validate at least one auth method is available
         if not self.nova_api_key and not self.nova_workflow_definition_name:
             raise ValueError(
-                "❌ Nova Act authentication not configured. "
+                "Nova Act authentication not configured. "
                 "Set either NOVA_ACT_API_KEY or NOVA_ACT_WORKFLOW_DEFINITION_NAME. "
                 "For AWS IAM auth, create a workflow: aws nova-act create-workflow-definition --name 'my-workflow'"
             )
@@ -145,7 +145,7 @@ class BrowserController:
             # Require Custom Browser ID - no fallback to system browser
             if not self.browser_id:
                 raise ValueError(
-                    "❌ Custom Browser ID not found. "
+                    "Custom Browser ID not found. "
                     "Browser tools require Custom Browser with Web Bot Auth. "
                     "Please deploy AgentCore Runtime Stack to create Custom Browser."
                 )
@@ -264,7 +264,7 @@ class BrowserController:
                 "screenshot": None
             }
 
-    def act(self, instruction: str, max_steps: int = 3, timeout: int = 120) -> Dict[str, Any]:
+    def act(self, instruction: str, max_steps: int = 5, timeout: int = 120) -> Dict[str, Any]:
         """Execute natural language instruction using Nova Act
 
         Args:
@@ -332,7 +332,7 @@ class BrowserController:
             # Even if action was partial, we return "success" with details in message
             return {
                 "status": "success",  # Always "success" if no exception (Bedrock requirement)
-                "message": f"{'✓ ' if success else '⚠️ '}{details}{execution_info}",
+                "message": f"{'' if success else '[WARN] '}{details}{execution_info}",
                 "instruction": instruction,
                 "current_url": current_url,
                 "page_title": page_title,
@@ -347,7 +347,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Invalid model output: {str(e)}\n\nTry simplifying the instruction or breaking it into smaller steps.",
+                "message": f"Invalid model output: {str(e)}\n\nCheck the screenshot to see current state and retry from that point.",
                 "instruction": instruction,
                 "screenshot": screenshot_data
             }
@@ -358,7 +358,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Task exceeded {max_steps} steps without completing. Try: 1) Simpler instruction, 2) Different tool, or 3) Ask user.",
+                "message": f"Task exceeded {max_steps} steps without completing. Check the screenshot to see current state and retry from that point.",
                 "instruction": instruction,
                 "screenshot": screenshot_data
             }
@@ -405,13 +405,13 @@ class BrowserController:
             pass
         return None
 
-    def extract(self, description: str, schema: Optional[Dict] = None, max_steps: int = 6, timeout: int = 180) -> Dict[str, Any]:
+    def extract(self, description: str, schema: Optional[Dict] = None, max_steps: int = 12, timeout: int = 180) -> Dict[str, Any]:
         """Extract structured data using Nova Act
 
         Args:
             description: Natural language description of what data to extract
             schema: Optional JSON schema for validation (None = no schema validation)
-            max_steps: Maximum number of steps for extraction (default: 6 allows scrolling/pagination)
+            max_steps: Maximum number of steps for extraction (default: 12 allows scrolling/pagination)
             timeout: Timeout in seconds for extraction (default: 180s = 3 minutes)
         """
         try:
@@ -484,7 +484,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Schema validation failed: {str(e)}\n\nThe extracted data didn't match the expected format. Try simplifying the description or using no schema.",
+                "message": f"Schema validation failed: {str(e)}\n\nThe extracted data didn't match the expected format. Check the screenshot and adjust the schema or description.",
                 "description": description,
                 "screenshot": screenshot_data
             }
@@ -495,7 +495,7 @@ class BrowserController:
             screenshot_data = self._get_error_screenshot()
             return {
                 "status": "error",
-                "message": f"Extraction exceeded {max_steps} steps. Try: 1) Simpler schema, 2) Extract partial data, or 3) Different approach.",
+                "message": f"Extraction exceeded {max_steps} steps. Check the screenshot to see current state and retry with adjusted approach.",
                 "description": description,
                 "screenshot": screenshot_data
             }

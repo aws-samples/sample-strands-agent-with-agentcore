@@ -99,6 +99,14 @@ export function ChatInputArea({
     }
   }, [inputMessage])
 
+  // Wrap onToggleTool to disable research mode when selecting a tool
+  const handleToolToggle = useCallback(async (toolId: string) => {
+    if (isResearchEnabled) {
+      onToggleResearch();
+    }
+    await onToggleTool(toolId);
+  }, [isResearchEnabled, onToggleResearch, onToggleTool]);
+
   const handleSlashCommand = useCallback((command: SlashCommand) => {
     setSlashCommands([])
     setInputMessage('')
@@ -394,7 +402,7 @@ export function ChatInputArea({
 
                 <ToolsDropdown
                   availableTools={availableTools}
-                  onToggleTool={onToggleTool}
+                  onToggleTool={handleToolToggle}
                   disabled={isVoiceActive || composerState.showOutlineConfirm}
                   autoEnabled={swarmEnabled}
                   onToggleAuto={onToggleSwarm}

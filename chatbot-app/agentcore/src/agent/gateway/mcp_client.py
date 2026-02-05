@@ -154,7 +154,7 @@ class FilteredMCPClient(MCPClient):
         # Inject user API keys into arguments (Lambda will extract these)
         if self.api_keys:
             arguments = {**arguments, '__user_api_keys': self.api_keys}
-            logger.debug(f"Injected user API keys into tool arguments: {list(self.api_keys.keys())}")
+            logger.debug("Injected user API keys into tool arguments")
 
         return super().call_tool_sync(tool_use_id, actual_name, arguments)
 
@@ -304,7 +304,7 @@ def create_filtered_gateway_client(
     # Create FilteredMCPClient with tool filtering and API keys
     logger.debug(f"Creating FilteredMCPClient with {len(gateway_tool_ids)} enabled tool IDs")
     if api_keys:
-        logger.debug(f"   User API keys provided: {list(api_keys.keys())}")
+        logger.debug(f"   User API keys provided: {len(api_keys)} key(s)")
 
     mcp_client = FilteredMCPClient(
         lambda: streamablehttp_client(

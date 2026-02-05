@@ -12,7 +12,6 @@ import { AssistantTurn } from "@/components/chat/AssistantTurn"
 import { Greeting } from "@/components/Greeting"
 import { ChatSidebar } from "@/components/ChatSidebar"
 import { ToolsDropdown } from "@/components/ToolsDropdown"
-import { BrowserLiveViewButton } from "@/components/BrowserLiveViewButton"
 import { BrowserResultModal } from "@/components/BrowserResultModal"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
 import { SwarmProgress } from "@/components/SwarmProgress"
@@ -116,12 +115,71 @@ export function ChatInterface() {
     handleWordDocumentsCreated,
     handleExcelDocumentsCreated,
     handlePptDocumentsCreated,
+    handleExtractedDataCreated,
     handleOpenResearchArtifact,
     handleOpenWordArtifact,
     handleOpenExcelArtifact,
     handleOpenPptArtifact,
+    handleOpenExtractedDataArtifact,
     setArtifactMethods,
   } = useCanvasHandlers()
+
+  // Refs for browser session handling (to avoid circular dependency with useArtifacts)
+  const addArtifactRef = useRef<typeof addArtifact | null>(null)
+  const openCanvasRef = useRef<(() => void) | null>(null)
+  const setBrowserArtifactIdRef = useRef<typeof setBrowserArtifactId | null>(null)
+
+  // Handler for browser session detection - creates artifact and opens Canvas
+  const handleBrowserSessionDetected = useCallback((browserSessionId: string, browserId: string) => {
+    console.log('[ChatInterface] Browser session detected:', browserSessionId, browserId)
+
+    const artifactId = `browser-${browserSessionId}`
+    const addArtifact = addArtifactRef.current
+    const openCanvas = openCanvasRef.current
+    const setBrowserArtifactId = setBrowserArtifactIdRef.current
+
+    if (!addArtifact || !openCanvas || !setBrowserArtifactId) {
+      console.warn('[ChatInterface] Artifact methods not ready yet')
+      return
+    }
+
+    // Create browser artifact
+    const browserArtifact = {
+      id: artifactId,
+      type: 'browser' as const,
+      title: 'Browser View',
+      content: '',
+      description: 'Real-time browser automation view',
+      timestamp: new Date().toISOString(),
+      metadata: {
+        browserSessionId,
+        browserId,
+      },
+    }
+
+    addArtifact(browserArtifact)
+
+    // Also save to sessionStorage for persistence across page reloads
+    const currentSessionId = sessionStorage.getItem('chat-session-id')
+    if (currentSessionId) {
+      const artifactsKey = `artifacts-${currentSessionId}`
+      const stored = sessionStorage.getItem(artifactsKey)
+      const existingArtifacts = stored ? JSON.parse(stored) : []
+
+      // Check if browser artifact already exists
+      const existingIndex = existingArtifacts.findIndex((a: any) => a.id === artifactId)
+      if (existingIndex >= 0) {
+        existingArtifacts[existingIndex] = browserArtifact
+      } else {
+        existingArtifacts.push(browserArtifact)
+      }
+      sessionStorage.setItem(artifactsKey, JSON.stringify(existingArtifacts))
+    }
+
+    // Set browser artifact ID and open canvas
+    setBrowserArtifactId(artifactId)
+    openCanvas()
+  }, [])
 
   const {
     groupedMessages,
@@ -157,7 +215,9 @@ export function ChatInterface() {
     onArtifactUpdated: handleArtifactUpdated,
     onWordDocumentsCreated: handleWordDocumentsCreated,
     onExcelDocumentsCreated: handleExcelDocumentsCreated,
-    onPptDocumentsCreated: handlePptDocumentsCreated
+    onPptDocumentsCreated: handlePptDocumentsCreated,
+    onBrowserSessionDetected: handleBrowserSessionDetected,
+    onExtractedDataCreated: handleExtractedDataCreated,
   })
 
   // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
@@ -243,6 +303,22 @@ export function ChatInterface() {
 
   // Research artifact ID tracking
   const [researchArtifactId, setResearchArtifactId] = useState<string | null>(null)
+
+  // Browser artifact ID tracking (for Live View in Canvas)
+  const [browserArtifactId, setBrowserArtifactId] = useState<string | null>(null)
+
+  // Update browser session handling refs (to avoid circular dependency)
+  useEffect(() => {
+    addArtifactRef.current = addArtifact
+  }, [addArtifact])
+
+  useEffect(() => {
+    openCanvasRef.current = openCanvasBase
+  }, [openCanvasBase])
+
+  useEffect(() => {
+    setBrowserArtifactIdRef.current = setBrowserArtifactId
+  }, [setBrowserArtifactId])
 
   // Artifact editing state
   const [editingArtifact, setEditingArtifact] = useState<{
@@ -381,25 +457,123 @@ export function ChatInterface() {
 
   const handleResearchConfirmPlan = useCallback((approved: boolean) => {
     researchRef.current.confirmPlanResponse(approved)
-    // If declined, close canvas and reset state
     if (!approved) {
       researchRef.current.reset()
       setResearchArtifactId(null)
-      processedInterruptRef.current = null  // Reset to allow new interrupts
+      processedInterruptRef.current = null
       closeCanvas()
     }
   }, [closeCanvas])
 
   const handleResearchCancel = useCallback(() => {
-    // Send rejection response if plan confirmation is showing
     if (researchRef.current.showPlanConfirm) {
       researchRef.current.confirmPlanResponse(false)
     }
     researchRef.current.reset()
     setResearchArtifactId(null)
-    processedInterruptRef.current = null  // Reset to allow new interrupts
+    processedInterruptRef.current = null
     closeCanvas()
   }, [closeCanvas])
+
+  // Browser Canvas callbacks - handle connection errors and validation failures
+  const handleBrowserConnectionError = useCallback(() => {
+    console.log('[ChatInterface] Browser connection error, removing artifact')
+    if (browserArtifactId) {
+      removeArtifact(browserArtifactId)
+      setBrowserArtifactId(null)
+
+      // Also remove from sessionStorage
+      const currentSessionId = sessionStorage.getItem('chat-session-id')
+      if (currentSessionId) {
+        const artifactsKey = `artifacts-${currentSessionId}`
+        const stored = sessionStorage.getItem(artifactsKey)
+        if (stored) {
+          const artifacts = JSON.parse(stored).filter((a: any) => a.id !== browserArtifactId)
+          sessionStorage.setItem(artifactsKey, JSON.stringify(artifacts))
+        }
+      }
+    }
+  }, [browserArtifactId, removeArtifact])
+
+  const handleBrowserValidationFailed = useCallback(() => {
+    console.log('[ChatInterface] Browser session validation failed, removing artifact')
+    if (browserArtifactId) {
+      removeArtifact(browserArtifactId)
+      setBrowserArtifactId(null)
+
+      // Also remove from sessionStorage
+      const currentSessionId = sessionStorage.getItem('chat-session-id')
+      if (currentSessionId) {
+        const artifactsKey = `artifacts-${currentSessionId}`
+        const stored = sessionStorage.getItem(artifactsKey)
+        if (stored) {
+          const artifacts = JSON.parse(stored).filter((a: any) => a.id !== browserArtifactId)
+          sessionStorage.setItem(artifactsKey, JSON.stringify(artifacts))
+        }
+      }
+    }
+  }, [browserArtifactId, removeArtifact])
+
+  // Restore and validate browser artifact on page load
+  useEffect(() => {
+    if (!sessionId) return
+
+    // Check if we have a browser artifact that needs to be restored
+    const existingBrowserArtifact = artifacts.find(a => a.type === 'browser')
+    if (existingBrowserArtifact && !browserArtifactId) {
+      console.log('[ChatInterface] Found browser artifact, validating session...')
+
+      // Get browserSession info from artifact metadata or sessionStorage
+      const metadata = existingBrowserArtifact.metadata
+      const browserSessionId = metadata?.browserSessionId || browserSession?.sessionId
+      const browserId = metadata?.browserId || browserSession?.browserId
+
+      if (!browserSessionId) {
+        // No session info - remove invalid artifact
+        console.log('[ChatInterface] No browser session info, removing artifact')
+        removeArtifact(existingBrowserArtifact.id)
+        return
+      }
+
+      // Validate the session
+      const validateAndRestore = async () => {
+        try {
+          let validateUrl = `/api/browser/validate-session?sessionId=${encodeURIComponent(browserSessionId)}`
+          if (browserId) {
+            validateUrl += `&browserId=${encodeURIComponent(browserId)}`
+          }
+
+          const response = await fetch(validateUrl)
+          const data = await response.json()
+
+          if (data.isValid) {
+            // Session is valid - restore artifact
+            console.log('[ChatInterface] Browser session valid, restoring artifact')
+            setBrowserArtifactId(existingBrowserArtifact.id)
+            openCanvasRef.current?.()
+          } else {
+            // Session is invalid - remove artifact
+            console.log('[ChatInterface] Browser session invalid, removing artifact')
+            removeArtifact(existingBrowserArtifact.id)
+
+            // Also remove from sessionStorage
+            const artifactsKey = `artifacts-${sessionId}`
+            const stored = sessionStorage.getItem(artifactsKey)
+            if (stored) {
+              const artifacts = JSON.parse(stored).filter((a: any) => a.id !== existingBrowserArtifact.id)
+              sessionStorage.setItem(artifactsKey, JSON.stringify(artifacts))
+            }
+          }
+        } catch (error) {
+          console.warn('[ChatInterface] Failed to validate browser session:', error)
+          // On error, still restore artifact - let BrowserLiveView handle connection
+          setBrowserArtifactId(existingBrowserArtifact.id)
+        }
+      }
+
+      validateAndRestore()
+    }
+  }, [sessionId, artifacts, browserArtifactId, browserSession, removeArtifact])
 
   // Close canvas when left sidebar opens
   useEffect(() => {
@@ -523,11 +697,9 @@ export function ChatInterface() {
     if (currentInterrupt && currentInterrupt.interrupts.length > 0) {
       const interrupt = currentInterrupt.interrupts[0]
 
-      // Skip if already processed this interrupt
       if (interrupt.name === "chatbot-research-approval" &&
           !researchArtifactId &&
           processedInterruptRef.current !== interrupt.id) {
-        console.log('[ChatInterface] Research interrupt detected, opening Canvas')
 
         // Mark as processed
         processedInterruptRef.current = interrupt.id
@@ -680,8 +852,8 @@ export function ChatInterface() {
         researchRef.current.reset()
       } else if (data.status === 'error' || data.status === 'declined') {
         processedResearchIdsRef.current.add(executionId)
-        // Just clean up research state
-        if (researchArtifactId) {
+        // Only cleanup if this is the active research (not 'in-progress' waiting for new one)
+        if (researchArtifactId && researchArtifactId !== 'in-progress') {
           setResearchArtifactId(null)
           researchRef.current.reset()
           closeCanvas()
@@ -1088,9 +1260,6 @@ If the user asks to modify this document, use the update_artifact tool to find a
             </div>
 
             <div className="flex items-center gap-2">
-              {/* Browser Live View Button */}
-              <BrowserLiveViewButton sessionId={sessionId} browserSession={browserSession} />
-
               {/* Canvas Toggle - Hidden on mobile */}
               {!isMobileView && (
                 <TooltipProvider delayDuration={300}>
@@ -1186,6 +1355,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
                         onOpenWordArtifact={handleOpenWordArtifact}
                         onOpenExcelArtifact={handleOpenExcelArtifact}
                         onOpenPptArtifact={handleOpenPptArtifact}
+                        onOpenExtractedDataArtifact={handleOpenExtractedDataArtifact}
                         researchProgress={researchProgress}
                         hideAvatar={isSwarmFinalResponse || hasHistorySwarm}
                       />
@@ -1338,6 +1508,13 @@ If the user asks to modify this document, use the update_artifact tool to find a
           onConfirmPlan: handleResearchConfirmPlan,
           onCancel: handleResearchCancel,
           sessionId: sessionId || undefined,
+        } : undefined}
+        browserState={browserArtifactId && browserSession?.sessionId ? {
+          sessionId: browserSession.sessionId,
+          browserId: browserSession.browserId || '',
+          isActive: true,
+          onConnectionError: handleBrowserConnectionError,
+          onValidationFailed: handleBrowserValidationFailed,
         } : undefined}
         sessionId={sessionId || undefined}
       />

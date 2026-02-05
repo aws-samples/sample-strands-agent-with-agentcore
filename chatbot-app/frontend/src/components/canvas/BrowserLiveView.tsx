@@ -1,17 +1,15 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Loader2, Monitor } from 'lucide-react';
+import { Monitor, RefreshCw } from 'lucide-react';
 
-// Note: Error filtering for DCV SDK is handled globally in /public/error-filter.js
-
-interface BrowserLiveViewModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  sessionId: string | null;
-  browserId: string | null;
+interface BrowserLiveViewProps {
+  sessionId: string;
+  browserId: string;
+  isActive: boolean;  // Controls DCV connection lifecycle
+  onConnectionError?: () => void;
+  onValidationFailed?: () => void;
 }
 
 declare global {
@@ -20,12 +18,13 @@ declare global {
   }
 }
 
-export function BrowserLiveViewModal({
-  isOpen,
-  onClose,
+export function BrowserLiveView({
   sessionId,
   browserId,
-}: BrowserLiveViewModalProps) {
+  isActive,
+  onConnectionError,
+  onValidationFailed,
+}: BrowserLiveViewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +32,7 @@ export function BrowserLiveViewModal({
   const connectionRef = useRef<any>(null);
   const [currentLiveViewUrl, setCurrentLiveViewUrl] = useState<string | undefined>(undefined);
   const resizeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const containerIdRef = useRef(`dcv-display-${sessionId}-${Date.now()}`);
 
   // Load DCV Web Client SDK
   useEffect(() => {
@@ -46,15 +46,14 @@ export function BrowserLiveViewModal({
 
     // Load DCV SDK from local public folder
     const script = document.createElement('script');
-    script.src = '/dcv-sdk/dcvjs-umd/dcv.js';  // Local hosted DCV SDK
+    script.src = '/dcv-sdk/dcvjs-umd/dcv.js';
     script.async = true;
     script.onload = () => {
-      console.log('DCV SDK loaded from local');
+      console.log('[BrowserLiveView] DCV SDK loaded');
 
       // Set worker path to local DCV SDK
       if (window.dcv && window.dcv.setWorkerPath) {
         window.dcv.setWorkerPath(window.location.origin + '/dcv-sdk/dcvjs-umd/dcv/');
-        console.log('DCV worker path set to:', window.location.origin + '/dcv-sdk/dcvjs-umd/dcv/');
       }
 
       setDcvLoaded(true);
@@ -75,12 +74,7 @@ export function BrowserLiveViewModal({
 
   // Connect to Live View
   useEffect(() => {
-    console.log('[BrowserLiveViewModal] useEffect triggered:', { isOpen, dcvLoaded, sessionId, browserId });
-    if (!isOpen || !dcvLoaded || !sessionId || !browserId) return;
-
-    // TypeScript type narrowing - both sessionId and browserId are guaranteed to be non-null here
-    const validSessionId: string = sessionId;
-    const validBrowserId: string = browserId;
+    if (!isActive || !dcvLoaded || !sessionId || !browserId) return;
 
     let mounted = true;
     let connectionEstablished = false;
@@ -90,13 +84,33 @@ export function BrowserLiveViewModal({
         setLoading(true);
         setError(null);
 
-        // Get fresh URL from BFF or use existing URL from metadata
-        let presignedUrl: string;
+        // Validate session first
+        let validateUrl = `/api/browser/validate-session?sessionId=${encodeURIComponent(sessionId)}`;
+        if (browserId) {
+          validateUrl += `&browserId=${encodeURIComponent(browserId)}`;
+        }
 
-        // Try to get fresh URL from BFF (auto-refresh capability)
+        try {
+          const validateResponse = await fetch(validateUrl);
+          const validateData = await validateResponse.json();
+
+          if (!validateData.isValid) {
+            console.log('[BrowserLiveView] Session not valid:', validateData.status || validateData.error);
+            if (mounted) {
+              onValidationFailed?.();
+            }
+            return;
+          }
+        } catch (validateError) {
+          console.warn('[BrowserLiveView] Validation failed:', validateError);
+          // Continue anyway - let DCV connection determine validity
+        }
+
+        // Get presigned URL from BFF
+        let presignedUrl: string;
         try {
           const response = await fetch(
-            `/api/browser/live-view?sessionId=${encodeURIComponent(validSessionId)}&browserId=${encodeURIComponent(validBrowserId)}`
+            `/api/browser/live-view?sessionId=${encodeURIComponent(sessionId)}&browserId=${encodeURIComponent(browserId)}`
           );
 
           if (response.ok) {
@@ -111,20 +125,14 @@ export function BrowserLiveViewModal({
             throw new Error(`BFF returned ${response.status}`);
           }
         } catch (bffError: any) {
-          // Fallback to liveViewUrl from metadata (without expiration check)
-          // Note: BFF refresh is the primary method, fallback is secondary
           if (currentLiveViewUrl) {
-            // Convert legacy WSS URLs to HTTPS (for backward compatibility)
             let fallbackUrl = currentLiveViewUrl;
             if (fallbackUrl.startsWith('wss://')) {
               fallbackUrl = fallbackUrl.replace('wss://', 'https://');
             }
-
             presignedUrl = fallbackUrl;
           } else {
-            throw new Error(
-              'No live view URL available and BFF refresh failed. Please run a browser tool first (browser_navigate, browser_act, or browser_extract).'
-            );
+            throw new Error('No live view URL available');
           }
         }
 
@@ -136,65 +144,53 @@ export function BrowserLiveViewModal({
           throw new Error('DCV SDK not loaded');
         }
 
-        // Reduce DCV logging noise - suppress all logs except critical errors
-        // WARN level filters out networkMonitor errors while keeping critical issues
+        // Reduce DCV logging noise
         dcv.setLogLevel(dcv.LogLevel.WARN);
 
-        console.log('[DCV] Connecting to browser session...');
+        console.log('[BrowserLiveView] Connecting to browser session...');
 
-        // Flag to track successful authentication (DCV SDK may call error callback even after success)
         let authSuccessful = false;
 
-        // Callback to inject AWS SigV4 query parameters for all DCV requests
         const httpExtraSearchParams = (method: any, url: any, body: any) => {
-          // Return query parameters from presigned URL
           const searchParams = new URL(presignedUrl).searchParams;
           return searchParams;
         };
 
-        // Authenticate first, then connect - following AWS reference implementation
+        const containerId = containerIdRef.current;
+
         dcv.authenticate(presignedUrl, {
           promptCredentials: (authType: any, callback: any) => {
-            // Credentials are in the presigned URL query params
             callback(null, null);
           },
           httpExtraSearchParams: httpExtraSearchParams,
           success: (auth: any, result: any) => {
             if (!mounted) return;
-            authSuccessful = true; // Mark authentication as successful
+            authSuccessful = true;
 
             if (result && result[0]) {
               const { sessionId: dcvSessionId, authToken } = result[0];
 
-              // Connect using the authenticated session
               dcv.connect({
                 url: presignedUrl,
                 sessionId: dcvSessionId,
                 authToken: authToken,
-                divId: 'dcv-display-container',
+                divId: containerId,
                 baseUrl: window.location.origin + '/dcv-sdk/dcvjs-umd',
                 observers: {
                   httpExtraSearchParams: httpExtraSearchParams,
                   displayLayout: (serverWidth: number, serverHeight: number) => {
-                    // Scale the display to fill the modal container
-                    const display = document.getElementById('dcv-display-container');
+                    const display = document.getElementById(containerId);
                     if (display && display.parentElement) {
-                      // Get actual parent container dimensions
                       const parent = display.parentElement;
                       const parentRect = parent.getBoundingClientRect();
 
                       const availableWidth = parentRect.width;
                       const availableHeight = parentRect.height;
 
-                      // Calculate scale to fill container
                       const scaleX = availableWidth / serverWidth;
                       const scaleY = availableHeight / serverHeight;
                       const scale = Math.min(scaleX, scaleY);
 
-                      const scaledWidth = serverWidth * scale;
-                      const scaledHeight = serverHeight * scale;
-
-                      // Position display absolutely and center it
                       display.style.width = `${serverWidth}px`;
                       display.style.height = `${serverHeight}px`;
                       display.style.transform = `scale(${scale})`;
@@ -205,17 +201,15 @@ export function BrowserLiveViewModal({
                       display.style.marginLeft = `-${serverWidth / 2}px`;
                       display.style.marginTop = `-${serverHeight / 2}px`;
 
-                      console.log(`[DCV] Browser: ${serverWidth}x${serverHeight}, Container: ${availableWidth.toFixed(0)}x${availableHeight.toFixed(0)}, Scale: ${scale.toFixed(3)}`);
+                      console.log(`[BrowserLiveView] Browser: ${serverWidth}x${serverHeight}, Scale: ${scale.toFixed(3)}`);
                     }
                   },
                   firstFrame: () => {
                     if (!mounted) return;
-                    console.log('[DCV] Connected successfully');
+                    console.log('[BrowserLiveView] Connected successfully');
                     setLoading(false);
 
                     // Nova Act recommended resolution: 1600x900 (width 1280-1920, height 650-976)
-                    // Scaling is handled by displayLayout callback
-                    // Request display layout to ensure proper size
                     if (connectionRef.current?.requestDisplayLayout) {
                       try {
                         const resizeDisplay = () => {
@@ -232,22 +226,20 @@ export function BrowserLiveViewModal({
                           }]);
                         };
 
-                        // Request multiple times for DCV SDK reliability
                         resizeDisplay();
                         setTimeout(resizeDisplay, 500);
                         setTimeout(resizeDisplay, 2000);
-
-                        console.log('[DCV] Browser resolution set to 1600×900');
                       } catch (e) {
-                        console.warn('[DCV] Could not set display layout:', e);
+                        console.warn('[BrowserLiveView] Could not set display layout:', e);
                       }
                     }
                   },
                   error: (error: any) => {
-                    console.error('[DCV] Connection error:', error);
+                    console.error('[BrowserLiveView] Connection error:', error);
                     if (!mounted) return;
                     setError(`Connection error: ${error.message || 'Unknown error'}`);
                     setLoading(false);
+                    onConnectionError?.();
                   },
                 },
               })
@@ -258,24 +250,21 @@ export function BrowserLiveViewModal({
                 })
                 .catch((error: any) => {
                   if (!mounted) return;
-                  console.error('[DCV] Connection failed:', error);
+                  console.error('[BrowserLiveView] Connection failed:', error);
                   setError(`Connection failed: ${error.message || 'Unknown error'}`);
                   setLoading(false);
+                  onConnectionError?.();
                 });
             } else {
-              console.error('[DCV] No session data in auth result');
+              console.error('[BrowserLiveView] No session data in auth result');
               setError('Authentication succeeded but no session data received');
               setLoading(false);
             }
           },
           error: (auth: any, error: any) => {
-            // IMPORTANT: Ignore error if authentication was already successful
-            // DCV SDK may call error callback even after successful authentication (SDK bug)
-            if (authSuccessful || !mounted) {
-              return;
-            }
+            if (authSuccessful || !mounted) return;
 
-            console.error('[DCV] Authentication failed:', error);
+            console.error('[BrowserLiveView] Authentication failed:', error);
 
             let errorMessage = 'Unknown authentication error';
             if (error?.message) {
@@ -286,14 +275,16 @@ export function BrowserLiveViewModal({
 
             setError(`Authentication failed: ${errorMessage}`);
             setLoading(false);
+            onConnectionError?.();
           },
         });
 
       } catch (error: any) {
         if (!mounted) return;
-        console.error('Failed to connect to live view:', error);
+        console.error('[BrowserLiveView] Failed to connect:', error);
         setError(error.message || 'Unknown error');
         setLoading(false);
+        onConnectionError?.();
       }
     }
 
@@ -301,69 +292,54 @@ export function BrowserLiveViewModal({
 
     return () => {
       mounted = false;
-      // Only disconnect if connection was actually established
-      // This prevents premature disconnection during React Strict Mode double-mounting
       if (connectionRef.current && connectionEstablished) {
         try {
           const conn = connectionRef.current;
-          connectionRef.current = null; // Clear ref first to prevent race conditions
+          connectionRef.current = null;
 
           if (conn && typeof conn.disconnect === 'function') {
-            // KNOWN ISSUE: DCV SDK disconnect causes "Close received after close" errors
-            // This is a DCV SDK bug where multiple modules try to close the same WebSocket
-            // These errors are:
-            // - Emitted by browser's WebSocket API (not JavaScript console.error)
-            // - Cannot be suppressed via JavaScript
-            // - Harmless (no functional impact or memory leaks)
-            // - Will appear in console but can be safely ignored
-            console.log('[DCV] Disconnecting (expect harmless WebSocket close errors)...');
-
+            console.log('[BrowserLiveView] Disconnecting...');
             conn.disconnect();
           }
 
-          // Clear the DCV display container to remove any lingering event handlers
-          const container = document.getElementById('dcv-display-container');
+          const container = document.getElementById(containerIdRef.current);
           if (container) {
             container.innerHTML = '';
           }
         } catch (e) {
-          // Suppress DCV SDK cleanup errors - they're expected during disconnect
+          // Suppress DCV SDK cleanup errors
         }
       }
     };
-  }, [isOpen, dcvLoaded, sessionId, browserId]);
+  }, [isActive, dcvLoaded, sessionId, browserId, onConnectionError, onValidationFailed]);
 
-  // Auto-rescale display when window size changes
+  // Auto-rescale display when container size changes
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isActive) return;
 
     const handleResize = () => {
-      // Debounce resize events
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
 
       resizeTimeoutRef.current = setTimeout(() => {
-        const display = document.getElementById('dcv-display-container');
+        const display = document.getElementById(containerIdRef.current);
 
         if (display && display.parentElement) {
           // Nova Act recommended resolution: 1600x900
           const browserWidth = parseInt(display.style.width) || 1600;
           const browserHeight = parseInt(display.style.height) || 900;
 
-          // Get actual parent container dimensions
           const parent = display.parentElement;
           const parentRect = parent.getBoundingClientRect();
 
           const availableWidth = parentRect.width;
           const availableHeight = parentRect.height;
 
-          // Calculate scale to fit
           const scaleX = availableWidth / browserWidth;
           const scaleY = availableHeight / browserHeight;
           const scale = Math.min(scaleX, scaleY);
 
-          // Apply new scale with center positioning
           display.style.transform = `scale(${scale})`;
           display.style.transformOrigin = 'center center';
           display.style.position = 'absolute';
@@ -371,94 +347,98 @@ export function BrowserLiveViewModal({
           display.style.top = '50%';
           display.style.marginLeft = `-${browserWidth / 2}px`;
           display.style.marginTop = `-${browserHeight / 2}px`;
-
-          console.log(`[DCV] Window resized, rescaling to ${scale.toFixed(3)}`);
         }
-      }, 300); // Debounce 300ms
+      }, 300);
     };
 
     window.addEventListener('resize', handleResize);
 
+    // Also observe container resize
+    const resizeObserver = new ResizeObserver(handleResize);
+    const container = containerRef.current?.parentElement;
+    if (container) {
+      resizeObserver.observe(container);
+    }
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      resizeObserver.disconnect();
       if (resizeTimeoutRef.current) {
         clearTimeout(resizeTimeoutRef.current);
       }
     };
-  }, [isOpen]);
+  }, [isActive]);
+
+  // Retry connection
+  const handleRetry = useCallback(() => {
+    setError(null);
+    setLoading(true);
+    // Force re-render by updating dcvLoaded
+    setDcvLoaded(false);
+    setTimeout(() => setDcvLoaded(!!window.dcv), 100);
+  }, []);
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent
-        className="!max-w-none p-0 flex flex-col gap-0 border-0 shadow-2xl rounded-xl overflow-hidden"
-        style={{
-          aspectRatio: '16/9',
-          maxWidth: '90vw',
-          maxHeight: '90vh',
-          width: 'min(90vw, calc(90vh * 16 / 9))',
-          height: 'min(90vh, calc(90vw * 9 / 16))'
-        }}
-      >
-        <DialogHeader className="px-4 py-2 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm border-b border-slate-200/50 dark:border-slate-700/50 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <Monitor className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-            <DialogTitle className="text-label font-medium text-slate-700 dark:text-slate-300">
-              Live View
-            </DialogTitle>
+    <div className="flex flex-col h-full w-full">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-sidebar-border/50 flex items-center justify-between flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <Monitor className="w-4 h-4 text-sidebar-foreground/70" />
+          <span className="text-label font-medium text-sidebar-foreground">Browser View</span>
+          {!loading && !error && (
             <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 dark:bg-green-400/10 rounded">
               <div className="w-1.5 h-1.5 bg-green-500 dark:bg-green-400 rounded-full animate-pulse" />
               <span className="text-[10px] font-medium text-green-600 dark:text-green-400">LIVE</span>
             </div>
-          </div>
-          <DialogDescription className="sr-only">
-            Real-time view of the browser automation session
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="relative flex-1 w-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
-          {loading && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
-              <div className="text-center">
-                <div className="relative">
-                  <div className="w-16 h-16 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-                  <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-400 rounded-full animate-ping mx-auto opacity-20"></div>
-                </div>
-                <p className="text-slate-200 font-medium">Connecting to browser session...</p>
-                <p className="text-slate-400 text-label mt-1">Please wait</p>
-              </div>
-            </div>
           )}
-
-          {error && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
-              <div className="text-center max-w-md px-6">
-                <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                </div>
-                <p className="text-heading font-semibold text-red-400 mb-2">Connection Failed</p>
-                <p className="text-label text-slate-300 mb-4">{error}</p>
-                <Button
-                  variant="outline"
-                  className="bg-slate-800 hover:bg-slate-700 text-white border-slate-600"
-                  onClick={() => window.location.reload()}
-                >
-                  Reload Page
-                </Button>
-              </div>
-            </div>
-          )}
-
-          <div
-            id="dcv-display-container"
-            ref={containerRef}
-            style={{
-              backgroundColor: '#000'
-            }}
-          />
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+
+      {/* Content */}
+      <div className="relative flex-1 w-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
+        {loading && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
+            <div className="text-center">
+              <div className="relative">
+                <div className="w-16 h-16 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
+                <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-400 rounded-full animate-ping mx-auto opacity-20"></div>
+              </div>
+              <p className="text-slate-200 font-medium">Connecting to browser session...</p>
+              <p className="text-slate-400 text-label mt-1">Please wait</p>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
+            <div className="text-center max-w-md px-6">
+              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+              </div>
+              <p className="text-heading font-semibold text-red-400 mb-2">Connection Failed</p>
+              <p className="text-label text-slate-300 mb-4">{error}</p>
+              <Button
+                variant="outline"
+                className="bg-slate-800 hover:bg-slate-700 text-white border-slate-600"
+                onClick={handleRetry}
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry
+              </Button>
+            </div>
+          </div>
+        )}
+
+        <div
+          id={containerIdRef.current}
+          ref={containerRef}
+          style={{
+            backgroundColor: '#000'
+          }}
+        />
+      </div>
+    </div>
   );
 }

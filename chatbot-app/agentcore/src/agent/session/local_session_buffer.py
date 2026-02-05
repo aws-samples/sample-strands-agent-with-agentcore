@@ -82,11 +82,11 @@ class LocalSessionBuffer:
 
         # Add to buffer
         self.pending_messages.append(message_dict)
-        logger.debug(f"📝 Buffered message (role={message_dict['role']}, total={len(self.pending_messages)})")
+        logger.debug(f"Buffered message (role={message_dict['role']}, total={len(self.pending_messages)})")
 
         # Periodic flush to prevent data loss
         if len(self.pending_messages) >= self.batch_size:
-            logger.info(f"⏰ Batch size ({self.batch_size}) reached, flushing buffer")
+            logger.info(f"Batch size ({self.batch_size}) reached, flushing buffer")
             self.flush()
 
     def flush(self):

@@ -526,12 +526,12 @@ print(f"Image uploaded: {filename} ({{len(file_bytes)}} bytes)")
             Formatted string with document list
         """
         if not documents:
-            return f"📁 **Workspace** (empty)\n\nNo {self.document_type} files found."
+            return f"**Workspace** (empty)\n\nNo {self.document_type} files found."
 
         # Sort by last_modified (most recent first)
         sorted_docs = sorted(documents, key=lambda x: x['last_modified'], reverse=True)
 
-        lines = [f"📁 **Workspace** ({len(documents)} file(s)):"]
+        lines = [f"**Workspace** ({len(documents)} file(s)):"]
         for doc in sorted_docs:
             # Format date to YYYY-MM-DD
             date_str = doc['last_modified'].split('T')[0]

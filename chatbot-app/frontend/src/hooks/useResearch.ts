@@ -96,13 +96,26 @@ export function useResearch({
       return
     }
 
-    setState(prev => ({
-      ...prev,
-      showPlanConfirm: false,
-      isResearching: approved,
-      progress: approved ? 'Starting research...' : '',
-      resultParts: [],
-    }))
+    if (approved) {
+      setState(prev => ({
+        ...prev,
+        showPlanConfirm: false,
+        isResearching: true,
+        progress: 'Starting research...',
+        resultParts: [],
+      }))
+    } else {
+      // Reset all state on decline
+      setState({
+        isResearching: false,
+        progress: '',
+        plan: null,
+        showPlanConfirm: false,
+        resultParts: [],
+        completedResult: null,
+        error: null,
+      })
+    }
 
     // Send response to interrupt
     respondToInterrupt(interruptId, approved ? 'yes' : 'no')

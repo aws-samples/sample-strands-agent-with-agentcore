@@ -37,9 +37,9 @@ class WordManager(BaseDocumentManager):
             Formatted string for display
         """
         if not documents:
-            return "📁 **Workspace**: Empty (no documents yet)"
+            return "**Workspace**: Empty (no documents yet)"
 
-        lines = [f"📁 **Workspace** ({len(documents)} document{'s' if len(documents) > 1 else ''}):"]
+        lines = [f"**Workspace** ({len(documents)} document{'s' if len(documents) > 1 else ''}):"]
 
         for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
             # Parse ISO timestamp
@@ -72,9 +72,9 @@ class ExcelManager(BaseDocumentManager):
             Formatted string for display
         """
         if not documents:
-            return "📁 **Workspace**: Empty (no spreadsheets yet)"
+            return "**Workspace**: Empty (no spreadsheets yet)"
 
-        lines = [f"📁 **Workspace** ({len(documents)} spreadsheet{'s' if len(documents) > 1 else ''}):"]
+        lines = [f"**Workspace** ({len(documents)} spreadsheet{'s' if len(documents) > 1 else ''}):"]
 
         for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
             # Parse ISO timestamp
@@ -117,9 +117,9 @@ class PowerPointManager(BaseDocumentManager):
             Formatted string for display
         """
         if not documents:
-            return "📁 **Workspace**: Empty (no presentations yet)"
+            return "**Workspace**: Empty (no presentations yet)"
 
-        lines = [f"📁 **Workspace** ({len(documents)} presentation{'s' if len(documents) > 1 else ''}):"]
+        lines = [f"**Workspace** ({len(documents)} presentation{'s' if len(documents) > 1 else ''}):"]
 
         for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
             # Parse ISO timestamp
@@ -235,9 +235,9 @@ class ImageManager(BaseDocumentManager):
             Formatted string for display
         """
         if not documents:
-            return "📁 **Workspace**: Empty (no images yet)"
+            return "**Workspace**: Empty (no images yet)"
 
-        lines = [f"📁 **Workspace** ({len(documents)} image{'s' if len(documents) > 1 else ''}):"]
+        lines = [f"**Workspace** ({len(documents)} image{'s' if len(documents) > 1 else ''}):"]
 
         for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
             # Parse ISO timestamp

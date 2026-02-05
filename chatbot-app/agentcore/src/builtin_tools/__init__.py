@@ -7,7 +7,7 @@ This package contains tools that leverage AWS Bedrock capabilities:
 - Excel Spreadsheets: Create, modify, and manage Excel spreadsheets with persistent storage
 - PowerPoint Presentations: Create, modify, and manage PowerPoint presentations with persistent storage
 
-⚠️  IMPORTANT: When adding a NEW TOOL, you MUST complete ALL 3 steps:
+IMPORTANT: When adding a NEW TOOL, you MUST complete ALL 3 steps:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Add tool import and export in THIS file (__init__.py)
 2. Add tool definition in: chatbot-app/frontend/src/config/tools-config.json
@@ -26,7 +26,7 @@ from .diagram_tool import generate_diagram_and_validate
 from .artifact_editor_tool import update_artifact
 
 # Nova Act browser tools
-from .nova_act_browser_tools import browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs, browser_drag, browser_save_screenshot
+from .nova_act_browser_tools import browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs, browser_save_screenshot
 
 from .word_document_tool import (
     create_word_document,
@@ -64,7 +64,6 @@ __all__ = [
     'browser_extract',
     'browser_get_page_info',
     'browser_manage_tabs',
-    'browser_drag',
     'browser_save_screenshot',
     'create_word_document',
     'modify_word_document',
@@ -124,6 +123,5 @@ BUILTIN_TOOLS.extend([
     browser_extract,
     browser_get_page_info,
     browser_manage_tabs,
-    browser_drag,
     browser_save_screenshot,
 ])

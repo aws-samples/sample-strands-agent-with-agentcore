@@ -10,6 +10,7 @@ import { fetchAuthSession } from 'aws-amplify/auth'
 import { apiPost } from '@/lib/api-client'
 
 import { WorkspaceDocument } from './useStreamEvents'
+import { ExtractedDataInfo } from './useCanvasHandlers'
 
 interface UseChatProps {
   onSessionCreated?: () => void
@@ -17,6 +18,8 @@ interface UseChatProps {
   onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
   onExcelDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Excel documents are created
   onPptDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when PowerPoint documents are created
+  onBrowserSessionDetected?: (browserSessionId: string, browserId: string) => void  // Callback when browser session is first detected
+  onExtractedDataCreated?: (data: ExtractedDataInfo) => void  // Callback when browser_extract creates artifact
 }
 
 interface UseChatReturn {
@@ -190,7 +193,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     onArtifactUpdated: props?.onArtifactUpdated,
     onWordDocumentsCreated: props?.onWordDocumentsCreated,
     onExcelDocumentsCreated: props?.onExcelDocumentsCreated,
-    onPptDocumentsCreated: props?.onPptDocumentsCreated
+    onPptDocumentsCreated: props?.onPptDocumentsCreated,
+    onBrowserSessionDetected: props?.onBrowserSessionDetected,
+    onExtractedDataCreated: props?.onExtractedDataCreated
   })
 
   // ==================== CHAT API HOOK ====================

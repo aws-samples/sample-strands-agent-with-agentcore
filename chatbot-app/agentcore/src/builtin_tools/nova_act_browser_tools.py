@@ -5,7 +5,7 @@ Each tool returns a screenshot to show current browser state.
 
 import os
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Union
 from strands import tool, ToolContext
 from .lib.browser_controller import get_or_create_controller
 
@@ -34,6 +34,115 @@ def _format_tab_summary(tabs: List[Dict], current_tab: int = 0) -> str:
         tab_parts.append(f"[{tab['index']}] {title}{marker}")
 
     return f"**Tabs** ({len(tabs)}): " + " | ".join(tab_parts)
+
+
+def _save_extracted_data_artifact(
+    tool_context: ToolContext,
+    description: str,
+    extracted_data: Any,
+    page_url: str,
+    page_title: str,
+    session_id: str
+) -> Optional[str]:
+    """Save extracted data as JSON artifact to agent.state for Canvas display.
+
+    Args:
+        tool_context: Strands ToolContext
+        description: Extraction description
+        extracted_data: The extracted data (dict or list)
+        page_url: Source page URL
+        page_title: Source page title
+        session_id: Session ID for isolation
+
+    Returns:
+        artifact_id if successful, None otherwise
+    """
+    import json
+    from datetime import datetime, timezone
+
+    try:
+        # Check if agent is available
+        logger.info(f"[_save_extracted_data_artifact] tool_context: {tool_context}, has agent: {hasattr(tool_context, 'agent') if tool_context else False}")
+        if tool_context:
+            logger.info(f"[_save_extracted_data_artifact] agent: {tool_context.agent}")
+
+        if not tool_context or not tool_context.agent:
+            logger.warning("No agent available in tool_context, skipping artifact save")
+            return None
+
+        # Generate artifact ID using timestamp
+        timestamp = datetime.now(timezone.utc)
+        artifact_id = f"extracted-{timestamp.strftime('%Y%m%d-%H%M%S')}"
+
+        # Create title from description (truncate if too long)
+        title = description[:50] + "..." if len(description) > 50 else description
+
+        # Get user_id from environment
+        user_id = os.environ.get('USER_ID', 'default_user')
+
+        # Save JSON file to workspace (S3)
+        try:
+            import boto3
+            from workspace import get_workspace_bucket
+
+            bucket = get_workspace_bucket()
+            s3_key = f"documents/{user_id}/{session_id}/extracted/{artifact_id}.json"
+
+            json_content = json.dumps(extracted_data, indent=2, ensure_ascii=False)
+
+            s3_client = boto3.client('s3')
+            s3_client.put_object(
+                Bucket=bucket,
+                Key=s3_key,
+                Body=json_content.encode('utf-8'),
+                ContentType='application/json'
+            )
+            logger.info(f"Saved extracted data to S3: s3://{bucket}/{s3_key}")
+        except Exception as s3_error:
+            logger.warning(f"Failed to save JSON to S3: {s3_error}")
+            s3_key = None
+
+        # Get current artifacts from agent.state
+        artifacts = tool_context.agent.state.get("artifacts") or {}
+
+        # Create artifact
+        artifacts[artifact_id] = {
+            "id": artifact_id,
+            "type": "extracted_data",
+            "title": title,
+            "content": json.dumps(extracted_data, indent=2, ensure_ascii=False),
+            "description": description,
+            "toolName": "browser_extract",
+            "metadata": {
+                "source_url": page_url,
+                "source_title": page_title,
+                "s3_key": s3_key,
+                "user_id": user_id,
+                "session_id": session_id
+            },
+            "created_at": timestamp.isoformat(),
+            "updated_at": timestamp.isoformat()
+        }
+
+        # Save to agent.state
+        tool_context.agent.state.set("artifacts", artifacts)
+
+        # Sync agent state to persistence
+        session_manager = tool_context.invocation_state.get("session_manager")
+        if not session_manager and hasattr(tool_context.agent, 'session_manager'):
+            session_manager = tool_context.agent.session_manager
+
+        if session_manager:
+            session_manager.sync_agent(tool_context.agent)
+            logger.info(f"Saved extracted data artifact: {artifact_id}")
+        else:
+            logger.warning(f"No session_manager found, artifact not persisted: {artifact_id}")
+
+        return artifact_id
+
+    except Exception as e:
+        logger.error(f"Failed to save extracted data artifact: {e}")
+        return None
 
 
 def _format_tab_list_detailed(tabs: List[Dict]) -> str:
@@ -94,7 +203,7 @@ def browser_navigate(url: str, tool_context: ToolContext) -> Dict[str, Any]:
 
             # Prepare response with screenshot (code interpreter format)
             content = [{
-                "text": f"""✅ **Navigated successfully**
+                "text": f"""**Navigated successfully**
 
 **URL**: {result.get('current_url', url)}
 **Page Title**: {result.get('page_title', 'N/A')}{tab_line}
@@ -129,7 +238,7 @@ Current page is shown in the screenshot below."""
         else:
             return {
                 "content": [{
-                    "text": f"❌ **Navigation failed**\n\n{result.get('message', 'Unknown error')}"
+                    "text": f"**Navigation failed**\n\n{result.get('message', 'Unknown error')}"
                 }],
                 "status": "error"
             }
@@ -138,7 +247,7 @@ Current page is shown in the screenshot below."""
         logger.error(f"browser_navigate failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Navigation error**: {str(e)}"
+                "text": f"**Navigation error**: {str(e)}"
             }],
             "status": "error"
         }
@@ -151,18 +260,16 @@ def browser_act(instruction: str, tool_context: ToolContext) -> Dict[str, Any]:
 
     Capabilities:
     - Actions: click, type, scroll, select dropdowns
-    - Can execute 2-3 related steps in sequence when visible on screen
+    - Can execute up to 3 predictable steps in sequence
 
     Limitations:
-    - Does NOT support drag operations - use browser_drag instead for drawing, resizing, or moving elements
-    - Has 3-step limit. If fails, simplify instruction or try different tool
+    - Has 5-step limit. If fails, check screenshot and retry from current state
     - For DOM attributes, use browser_get_page_info()
 
     Args:
         instruction: Natural language instruction for UI actions.
-
-                    Sequential steps: "Type 'laptop' in search box and click search button"
-                    Single step: "Click the login button" (when exploring unknown page)
+                    Use numbered steps for predictable sequences:
+                    "1. Type 'laptop' in search box 2. Click search button 3. Click first result"
 
     Returns screenshot showing the result.
     """
@@ -180,7 +287,7 @@ def browser_act(instruction: str, tool_context: ToolContext) -> Dict[str, Any]:
         controller = get_or_create_controller(session_id)
         result = controller.act(instruction)
 
-        status_emoji = "✅" if result["status"] == "success" else "⚠️"
+        status_emoji = "[OK]" if result["status"] == "success" else "[WARN]"
 
         # Format tab summary if multiple tabs
         tab_summary = _format_tab_summary(
@@ -228,7 +335,7 @@ Current page state is shown in the screenshot below."""
         logger.error(f"browser_act failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Action error**: {str(e)}\n\n**Instruction**: {instruction}"
+                "text": f"**Action error**: {str(e)}\n\n**Instruction**: {instruction}"
             }],
             "status": "error"
         }
@@ -245,7 +352,7 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
     - Detects repeated patterns and extracts systematically
 
     Limitations:
-    - Has 6-step limit. If too complex, break down task or simplify schema
+    - Has 12-step limit. Check screenshot on failure and retry from current state
     - For DOM attributes, use browser_get_page_info()
 
     Args:
@@ -284,7 +391,8 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
 
         if result["status"] == "success":
             import json
-            extracted_data_str = json.dumps(result.get("data", {}), indent=2, ensure_ascii=False)
+            extracted_data = result.get("data", {})
+            extracted_data_str = json.dumps(extracted_data, indent=2, ensure_ascii=False)
             schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
 
             # Format tab summary if multiple tabs
@@ -294,8 +402,19 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
             )
             tab_line = f"\n{tab_summary}" if tab_summary else ""
 
+            # Save extracted data as artifact
+            artifact_id = _save_extracted_data_artifact(
+                tool_context=tool_context,
+                description=description,
+                extracted_data=extracted_data,
+                page_url=result.get('current_url', 'N/A'),
+                page_title=result.get('page_title', 'N/A'),
+                session_id=session_id
+            )
+            artifact_line = f"\n\n**Saved as artifact**: {artifact_id} (view in Canvas)" if artifact_id else ""
+
             content = [{
-                "text": f"""✅ **Data extracted successfully**
+                "text": f"""**Data extracted successfully**
 
 **Description**: {description}
 
@@ -305,7 +424,7 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
 ```
 
 **Current URL**: {result.get('current_url', 'N/A')}
-**Page Title**: {result.get('page_title', 'N/A')}{tab_line}
+**Page Title**: {result.get('page_title', 'N/A')}{tab_line}{artifact_line}
 
 **Extracted Data**:
 ```json
@@ -320,6 +439,8 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
                 metadata["browserSessionId"] = controller.browser_session_client.session_id
                 if controller.browser_id:
                     metadata["browserId"] = controller.browser_id
+            if artifact_id:
+                metadata["artifactId"] = artifact_id
 
             return {
                 "content": content,
@@ -331,7 +452,7 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
             schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
             return {
                 "content": [{
-                    "text": f"❌ **Extraction failed**\n\n{result.get('message', 'Unknown error')}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"
+                    "text": f"**Extraction failed**\n\n{result.get('message', 'Unknown error')}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"
                 }],
                 "status": "error"
             }
@@ -342,7 +463,7 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
         schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
         return {
             "content": [{
-                "text": f"❌ **Extraction error**: {str(e)}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"
+                "text": f"**Extraction error**: {str(e)}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"
             }],
             "status": "error"
         }
@@ -427,9 +548,9 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
             # State warnings
             if state['has_alerts']:
                 summary_lines.append("")
-                summary_lines.append(f"⚠️ **Alerts detected**: {len(state['alert_messages'])}")
+                summary_lines.append(f"**Alerts detected**: {len(state['alert_messages'])}")
             if state['has_modals']:
-                summary_lines.append(f"⚠️ **Modal is open**")
+                summary_lines.append(f"**Modal is open**")
             if state['has_loading']:
                 summary_lines.append(f"⏳ **Page is loading**")
 
@@ -443,7 +564,7 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
             summary = "\n".join(summary_lines)
 
             content = [{
-                "text": f"""✅ **Page information collected**
+                "text": f"""**Page information collected**
 
 {summary}
 
@@ -469,7 +590,7 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
         else:
             return {
                 "content": [{
-                    "text": f"❌ **Failed to get page info**\n\n{result.get('message', 'Unknown error')}"
+                    "text": f"**Failed to get page info**\n\n{result.get('message', 'Unknown error')}"
                 }],
                 "status": "error"
             }
@@ -478,7 +599,7 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
         logger.error(f"browser_get_page_info failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Error getting page info**: {str(e)}"
+                "text": f"**Error getting page info**: {str(e)}"
             }],
             "status": "error"
         }
@@ -535,7 +656,7 @@ def browser_manage_tabs(
         if action not in valid_actions:
             return {
                 "content": [{
-                    "text": f"❌ **Invalid action**: '{action}'. Must be one of: {', '.join(valid_actions)}\n\n💡 **Tip**: To view all tabs, use browser_get_page_info() instead."
+                    "text": f"**Invalid action**: '{action}'. Must be one of: {', '.join(valid_actions)}\n\nTip:**Tip**: To view all tabs, use browser_get_page_info() instead."
                 }],
                 "status": "error"
             }
@@ -545,7 +666,7 @@ def browser_manage_tabs(
             if tab_index is None:
                 return {
                     "content": [{
-                        "text": "❌ **tab_index required** for 'switch' action. Example: browser_manage_tabs(action='switch', tab_index=0)"
+                        "text": "**tab_index required** for 'switch' action. Example: browser_manage_tabs(action='switch', tab_index=0)"
                     }],
                     "status": "error"
                 }
@@ -556,7 +677,7 @@ def browser_manage_tabs(
                 tab_details = _format_tab_list_detailed(result.get('tabs', []))
 
                 content = [{
-                    "text": f"""✅ **Switched to tab {result.get('current_tab', tab_index)}**
+                    "text": f"""**Switched to tab {result.get('current_tab', tab_index)}**
 
 **URL**: {result.get('current_url', 'N/A')}
 **Title**: {result.get('page_title', 'N/A')}
@@ -588,7 +709,7 @@ Current tab screenshot shown below."""
             else:
                 return {
                     "content": [{
-                        "text": f"❌ **Switch failed**: {result.get('message', 'Unknown error')}"
+                        "text": f"**Switch failed**: {result.get('message', 'Unknown error')}"
                     }],
                     "status": "error"
                 }
@@ -597,7 +718,7 @@ Current tab screenshot shown below."""
             if tab_index is None:
                 return {
                     "content": [{
-                        "text": "❌ **tab_index required** for 'close' action. Example: browser_manage_tabs(action='close', tab_index=1)"
+                        "text": "**tab_index required** for 'close' action. Example: browser_manage_tabs(action='close', tab_index=1)"
                     }],
                     "status": "error"
                 }
@@ -608,7 +729,7 @@ Current tab screenshot shown below."""
                 tab_details = _format_tab_list_detailed(result.get('tabs', []))
 
                 content = [{
-                    "text": f"""✅ **Tab closed**
+                    "text": f"""**Tab closed**
 
 {result.get('message', 'Tab closed successfully')}
 
@@ -643,7 +764,7 @@ Current tab screenshot shown below."""
             else:
                 return {
                     "content": [{
-                        "text": f"❌ **Close failed**: {result.get('message', 'Unknown error')}"
+                        "text": f"**Close failed**: {result.get('message', 'Unknown error')}"
                     }],
                     "status": "error"
                 }
@@ -658,7 +779,7 @@ Current tab screenshot shown below."""
                 tab_details = _format_tab_list_detailed(result.get('tabs', []))
 
                 content = [{
-                    "text": f"""✅ **New tab created**
+                    "text": f"""**New tab created**
 
 {result.get('message', 'Tab created successfully')}
 
@@ -693,7 +814,7 @@ Current tab screenshot shown below."""
             else:
                 return {
                     "content": [{
-                        "text": f"❌ **Create failed**: {result.get('message', 'Unknown error')}"
+                        "text": f"**Create failed**: {result.get('message', 'Unknown error')}"
                     }],
                     "status": "error"
                 }
@@ -702,125 +823,7 @@ Current tab screenshot shown below."""
         logger.error(f"browser_manage_tabs failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Tab management error**: {str(e)}"
-            }],
-            "status": "error"
-        }
-
-
-@tool(context=True)
-def browser_drag(
-    start_x: int,
-    start_y: int,
-    end_x: int,
-    end_y: int,
-    steps: int = 10,
-    include_screenshot: bool = False,
-    tool_context: ToolContext = None
-) -> Dict[str, Any]:
-    """
-    Drag from start coordinates to end coordinates using Playwright.
-    Useful for drawing, resizing elements, moving objects, or slider controls.
-
-    Args:
-        start_x: X coordinate to start drag (pixels from left edge of viewport)
-        start_y: Y coordinate to start drag (pixels from top edge of viewport)
-        end_x: X coordinate to end drag (pixels from left edge of viewport)
-        end_y: Y coordinate to end drag (pixels from top edge of viewport)
-        steps: Number of intermediate points for smooth movement (default: 10)
-        include_screenshot: Whether to include screenshot in response (default: False, saves ~1s)
-
-    Tip: Use browser_get_page_info() first to understand page dimensions and viewport size.
-    Set include_screenshot=True when you need to verify the result visually.
-    """
-    try:
-        # Get session_id from ToolContext
-        session_id = tool_context.invocation_state.get("session_id")
-        if not session_id and hasattr(tool_context.agent, '_session_manager'):
-            session_id = tool_context.agent._session_manager.session_id
-            logger.info(f"[browser_drag] Using session_id from agent._session_manager: {session_id}")
-        elif session_id:
-            logger.info(f"[browser_drag] Using session_id from invocation_state: {session_id}")
-        else:
-            raise ValueError("session_id not found in ToolContext")
-
-        controller = get_or_create_controller(session_id)
-
-        # Ensure browser is connected
-        if not controller._connected:
-            controller.connect()
-
-        # Get the current page
-        page = controller._get_current_page()
-        if not page:
-            return {
-                "content": [{
-                    "text": "❌ **Drag failed**: No active browser page"
-                }],
-                "status": "error"
-            }
-
-        logger.info(f"Dragging from ({start_x}, {start_y}) to ({end_x}, {end_y}) with {steps} steps")
-
-        # Perform drag using Playwright's mouse API
-        page.mouse.move(start_x, start_y)
-        page.mouse.down()
-        page.mouse.move(end_x, end_y, steps=steps)
-        page.mouse.up()
-
-        # Get current page info
-        current_url = page.url
-        page_title = page.title()
-
-        # Format tab summary if multiple tabs
-        tab_summary = _format_tab_summary(
-            controller.get_tab_list(),
-            controller._current_tab_index
-        )
-        tab_line = f"\n{tab_summary}" if tab_summary else ""
-
-        content = [{
-            "text": f"""✅ **Drag completed**
-
-**From**: ({start_x}, {start_y})
-**To**: ({end_x}, {end_y})
-**Steps**: {steps}
-**Current URL**: {current_url}
-**Page Title**: {page_title}{tab_line}"""
-        }]
-
-        # Only take screenshot if requested
-        if include_screenshot:
-            screenshot_data = controller._take_screenshot()
-            if screenshot_data:
-                content[0]["text"] += "\n\nScreenshot captured below."
-                content.append({
-                    "image": {
-                        "format": "jpeg",
-                        "source": {
-                            "bytes": screenshot_data  # Raw bytes
-                        }
-                    }
-                })
-
-        # Get browser session info for Live View
-        metadata = {}
-        if controller.browser_session_client and controller.browser_session_client.session_id:
-            metadata["browserSessionId"] = controller.browser_session_client.session_id
-            if controller.browser_id:
-                metadata["browserId"] = controller.browser_id
-
-        return {
-            "content": content,
-            "status": "success",
-            "metadata": metadata
-        }
-
-    except Exception as e:
-        logger.error(f"browser_drag failed: {e}")
-        return {
-            "content": [{
-                "text": f"❌ **Drag error**: {str(e)}"
+                "text": f"**Tab management error**: {str(e)}"
             }],
             "status": "error"
         }
@@ -852,7 +855,7 @@ def browser_save_screenshot(filename: str, tool_context: ToolContext) -> Dict[st
         if not filename.lower().endswith(('.png', '.jpg', '.jpeg')):
             return {
                 "content": [{
-                    "text": "❌ **Invalid filename**: Must end with .png, .jpg, or .jpeg"
+                    "text": "**Invalid filename**: Must end with .png, .jpg, or .jpeg"
                 }],
                 "status": "error"
             }
@@ -882,7 +885,7 @@ def browser_save_screenshot(filename: str, tool_context: ToolContext) -> Dict[st
         if page_info.get("status") != "success":
             return {
                 "content": [{
-                    "text": "❌ **Failed to capture screenshot**: Browser not ready"
+                    "text": "**Failed to capture screenshot**: Browser not ready"
                 }],
                 "status": "error"
             }
@@ -893,7 +896,7 @@ def browser_save_screenshot(filename: str, tool_context: ToolContext) -> Dict[st
         if not screenshot_bytes:
             return {
                 "content": [{
-                    "text": "❌ **No screenshot data available**"
+                    "text": "**No screenshot data available**"
                 }],
                 "status": "error"
             }
@@ -910,7 +913,7 @@ def browser_save_screenshot(filename: str, tool_context: ToolContext) -> Dict[st
 
         return {
             "content": [{
-                "text": f"""✅ **Screenshot saved to workspace**
+                "text": f"""**Screenshot saved to workspace**
 
 **Filename**: {filename}
 **Source**: {current_title}
@@ -925,7 +928,7 @@ This image is now available in workspace and can be referenced by filename in do
         logger.error(f"browser_save_screenshot failed: {e}")
         return {
             "content": [{
-                "text": f"❌ **Screenshot save error**: {str(e)}"
+                "text": f"**Screenshot save error**: {str(e)}"
             }],
             "status": "error"
         }

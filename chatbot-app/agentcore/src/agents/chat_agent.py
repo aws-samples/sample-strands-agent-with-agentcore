@@ -327,7 +327,7 @@ class ChatAgent(BaseAgent):
             effective_api_keys = api_keys or self.api_keys
             if effective_api_keys:
                 invocation_state['api_keys'] = effective_api_keys
-                logger.debug(f"Added API keys to invocation_state: {list(effective_api_keys.keys())}")
+                logger.debug(f"Added API keys to invocation_state: {len(effective_api_keys)} key(s)")
 
                 # Update Gateway client's api_keys for tool calls
                 if self.gateway_client and hasattr(self.gateway_client, 'api_keys'):

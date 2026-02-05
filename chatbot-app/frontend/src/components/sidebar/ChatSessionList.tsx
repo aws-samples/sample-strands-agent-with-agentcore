@@ -50,30 +50,36 @@ export function ChatSessionList({
 
   return (
     <div className="px-2 space-y-1">
-      {sessions.map((session) => (
-        <div
-          key={session.sessionId}
-          className={`group/session flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer ${
-            session.sessionId === currentSessionId ? 'bg-sidebar-accent' : ''
-          }`}
-          onClick={() => {
-            if (onLoadSession) {
-              onLoadSession(session.sessionId);
-            }
-          }}
-        >
-          <span className="text-[15px] text-sidebar-foreground truncate flex-1 pr-2">
-            {session.title}
-          </span>
-          <button
-            onClick={(e) => handleDeleteSession(session.sessionId, e)}
-            className="opacity-0 group-hover/session:opacity-100 transition-opacity p-1.5 rounded hover:bg-destructive/10 text-sidebar-foreground/40 hover:text-destructive flex-shrink-0"
-            title="Delete"
+      {sessions.map((session) => {
+        const isCurrentSession = session.sessionId === currentSessionId;
+
+        return (
+          <div
+            key={session.sessionId}
+            className={`group/session flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer ${
+              isCurrentSession ? 'bg-sidebar-accent' : ''
+            }`}
+            onClick={() => {
+              if (onLoadSession) {
+                onLoadSession(session.sessionId);
+              }
+            }}
           >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      ))}
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <span className="text-[15px] text-sidebar-foreground truncate">
+                {session.title}
+              </span>
+            </div>
+            <button
+              onClick={(e) => handleDeleteSession(session.sessionId, e)}
+              className="opacity-0 group-hover/session:opacity-100 transition-opacity p-1.5 rounded hover:bg-destructive/10 text-sidebar-foreground/40 hover:text-destructive flex-shrink-0"
+              title="Delete"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+        );
+      })}
     </div>
   );
 }
