@@ -80,5 +80,14 @@ export interface Tool {
   category: string
   tool_type?: "local" | "builtin" | "gateway" | "runtime-a2a"
   connection_status?: "connected" | "disconnected" | "invalid" | "unknown"
+  active?: boolean  // Deployment-time availability (default: true)
+}
+
+export interface NestedTool {
+  id: string
+  name: string
+  description: string
+  enabled?: boolean
+  active?: boolean  // Deployment-time availability (default: true)
 }
 

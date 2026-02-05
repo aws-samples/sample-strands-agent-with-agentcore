@@ -19,6 +19,14 @@ const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
 export const runtime = 'nodejs'
 
 /**
+ * Filter tools where active !== false (undefined defaults to true for backward compatibility)
+ * Tools with active: false are completely hidden from UI and AUTO mode
+ */
+function filterActiveTools<T>(tools: T[]): T[] {
+  return tools.filter(tool => (tool as any).active !== false)
+}
+
+/**
  * Check if tool registry needs sync by comparing tool counts
  * Returns true if any category has different tool counts
  */
@@ -145,8 +153,11 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Step 3: Map tools with user-specific enabled state
-    const localTools = (toolsConfig.local_tools || []).map((tool: any) => ({
+    // Step 3: Filter inactive tools and map with user-specific enabled state
+    const activeLocalTools = filterActiveTools(toolsConfig.local_tools || [])
+    console.log(`[API] local_tools: ${toolsConfig.local_tools?.length || 0} total, ${activeLocalTools.length} active`)
+
+    const localTools = activeLocalTools.map((tool: any) => ({
       id: tool.id,
       name: tool.name,
       description: tool.description,
@@ -156,7 +167,10 @@ export async function GET(request: NextRequest) {
       enabled: enabledToolIds.includes(tool.id)
     }))
 
-    const builtinTools = (toolsConfig.builtin_tools || []).map((tool: any) => {
+    const activeBuiltinTools = filterActiveTools(toolsConfig.builtin_tools || [])
+    console.log(`[API] builtin_tools: ${toolsConfig.builtin_tools?.length || 0} total, ${activeBuiltinTools.length} active`)
+
+    const builtinTools = activeBuiltinTools.map((tool: any) => {
       // Check if this is a dynamic tool with nested tools
       const isDynamic = tool.isDynamic === true
       const hasNestedTools = tool.tools && Array.isArray(tool.tools)
@@ -199,7 +213,10 @@ export async function GET(request: NextRequest) {
     })
 
     // Browser automation tools (separate category)
-    const browserAutomation = (toolsConfig.browser_automation || []).map((group: any) => {
+    const activeBrowserAutomation = filterActiveTools(toolsConfig.browser_automation || [])
+    console.log(`[API] browser_automation: ${toolsConfig.browser_automation?.length || 0} total, ${activeBrowserAutomation.length} active`)
+
+    const browserAutomation = activeBrowserAutomation.map((group: any) => {
       // Check if any tool in the group is enabled (only if group has tools)
       const anyToolEnabled = group.tools && Array.isArray(group.tools)
         ? group.tools.some((tool: any) => enabledToolIds.includes(tool.id))
@@ -227,7 +244,9 @@ export async function GET(request: NextRequest) {
     })
 
     // Gateway tools (grouped like Browser Automation)
-    const gatewayTargets = toolsConfig.gateway_targets || []
+    const gatewayTargets = filterActiveTools(toolsConfig.gateway_targets || [])
+    console.log(`[API] gateway_targets: ${toolsConfig.gateway_targets?.length || 0} total, ${gatewayTargets.length} active`)
+
     const gatewayTools = gatewayTargets.map((target: any) => {
       // Check if any tool in the group is enabled (only if target has tools)
       const anyToolEnabled = target.tools && Array.isArray(target.tools)
@@ -256,7 +275,9 @@ export async function GET(request: NextRequest) {
     })
 
     // Runtime A2A agents (grouped)
-    const runtimeA2AServers = toolsConfig.agentcore_runtime_a2a || []
+    const runtimeA2AServers = filterActiveTools(toolsConfig.agentcore_runtime_a2a || [])
+    console.log(`[API] agentcore_runtime_a2a: ${toolsConfig.agentcore_runtime_a2a?.length || 0} total, ${runtimeA2AServers.length} active`)
+
     const runtimeA2ATools = runtimeA2AServers.map((server: any) => {
       // For A2A agents, check if the agent itself is enabled (not nested tools)
       const isEnabled = enabledToolIds.includes(server.id)

@@ -11,6 +11,7 @@
       "category": "utilities",
       "icon": "🧮",
       "enabled": true,
+      "active": false,
       "isDynamic": false,
       "displayName": { "running": "Calculating", "complete": "Calculated" },
       "tags": ["math", "finance", "business", "report", "analysis"]

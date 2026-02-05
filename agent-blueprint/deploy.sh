@@ -4,6 +4,15 @@ set -e
 # Strands Agent Chatbot - Main Deployment Orchestrator
 # Routes to specific deployment scripts
 
+# AWS Profile support
+# Usage: PROFILE=myprofile ./deploy.sh
+AWS_PROFILE_FLAG=""
+if [ -n "$PROFILE" ]; then
+    AWS_PROFILE_FLAG="--profile $PROFILE"
+    export AWS_PROFILE="$PROFILE"
+    echo "Using AWS Profile: $PROFILE"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -143,7 +152,7 @@ check_aws() {
         exit 1
     fi
 
-    if ! aws sts get-caller-identity &> /dev/null; then
+    if ! aws sts get-caller-identity $AWS_PROFILE_FLAG &> /dev/null; then
         log_error "AWS CLI is not configured. Please run: aws configure"
         exit 1
     fi
@@ -167,7 +176,8 @@ deploy_agentcore_runtime() {
         --secret-id "strands-agent-chatbot/nova-act-api-key" \
         --query 'Name' \
         --output text \
-        --region "$AWS_REGION" 2>/dev/null || echo "")
+        --region "$AWS_REGION" \
+        $AWS_PROFILE_FLAG 2>/dev/null || echo "")
 
     if [ -z "$NOVA_SECRET_EXISTS" ]; then
         log_warn "Nova Act API Key not configured"
@@ -183,11 +193,13 @@ deploy_agentcore_runtime() {
                 --name "strands-agent-chatbot/nova-act-api-key" \
                 --secret-string "$NOVA_ACT_KEY" \
                 --description "Nova Act API Key for browser automation" \
-                --region "$AWS_REGION" > /dev/null 2>&1 || \
+                --region "$AWS_REGION" \
+                $AWS_PROFILE_FLAG > /dev/null 2>&1 || \
             aws secretsmanager put-secret-value \
                 --secret-id "strands-agent-chatbot/nova-act-api-key" \
                 --secret-string "$NOVA_ACT_KEY" \
-                --region "$AWS_REGION" > /dev/null 2>&1
+                --region "$AWS_REGION" \
+                $AWS_PROFILE_FLAG > /dev/null 2>&1
             log_info "Nova Act API Key configured"
         else
             log_warn "Skipped - Browser automation tools will not work without API key"
@@ -210,7 +222,7 @@ deploy_agentcore_runtime() {
     npm run build
 
     # Check if ECR repository already exists
-    if aws ecr describe-repositories --repository-names strands-agent-chatbot-agent-core --region $AWS_REGION &> /dev/null; then
+    if aws ecr describe-repositories --repository-names strands-agent-chatbot-agent-core --region $AWS_REGION $AWS_PROFILE_FLAG &> /dev/null; then
         log_info "ECR repository already exists, importing..."
         export USE_EXISTING_ECR=true
     else
@@ -220,19 +232,21 @@ deploy_agentcore_runtime() {
 
     # Deploy infrastructure
     log_step "Deploying CDK infrastructure..."
-    npx cdk deploy --require-approval never
+    npx cdk deploy --require-approval never $AWS_PROFILE_FLAG
 
     # Get outputs
     log_step "Retrieving stack outputs..."
     REPO_URI=$(aws cloudformation describe-stacks \
         --stack-name AgentRuntimeStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`RepositoryUri`].OutputValue' \
         --output text)
 
     EXECUTION_ROLE_ARN=$(aws cloudformation describe-stacks \
         --stack-name AgentRuntimeStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`ExecutionRoleArn`].OutputValue' \
         --output text)
 
@@ -245,12 +259,14 @@ deploy_agentcore_runtime() {
     RUNTIME_ARN=$(aws cloudformation describe-stacks \
         --stack-name AgentRuntimeStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' \
         --output text)
 
     RUNTIME_ID=$(aws cloudformation describe-stacks \
         --stack-name AgentRuntimeStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeId`].OutputValue' \
         --output text)
 
@@ -259,7 +275,7 @@ deploy_agentcore_runtime() {
     echo ""
     echo "Runtime ARN: $RUNTIME_ARN"
     echo "Runtime ID: $RUNTIME_ID"
-    echo "Memory ARN: $(aws cloudformation describe-stacks --stack-name AgentRuntimeStack --region $AWS_REGION --query 'Stacks[0].Outputs[?OutputKey==`MemoryArn`].OutputValue' --output text)"
+    echo "Memory ARN: $(aws cloudformation describe-stacks --stack-name AgentRuntimeStack --region $AWS_REGION $AWS_PROFILE_FLAG --query 'Stacks[0].Outputs[?OutputKey==`MemoryArn`].OutputValue' --output text)"
     echo ""
 
     cd ../../agent-blueprint
@@ -339,7 +355,8 @@ deploy_mcp_servers() {
         --name "/strands-agent-chatbot/dev/mcp/gateway-url" \
         --query 'Parameter.Value' \
         --output text \
-        --region $AWS_REGION 2>/dev/null || echo "")
+        --region $AWS_REGION \
+        $AWS_PROFILE_FLAG 2>/dev/null || echo "")
 
     if [ -n "$GATEWAY_URL" ]; then
         log_info "Gateway deployed successfully!"
@@ -572,6 +589,7 @@ display_deployment_summary() {
     CLOUDFRONT_URL=$(aws cloudformation describe-stacks \
         --stack-name ChatbotStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`ApplicationUrl`].OutputValue' \
         --output text 2>/dev/null || echo "Not available")
 
@@ -579,6 +597,7 @@ display_deployment_summary() {
     STREAMING_ALB_URL=$(aws cloudformation describe-stacks \
         --stack-name ChatbotStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`StreamingAlbUrl`].OutputValue' \
         --output text 2>/dev/null || echo "Not available")
 
@@ -586,6 +605,7 @@ display_deployment_summary() {
     RUNTIME_ARN=$(aws cloudformation describe-stacks \
         --stack-name AgentRuntimeStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`AgentRuntimeArn`].OutputValue' \
         --output text 2>/dev/null || echo "Not available")
 
@@ -594,20 +614,23 @@ display_deployment_summary() {
         --name "/strands-agent-chatbot/dev/mcp/gateway-url" \
         --query 'Parameter.Value' \
         --output text \
-        --region $AWS_REGION 2>/dev/null || echo "Not available")
+        --region $AWS_REGION \
+        $AWS_PROFILE_FLAG 2>/dev/null || echo "Not available")
 
     # Get A2A Runtime ARNs
     RESEARCH_AGENT_ARN=$(aws ssm get-parameter \
         --name "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
-        --region $AWS_REGION 2>/dev/null || echo "Not deployed")
+        --region $AWS_REGION \
+        $AWS_PROFILE_FLAG 2>/dev/null || echo "Not deployed")
 
     BROWSER_AGENT_ARN=$(aws ssm get-parameter \
         --name "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
-        --region $AWS_REGION 2>/dev/null || echo "Not deployed")
+        --region $AWS_REGION \
+        $AWS_PROFILE_FLAG 2>/dev/null || echo "Not deployed")
 
     log_info "Deployment Region: $AWS_REGION"
     echo ""
@@ -624,6 +647,7 @@ display_deployment_summary() {
     COGNITO_USER_POOL_ID=$(aws cloudformation describe-stacks \
         --stack-name CognitoAuthStack \
         --region $AWS_REGION \
+        $AWS_PROFILE_FLAG \
         --query 'Stacks[0].Outputs[?OutputKey==`UserPoolId`].OutputValue' \
         --output text 2>/dev/null || echo "")
 

@@ -178,3 +178,4 @@ browser-use
 **/pytest_cache/
 
 results
+.specify/*
