@@ -101,8 +101,24 @@ def get_google_credentials() -> Optional[Dict[str, str]]:
 def google_web_search(params: Dict[str, Any]) -> Dict[str, Any]:
     """Execute Google web search with optional image results"""
 
-    # Get credentials
-    credentials = get_google_credentials()
+    # Check for user-provided API keys first (from __user_api_keys)
+    user_api_keys = params.pop('__user_api_keys', None)
+    credentials = None
+
+    if user_api_keys:
+        user_api_key = user_api_keys.get('google_api_key')
+        user_search_engine_id = user_api_keys.get('google_search_engine_id')
+        if user_api_key and user_search_engine_id:
+            credentials = {
+                'api_key': user_api_key,
+                'search_engine_id': user_search_engine_id
+            }
+            logger.info("Using user-provided Google API credentials")
+
+    # Fall back to default credentials from Secrets Manager
+    if not credentials:
+        credentials = get_google_credentials()
+
     if not credentials:
         return error_response("Failed to get Google API credentials")
 

@@ -27,7 +27,8 @@ class FilteredMCPClient(MCPClient):
         self,
         client_factory: Callable[[], Any],
         enabled_tool_ids: List[str],
-        prefix: str = "gateway"
+        prefix: str = "gateway",
+        api_keys: Optional[dict] = None
     ):
         """
         Initialize filtered MCP client.
@@ -36,11 +37,13 @@ class FilteredMCPClient(MCPClient):
             client_factory: Factory function to create MCP client transport
             enabled_tool_ids: List of tool IDs that should be enabled
             prefix: Prefix used for tool IDs (default: 'gateway')
+            api_keys: User-specific API keys for external services
         """
         super().__init__(client_factory)
         self.enabled_tool_ids = enabled_tool_ids
         self.prefix = prefix
         self._session_started = False
+        self.api_keys = api_keys  # User-specific API keys
         logger.debug(f"FilteredMCPClient created with {len(enabled_tool_ids)} enabled tool IDs")
 
     def __enter__(self):
@@ -134,17 +137,24 @@ class FilteredMCPClient(MCPClient):
 
     def call_tool_sync(self, tool_use_id: str, name: str, arguments: dict):
         """
-        Call tool with automatic name conversion.
+        Call tool with automatic name conversion and API key injection.
 
         Converts simplified tool name (e.g., "search_places") back to
         Gateway's full name format (e.g., "search-places___search_places")
         before calling the Gateway.
+
+        Also injects user API keys into arguments if available.
         """
         # Convert simplified name to full name for Gateway
         actual_name = name
         if hasattr(self, '_tool_name_map') and name in self._tool_name_map:
             actual_name = self._tool_name_map[name]
             logger.debug(f"Restoring full tool name for Gateway: {name} → {actual_name}")
+
+        # Inject user API keys into arguments (Lambda will extract these)
+        if self.api_keys:
+            arguments = {**arguments, '__user_api_keys': self.api_keys}
+            logger.debug(f"Injected user API keys into tool arguments: {list(self.api_keys.keys())}")
 
         return super().call_tool_sync(tool_use_id, actual_name, arguments)
 
@@ -246,7 +256,8 @@ def create_gateway_mcp_client(
 
 def create_filtered_gateway_client(
     enabled_tool_ids: List[str],
-    prefix: str = "gateway"
+    prefix: str = "gateway",
+    api_keys: Optional[dict] = None
 ) -> Optional[FilteredMCPClient]:
     """
     Create Gateway MCP client with tool filtering based on enabled tool IDs.
@@ -258,6 +269,7 @@ def create_filtered_gateway_client(
         enabled_tool_ids: List of tool IDs that are enabled by user
                          e.g., ["gateway_wikipedia-search___wikipedia_search", "gateway_arxiv-search___arxiv_search"]
         prefix: Prefix used for Gateway tools (default: 'gateway')
+        api_keys: User-specific API keys for external services
 
     Returns:
         FilteredMCPClient with filtered tools or None if no Gateway tools enabled
@@ -289,8 +301,10 @@ def create_filtered_gateway_client(
     # Create SigV4 auth for Gateway
     auth = get_sigv4_auth(region=region)
 
-    # Create FilteredMCPClient with tool filtering
+    # Create FilteredMCPClient with tool filtering and API keys
     logger.debug(f"Creating FilteredMCPClient with {len(gateway_tool_ids)} enabled tool IDs")
+    if api_keys:
+        logger.debug(f"   User API keys provided: {list(api_keys.keys())}")
 
     mcp_client = FilteredMCPClient(
         lambda: streamablehttp_client(
@@ -298,7 +312,8 @@ def create_filtered_gateway_client(
             auth=auth  # httpx Auth class for automatic SigV4 signing
         ),
         enabled_tool_ids=gateway_tool_ids,
-        prefix=prefix
+        prefix=prefix,
+        api_keys=api_keys
     )
 
     logger.debug(f"FilteredMCPClient created: {gateway_url}, region: {region}")
@@ -310,13 +325,15 @@ def create_filtered_gateway_client(
 GATEWAY_ENABLED = os.environ.get('GATEWAY_MCP_ENABLED', 'true').lower() == 'true'
 
 def get_gateway_client_if_enabled(
-    enabled_tool_ids: Optional[List[str]] = None
+    enabled_tool_ids: Optional[List[str]] = None,
+    api_keys: Optional[dict] = None
 ) -> Optional[MCPClient]:
     """
     Get Gateway MCP client if enabled via environment variable.
 
     Args:
         enabled_tool_ids: List of enabled tool IDs for filtering
+        api_keys: User-specific API keys for external services
 
     Returns:
         MCPClient or None if disabled or no tools enabled
@@ -326,6 +343,6 @@ def get_gateway_client_if_enabled(
         return None
 
     if enabled_tool_ids:
-        return create_filtered_gateway_client(enabled_tool_ids)
+        return create_filtered_gateway_client(enabled_tool_ids, api_keys=api_keys)
     else:
         return create_gateway_mcp_client()

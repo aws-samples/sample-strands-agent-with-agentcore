@@ -73,6 +73,18 @@ export interface SessionRecord extends DynamoDBRecord {
 // User Preferences
 // ============================================================
 
+/**
+ * User API Keys for external services
+ * Stored encrypted in DynamoDB
+ */
+export interface UserApiKeys {
+  tavily_api_key?: string
+  google_api_key?: string
+  google_search_engine_id?: string
+  google_maps_api_key?: string
+  nova_act_api_key?: string
+}
+
 export interface UserPreferences {
   // Model Configuration
   defaultModel?: string // e.g., "anthropic.claude-sonnet-4-5-20250929-v1:0"
@@ -84,6 +96,9 @@ export interface UserPreferences {
   // Tool Configuration
   enabledTools?: string[] // Array of tool IDs
   disabledTools?: string[] // Array of tool IDs to explicitly disable
+
+  // API Keys for external services
+  apiKeys?: UserApiKeys
 
   // UI Preferences
   theme?: 'light' | 'dark' | 'auto'

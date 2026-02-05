@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Tool } from '@/types/chat';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -16,8 +16,21 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Sparkles, Search, Check, Zap, X } from 'lucide-react';
+import { Sparkles, Search, Check, Zap, X, KeyRound } from 'lucide-react';
 import { getToolIcon } from '@/config/tool-icons';
+import { apiGet } from '@/lib/api-client';
+
+// Mapping of tool IDs to their required API keys
+const TOOL_REQUIRED_KEYS: Record<string, string[]> = {
+  'gateway_tavily-search': ['tavily_api_key'],
+  'gateway_tavily_search': ['tavily_api_key'],
+  'gateway_tavily_extract': ['tavily_api_key'],
+  'gateway_google-web-search': ['google_api_key', 'google_search_engine_id'],
+  'gateway_google_web_search': ['google_api_key', 'google_search_engine_id'],
+  'gateway_google_image_search': ['google_api_key', 'google_search_engine_id'],
+  'gateway_google-maps': ['google_maps_api_key'],
+  'browser_automation': ['nova_act_api_key'],
+};
 
 interface ToolsDropdownProps {
   availableTools: Tool[];
@@ -32,10 +45,52 @@ export function ToolsDropdown({
   onToggleTool,
   disabled = false,
   autoEnabled = false,
-  onToggleAuto
+  onToggleAuto,
 }: ToolsDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [configuredKeys, setConfiguredKeys] = useState<Record<string, boolean>>({});
+
+  // Load configured API keys on mount and when dropdown opens
+  useEffect(() => {
+    const loadApiKeys = async () => {
+      try {
+        const data = await apiGet<{
+          success: boolean;
+          user_keys: Record<string, { configured: boolean }>;
+          default_keys: Record<string, { configured: boolean }>;
+        }>('settings/api-keys');
+
+        if (data.success) {
+          const configured: Record<string, boolean> = {};
+          // Merge user keys and default keys - either one being configured is enough
+          const allKeyNames = new Set([
+            ...Object.keys(data.user_keys || {}),
+            ...Object.keys(data.default_keys || {})
+          ]);
+
+          allKeyNames.forEach(keyName => {
+            const userConfigured = data.user_keys?.[keyName]?.configured || false;
+            const defaultConfigured = data.default_keys?.[keyName]?.configured || false;
+            configured[keyName] = userConfigured || defaultConfigured;
+          });
+
+          setConfiguredKeys(configured);
+        }
+      } catch (error) {
+        console.error('Failed to load API keys for tools:', error);
+      }
+    };
+
+    loadApiKeys();
+  }, [isOpen]);
+
+  // Check if a tool has all required API keys configured
+  const isToolAvailable = (toolId: string): boolean => {
+    const requiredKeys = TOOL_REQUIRED_KEYS[toolId];
+    if (!requiredKeys) return true;
+    return requiredKeys.every(key => configuredKeys[key]);
+  };
 
   // Calculate enabled count (excluding Research Agent)
   const enabledCount = useMemo(() => {
@@ -249,26 +304,30 @@ export function ToolsDropdown({
               const isDynamic = (tool as any).isDynamic === true;
               const nestedTools = (tool as any).tools || [];
               const enabledNestedCount = getEnabledNestedCount(tool);
+              const available = isToolAvailable(tool.id);
 
-              return (
+              const toolItem = (
                 <div
-                  key={tool.id}
-                  onClick={() => handleToolToggle(tool.id, tool)}
-                  className={`group flex items-center gap-3 px-4 py-2.5 cursor-pointer transition-colors ${
-                    enabled
-                      ? 'bg-emerald-50/50 dark:bg-emerald-950/20'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-900/30'
+                  onClick={() => available && handleToolToggle(tool.id, tool)}
+                  className={`group flex items-center gap-3 px-4 py-2.5 transition-colors ${
+                    !available
+                      ? 'opacity-50 cursor-not-allowed'
+                      : enabled
+                      ? 'bg-emerald-50/50 dark:bg-emerald-950/20 cursor-pointer'
+                      : 'hover:bg-slate-50 dark:hover:bg-slate-900/30 cursor-pointer'
                   }`}
                 >
                   {/* Icon - no background */}
                   <ToolIcon className={`w-[18px] h-[18px] shrink-0 ${
-                    enabled ? 'text-emerald-500' : 'text-slate-400'
+                    !available ? 'text-slate-300' : enabled ? 'text-emerald-500' : 'text-slate-400'
                   }`} />
 
                   {/* Name & Description */}
                   <div className="flex-1 min-w-0">
                     <div className={`text-[13px] truncate ${
-                      enabled
+                      !available
+                        ? 'text-slate-400'
+                        : enabled
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : 'text-slate-600 dark:text-slate-400'
                     }`}>
@@ -281,11 +340,29 @@ export function ToolsDropdown({
                     </div>
                   </div>
 
-                  {/* Check indicator */}
-                  {enabled && (
+                  {/* Check indicator or key icon for unavailable */}
+                  {!available ? (
+                    <KeyRound className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                  ) : enabled ? (
                     <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                  )}
+                  ) : null}
                 </div>
+              );
+
+              return !available ? (
+                <TooltipProvider key={tool.id} delayDuration={200}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      {toolItem}
+                    </TooltipTrigger>
+                    <TooltipContent side="right" className="text-xs">
+                      <p>API Key required</p>
+                      <p className="text-muted-foreground">Settings → API Keys</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              ) : (
+                <div key={tool.id}>{toolItem}</div>
               );
             })}
 

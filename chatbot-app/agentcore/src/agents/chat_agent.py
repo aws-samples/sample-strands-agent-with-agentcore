@@ -86,7 +86,8 @@ class ChatAgent(BaseAgent):
         caching_enabled: Optional[bool] = None,
         compaction_enabled: Optional[bool] = None,
         use_null_conversation_manager: Optional[bool] = None,
-        agent_id: Optional[str] = None
+        agent_id: Optional[str] = None,
+        api_keys: Optional[Dict[str, str]] = None
     ):
         """
         Initialize ChatAgent with specific configuration
@@ -101,6 +102,7 @@ class ChatAgent(BaseAgent):
             caching_enabled: Whether to enable prompt caching
             compaction_enabled: Whether to enable context compaction (default: True)
             use_null_conversation_manager: Use NullConversationManager instead of default SlidingWindow (default: False)
+            api_keys: User-specific API keys for external services
         """
         # Initialize stream processor first (before BaseAgent.__init__)
         global _global_stream_processor
@@ -110,6 +112,7 @@ class ChatAgent(BaseAgent):
         # Initialize Strands agent placeholder
         self.agent = None
         self.use_null_conversation_manager = use_null_conversation_manager if use_null_conversation_manager is not None else False
+        self.api_keys = api_keys  # User-specific API keys
 
         # Call BaseAgent init (handles tools, session_manager)
         super().__init__(
@@ -276,7 +279,7 @@ class ChatAgent(BaseAgent):
             logger.error(f"Error creating agent: {e}")
             raise
 
-    async def stream_async(self, message: str, session_id: str = None, files: Optional[List] = None, selected_artifact_id: Optional[str] = None) -> AsyncGenerator[str, None]:
+    async def stream_async(self, message: str, session_id: str = None, files: Optional[List] = None, selected_artifact_id: Optional[str] = None, api_keys: Optional[Dict[str, str]] = None) -> AsyncGenerator[str, None]:
         """
         Stream responses using StreamEventProcessor
 
@@ -285,6 +288,7 @@ class ChatAgent(BaseAgent):
             session_id: Session identifier
             files: Optional list of FileContent objects (with base64 bytes)
             selected_artifact_id: Currently selected artifact ID for tool context
+            api_keys: User-specific API keys for external services
         """
         if not self.agent:
             self.create_agent()
@@ -318,6 +322,17 @@ class ChatAgent(BaseAgent):
                 "model_id": self.model_id,
                 "session_manager": self.session_manager  # For tools that need to persist state (e.g., research artifacts)
             }
+
+            # Add user API keys to invocation_state (for gateway tools)
+            effective_api_keys = api_keys or self.api_keys
+            if effective_api_keys:
+                invocation_state['api_keys'] = effective_api_keys
+                logger.debug(f"Added API keys to invocation_state: {list(effective_api_keys.keys())}")
+
+                # Update Gateway client's api_keys for tool calls
+                if self.gateway_client and hasattr(self.gateway_client, 'api_keys'):
+                    self.gateway_client.api_keys = effective_api_keys
+                    logger.debug(f"Updated Gateway client with user API keys")
 
             # Add uploaded files to invocation_state (for tool access)
             if uploaded_files:

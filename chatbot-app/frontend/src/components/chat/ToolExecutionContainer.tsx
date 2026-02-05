@@ -626,10 +626,10 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                 )}
               </div>
 
-              {/* Tool Images */}
+              {/* Tool Images - Horizontal Scroll Gallery */}
               {toolExecution.images && toolExecution.images.length > 0 && (
-                <div className="mt-3 mb-2">
-                  <div className="space-y-3">
+                <div className="mt-3 mb-2 -mx-2">
+                  <div className="flex gap-2 overflow-x-auto px-2 pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
                     {toolExecution.images
                       .filter((image) => {
                         const isUrlImage = 'type' in image && image.type === 'url';
@@ -638,7 +638,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                           : ('data' in image && image.data);
                         return !!hasValidSource;
                       })
-                      .slice(0, 3)
+                      .slice(0, 5)
                       .map((image: ImageData, idx: number) => {
                         const isUrlImage = 'type' in image && image.type === 'url';
 
@@ -673,26 +673,26 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                         };
 
                         return (
-                          <div key={idx} className="relative w-full">
+                          <div key={idx} className="relative flex-shrink-0 h-[180px]">
                             <div
-                              className="relative rounded-xl overflow-hidden border border-border shadow-md hover:shadow-xl transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900"
+                              className="relative h-full rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900"
                               onClick={handleClick}
                             >
                               <LazyImage
                                 src={imageSrc}
                                 alt={imageTitle}
-                                className="w-full h-auto object-contain"
+                                className="h-full w-auto object-cover"
                               />
 
-                              <div className="absolute top-3 right-3">
-                                <div className="text-caption font-semibold bg-black/80 text-white border-0 backdrop-blur-sm px-2.5 py-1 rounded inline-block">
+                              <div className="absolute top-2 right-2">
+                                <div className="text-[10px] font-medium bg-black/70 text-white backdrop-blur-sm px-1.5 py-0.5 rounded">
                                   {String(imageFormat)}
                                 </div>
                               </div>
 
                               {isUrlImage && 'title' in image && image.title && (
-                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/60 to-transparent p-4 pt-8">
-                                  <p className="text-label font-medium text-white line-clamp-2 leading-tight">
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
+                                  <p className="text-[11px] font-medium text-white line-clamp-2 leading-tight max-w-[200px]">
                                     {image.title}
                                   </p>
                                 </div>
@@ -712,22 +712,21 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       {/* Image Modal */}
       {selectedImage && (
         <div
-          className="fixed inset-0 bg-black/90 flex items-center justify-center z-50"
+          className="fixed inset-0 bg-black/80 flex items-center justify-center z-[9999] p-8"
           onClick={() => setSelectedImage(null)}
         >
-          <div className="relative" style={{ maxWidth: '90vw', maxHeight: '90vh' }}>
+          <div className="relative max-w-[80vw] max-h-[80vh]">
             <img
               src={selectedImage.src}
               alt={selectedImage.alt}
-              className="object-contain cursor-zoom-out rounded-lg"
-              style={{ maxWidth: 'min(90vw, 150%)', maxHeight: '85vh' }}
+              className="max-w-full max-h-[80vh] object-contain rounded-lg cursor-zoom-out"
               onClick={(e) => e.stopPropagation()}
             />
             <button
               onClick={() => setSelectedImage(null)}
-              className="absolute -top-3 -right-3 bg-white/90 hover:bg-white text-gray-800 rounded-full p-1.5 shadow-lg transition-colors"
+              className="absolute top-2 right-2 bg-black/60 hover:bg-black/80 text-white rounded-full p-2 transition-colors"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
             </button>

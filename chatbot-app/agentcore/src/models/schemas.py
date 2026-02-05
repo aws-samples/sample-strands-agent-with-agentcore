@@ -18,6 +18,17 @@ class FileContent(BaseModel):
     bytes: str  # Base64 encoded
 
 
+class ApiKeys(BaseModel):
+    """User API keys for external services
+
+    These are user-specific keys that override default keys (from Secrets Manager).
+    """
+    tavily_api_key: Optional[str] = None
+    google_api_key: Optional[str] = None
+    google_search_engine_id: Optional[str] = None
+    google_maps_api_key: Optional[str] = None
+
+
 class InvocationInput(BaseModel):
     """Input for /invocations endpoint (AgentCore Runtime standard)
 
@@ -37,6 +48,7 @@ class InvocationInput(BaseModel):
     warmup: Optional[bool] = None
     request_type: Optional[str] = None  # Request type: "normal" (default), "swarm", "compose"
     selected_artifact_id: Optional[str] = None  # Currently selected artifact for tool context
+    api_keys: Optional[Dict[str, str]] = None  # User-specific API keys for external services
 
 
 class InvocationRequest(BaseModel):

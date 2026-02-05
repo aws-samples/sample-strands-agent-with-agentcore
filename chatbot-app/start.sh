@@ -117,6 +117,41 @@ echo "AgentCore Runtime is running on port: 8080"
 export NEXT_PUBLIC_AGENTCORE_URL="http://localhost:8080"
 export NEXT_PUBLIC_AGENTCORE_LOCAL="true"
 
+# Auto-detect configured API keys from Secrets Manager
+if command -v aws &> /dev/null && aws sts get-caller-identity &> /dev/null 2>&1; then
+    echo "Detecting configured API keys from Secrets Manager..."
+    AWS_REGION=${AWS_REGION:-us-west-2}
+    DEFAULT_KEYS=""
+
+    # Check Tavily
+    if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/mcp/tavily-api-key" --region "$AWS_REGION" &>/dev/null; then
+        DEFAULT_KEYS="tavily_api_key"
+    fi
+
+    # Check Google Search
+    if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/mcp/google-credentials" --region "$AWS_REGION" &>/dev/null; then
+        [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"
+        DEFAULT_KEYS="${DEFAULT_KEYS}google_api_key,google_search_engine_id"
+    fi
+
+    # Check Google Maps
+    if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/mcp/google-maps-credentials" --region "$AWS_REGION" &>/dev/null; then
+        [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"
+        DEFAULT_KEYS="${DEFAULT_KEYS}google_maps_api_key"
+    fi
+
+    # Check Nova Act
+    if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/nova-act-api-key" --region "$AWS_REGION" &>/dev/null; then
+        [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"
+        DEFAULT_KEYS="${DEFAULT_KEYS}nova_act_api_key"
+    fi
+
+    if [ -n "$DEFAULT_KEYS" ]; then
+        export NEXT_PUBLIC_DEFAULT_KEYS="$DEFAULT_KEYS"
+        echo "✓ Default API keys detected: $DEFAULT_KEYS"
+    fi
+fi
+
 echo "Starting frontend server (local mode)..."
 cd "$CHATBOT_APP_ROOT/frontend"
 # Unset PORT to let Next.js use default port 3000

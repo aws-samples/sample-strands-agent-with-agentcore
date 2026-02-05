@@ -219,6 +219,7 @@ export function BrowserLiveViewModal({
                     if (connectionRef.current?.requestDisplayLayout) {
                       try {
                         const resizeDisplay = () => {
+                          if (!connectionRef.current?.requestDisplayLayout) return;
                           connectionRef.current.requestDisplayLayout([{
                             name: "Main Display",
                             rect: {

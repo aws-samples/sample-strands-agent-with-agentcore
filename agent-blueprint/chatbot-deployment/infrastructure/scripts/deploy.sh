@@ -210,6 +210,52 @@ else
     echo "🌐 CORS Origins: $CORS_ORIGINS"
 fi
 
+# Detect configured API keys from Secrets Manager
+echo ""
+echo "🔑 Detecting configured API keys from Secrets Manager..."
+DEFAULT_KEYS=""
+
+# Check Tavily
+if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/mcp/tavily-api-key" --region "$AWS_REGION" &>/dev/null; then
+    DEFAULT_KEYS="tavily_api_key"
+    echo "  ✓ Tavily API key found"
+fi
+
+# Check Google Search
+if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/mcp/google-credentials" --region "$AWS_REGION" &>/dev/null; then
+    [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"
+    DEFAULT_KEYS="${DEFAULT_KEYS}google_api_key,google_search_engine_id"
+    echo "  ✓ Google Search credentials found"
+fi
+
+# Check Google Maps
+if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/mcp/google-maps-credentials" --region "$AWS_REGION" &>/dev/null; then
+    [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"
+    DEFAULT_KEYS="${DEFAULT_KEYS}google_maps_api_key"
+    echo "  ✓ Google Maps credentials found"
+fi
+
+# Check Nova Act
+if aws secretsmanager get-secret-value --secret-id "strands-agent-chatbot/nova-act-api-key" --region "$AWS_REGION" &>/dev/null; then
+    [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"
+    DEFAULT_KEYS="${DEFAULT_KEYS}nova_act_api_key"
+    echo "  ✓ Nova Act API key found"
+fi
+
+if [ -n "$DEFAULT_KEYS" ]; then
+    export NEXT_PUBLIC_DEFAULT_KEYS="$DEFAULT_KEYS"
+    echo "✅ Default API keys: $DEFAULT_KEYS"
+
+    # Save to master .env file
+    MAIN_ENV_FILE="../../.env"
+    grep -v "^NEXT_PUBLIC_DEFAULT_KEYS=" "$MAIN_ENV_FILE" > "$MAIN_ENV_FILE.tmp" 2>/dev/null || touch "$MAIN_ENV_FILE.tmp"
+    mv "$MAIN_ENV_FILE.tmp" "$MAIN_ENV_FILE"
+    echo "NEXT_PUBLIC_DEFAULT_KEYS=$DEFAULT_KEYS" >> "$MAIN_ENV_FILE"
+else
+    echo "⚠️  No default API keys found in Secrets Manager"
+fi
+echo ""
+
 # Collect IP ranges for CIDR-based access control (if not using Cognito)
 if [ "$ENABLE_COGNITO" != "true" ]; then
     # Set default IP ranges if not configured

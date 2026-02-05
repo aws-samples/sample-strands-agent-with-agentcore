@@ -10,12 +10,21 @@ import path from 'path'
 const STORE_DIR = path.join(process.cwd(), '.local-store')
 const USER_TOOLS_FILE = path.join(STORE_DIR, 'user-tools.json')
 const USER_MODEL_CONFIG_FILE = path.join(STORE_DIR, 'user-model-config.json')
+const USER_API_KEYS_FILE = path.join(STORE_DIR, 'user-api-keys.json')
 
 // Model configuration interface
 interface ModelConfig {
   model_id?: string
   temperature?: number
   caching_enabled?: boolean
+}
+
+// API Keys interface
+interface UserApiKeys {
+  tavily_api_key?: string
+  google_api_key?: string
+  google_search_engine_id?: string
+  google_maps_api_key?: string
 }
 
 // Ensure store directory exists
@@ -153,4 +162,68 @@ export function clearUserModelConfig(userId: string): void {
   delete store[userId]
   saveModelConfigStore(store)
   console.log(`[LocalToolStore] Cleared model config for user ${userId}`)
+}
+
+// ============================================================
+// API Keys
+// ============================================================
+
+// Load all user API keys
+function loadApiKeysStore(): Record<string, UserApiKeys> {
+  ensureStoreDir()
+
+  if (!fs.existsSync(USER_API_KEYS_FILE)) {
+    return {}
+  }
+
+  try {
+    const content = fs.readFileSync(USER_API_KEYS_FILE, 'utf-8')
+    return JSON.parse(content)
+  } catch (error) {
+    console.error('[LocalToolStore] Failed to load API keys store:', error)
+    return {}
+  }
+}
+
+// Save all user API keys
+function saveApiKeysStore(store: Record<string, UserApiKeys>) {
+  ensureStoreDir()
+
+  try {
+    fs.writeFileSync(USER_API_KEYS_FILE, JSON.stringify(store, null, 2), 'utf-8')
+  } catch (error) {
+    console.error('[LocalToolStore] Failed to save API keys store:', error)
+    throw error
+  }
+}
+
+/**
+ * Get API keys for a user
+ */
+export function getUserApiKeys(userId: string): UserApiKeys | null {
+  const store = loadApiKeysStore()
+  return store[userId] || null
+}
+
+/**
+ * Update API keys for a user
+ */
+export function updateUserApiKeys(userId: string, apiKeys: UserApiKeys): void {
+  const store = loadApiKeysStore()
+  store[userId] = {
+    ...(store[userId] || {}),
+    ...apiKeys,
+  }
+  saveApiKeysStore(store)
+  console.log(`[LocalToolStore] Updated API keys for user ${userId}`)
+}
+
+/**
+ * Clear API keys for a user
+ */
+export function clearUserApiKeys(userId: string): void {
+  const store = loadApiKeysStore()
+  delete store[userId]
+  saveApiKeysStore(store)
+  console.log(`[LocalToolStore] Cleared API keys for user ${userId}`)
 }

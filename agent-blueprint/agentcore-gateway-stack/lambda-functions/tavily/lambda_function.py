@@ -96,8 +96,18 @@ def get_tavily_api_key() -> Optional[str]:
 def tavily_search(params: Dict[str, Any]) -> Dict[str, Any]:
     """Execute Tavily web search"""
 
-    # Get API key from Secrets Manager (with caching)
-    api_key = get_tavily_api_key()
+    # Check for user-provided API key first (from __user_api_keys)
+    user_api_keys = params.pop('__user_api_keys', None)
+    api_key = None
+
+    if user_api_keys and user_api_keys.get('tavily_api_key'):
+        api_key = user_api_keys['tavily_api_key']
+        logger.info("Using user-provided Tavily API key")
+
+    # Fall back to default API key from Secrets Manager
+    if not api_key:
+        api_key = get_tavily_api_key()
+
     if not api_key:
         return error_response("Failed to get Tavily API key")
 
@@ -174,8 +184,18 @@ def tavily_search(params: Dict[str, Any]) -> Dict[str, Any]:
 def tavily_extract(params: Dict[str, Any]) -> Dict[str, Any]:
     """Extract content from URLs using Tavily"""
 
-    # Get API key from Secrets Manager (with caching)
-    api_key = get_tavily_api_key()
+    # Check for user-provided API key first (from __user_api_keys)
+    user_api_keys = params.pop('__user_api_keys', None)
+    api_key = None
+
+    if user_api_keys and user_api_keys.get('tavily_api_key'):
+        api_key = user_api_keys['tavily_api_key']
+        logger.info("Using user-provided Tavily API key")
+
+    # Fall back to default API key from Secrets Manager
+    if not api_key:
+        api_key = get_tavily_api_key()
+
     if not api_key:
         return error_response("Failed to get Tavily API key")
 

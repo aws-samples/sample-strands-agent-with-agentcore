@@ -95,7 +95,8 @@ async function invokeLocalAgentCore(
   cachingEnabled?: boolean,
   abortSignal?: AbortSignal,
   requestType?: string,
-  selectedArtifactId?: string
+  selectedArtifactId?: string,
+  apiKeys?: Record<string, string>
 ): Promise<ReadableStream> {
   console.log('[AgentCore] 🚀 Invoking LOCAL AgentCore via HTTP POST')
   console.log(`[AgentCore]    URL: ${AGENTCORE_URL}/invocations`)
@@ -144,9 +145,14 @@ async function invokeLocalAgentCore(
     console.log(`[AgentCore]    Selected artifact: ${selectedArtifactId}`)
   }
 
+  if (apiKeys && Object.keys(apiKeys).length > 0) {
+    inputData.api_keys = apiKeys
+    console.log(`[AgentCore]    API keys provided: ${Object.keys(apiKeys).join(', ')}`)
+  }
+
   const payload = { input: inputData }
 
-  // Log payload without bytes (to avoid massive console output)
+  // Log payload without bytes and api_keys (to avoid massive console output and security concerns)
   const payloadForLog = {
     input: {
       ...inputData,
@@ -154,7 +160,8 @@ async function invokeLocalAgentCore(
         filename: f.filename,
         content_type: f.content_type,
         bytes: `<base64 data ${f.bytes?.length || 0} chars>`
-      }))
+      })),
+      api_keys: apiKeys ? `<${Object.keys(apiKeys).length} keys>` : undefined
     }
   }
   console.log('[AgentCore]    Payload:', JSON.stringify(payloadForLog, null, 2))
@@ -199,7 +206,8 @@ async function invokeAwsAgentCore(
   cachingEnabled?: boolean,
   abortSignal?: AbortSignal,
   requestType?: string,
-  selectedArtifactId?: string
+  selectedArtifactId?: string,
+  apiKeys?: Record<string, string>
 ): Promise<ReadableStream> {
   await initializeAwsClients()
   const runtimeArn = await getAgentCoreRuntimeArn()
@@ -251,9 +259,14 @@ async function invokeAwsAgentCore(
     console.log(`[AgentCore]    Selected artifact: ${selectedArtifactId}`)
   }
 
+  if (apiKeys && Object.keys(apiKeys).length > 0) {
+    inputData.api_keys = apiKeys
+    console.log(`[AgentCore]    API keys provided: ${Object.keys(apiKeys).join(', ')}`)
+  }
+
   const payload = { input: inputData }
 
-  // Log payload without bytes (to avoid massive console output)
+  // Log payload without bytes and api_keys (to avoid massive console output and security concerns)
   const payloadForLog = {
     input: {
       ...inputData,
@@ -261,7 +274,8 @@ async function invokeAwsAgentCore(
         filename: f.filename,
         content_type: f.content_type,
         bytes: `<base64 data ${f.bytes?.length || 0} chars>`
-      }))
+      })),
+      api_keys: apiKeys ? `<${Object.keys(apiKeys).length} keys>` : undefined
     }
   }
   console.log('[AgentCore]    Payload:', JSON.stringify(payloadForLog, null, 2))
@@ -393,13 +407,14 @@ export async function invokeAgentCoreRuntime(
   cachingEnabled?: boolean,
   abortSignal?: AbortSignal,
   requestType?: string,
-  selectedArtifactId?: string
+  selectedArtifactId?: string,
+  apiKeys?: Record<string, string>
 ): Promise<ReadableStream> {
   try {
     if (IS_LOCAL) {
-      return await invokeLocalAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal, requestType, selectedArtifactId)
+      return await invokeLocalAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal, requestType, selectedArtifactId, apiKeys)
     } else {
-      return await invokeAwsAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal, requestType, selectedArtifactId)
+      return await invokeAwsAgentCore(userId, sessionId, message, modelId, enabledTools, files, temperature, systemPrompt, cachingEnabled, abortSignal, requestType, selectedArtifactId, apiKeys)
     }
   } catch (error) {
     console.error('[AgentCore] ❌ Failed to invoke Runtime:', error)

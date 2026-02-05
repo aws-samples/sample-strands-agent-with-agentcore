@@ -174,8 +174,8 @@ export async function POST(request: NextRequest) {
         console.error(`[BFF] Error loading config for ${userId}:`, error)
         // Use defaults
       }
-    } else if (userId !== 'anonymous') {
-      // DynamoDB only for authenticated users
+    } else {
+      // DynamoDB for all users (including anonymous)
       try {
         const { getUserProfile } = await import('@/lib/dynamodb-client')
         const profile = await getUserProfile(userId)
@@ -200,6 +200,40 @@ export async function POST(request: NextRequest) {
     const currentDate = getCurrentDatePacific()
     modelConfig.system_prompt = `${basePrompt}\n\nCurrent date and time: ${currentDate}`
     console.log(`[BFF] Added current date to system prompt: ${currentDate}`)
+
+    // Load user API keys
+    let userApiKeys: Record<string, string> | undefined
+    if (IS_LOCAL) {
+      try {
+        const { getUserApiKeys } = await import('@/lib/local-tool-store')
+        const apiKeys = getUserApiKeys(userId)
+        if (apiKeys && Object.keys(apiKeys).length > 0) {
+          userApiKeys = apiKeys as Record<string, string>
+          console.log(`[BFF] Loaded user API keys for ${userId}:`, Object.keys(userApiKeys))
+        }
+      } catch (error) {
+        console.warn('[BFF] Failed to load user API keys from local store:', error)
+      }
+    } else {
+      try {
+        const { getUserProfile } = await import('@/lib/dynamodb-client')
+        const profile = await getUserProfile(userId)
+        if (profile?.preferences?.apiKeys) {
+          const apiKeys = profile.preferences.apiKeys
+          // Filter out empty/null values
+          userApiKeys = Object.fromEntries(
+            Object.entries(apiKeys).filter(([_, v]) => v && v.trim() !== '')
+          ) as Record<string, string>
+          if (Object.keys(userApiKeys).length > 0) {
+            console.log(`[BFF] Loaded user API keys for ${userId}:`, Object.keys(userApiKeys))
+          } else {
+            userApiKeys = undefined
+          }
+        }
+      } catch (error) {
+        console.warn('[BFF] Failed to load user API keys from DynamoDB:', error)
+      }
+    }
 
     // Create a custom stream that:
     // 1. Immediately starts sending keep-alive (before AgentCore responds)
@@ -315,7 +349,8 @@ export async function POST(request: NextRequest) {
             modelConfig.caching_enabled,
             agentCoreAbortController.signal, // Pass abort signal for cancellation
             request_type, // Request type: normal, swarm, compose
-            selected_artifact_id // Selected artifact ID for tool context
+            selected_artifact_id, // Selected artifact ID for tool context
+            userApiKeys // User API keys for tool authentication
           )
           agentStarted = true
 

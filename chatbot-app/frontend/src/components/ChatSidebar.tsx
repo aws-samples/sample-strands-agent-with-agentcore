@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Menu, Plus, Trash2, Moon, Sun } from 'lucide-react';
+import { Menu, Plus, Trash2, Moon, Sun, Settings, KeyRound, Github, ChevronRight } from 'lucide-react';
+import { SettingsDialog } from './settings/SettingsDialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -12,6 +13,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import {
   Sidebar,
   SidebarHeader,
   SidebarMenu,
@@ -19,6 +25,8 @@ import {
 } from '@/components/ui/sidebar';
 import { ChatSessionList } from './sidebar/ChatSessionList';
 import { useChatSessions } from '@/hooks/useChatSessions';
+
+const GITHUB_REPO_URL = 'https://github.com/aws-samples/sample-strands-agent-with-agentcore';
 
 interface ChatSidebarProps {
   sessionId: string | null;
@@ -37,6 +45,7 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const { toggleSidebar } = useSidebar();
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
 
@@ -132,6 +141,47 @@ export function ChatSidebar({
           />
         </div>
       </div>
+
+      {/* Settings Menu - Bottom */}
+      <div className="flex-shrink-0 px-3 py-3 border-t border-sidebar-border">
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              variant="ghost"
+              className="w-full justify-end gap-2 h-10 px-3 hover:bg-sidebar-accent text-sidebar-foreground/70"
+            >
+              <span className="text-[13px]">Settings</span>
+              <Settings className="h-4 w-4" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent
+            side="right"
+            align="end"
+            className="w-44 p-1"
+            sideOffset={8}
+          >
+            <button
+              onClick={() => setIsSettingsOpen(true)}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+            >
+              <KeyRound className="h-4 w-4 text-muted-foreground" />
+              <span>API Keys</span>
+            </button>
+            <a
+              href={GITHUB_REPO_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
+            >
+              <Github className="h-4 w-4 text-muted-foreground" />
+              <span>GitHub</span>
+            </a>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* Settings Dialog */}
+      <SettingsDialog open={isSettingsOpen} onOpenChange={setIsSettingsOpen} />
 
       {/* Clear All Confirmation Dialog */}
       <Dialog open={isConfirmDialogOpen} onOpenChange={setIsConfirmDialogOpen}>
