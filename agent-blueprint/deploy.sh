@@ -173,7 +173,6 @@ deploy_agentcore_runtime() {
         --query 'Name' \
         --output text \
         --region "$AWS_REGION" 2>/dev/null || echo "")
-        --region "$AWS_REGION" 2>/dev/null || echo "")
 
     if [ -z "$NOVA_SECRET_EXISTS" ]; then
         log_warn "Nova Act API Key not configured"
@@ -190,11 +189,9 @@ deploy_agentcore_runtime() {
                 --secret-string "$NOVA_ACT_KEY" \
                 --description "Nova Act API Key for browser automation" \
                 --region "$AWS_REGION" > /dev/null 2>&1 || \
-                --region "$AWS_REGION" > /dev/null 2>&1 || \
             aws secretsmanager put-secret-value \
                 --secret-id "${PROJECT_NAME}/nova-act-api-key" \
                 --secret-string "$NOVA_ACT_KEY" \
-                --region "$AWS_REGION" > /dev/null 2>&1
                 --region "$AWS_REGION" > /dev/null 2>&1
             log_info "Nova Act API Key configured"
         else
@@ -228,7 +225,6 @@ deploy_agentcore_runtime() {
 
     # Deploy infrastructure
     log_step "Deploying CDK infrastructure..."
-    npx cdk deploy --require-approval never
     npx cdk deploy --require-approval never
 
     # Get outputs
@@ -268,7 +264,6 @@ deploy_agentcore_runtime() {
     echo ""
     echo "Runtime ARN: $RUNTIME_ARN"
     echo "Runtime ID: $RUNTIME_ID"
-    echo "Memory ARN: $(aws cloudformation describe-stacks --stack-name AgentRuntimeStack --region $AWS_REGION --query 'Stacks[0].Outputs[?OutputKey==`MemoryArn`].OutputValue' --output text)"
     echo "Memory ARN: $(aws cloudformation describe-stacks --stack-name AgentRuntimeStack --region $AWS_REGION --query 'Stacks[0].Outputs[?OutputKey==`MemoryArn`].OutputValue' --output text)"
     echo ""
 
@@ -348,7 +343,6 @@ deploy_mcp_servers() {
         --name "/${PROJECT_NAME}/dev/mcp/gateway-url" \
         --query 'Parameter.Value' \
         --output text \
-        --region $AWS_REGION 2>/dev/null || echo "")
         --region $AWS_REGION 2>/dev/null || echo "")
 
     if [ -n "$GATEWAY_URL" ]; then
@@ -603,7 +597,6 @@ display_deployment_summary() {
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "Not available")
-        --region $AWS_REGION 2>/dev/null || echo "Not available")
 
     # Get A2A Runtime ARNs
     RESEARCH_AGENT_ARN=$(aws ssm get-parameter \
@@ -611,13 +604,11 @@ display_deployment_summary() {
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "Not deployed")
-        --region $AWS_REGION 2>/dev/null || echo "Not deployed")
 
     BROWSER_AGENT_ARN=$(aws ssm get-parameter \
         --name "/${PROJECT_NAME}/dev/a2a/browser-use-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
-        --region $AWS_REGION 2>/dev/null || echo "Not deployed")
         --region $AWS_REGION 2>/dev/null || echo "Not deployed")
 
     log_info "Deployment Region: $AWS_REGION"
