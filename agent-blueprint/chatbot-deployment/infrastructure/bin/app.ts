@@ -52,7 +52,7 @@ if (enableCognito) {
 const chatbotStack = new ChatbotStack(app, 'ChatbotStack', {
   env,
   ...cognitoProps,
-  projectName: 'strands-agent-chatbot',
+  projectName: process.env.PROJECT_NAME || 'strands-agent-chatbot',
   environment: 'dev',
 });
 
