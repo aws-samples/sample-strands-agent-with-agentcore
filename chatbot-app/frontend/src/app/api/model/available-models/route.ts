@@ -1,171 +1,299 @@
 /**
  * Available Models endpoint - returns list of supported AI models
+ * Dynamically fetches models from AWS Bedrock API
  */
 import { NextResponse } from 'next/server'
+import {
+  BedrockClient,
+  ListFoundationModelsCommand,
+  ListInferenceProfilesCommand,
+  type FoundationModelSummary,
+  type InferenceProfileSummary
+} from '@aws-sdk/client-bedrock'
 
 export const runtime = 'nodejs'
 
-// Available Bedrock models
-const AVAILABLE_MODELS = [
-  // Claude (Anthropic)
-  {
-    id: 'us.anthropic.claude-opus-4-5-20251101-v1:0',
-    name: 'Claude Opus 4.5',
-    provider: 'Anthropic',
-    description: 'Most intelligent model, best for complex tasks'
-  },
-  {
-    id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    name: 'Claude Sonnet 4.5',
-    provider: 'Anthropic',
-    description: 'Most capable model, balanced performance'
-  },
-  {
-    id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-    name: 'Claude Haiku 4.5',
-    provider: 'Anthropic',
-    description: 'Fast and efficient, cost-effective'
-  },
+// Initialize Bedrock client
+const bedrockClient = new BedrockClient({})
 
-  // Nova (Amazon)
-  {
-    id: 'us.amazon.nova-2-omni-v1:0',
-    name: 'Nova 2 Omni',
-    provider: 'Amazon',
-    description: 'Preview multimodal model with advanced capabilities'
-  },
-  {
-    id: 'us.amazon.nova-2-pro-preview-20251202-v1:0',
-    name: 'Nova 2 Pro',
-    provider: 'Amazon',
-    description: 'High-performance multimodal model'
-  },
-  {
-    id: 'us.amazon.nova-2-lite-v1:0',
-    name: 'Nova 2 Lite',
-    provider: 'Amazon',
-    description: 'Lightweight and efficient model'
-  },
+// Cache for model modalities to avoid repeated API calls
+const modalitiesCache = new Map<string, { inputModalities: string[]; outputModalities: string[] }>()
 
-  // GPT (OpenAI)
-  {
-    id: 'openai.gpt-oss-120b-1:0',
-    name: 'GPT OSS 120B',
-    provider: 'OpenAI',
-    description: 'Open-source GPT model with 120B parameters'
-  },
-  {
-    id: 'openai.gpt-oss-safeguard-20b',
-    name: 'GPT OSS Safeguard 20B',
-    provider: 'OpenAI',
-    description: 'Content safety model for custom policy enforcement'
-  },
-  {
-    id: 'openai.gpt-oss-safeguard-120b',
-    name: 'GPT OSS Safeguard 120B',
-    provider: 'OpenAI',
-    description: 'Larger content safety model for complex moderation'
-  },
+interface NormalizedModel {
+  id: string
+  name: string
+  provider: string
+  description: string
+  modelType: 'foundation' | 'inference_profile'
+  inputModalities: string[]
+  outputModalities: string[]
+}
 
-  // Qwen
-  {
-    id: 'qwen.qwen3-vl-235b-a22b',
-    name: 'Qwen3 VL 235B',
-    provider: 'Qwen',
-    description: 'Multimodal model for image, video, and code understanding'
-  },
-  {
-    id: 'qwen.qwen3-235b-a22b-2507-v1:0',
-    name: 'Qwen 235B',
-    provider: 'Qwen',
-    description: 'Large-scale language model with 235B parameters'
-  },
-  {
-    id: 'qwen.qwen3-next-80b-a3b',
-    name: 'Qwen3 Next 80B',
-    provider: 'Qwen',
-    description: 'Fast inference for ultra-long documents and RAG'
-  },
-  {
-    id: 'qwen.qwen3-32b-v1:0',
-    name: 'Qwen 32B',
-    provider: 'Qwen',
-    description: 'Efficient language model with 32B parameters'
-  },
+/**
+ * Get input and output modalities for a model from its ARN (with caching)
+ */
+function getModelModalities(
+  modelArn: string
+): { inputModalities: string[]; outputModalities: string[] } {
+  // Extract model ID from ARN (last part after the final /)
+  const modelId = modelArn.includes('/') ? modelArn.split('/').pop()! : modelArn
 
-  // Gemma (Google)
-  {
-    id: 'google.gemma-3-27b-it',
-    name: 'Gemma 3 27B',
-    provider: 'Google',
-    description: 'Powerful text and image model for enterprise'
-  },
-  {
-    id: 'google.gemma-3-12b-it',
-    name: 'Gemma 3 12B',
-    provider: 'Google',
-    description: 'Balanced text and image model for workstations'
-  },
-  {
-    id: 'google.gemma-3-4b-it',
-    name: 'Gemma 3 4B',
-    provider: 'Google',
-    description: 'Efficient text and image model for on-device AI'
-  },
-
-  // NVIDIA
-  {
-    id: 'nvidia.nemotron-nano-12b-v2',
-    name: 'Nemotron Nano 12B v2 VL',
-    provider: 'NVIDIA',
-    description: 'Advanced multimodal reasoning for video understanding'
-  },
-  {
-    id: 'nvidia.nemotron-nano-9b-v2',
-    name: 'Nemotron Nano 9B v2',
-    provider: 'NVIDIA',
-    description: 'High efficiency for reasoning and agentic tasks'
-  },
-
-  // Mistral
-  {
-    id: 'mistral.voxtral-small-24b-2507',
-    name: 'Voxtral Small 24B',
-    provider: 'Mistral AI',
-    description: 'State-of-the-art audio input with text performance'
-  },
-  {
-    id: 'mistral.voxtral-mini-3b-2507',
-    name: 'Voxtral Mini 3B',
-    provider: 'Mistral AI',
-    description: 'Advanced audio understanding with transcription'
-  },
-
-  // Others
-  {
-    id: 'moonshot.kimi-k2-thinking',
-    name: 'Kimi K2 Thinking',
-    provider: 'Moonshot AI',
-    description: 'Deep reasoning model for complex workflows'
-  },
-  {
-    id: 'minimax.minimax-m2',
-    name: 'MiniMax M2',
-    provider: 'MiniMax AI',
-    description: 'Built for coding agents and automation'
+  // Check cache first
+  if (modalitiesCache.has(modelId)) {
+    return modalitiesCache.get(modelId)!
   }
-]
+
+  // Default to TEXT if not found in cache (will be populated from foundation models)
+  return { inputModalities: ['TEXT'], outputModalities: ['TEXT'] }
+}
+
+/**
+ * Fetch available foundation models from Bedrock
+ */
+async function listFoundationModels(): Promise<NormalizedModel[]> {
+  const models: NormalizedModel[] = []
+
+  try {
+    const response = await bedrockClient.send(new ListFoundationModelsCommand({}))
+
+    for (const model of response.modelSummaries ?? []) {
+      // Only include models that support text output (for chat)
+      const outputModalities = model.outputModalities ?? []
+      if (!outputModalities.includes('TEXT')) {
+        continue
+      }
+
+      const modelId = model.modelId ?? ''
+      const inputModalities = model.inputModalities ?? []
+
+      // Cache modalities for later use by inference profiles
+      modalitiesCache.set(modelId, { inputModalities, outputModalities })
+
+      models.push({
+        id: modelId,
+        name: model.modelName ?? '',
+        provider: model.providerName ?? '',
+        description: generateDescription(model),
+        modelType: 'foundation',
+        inputModalities,
+        outputModalities
+      })
+    }
+
+    console.log(`[API] Found ${models.length} foundation models, cached ${modalitiesCache.size} modalities`)
+  } catch (error) {
+    console.error('[API] Error listing foundation models:', error)
+    throw error
+  }
+
+  return models
+}
+
+/**
+ * Generate a description based on model capabilities
+ */
+function generateDescription(model: FoundationModelSummary): string {
+  const inputModalities = model.inputModalities ?? []
+  const outputModalities = model.outputModalities ?? []
+  const capabilities: string[] = []
+
+  // Check for multimodal capabilities
+  if (inputModalities.includes('IMAGE')) {
+    capabilities.push('image understanding')
+  }
+  if (outputModalities.includes('IMAGE')) {
+    capabilities.push('image generation')
+  }
+
+  // Check for streaming support
+  if (model.responseStreamingSupported) {
+    capabilities.push('streaming')
+  }
+
+  if (capabilities.length > 0) {
+    return `Supports ${capabilities.join(', ')}`
+  }
+
+  return 'Text generation model'
+}
+
+/**
+ * Fetch available inference profiles from Bedrock
+ */
+async function listInferenceProfiles(): Promise<NormalizedModel[]> {
+  const models: NormalizedModel[] = []
+
+  try {
+    let nextToken: string | undefined
+    do {
+      const response = await bedrockClient.send(
+        new ListInferenceProfilesCommand({ nextToken })
+      )
+
+      for (const profile of response.inferenceProfileSummaries ?? []) {
+        // Get the first model from the profile to check modalities
+        const profileModels = profile.models ?? []
+        if (profileModels.length === 0) {
+          continue
+        }
+
+        const firstModel = profileModels[0]
+        const modelArn = firstModel.modelArn ?? ''
+        if (!modelArn) {
+          continue
+        }
+
+        const { inputModalities, outputModalities } = getModelModalities(modelArn)
+
+        // Only include profiles that support TEXT output (for chat)
+        if (!outputModalities.includes('TEXT')) {
+          continue
+        }
+
+        models.push({
+          id: profile.inferenceProfileArn ?? profile.inferenceProfileId ?? '',
+          name: profile.inferenceProfileName ?? '',
+          provider: extractProviderFromProfile(profile),
+          description: profile.description ?? 'Inference profile for optimized throughput',
+          modelType: 'inference_profile',
+          inputModalities,
+          outputModalities
+        })
+      }
+
+      nextToken = response.nextToken
+    } while (nextToken)
+
+    console.log(`[API] Found ${models.length} inference profiles`)
+  } catch (error) {
+    // ListInferenceProfiles may not be available in all regions or accounts
+    console.warn('[API] Error listing inference profiles (may not be available):', error)
+    return []
+  }
+
+  return models
+}
+
+/**
+ * Extract provider name from inference profile
+ */
+function extractProviderFromProfile(profile: InferenceProfileSummary): string {
+  const profileId = profile.inferenceProfileId ?? ''
+
+  // Extract provider from profile ID (e.g., "us.anthropic.claude-..." -> "Anthropic")
+  const parts = profileId.split('.')
+  if (parts.length >= 2) {
+    const providerPart = parts[1]
+    // Capitalize first letter
+    return providerPart.charAt(0).toUpperCase() + providerPart.slice(1)
+  }
+
+  return 'Unknown'
+}
+
+/**
+ * Get the set of base model IDs that are covered by inference profiles
+ */
+function getInferenceProfileBaseModelIds(inferenceProfiles: NormalizedModel[]): Set<string> {
+  const baseModelIds = new Set<string>()
+
+  for (const profile of inferenceProfiles) {
+    let profileId = profile.id
+
+    // Handle ARN format
+    if (profileId.includes('/')) {
+      profileId = profileId.split('/').pop()!
+    }
+
+    // Remove region prefix (e.g., "us." or "eu.") to get base model ID
+    const parts = profileId.split('.')
+    if (parts.length >= 2 && parts[0].length <= 3) {
+      // Looks like a region prefix (us, eu, ap, etc.)
+      baseModelIds.add(parts.slice(1).join('.'))
+    }
+  }
+
+  return baseModelIds
+}
+
+/**
+ * Fetch all available models from both foundation models and inference profiles
+ */
+async function getAllModels(): Promise<NormalizedModel[]> {
+  const allModels: NormalizedModel[] = []
+  let foundationModels: NormalizedModel[] = []
+  let inferenceProfiles: NormalizedModel[] = []
+
+  // Fetch foundation models first to populate the modalities cache
+  try {
+    foundationModels = await listFoundationModels()
+  } catch (error) {
+    console.error('[API] Failed to list foundation models:', error)
+  }
+
+  // Then fetch inference profiles (uses cached modalities from foundation models)
+  try {
+    inferenceProfiles = await listInferenceProfiles()
+  } catch (error) {
+    console.warn('[API] Failed to list inference profiles:', error)
+  }
+
+  // Get the base model IDs covered by inference profiles
+  const profileBaseIds = getInferenceProfileBaseModelIds(inferenceProfiles)
+  console.log(`[API] Inference profiles cover ${profileBaseIds.size} base models`)
+
+  // Filter out foundation models that have a corresponding inference profile
+  // (those models require invocation via the profile, not directly)
+  let filteredCount = 0
+  for (const model of foundationModels) {
+    if (!profileBaseIds.has(model.id)) {
+      allModels.push(model)
+    } else {
+      filteredCount++
+      console.log(`[API] Filtering out foundation model ${model.id} (use inference profile instead)`)
+    }
+  }
+
+  if (filteredCount > 0) {
+    console.log(`[API] Filtered out ${filteredCount} foundation models (require inference profiles)`)
+  }
+
+  // Add all inference profiles
+  allModels.push(...inferenceProfiles)
+
+  // Sort by provider name, then model name
+  allModels.sort((a, b) => {
+    const providerCompare = a.provider.localeCompare(b.provider)
+    if (providerCompare !== 0) return providerCompare
+    return a.name.localeCompare(b.name)
+  })
+
+  console.log(`[API] Total models available: ${allModels.length}`)
+  return allModels
+}
 
 export async function GET() {
   try {
+    const models = await getAllModels()
+
+    // Transform to the expected frontend format
+    const formattedModels = models.map(model => ({
+      id: model.id,
+      name: model.name,
+      provider: model.provider,
+      description: model.description
+    }))
+
     return NextResponse.json({
-      models: AVAILABLE_MODELS
+      models: formattedModels
     })
   } catch (error) {
     console.error('[API] Error loading available models:', error)
 
-    return NextResponse.json({
-      models: AVAILABLE_MODELS
-    })
+    // Return empty list on error
+    return NextResponse.json(
+      { error: 'Failed to fetch available models', models: [] },
+      { status: 500 }
+    )
   }
 }

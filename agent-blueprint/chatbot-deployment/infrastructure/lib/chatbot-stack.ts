@@ -718,6 +718,18 @@ async function sendResponse(event, status, data, reason) {
       })
     );
 
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock:ListInferenceProfiles'
+        ],
+        resources: [
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/*`
+        ]
+      })
+    );
+
     // Frontend + BFF Container
     const frontendEnvironment: { [key: string]: string } = {
       NODE_ENV: 'production',
