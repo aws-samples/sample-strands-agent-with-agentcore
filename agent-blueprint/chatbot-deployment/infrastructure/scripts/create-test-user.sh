@@ -40,7 +40,7 @@ echo ""
 
 # Default test user credentials
 DEFAULT_EMAIL="test@example.com"
-DEFAULT_PASSWORD="TestUser123!"
+DEFAULT_PASSWORD=$(LC_ALL=C tr -dc 'A-Za-z0-9!@#$%^&*' < /dev/urandom | head -c 12)
 
 # Ask for custom credentials or use defaults
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

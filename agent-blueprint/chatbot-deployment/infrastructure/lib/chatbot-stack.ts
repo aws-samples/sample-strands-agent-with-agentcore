@@ -299,6 +299,9 @@ export class ChatbotStack extends cdk.Stack {
               `if aws secretsmanager get-secret-value --secret-id "${projectName}/mcp/google-maps-credentials" --region ${this.region} &>/dev/null; then [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"; DEFAULT_KEYS="\${DEFAULT_KEYS}google_maps_api_key"; echo "  ✓ Google Maps"; fi`,
               `if aws secretsmanager get-secret-value --secret-id "${projectName}/nova-act-api-key" --region ${this.region} &>/dev/null; then [ -n "$DEFAULT_KEYS" ] && DEFAULT_KEYS="$DEFAULT_KEYS,"; DEFAULT_KEYS="\${DEFAULT_KEYS}nova_act_api_key"; echo "  ✓ Nova Act"; fi`,
               'echo "Default API keys: $DEFAULT_KEYS"',
+              `BUILD_DATETIME=$(date -u +%Y%m%d%H%M%S)`,
+              `APP_VERSION="${process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0'}-$BUILD_DATETIME"`,
+              'echo "App Version: $APP_VERSION"',
             ],
           },
           build: {
@@ -711,6 +714,18 @@ async function sendResponse(event, status, data, reason) {
         resources: [
           `arn:aws:logs:${this.region}:${this.account}:log-group:/ecs/chatbot-frontend`,
           `arn:aws:logs:${this.region}:${this.account}:log-group:/ecs/chatbot-frontend:*`
+        ]
+      })
+    );
+
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock:ListInferenceProfiles'
+        ],
+        resources: [
+          `arn:aws:bedrock:${this.region}:${this.account}:inference-profile/*`
         ]
       })
     );

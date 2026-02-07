@@ -13,7 +13,7 @@ export class CognitoAuthStack extends cdk.Stack {
     // Create Cognito User Pool for authentication
     this.userPool = new cognito.UserPool(this, 'ChatbotUserPool', {
       userPoolName: 'chatbot-users',
-      selfSignUpEnabled: true,
+      selfSignUpEnabled: false, // Disable self sign-up for better security
       signInAliases: {
         email: true,
       },
