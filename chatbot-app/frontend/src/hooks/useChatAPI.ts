@@ -789,6 +789,11 @@ export const useChatAPI = ({
     try {
       logger.info(`Loading session: ${newSessionId}`)
 
+      // Immediately switch session and clear messages for instant UI feedback
+      setSessionId(newSessionId)
+      sessionStorage.setItem('chat-session-id', newSessionId)
+      setMessages([])
+
       const authHeaders = await getAuthHeaders()
 
       // Load conversation history from AgentCore Memory
@@ -1013,10 +1018,8 @@ export const useChatAPI = ({
           return true
         })
 
-      // Update messages and session ID
+      // Update messages (session ID already set at function start for instant UI)
       setMessages(loadedMessages)
-      setSessionId(newSessionId)
-      sessionStorage.setItem('chat-session-id', newSessionId)
 
       logger.info(`Session loaded: ${newSessionId} with ${loadedMessages.length} messages`)
 

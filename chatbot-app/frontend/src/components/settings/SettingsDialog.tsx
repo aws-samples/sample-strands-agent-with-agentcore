@@ -1,11 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Settings, Eye, EyeOff, X, RefreshCw, ExternalLink } from 'lucide-react';
+import { Settings, Eye, EyeOff, X, Loader2, ExternalLink } from 'lucide-react';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 interface ApiKeyConfig {
   configured: boolean;
@@ -154,8 +154,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     const isSaving = savingKey === keyName;
 
     return (
-      <div key={keyName} className="flex items-center gap-2">
-        <span className="text-xs text-foreground/70 w-16 shrink-0">{label}</span>
+      <div key={keyName} className="flex items-center gap-3">
+        <span className="text-sm text-muted-foreground w-20 shrink-0">{label}</span>
 
         {isEditing ? (
           // Edit mode - active input
@@ -166,16 +166,16 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 placeholder="Enter key..."
                 value={newValues[keyName] || ''}
                 onChange={(e) => handleValueChange(keyName, e.target.value)}
-                className="h-8 text-xs pr-8"
+                className="h-9 text-sm pr-9"
                 autoFocus
                 disabled={isSaving}
               />
               <button
                 type="button"
                 onClick={() => toggleShowValue(keyName)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {showValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
             <Button
@@ -183,7 +183,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               size="sm"
               onClick={() => handleSaveKey(keyName)}
               disabled={isSaving || !newValues[keyName]?.trim()}
-              className="h-7 px-3 text-xs"
+              className="h-8 px-3 text-sm"
             >
               {isSaving ? '...' : 'Set'}
             </Button>
@@ -203,14 +203,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                 type="text"
                 value={showValue ? userKey.value || '' : userKey.masked || ''}
                 readOnly
-                className="h-8 text-xs pr-8 bg-blue-50/70 dark:bg-blue-950/40 text-blue-700/80 dark:text-blue-400/90 cursor-default"
+                className="h-9 text-sm pr-9 bg-primary/5 text-primary cursor-default"
               />
               <button
                 type="button"
                 onClick={() => toggleShowValue(keyName)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
               >
-                {showValue ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                {showValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
             <Button
@@ -218,7 +218,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               size="sm"
               onClick={() => handleStartEdit(keyName)}
               disabled={isSaving}
-              className="h-7 px-2 text-xs"
+              className="h-8 px-3 text-sm"
             >
               Edit
             </Button>
@@ -227,7 +227,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               size="sm"
               onClick={() => handleClearKey(keyName)}
               disabled={isSaving}
-              className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+              className="h-8 px-3 text-sm text-destructive hover:text-destructive"
             >
               {isSaving ? '...' : 'Clear'}
             </Button>
@@ -239,13 +239,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               type="text"
               value="••••••••  (shared key active)"
               disabled
-              className="h-8 text-xs flex-1 bg-blue-50/70 dark:bg-blue-950/40 text-blue-600/80 dark:text-blue-400/80"
+              className="h-9 text-sm flex-1 bg-primary/5 text-primary/80"
             />
             <Button
               variant="outline"
               size="sm"
               onClick={() => handleStartEdit(keyName)}
-              className="h-7 px-2 text-xs"
+              className="h-8 px-3 text-sm"
             >
               Override
             </Button>
@@ -258,13 +258,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               value=""
               placeholder="Not configured"
               disabled
-              className="h-8 text-xs flex-1 bg-red-50/60 dark:bg-red-950/30 placeholder:text-red-500/80 dark:placeholder:text-red-400/70"
+              className="h-9 text-sm flex-1 bg-destructive/5 placeholder:text-destructive/60"
             />
             <Button
               variant="outline"
               size="sm"
               onClick={() => handleStartEdit(keyName)}
-              className="h-7 px-2 text-xs"
+              className="h-8 px-3 text-sm"
             >
               Add
             </Button>
@@ -276,33 +276,36 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[420px]">
+      <DialogContent className="sm:max-w-[480px]">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-sm font-medium">
-            <Settings className="h-4 w-4" />
+          <DialogTitle className="flex items-center gap-2">
+            <Settings className="h-5 w-5" />
             API Keys
           </DialogTitle>
+          <DialogDescription>
+            Configure API keys for external services
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="py-2 space-y-4">
+        <div className="py-2 space-y-5">
           {loading ? (
-            <div className="flex items-center justify-center py-6">
-              <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
             API_KEY_SECTIONS.map((section, index) => (
               <div key={section.id}>
-                {index > 0 && <div className="border-t border-border/50 mb-4" />}
-                <div className="space-y-2.5">
+                {index > 0 && <div className="border-t border-border/50 mb-5" />}
+                <div className="space-y-3">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-medium">{section.title}</h4>
+                    <h4 className="text-sm font-medium">{section.title}</h4>
                     <a
                       href={section.link}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-foreground/40 hover:text-foreground/70 transition-colors"
+                      className="text-muted-foreground hover:text-foreground transition-colors"
                     >
-                      <ExternalLink className="h-3 w-3" />
+                      <ExternalLink className="h-3.5 w-3.5" />
                     </a>
                   </div>
                   {section.keys.map((keyDef) => renderKeyField(keyDef.name, keyDef.label))}

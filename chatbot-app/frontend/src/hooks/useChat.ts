@@ -46,6 +46,7 @@ interface UseChatReturn {
   toggleTool: (toolId: string) => Promise<void>
   refreshTools: () => Promise<void>
   sessionId: string | null
+  isLoadingMessages: boolean
   loadSession: (sessionId: string) => Promise<void>
   onGatewayToolsChange: (enabledToolIds: string[]) => void
   browserSession: { sessionId: string | null; browserId: string | null } | null
@@ -78,7 +79,7 @@ interface UseChatReturn {
 
 // Default preferences when session has no saved preferences
 const DEFAULT_PREFERENCES: SessionPreferences = {
-  lastModel: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
+  lastModel: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
   lastTemperature: 0.7,
   enabledTools: [],
   selectedPromptId: 'general',
@@ -93,6 +94,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [swarmEnabled, setSwarmEnabled] = useState(false)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
 
   // Per-session model/temperature state (not written to global profile on session switch)
   const [currentModelId, setCurrentModelId] = useState(DEFAULT_PREFERENCES.lastModel!)
@@ -305,6 +307,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Stop any existing polling
     stopPolling()
 
+    // Set loading state for UI feedback
+    setIsLoadingMessages(true)
+
     // Reset UI and session state
     setUIState(prev => ({
       ...prev,
@@ -323,7 +328,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       interrupt: null
     })
 
-    const preferences = await apiLoadSession(newSessionId)
+    try {
+      const preferences = await apiLoadSession(newSessionId)
 
     // Verify session hasn't changed during async load
     if (currentSessionIdRef.current !== newSessionId) {
@@ -379,6 +385,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     // Notify that session loading is complete (artifacts are in sessionStorage)
     onSessionLoadedRef.current?.()
+    } finally {
+      setIsLoadingMessages(false)
+    }
   }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
   // ==================== INITIALIZATION EFFECTS ====================
@@ -919,6 +928,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     toggleTool,
     refreshTools,
     sessionId,
+    isLoadingMessages,
     loadSession: loadSessionWithPreferences,
     onGatewayToolsChange: handleGatewayToolsChange,
     browserSession: sessionState.browserSession,

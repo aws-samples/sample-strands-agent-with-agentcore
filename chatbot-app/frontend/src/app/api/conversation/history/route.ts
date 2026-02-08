@@ -80,7 +80,7 @@ export async function GET(request: NextRequest) {
     // Get query parameters
     const searchParams = request.nextUrl.searchParams
     const sessionId = searchParams.get('session_id')
-    const limit = parseInt(searchParams.get('limit') || '100')
+    // Note: limit parameter is deprecated - we now paginate through all events
 
     if (!sessionId) {
       return NextResponse.json(
@@ -120,18 +120,30 @@ export async function GET(request: NextRequest) {
 
       const client = new BedrockAgentCoreClient({ region: AWS_REGION })
 
-      const command = new ListEventsCommand({
-        memoryId: memoryId,
-        sessionId: sessionId,
-        actorId: userId,
-        includePayloads: true,
-        maxResults: limit,
-      })
+      // Paginate through all events (API max is 100 per request)
+      let allEvents: any[] = []
+      let nextToken: string | undefined
 
-      const response = await client.send(command)
-      const events = response.events || []
+      do {
+        const command = new ListEventsCommand({
+          memoryId: memoryId,
+          sessionId: sessionId,
+          actorId: userId,
+          includePayloads: true,
+          maxResults: 100, // API maximum
+          nextToken,
+        })
 
-      console.log(`[API] Retrieved ${events.length} events from AgentCore Memory`)
+        const response = await client.send(command)
+        const pageEvents = response.events || []
+        allEvents.push(...pageEvents)
+        nextToken = response.nextToken
+
+        console.log(`[API] Retrieved ${pageEvents.length} events (total: ${allEvents.length})${nextToken ? ', fetching more...' : ''}`)
+      } while (nextToken)
+
+      const events = allEvents
+      console.log(`[API] Retrieved ${events.length} total events from AgentCore Memory`)
 
       // Convert AgentCore Memory events to chat messages
       // Events are returned newest-first, reverse to get chronological order

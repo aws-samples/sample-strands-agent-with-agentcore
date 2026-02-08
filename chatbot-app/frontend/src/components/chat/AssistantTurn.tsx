@@ -532,7 +532,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                             <LazyImage
                               src={imageSrc}
                               alt={`Generated image ${idx + 1}`}
-                              className="max-w-full h-auto rounded-xl border border-slate-200 shadow-sm"
+                              className="max-w-full h-auto rounded-xl border border-border shadow-sm"
                               style={{ maxHeight: '400px' }}
                             />
                             <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -552,29 +552,29 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
           {/* Generated Documents - Rendered at turn bottom */}
           {turnDocuments.length > 0 && (
-            <div className="mt-4 p-3 bg-gray-50/60 dark:bg-gray-800/30 rounded-lg border border-gray-200/60 dark:border-gray-700/40">
+            <div className="mt-4 p-3 bg-muted/50 rounded-lg border border-border/60">
               <div className="flex items-center gap-2 mb-2">
-                <FileText className="h-3.5 w-3.5 text-gray-500 dark:text-gray-400" />
-                <span className="text-caption font-medium text-gray-600 dark:text-gray-400">
+                <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                <span className="text-caption font-medium text-muted-foreground">
                   {turnDocuments.length} {turnDocuments.length === 1 ? 'Document' : 'Documents'}
                 </span>
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+              <div className="flex gap-2 overflow-x-auto pb-1">
                 {turnDocuments.map((doc, idx) => {
                   const { Icon, color } = getFileIcon(doc.filename)
                   return (
                     <div
                       key={idx}
-                      className="group relative flex items-center gap-2.5 px-3.5 py-2 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600 flex-shrink-0"
+                      className="group relative flex items-center gap-2.5 px-3.5 py-2 bg-background hover:bg-muted/50 rounded-lg transition-all duration-200 cursor-pointer border border-border/50 hover:border-border flex-shrink-0"
                       onClick={() => handleDocumentDownload(doc.filename, doc.tool_type)}
                     >
-                      <div className="flex items-center justify-center w-7 h-7 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
+                      <div className="flex items-center justify-center w-7 h-7 bg-muted rounded shadow-sm">
                         <Icon className={`h-3.5 w-3.5 ${color}`} />
                       </div>
-                      <span className="text-label font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
+                      <span className="text-label font-medium text-foreground whitespace-nowrap">
                         {doc.filename}
                       </span>
-                      <Download className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      <Download className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
                     </div>
                   )
                 })}
@@ -608,7 +608,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
               variant="ghost"
               size="sm"
               onClick={handleCopy}
-              className="h-8 px-3 text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800"
+              className="h-8 px-3 text-muted-foreground hover:text-foreground hover:bg-muted"
             >
               {copied ? (
                 <Check className="h-3.5 w-3.5" />
@@ -623,8 +623,8 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
               onClick={() => handleFeedback('up')}
               className={`h-8 px-3 ${
                 feedback === 'up'
-                  ? 'text-green-600 bg-green-50 hover:bg-green-100 dark:text-green-400 dark:bg-green-950/30 dark:hover:bg-green-950/50'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800'
+                  ? 'text-green-600 bg-green-500/10 hover:bg-green-500/20 dark:text-green-400'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               <ThumbsUp className="h-3.5 w-3.5" />
@@ -636,8 +636,8 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
               onClick={() => handleFeedback('down')}
               className={`h-8 px-3 ${
                 feedback === 'down'
-                  ? 'text-red-600 bg-red-50 hover:bg-red-100 dark:text-red-400 dark:bg-red-950/30 dark:hover:bg-red-950/50'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800'
+                  ? 'text-destructive bg-destructive/10 hover:bg-destructive/20'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-muted'
               }`}
             >
               <ThumbsDown className="h-3.5 w-3.5" />

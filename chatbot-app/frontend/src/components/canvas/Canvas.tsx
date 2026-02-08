@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { X, FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal, Monitor, Database } from 'lucide-react'
+import { X, FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal, Monitor, Database, Layers } from 'lucide-react'
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import { Artifact } from '@/types/artifact'
 import { ComposeArtifact } from './ComposeArtifact'
 import { ResearchArtifact } from './ResearchArtifact'
@@ -390,8 +391,8 @@ export function Canvas({
                         />
                       </div>
                     ) : selectedArtifact.type === 'extracted_data' ? (
-                      <div className="bg-slate-900 rounded-lg p-4 overflow-auto">
-                        <pre className="text-sm text-slate-100 whitespace-pre-wrap font-mono">
+                      <div className="bg-muted rounded-lg p-4 overflow-auto border border-border">
+                        <pre className="text-sm text-foreground whitespace-pre-wrap font-mono">
                           {typeof selectedArtifact.content === 'string'
                             ? selectedArtifact.content
                             : JSON.stringify(selectedArtifact.content, null, 2)}
@@ -423,12 +424,17 @@ export function Canvas({
               onValidationFailed={browserState.onValidationFailed}
             />
           ) : (
-            <div className="flex-1 flex items-center justify-center text-sidebar-foreground/50">
-              <div className="text-center">
-                <Sparkles className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p className="text-label">Select a canvas item to preview</p>
-              </div>
-            </div>
+            <Empty className="text-sidebar-foreground/60">
+              <EmptyHeader>
+                <EmptyMedia variant="icon" className="bg-sidebar-accent text-sidebar-foreground/50">
+                  <Layers className="h-6 w-6" />
+                </EmptyMedia>
+                <EmptyTitle className="text-sidebar-foreground/80">No Content Selected</EmptyTitle>
+                <EmptyDescription className="text-sidebar-foreground/50">
+                  Select an item from the library below to preview
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
         </div>
 

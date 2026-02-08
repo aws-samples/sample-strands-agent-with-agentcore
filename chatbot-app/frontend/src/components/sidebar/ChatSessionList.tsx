@@ -56,7 +56,7 @@ export function ChatSessionList({
         return (
           <div
             key={session.sessionId}
-            className={`group/session flex items-center justify-between py-2.5 px-3 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer ${
+            className={`group/session flex items-center gap-2 py-2.5 px-3 rounded-lg hover:bg-sidebar-accent transition-colors cursor-pointer ${
               isCurrentSession ? 'bg-sidebar-accent' : ''
             }`}
             onClick={() => {
@@ -65,11 +65,9 @@ export function ChatSessionList({
               }
             }}
           >
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <span className="text-[15px] text-sidebar-foreground truncate">
-                {session.title}
-              </span>
-            </div>
+            <span className="text-[15px] text-sidebar-foreground block truncate max-w-[calc(var(--sidebar-width,24rem)-5rem)]">
+              {session.title}
+            </span>
             <button
               onClick={(e) => handleDeleteSession(session.sessionId, e)}
               className="opacity-0 group-hover/session:opacity-100 transition-opacity p-1.5 rounded hover:bg-destructive/10 text-sidebar-foreground/40 hover:text-destructive flex-shrink-0"

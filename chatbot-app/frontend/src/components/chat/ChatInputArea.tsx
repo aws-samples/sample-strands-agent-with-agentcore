@@ -4,9 +4,10 @@ import React, { useState, useRef, useEffect, useCallback } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Send, FileText, ImageIcon, Square, Loader2, Mic, FlaskConical } from "lucide-react"
+import { Upload, Send, Square, Loader2, Mic, FlaskConical } from "lucide-react"
+import { FilePreview } from "@/components/ui/file-preview"
+import { AnimatePresence } from "framer-motion"
 import { ToolsDropdown } from "@/components/ToolsDropdown"
 import { VoiceAnimation } from "@/components/VoiceAnimation"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
@@ -220,32 +221,21 @@ export function ChatInputArea({
     adjustTextareaHeight()
   }, [inputMessage, adjustTextareaHeight])
 
-  const getFileIcon = (file: File) => {
-    if (file.type.startsWith("image/")) return <ImageIcon className="w-3 h-3" />
-    return <FileText className="w-3 h-3" />
-  }
-
   return (
     <>
       {/* File Upload Preview */}
       {selectedFiles.length > 0 && (
         <div className="mx-auto px-4 w-full md:max-w-4xl mb-2">
           <div className="flex flex-wrap gap-2">
-            {selectedFiles.map((file, index) => (
-              <Badge key={index} variant="secondary" className="flex items-center gap-1 max-w-[200px]">
-                {getFileIcon(file)}
-                <span className="truncate text-caption">
-                  {file.name.length > 20 ? `${file.name.substring(0, 20)}...` : file.name}
-                </span>
-                <button
-                  onClick={() => removeFile(index)}
-                  className="ml-1 text-slate-500 hover:text-slate-700 text-label"
-                  type="button"
-                >
-                  ×
-                </button>
-              </Badge>
-            ))}
+            <AnimatePresence>
+              {selectedFiles.map((file, index) => (
+                <FilePreview
+                  key={`${file.name}-${index}`}
+                  file={file}
+                  onRemove={() => removeFile(index)}
+                />
+              ))}
+            </AnimatePresence>
           </div>
         </div>
       )}

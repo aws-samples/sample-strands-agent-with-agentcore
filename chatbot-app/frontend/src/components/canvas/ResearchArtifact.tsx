@@ -158,20 +158,23 @@ export function ResearchArtifact({
         {/* Actions */}
         <div className="flex-shrink-0 px-6 py-4 border-t border-border/50">
           <div className="flex justify-end items-center gap-2">
-            <button
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={handleDecline}
-              className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground bg-muted/50 hover:bg-muted rounded-lg transition-all"
+              className="px-4"
             >
-              <X className="h-3.5 w-3.5" />
+              <X className="h-3.5 w-3.5 mr-1.5" />
               Decline
-            </button>
-            <button
+            </Button>
+            <Button
+              size="sm"
               onClick={handleApprove}
-              className="inline-flex items-center gap-1.5 px-5 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 rounded-lg transition-all shadow-sm hover:shadow"
+              className="px-5"
             >
-              <Check className="h-3.5 w-3.5" />
+              <Check className="h-3.5 w-3.5 mr-1.5" />
               Approve & Start
-            </button>
+            </Button>
           </div>
         </div>
       </div>

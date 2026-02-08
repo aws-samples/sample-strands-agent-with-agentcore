@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Monitor, RefreshCw } from 'lucide-react';
+import { Monitor, RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
 
 interface BrowserLiveViewProps {
   sessionId: string;
@@ -397,31 +397,28 @@ export function BrowserLiveView({
       {/* Content */}
       <div className="relative flex-1 w-full bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 overflow-hidden">
         {loading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm z-10">
             <div className="text-center">
-              <div className="relative">
-                <div className="w-16 h-16 border-4 border-slate-700 border-t-blue-500 rounded-full animate-spin mx-auto mb-4"></div>
-                <div className="absolute inset-0 w-16 h-16 border-4 border-transparent border-t-blue-400 rounded-full animate-ping mx-auto opacity-20"></div>
+              <div className="relative mb-4">
+                <div className="absolute inset-0 bg-primary/20 rounded-full blur-xl animate-pulse w-16 h-16 mx-auto" />
+                <Loader2 className="h-16 w-16 animate-spin text-primary mx-auto relative" />
               </div>
-              <p className="text-slate-200 font-medium">Connecting to browser session...</p>
-              <p className="text-slate-400 text-label mt-1">Please wait</p>
+              <p className="text-foreground font-medium">Connecting to browser session...</p>
+              <p className="text-muted-foreground text-label mt-1">Please wait</p>
             </div>
           </div>
         )}
 
         {error && (
-          <div className="absolute inset-0 flex items-center justify-center bg-slate-900/95 backdrop-blur-sm z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-background/95 backdrop-blur-sm z-10">
             <div className="text-center max-w-md px-6">
-              <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-red-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                </svg>
+              <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <AlertTriangle className="w-8 h-8 text-destructive" />
               </div>
-              <p className="text-heading font-semibold text-red-400 mb-2">Connection Failed</p>
-              <p className="text-label text-slate-300 mb-4">{error}</p>
+              <p className="text-heading font-semibold text-destructive mb-2">Connection Failed</p>
+              <p className="text-label text-muted-foreground mb-4">{error}</p>
               <Button
                 variant="outline"
-                className="bg-slate-800 hover:bg-slate-700 text-white border-slate-600"
                 onClick={handleRetry}
               >
                 <RefreshCw className="w-4 h-4 mr-2" />

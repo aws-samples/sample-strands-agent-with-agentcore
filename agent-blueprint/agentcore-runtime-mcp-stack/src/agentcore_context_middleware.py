@@ -35,23 +35,13 @@ class AgentCoreContextMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
-        # Debug: Log all headers to understand what AgentCore sends
-        print(f"[Middleware] Request path: {request.url.path}")
-        print(f"[Middleware] Headers received: {dict(request.headers)}")
-
         token = request.headers.get("WorkloadAccessToken")
         if token:
-            print(f"[Middleware] WorkloadAccessToken found (length={len(token)})")
             BedrockAgentCoreContext.set_workload_access_token(token)
-        else:
-            print("[Middleware] WARNING: No WorkloadAccessToken header!")
 
         callback_url = request.headers.get("OAuth2CallbackUrl")
         if callback_url:
-            print(f"[Middleware] OAuth2CallbackUrl found: {callback_url}")
             BedrockAgentCoreContext.set_oauth2_callback_url(callback_url)
-        else:
-            print("[Middleware] WARNING: No OAuth2CallbackUrl header!")
 
         session_id = request.headers.get("X-Amzn-Bedrock-AgentCore-Runtime-Session-Id")
         if session_id:

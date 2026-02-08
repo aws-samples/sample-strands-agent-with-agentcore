@@ -1,11 +1,12 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { FileText, Image, ChevronDown, ChevronUp, Copy, Check, Mic, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check, Mic, Sparkles } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { Markdown } from '@/components/ui/Markdown'
 import { ToolExecutionContainer } from './ToolExecutionContainer'
 import { LazyImage } from '@/components/ui/LazyImage'
 import { AIIcon } from '@/components/ui/AIIcon'
+import { SentFilePreview } from '@/components/ui/file-preview'
 
 // Check if this is a compose request JSON (user message to hide)
 const isComposeRequest = (text: string): boolean => {
@@ -58,15 +59,6 @@ interface ChatMessageProps {
 }
 
 const MAX_LINES = 5
-
-const getFileIcon = (fileType: string) => {
-  if (fileType.startsWith('image/')) {
-    return <Image className="w-3 h-3" />
-  } else if (fileType === 'application/pdf') {
-    return <FileText className="w-3 h-3" />
-  }
-  return <FileText className="w-3 h-3" />
-}
 
 const CollapsibleUserMessage = ({ text }: { text: string }) => {
   const [isExpanded, setIsExpanded] = useState(false)
@@ -131,21 +123,19 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
           <div className="flex flex-col items-end space-y-2">
             {/* Uploaded files display */}
             {message.uploadedFiles && message.uploadedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1 justify-end max-w-sm">
+              <div className="flex flex-wrap gap-2 justify-end">
                 {message.uploadedFiles.map((file, index) => (
-                  <Badge key={index} variant="secondary" className="flex items-center gap-1 text-caption">
-                    {getFileIcon(file.type)}
-                    <span className="truncate max-w-[120px]">
-                      {file.name.length > 15 ? `${file.name.substring(0, 15)}...` : file.name}
-                    </span>
-                  </Badge>
+                  <SentFilePreview
+                    key={index}
+                    fileInfo={{ name: file.name, type: file.type, size: file.size }}
+                  />
                 ))}
               </div>
             )}
             <div className="flex items-center gap-2">
               <button
                 onClick={handleCopy}
-                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
                 title="Copy message"
               >
                 {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
@@ -153,7 +143,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
               <div className={`rounded-2xl rounded-tr-md px-5 py-3.5 shadow-sm ${
                 message.isVoiceMessage
                   ? 'bg-gradient-to-r from-fuchsia-100 to-purple-100 dark:from-fuchsia-900/30 dark:to-purple-900/30 text-fuchsia-800 dark:text-fuchsia-200'
-                  : 'bg-blue-100 dark:bg-[#303030] text-slate-800 dark:text-[#E0E0E0]'
+                  : 'bg-primary/10 text-foreground'
               }`}>
                 {message.isVoiceMessage && (
                   <div className="flex items-center gap-1.5 mb-1 text-fuchsia-600 dark:text-fuchsia-300">
@@ -208,7 +198,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
           {/* Tool Executions Section - Only show if not a separate tool message */}
           {message.toolExecutions && message.toolExecutions.length > 0 && !message.isToolMessage && (
             <div className="mb-4">
-              <div className="text-caption font-medium text-slate-600 mb-2 flex items-center gap-2">
+              <div className="text-caption font-medium text-muted-foreground mb-2 flex items-center gap-2">
                 <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
                 Tools Used ({message.toolExecutions.length})
               </div>
@@ -241,7 +231,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
                       <LazyImage
                         src={imageSrc}
                         alt={`Generated image ${idx + 1}`}
-                        className="max-w-full h-auto rounded-xl border border-slate-200 shadow-sm"
+                        className="max-w-full h-auto rounded-xl border border-border shadow-sm"
                         style={{ maxHeight: '400px' }}
                       />
                       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">

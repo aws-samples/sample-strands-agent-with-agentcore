@@ -28,6 +28,8 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Upload, Send, FileText, ImageIcon, Square, Loader2, ArrowDown, Mic, FlaskConical, Sparkles } from "lucide-react"
 import { AIIcon } from "@/components/ui/AIIcon"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
@@ -197,6 +199,7 @@ export function ChatInterface() {
     toggleTool,
     refreshTools,
     sessionId,
+    isLoadingMessages,
     loadSession,
     onGatewayToolsChange,
     browserSession,
@@ -1306,12 +1309,48 @@ If the user asks to modify this document, use the update_artifact tool to find a
         )}
 
         {/* Messages Area - unified container scroll for both modes */}
-        <div
-          ref={messagesContainerRef}
-          onScroll={handleScroll}
-          className={`flex flex-col min-w-0 gap-6 ${groupedMessages.length > 0 ? 'flex-1' : ''} overflow-y-auto relative min-h-0 ${groupedMessages.length > 0 ? 'pt-4' : ''}`}
+        <ScrollArea
+          viewportRef={messagesContainerRef}
+          onScrollCapture={handleScroll}
+          className={`${groupedMessages.length > 0 || isLoadingMessages ? 'flex-1' : ''} relative min-h-0`}
+          viewportClassName={`flex flex-col min-w-0 gap-6 ${groupedMessages.length > 0 || isLoadingMessages ? 'pt-4' : ''}`}
         >
-          {groupedMessages.map((group, index) => {
+          {/* Loading skeleton when switching sessions */}
+          {isLoadingMessages && (
+            <div className="mx-auto w-full max-w-4xl px-4">
+              {/* User message skeleton */}
+              <div className="flex justify-end mb-8">
+                <Skeleton className="h-12 w-[420px] rounded-2xl rounded-tr-md" />
+              </div>
+              {/* Assistant message skeleton */}
+              <div className="flex justify-start mb-8">
+                <div className="flex items-start w-full space-x-4">
+                  <Skeleton className="w-9 h-9 rounded-full flex-shrink-0 mt-2" />
+                  <div className="flex-1 space-y-3 pt-1">
+                    <Skeleton className="h-5 w-[90%]" />
+                    <Skeleton className="h-5 w-[85%]" />
+                    <Skeleton className="h-5 w-[78%]" />
+                    <Skeleton className="h-5 w-[60%]" />
+                  </div>
+                </div>
+              </div>
+              {/* Another exchange */}
+              <div className="flex justify-end mb-8">
+                <Skeleton className="h-12 w-[320px] rounded-2xl rounded-tr-md" />
+              </div>
+              <div className="flex justify-start mb-8">
+                <div className="flex items-start w-full space-x-4">
+                  <Skeleton className="w-9 h-9 rounded-full flex-shrink-0 mt-2" />
+                  <div className="flex-1 space-y-3 pt-1">
+                    <Skeleton className="h-5 w-[88%]" />
+                    <Skeleton className="h-5 w-[75%]" />
+                    <Skeleton className="h-5 w-[55%]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {!isLoadingMessages && groupedMessages.map((group, index) => {
             const isLastGroup = index === groupedMessages.length - 1;
             const hasSwarmProgress = swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed');
             const isSwarmFinalResponse = hasSwarmProgress && isLastGroup && group.type === 'assistant_turn';
@@ -1393,7 +1432,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
 
           {/* Scroll target */}
           <div ref={messagesEndRef} className="h-4" />
-        </div>
+        </ScrollArea>
 
         {/* Scroll to bottom button - show when user scrolled up */}
         {isUserScrolledUp && groupedMessages.length > 0 && (
@@ -1409,8 +1448,8 @@ If the user asks to modify this document, use the update_artifact tool to find a
           </div>
         )}
 
-        {/* Greeting - Show when chat not started */}
-        {groupedMessages.length === 0 && (
+        {/* Greeting - Show when chat not started (not during loading) */}
+        {groupedMessages.length === 0 && !isLoadingMessages && (
           <div className="mx-auto px-4 w-full md:max-w-4xl">
             <div className="flex flex-col items-center justify-center mb-16 animate-fade-in">
               <Greeting />

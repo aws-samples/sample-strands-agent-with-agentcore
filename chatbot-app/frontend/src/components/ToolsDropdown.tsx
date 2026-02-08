@@ -3,7 +3,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Tool } from '@/types/chat';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import {
   Popover,
@@ -11,12 +10,20 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
+import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Sparkles, Search, Check, Zap, X, KeyRound } from 'lucide-react';
+import { Sparkles, Check, Zap, KeyRound } from 'lucide-react';
 import { getToolIcon } from '@/config/tool-icons';
 import { apiGet } from '@/lib/api-client';
 
@@ -48,7 +55,6 @@ export function ToolsDropdown({
   onToggleAuto,
 }: ToolsDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [configuredKeys, setConfiguredKeys] = useState<Record<string, boolean>>({});
 
   // Load configured API keys on mount and when dropdown opens
@@ -139,22 +145,8 @@ export function ToolsDropdown({
     return enabled;
   }, [availableTools]);
 
-  // Filter and sort tools: enabled tools first, then by original order
-  const filteredTools = useMemo(() => {
-    let tools = allTools;
-
-    if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
-      tools = tools.filter(tool => {
-        const nameMatch = tool.name.toLowerCase().includes(query);
-        const descMatch = tool.description?.toLowerCase().includes(query);
-        const tags = (tool as any).tags || [];
-        const tagMatch = tags.some((tag: string) => tag.toLowerCase().includes(query));
-        return nameMatch || descMatch || tagMatch;
-      });
-    }
-
-    // Sort enabled tools to the top while preserving relative order within each group
+  // Sort tools: enabled tools first, then alphabetical
+  const sortedTools = useMemo(() => {
     const checkEnabled = (tool: Tool): boolean => {
       const isDynamic = (tool as any).isDynamic === true;
       const nestedTools = (tool as any).tools || [];
@@ -164,15 +156,13 @@ export function ToolsDropdown({
       return tool.enabled;
     };
 
-    return [...tools].sort((a, b) => {
-      // Primary: enabled tools first
+    return [...allTools].sort((a, b) => {
       const aEnabled = checkEnabled(a) ? 1 : 0;
       const bEnabled = checkEnabled(b) ? 1 : 0;
       if (aEnabled !== bEnabled) return bEnabled - aEnabled;
-      // Secondary: alphabetical by name
       return a.name.localeCompare(b.name);
     });
-  }, [allTools, searchQuery, availableTools]);
+  }, [allTools, availableTools]);
 
   const handleToolToggle = (toolId: string, tool: Tool) => {
     const isDynamic = (tool as any).isDynamic === true;
@@ -233,14 +223,14 @@ export function ToolsDropdown({
                 variant="ghost"
                 size="sm"
                 disabled={disabled}
-                className={`h-9 w-9 p-0 transition-all duration-200 ${
+                className={`h-9 w-9 p-0 transition-all ${
                   disabled
-                    ? 'opacity-40 cursor-not-allowed hover:bg-transparent'
+                    ? 'opacity-40 cursor-not-allowed'
                     : autoEnabled
                     ? 'bg-purple-500/15 hover:bg-purple-500/25 text-purple-500'
                     : enabledCount > 0
-                    ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-400'
-                    : 'hover:bg-muted-foreground/10 text-muted-foreground'
+                    ? 'bg-primary/15 hover:bg-primary/25 text-primary'
+                    : 'hover:bg-muted text-muted-foreground'
                 }`}
               >
                 <Sparkles className="w-4 h-4" />
@@ -256,23 +246,23 @@ export function ToolsDropdown({
       <PopoverContent
         align="start"
         side="top"
-        className="w-[280px] p-0 shadow-md rounded-xl border border-slate-200/80 dark:border-slate-800 overflow-hidden bg-white dark:bg-slate-950"
+        className="w-[300px] p-0"
         sideOffset={12}
       >
         {/* Auto Mode Toggle */}
         {onToggleAuto && (
-          <div className="px-3 py-2.5 border-b border-slate-100 dark:border-slate-800">
+          <div className="px-3 py-2.5 border-b">
             <div
               onClick={() => onToggleAuto(!autoEnabled)}
-              className={`flex items-center justify-between cursor-pointer transition-all`}
+              className="flex items-center justify-between cursor-pointer"
             >
               <div className="flex items-center gap-3">
-                <Zap className={`w-[18px] h-[18px] ${autoEnabled ? 'text-purple-500' : 'text-slate-400'}`} />
+                <Zap className={`w-[18px] h-[18px] ${autoEnabled ? 'text-purple-500' : 'text-muted-foreground'}`} />
                 <div>
-                  <div className={`text-[13px] ${autoEnabled ? 'text-purple-600 dark:text-purple-400' : 'text-slate-600 dark:text-slate-400'}`}>
+                  <div className={`text-base ${autoEnabled ? 'text-purple-600 dark:text-purple-400' : 'text-foreground'}`}>
                     Auto Mode
                   </div>
-                  <div className="text-[11px] text-slate-400">
+                  <div className="text-sm text-muted-foreground">
                     AI selects tools automatically
                   </div>
                 </div>
@@ -280,123 +270,89 @@ export function ToolsDropdown({
               <Switch
                 checked={autoEnabled}
                 onCheckedChange={onToggleAuto}
-                className="data-[state=checked]:bg-purple-500 scale-90"
+                className="data-[state=checked]:bg-purple-500"
               />
             </div>
           </div>
         )}
 
-        {/* Search + Clear */}
-        <div className={`px-3 py-2 border-b border-slate-100 dark:border-slate-800 ${autoEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300" />
-              <Input
-                type="text"
-                placeholder="Search tools..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                disabled={autoEnabled}
-                className="pl-9 h-9 text-[13px] bg-slate-50/50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800 focus-visible:ring-1 focus-visible:ring-slate-200 dark:focus-visible:ring-slate-700 rounded-lg placeholder:text-slate-400"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-500"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
-            </div>
+        {/* Command - Search + Tool List */}
+        <Command className={`${autoEnabled ? 'opacity-40 pointer-events-none' : ''}`}>
+          <div className="flex items-center border-b px-3">
+            <CommandInput
+              placeholder="Search tools..."
+              className="h-9"
+            />
             {enabledCount > 0 && (
               <button
                 onClick={handleClearAll}
-                className="text-[12px] text-slate-400 hover:text-rose-500 transition-colors whitespace-nowrap"
+                className="text-sm text-muted-foreground hover:text-destructive transition-colors whitespace-nowrap ml-2"
               >
-                Clear all
+                Clear
               </button>
             )}
           </div>
-        </div>
+          <CommandList className="max-h-[240px]">
+            <CommandEmpty className="py-6 text-center text-base text-muted-foreground">
+              No tools found
+            </CommandEmpty>
+            <CommandGroup>
+              {sortedTools.map((tool) => {
+                const ToolIcon = getToolIcon(tool.id);
+                const enabled = isToolEnabled(tool);
+                const isDynamic = (tool as any).isDynamic === true;
+                const nestedTools = (tool as any).tools || [];
+                const enabledNestedCount = getEnabledNestedCount(tool);
+                const available = isToolAvailable(tool.id);
 
-        {/* Tool List */}
-        <div className={`max-h-[240px] overflow-y-auto ${autoEnabled ? 'opacity-40 pointer-events-none' : ''}`}>
-          <div className="py-1">
-            {filteredTools.map((tool) => {
-              const ToolIcon = getToolIcon(tool.id);
-              const enabled = isToolEnabled(tool);
-              const isDynamic = (tool as any).isDynamic === true;
-              const nestedTools = (tool as any).tools || [];
-              const enabledNestedCount = getEnabledNestedCount(tool);
-              const available = isToolAvailable(tool.id);
+                return (
+                  <CommandItem
+                    key={tool.id}
+                    value={tool.name}
+                    onSelect={() => available && handleToolToggle(tool.id, tool)}
+                    disabled={!available}
+                    className={`flex items-center gap-3 ${
+                      enabled ? 'bg-primary/5' : ''
+                    } ${!available ? 'opacity-50' : ''}`}
+                  >
+                    <ToolIcon className={`w-4 h-4 shrink-0 ${
+                      !available ? 'text-muted-foreground/50' : enabled ? 'text-primary' : 'text-muted-foreground'
+                    }`} />
 
-              const toolItem = (
-                <div
-                  onClick={() => available && handleToolToggle(tool.id, tool)}
-                  className={`group flex items-center gap-3 px-4 py-2.5 transition-colors ${
-                    !available
-                      ? 'opacity-50 cursor-not-allowed'
-                      : enabled
-                      ? 'bg-emerald-50/50 dark:bg-emerald-950/20 cursor-pointer'
-                      : 'hover:bg-slate-50 dark:hover:bg-slate-900/30 cursor-pointer'
-                  }`}
-                >
-                  {/* Icon - no background */}
-                  <ToolIcon className={`w-[18px] h-[18px] shrink-0 ${
-                    !available ? 'text-slate-300' : enabled ? 'text-emerald-500' : 'text-slate-400'
-                  }`} />
-
-                  {/* Name & Description */}
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-[13px] truncate ${
-                      !available
-                        ? 'text-slate-400'
-                        : enabled
-                        ? 'text-emerald-600 dark:text-emerald-400'
-                        : 'text-slate-600 dark:text-slate-400'
-                    }`}>
-                      {tool.name}
+                    <div className="flex-1 min-w-0">
+                      <span className={`text-base truncate ${
+                        enabled ? 'text-primary' : ''
+                      }`}>
+                        {tool.name}
+                      </span>
                       {isDynamic && nestedTools.length > 0 && (
-                        <span className="text-[11px] text-slate-400 ml-1.5">
+                        <span className="text-sm text-muted-foreground ml-1.5">
                           {enabled ? `${enabledNestedCount}/${nestedTools.length}` : `${nestedTools.length}`}
                         </span>
                       )}
                     </div>
-                  </div>
 
-                  {/* Check indicator or key icon for unavailable */}
-                  {!available ? (
-                    <KeyRound className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                  ) : enabled ? (
-                    <Check className="w-4 h-4 text-emerald-500 shrink-0" />
-                  ) : null}
-                </div>
-              );
-
-              return !available ? (
-                <TooltipProvider key={tool.id} delayDuration={200}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      {toolItem}
-                    </TooltipTrigger>
-                    <TooltipContent side="right" className="text-xs">
-                      <p>API Key required</p>
-                      <p className="text-muted-foreground">Settings → API Keys</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              ) : (
-                <div key={tool.id}>{toolItem}</div>
-              );
-            })}
-
-            {filteredTools.length === 0 && (
-              <div className="py-8 text-center text-[13px] text-slate-400">
-                No tools found
-              </div>
-            )}
-          </div>
-        </div>
+                    {!available ? (
+                      <TooltipProvider delayDuration={200}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <KeyRound className="w-3.5 h-3.5 text-muted-foreground/50 shrink-0" />
+                          </TooltipTrigger>
+                          <TooltipContent side="right" className="text-xs">
+                            <p>API Key required</p>
+                            <p className="text-muted-foreground">Settings → API Keys</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : enabled ? (
+                      <Check className="w-4 h-4 text-primary shrink-0" />
+                    ) : null}
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
       </PopoverContent>
     </Popover>
   );

@@ -7,7 +7,102 @@ import { invokeAgentCoreRuntime } from '@/lib/agentcore-runtime-client'
 import { extractUserFromRequest, getSessionId, ensureSessionExists } from '@/lib/auth-utils'
 import { createDefaultHookManager } from '@/lib/chat-hooks'
 import { getSystemPrompt } from '@/lib/system-prompts'
+import sharp from 'sharp'
 // Note: browser-session-poller is dynamically imported when browser-use-agent is enabled
+
+// Maximum image size in bytes (5MB)
+const MAX_IMAGE_SIZE = 5 * 1024 * 1024
+
+/**
+ * Resize image if it exceeds max size
+ * Progressively reduces quality and resolution until under limit
+ */
+async function resizeImageIfNeeded(
+  buffer: Buffer,
+  contentType: string,
+  filename: string
+): Promise<{ buffer: Buffer; resized: boolean }> {
+  // Only process images
+  if (!contentType.startsWith('image/')) {
+    return { buffer, resized: false }
+  }
+
+  // Skip if already under limit
+  if (buffer.length <= MAX_IMAGE_SIZE) {
+    return { buffer, resized: false }
+  }
+
+  console.log(`[BFF] Image ${filename} is ${(buffer.length / 1024 / 1024).toFixed(2)}MB, resizing...`)
+
+  // Determine output format (convert to jpeg for better compression, keep png for transparency)
+  const isPng = contentType === 'image/png'
+  const isGif = contentType === 'image/gif'
+
+  // Don't process GIFs (animated)
+  if (isGif) {
+    console.log(`[BFF] Skipping GIF resize (may be animated)`)
+    return { buffer, resized: false }
+  }
+
+  let result = buffer
+  let quality = 85
+  const maxDimension = 2048
+
+  try {
+    // First pass: resize to max dimension and initial quality
+    let sharpInstance = sharp(buffer)
+      .resize(maxDimension, maxDimension, {
+        fit: 'inside',
+        withoutEnlargement: true
+      })
+
+    if (isPng) {
+      result = await sharpInstance.png({ quality, compressionLevel: 9 }).toBuffer()
+    } else {
+      result = await sharpInstance.jpeg({ quality }).toBuffer()
+    }
+
+    // Progressive quality reduction if still too large
+    while (result.length > MAX_IMAGE_SIZE && quality > 30) {
+      quality -= 10
+      sharpInstance = sharp(buffer)
+        .resize(maxDimension, maxDimension, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+
+      if (isPng) {
+        // For PNG, also reduce colors if quality is low
+        result = await sharpInstance.png({ quality, compressionLevel: 9 }).toBuffer()
+      } else {
+        result = await sharpInstance.jpeg({ quality }).toBuffer()
+      }
+    }
+
+    // If still too large, reduce dimensions further
+    if (result.length > MAX_IMAGE_SIZE) {
+      const reducedDimension = 1024
+      sharpInstance = sharp(buffer)
+        .resize(reducedDimension, reducedDimension, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+
+      if (isPng) {
+        result = await sharpInstance.png({ quality: 60, compressionLevel: 9 }).toBuffer()
+      } else {
+        result = await sharpInstance.jpeg({ quality: 60 }).toBuffer()
+      }
+    }
+
+    console.log(`[BFF] Resized ${filename}: ${(buffer.length / 1024 / 1024).toFixed(2)}MB -> ${(result.length / 1024 / 1024).toFixed(2)}MB (quality: ${quality})`)
+    return { buffer: result, resized: true }
+
+  } catch (error) {
+    console.error(`[BFF] Failed to resize image ${filename}:`, error)
+    return { buffer, resized: false }
+  }
+}
 
 // Check if running in local mode
 const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
@@ -53,16 +148,30 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Convert File objects to AgentCore format
+      // Convert File objects to AgentCore format (with image resize if needed)
       if (uploadedFiles.length > 0) {
         files = await Promise.all(
           uploadedFiles.map(async (file) => {
-            const buffer = await file.arrayBuffer()
-            const base64 = Buffer.from(buffer).toString('base64')
+            const arrayBuffer = await file.arrayBuffer()
+            let buffer = Buffer.from(arrayBuffer)
+            const contentType = file.type || 'application/octet-stream'
+
+            // Resize image if it exceeds 5MB
+            const { buffer: processedBuffer, resized } = await resizeImageIfNeeded(
+              buffer,
+              contentType,
+              file.name
+            )
+
+            if (resized) {
+              buffer = processedBuffer
+            }
+
+            const base64 = buffer.toString('base64')
 
             return {
               filename: file.name,
-              content_type: file.type || 'application/octet-stream',
+              content_type: contentType,
               bytes: base64
             } as any // Type assertion to avoid AgentCore File type conflict
           })

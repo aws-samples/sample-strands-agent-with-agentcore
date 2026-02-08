@@ -446,9 +446,9 @@ function DownloadButton({ chartRef, title }: { chartRef: React.RefObject<HTMLDiv
 
   return (
     <Button
-      className="absolute top-2 right-2 z-10 download-button h-8 w-8 p-0"
-      variant="ghost"
-      size="sm"
+      className="absolute top-2 right-2 z-10 download-button"
+      variant="outline"
+      size="icon"
       onClick={handleDownload}
       disabled={isDownloading}
       title={isDownloading ? 'Downloading...' : 'Download chart'}
@@ -469,7 +469,7 @@ export const ChartRenderer = React.memo<ChartRendererProps>(({ chartData }) => {
   if (!chartData) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-label text-red-600">No chart data provided</div>
+        <div className="text-sm text-destructive">No chart data provided</div>
       </div>
     );
   }
@@ -479,30 +479,34 @@ export const ChartRenderer = React.memo<ChartRendererProps>(({ chartData }) => {
   // Data summary section - shows first few data points
   const renderDataSummary = () => {
     if (!chartData.data || !Array.isArray(chartData.data) || chartData.data.length === 0) return null;
-    
+
     return (
-      <div className="chart-data-summary">
-        <details>
-          <summary className="chart-data-summary-header">
-            <span className="chart-data-count">Data ({chartData.data.length} items)</span>
-            <svg viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg" className="details-icon">
+      <div className="mt-4 border-t pt-4">
+        <details className="group">
+          <summary className="flex items-center justify-between cursor-pointer text-sm text-muted-foreground hover:text-foreground transition-colors">
+            <span>Data ({chartData.data.length} items)</span>
+            <svg
+              viewBox="0 0 12 12"
+              fill="none"
+              className="w-3 h-3 transition-transform group-open:rotate-180"
+            >
               <path d="M6 9L2 5H10L6 9Z" fill="currentColor" />
             </svg>
           </summary>
-          <div className="chart-data-summary-content">
-            <table className="chart-data-table">
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="chart-data-table-header">
+                <tr className="border-b">
                   {Object.keys(chartData.data[0]).map(key => (
-                    <th key={key} className="chart-data-table-header-cell">{key}</th>
+                    <th key={key} className="px-3 py-2 text-left font-medium text-muted-foreground">{key}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {chartData.data.map((item: any, idx: number) => (
-                  <tr key={idx} className={idx % 2 === 0 ? 'chart-data-table-row-even' : 'chart-data-table-row-odd'}>
+                  <tr key={idx} className={idx % 2 === 0 ? 'bg-muted/30' : ''}>
                     {Object.entries(item).map(([key, value]) => (
-                      <td key={key} className="chart-data-table-cell">
+                      <td key={key} className="px-3 py-2">
                         {typeof value === 'number'
                           ? new Intl.NumberFormat().format(value)
                           : String(value)}
@@ -540,13 +544,13 @@ export const ChartRenderer = React.memo<ChartRendererProps>(({ chartData }) => {
   if (!ChartComponent) {
     return (
       <div className="flex items-center justify-center p-8">
-        <div className="text-label text-red-600">Unsupported chart type: {chartData.chartType}</div>
+        <div className="text-sm text-destructive">Unsupported chart type: {chartData.chartType}</div>
       </div>
     );
   }
 
   return (
-    <div ref={chartRef} className="relative chat-chart-content">
+    <div ref={chartRef} className="relative p-1">
       <DownloadButton chartRef={chartRef} title={chartTitleToUse} />
       <ChartComponent data={chartData} />
       {renderDataSummary()}

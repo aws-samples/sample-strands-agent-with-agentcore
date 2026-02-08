@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/sidebar';
 import { ChatSessionList } from './sidebar/ChatSessionList';
 import { useChatSessions } from '@/hooks/useChatSessions';
+import { ScrollArea } from '@/components/ui/scroll-area';
 
 const GITHUB_REPO_URL = 'https://github.com/aws-samples/sample-strands-agent-with-agentcore';
 
@@ -145,7 +146,7 @@ export function ChatSidebar({
             </button>
           )}
         </div>
-        <div className="flex-1 overflow-y-auto">
+        <ScrollArea className="flex-1">
           <ChatSessionList
             sessions={chatSessions}
             currentSessionId={sessionId}
@@ -153,7 +154,7 @@ export function ChatSidebar({
             onLoadSession={loadSession}
             onDeleteSession={deleteSession}
           />
-        </div>
+        </ScrollArea>
       </div>
 
       {/* Settings Menu - Bottom */}
