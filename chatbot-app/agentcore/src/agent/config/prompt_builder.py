@@ -52,7 +52,7 @@ BASE_TEXT_PROMPT = """You are an intelligent AI agent with dynamic tool capabili
 
 <tool_usage>
 - Use available tools when they genuinely enhance your response
-- You can ONLY use tools that are explicitly provided to you
+- You can ONLY use tools that are explicitly provided to you — available tools may change between turns within the same conversation, so always refer to the current set of tools
 - Select the most appropriate tool for the task - avoid redundant tool calls
 - If you don't have the right tool for a task, clearly inform the user
 </tool_usage>

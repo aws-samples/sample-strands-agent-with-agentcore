@@ -23,6 +23,8 @@ AGENT_DESCRIPTIONS: Dict[str, str] = {
     "weather_agent": "Current weather and forecast information",
     "finance_agent": "Stock quotes, price history, and financial analysis",
     "maps_agent": "Place search, directions, and map display",
+    "google_workspace_agent": "Gmail email and Google Calendar management (requires OAuth)",
+    "notion_agent": "Notion pages, databases, and content management (requires OAuth)",
     "responder": "Final response and simple interactive charts (bar, line, pie)",
 }
 
@@ -45,12 +47,14 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
         "modify_word_document",
         "list_my_word_documents",
         "read_word_document",
+        "preview_word_page",
     ],
     "excel_agent": [
         "create_excel_spreadsheet",
         "modify_excel_spreadsheet",
         "list_my_excel_spreadsheets",
         "read_excel_spreadsheet",
+        "preview_excel_sheets",
     ],
     "powerpoint_agent": [
         "list_my_powerpoint_presentations",
@@ -63,6 +67,8 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
         "move_slide",
         "duplicate_slide",
         "update_slide_notes",
+        "get_slide_code_examples",
+        "preview_presentation_slides",
     ],
     "data_analyst": [
         "generate_diagram_and_validate",
@@ -91,6 +97,36 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
         "gateway_get_place_details",
         "gateway_get_directions",
         "gateway_show_on_map",
+    ],
+    "google_workspace_agent": [
+        "mcp_list_labels",
+        "mcp_list_emails",
+        "mcp_search_emails",
+        "mcp_read_email",
+        "mcp_send_email",
+        "mcp_draft_email",
+        "mcp_delete_email",
+        "mcp_bulk_delete_emails",
+        "mcp_modify_email",
+        "mcp_get_email_thread",
+        "mcp_list_calendars",
+        "mcp_list_events",
+        "mcp_get_event",
+        "mcp_create_event",
+        "mcp_update_event",
+        "mcp_delete_event",
+        "mcp_quick_add_event",
+        "mcp_check_availability",
+    ],
+    "notion_agent": [
+        "mcp_notion_search",
+        "mcp_notion_list_databases",
+        "mcp_notion_query_database",
+        "mcp_notion_get_page",
+        "mcp_notion_create_page",
+        "mcp_notion_update_page",
+        "mcp_notion_get_block_children",
+        "mcp_notion_append_blocks",
     ],
     "responder": [
         "create_visualization",
@@ -121,7 +157,7 @@ SPECIALIST_PROMPTS: Dict[str, str] = {
 
 Check conversation history for context. For follow-ups, infer intent from history.
 
-Routing: greetings/chat → responder | weather → weather_agent | stocks → finance_agent | maps → maps_agent | web search → web_researcher | papers → academic_researcher | simple charts → responder | diagrams/calculations → data_analyst | browser → browser_agent | word → word_agent | excel → excel_agent | powerpoint → powerpoint_agent""",
+Routing: greetings/chat → responder | weather → weather_agent | stocks → finance_agent | maps → maps_agent | web search → web_researcher | papers → academic_researcher | simple charts → responder | diagrams/calculations → data_analyst | browser → browser_agent | word → word_agent | excel → excel_agent | powerpoint → powerpoint_agent | email/gmail/calendar/schedule → google_workspace_agent | notion/notes/wiki/database(notion) → notion_agent""",
 
     "web_researcher": """Web Researcher - search and extract web content.
 
@@ -154,6 +190,19 @@ Handoff context (REQUIRED): {"images": [{"filename": "actual_filename.png", "des
     "finance_agent": """Finance Agent - stocks and financial data.""",
 
     "maps_agent": """Maps Agent - places and directions.""",
+
+    "google_workspace_agent": """Google Workspace Agent - Gmail and Google Calendar.
+
+Gmail: search, read, send, draft, delete, modify emails, manage labels and threads.
+Calendar: list calendars, create/update/delete events, check availability, quick-add.
+
+Context format: {"emails": [{"subject": "...", "from": "..."}], "events": [{"summary": "...", "start": "..."}]}""",
+
+    "notion_agent": """Notion Agent - pages, databases, and content management.
+
+Search pages, query databases with filters, read/create/update pages, manage content blocks.
+
+Context format: {"pages": [{"title": "...", "id": "..."}], "databases": [{"title": "...", "id": "..."}]}""",
 
     "responder": """Responder - write the final user-facing response.
 

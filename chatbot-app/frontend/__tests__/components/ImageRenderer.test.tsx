@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
-import { ImageRenderer } from '@/components/ImageRenderer'
+import { ImageRenderer } from '@/components/canvas/ImageRenderer'
 
 describe('ImageRenderer Component', () => {
   describe('Image Path Generation', () => {

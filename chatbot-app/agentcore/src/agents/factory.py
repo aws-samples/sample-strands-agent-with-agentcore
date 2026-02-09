@@ -97,6 +97,8 @@ def create_agent(
             max_iterations=kwargs.get("max_iterations", 15),
             execution_timeout=kwargs.get("execution_timeout", 600.0),
             node_timeout=kwargs.get("node_timeout", 180.0),
+            api_keys=api_keys,
+            auth_token=auth_token,
         )
 
     elif request_type == "compose":
@@ -117,6 +119,8 @@ def create_agent(
             user_id=user_id,
             enabled_tools=enabled_tools,
             system_prompt=system_prompt,
+            auth_token=auth_token,
+            api_keys=api_keys,
         )
 
     else:

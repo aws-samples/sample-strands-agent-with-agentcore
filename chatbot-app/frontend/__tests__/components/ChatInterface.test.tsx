@@ -174,26 +174,20 @@ describe('ChatInterface', () => {
   })
 
   describe('Rendering', () => {
-    it('should render chat interface in standalone mode', () => {
-      render(<ChatInterface mode="standalone" />)
-
-      expect(screen.getByTestId('sidebar-inset')).toBeInTheDocument()
-    })
-
-    it('should render chat interface in embedded mode', () => {
-      render(<ChatInterface mode="embedded" />)
+    it('should render chat interface', () => {
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('sidebar-inset')).toBeInTheDocument()
     })
 
     it('should show greeting when no messages', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('greeting')).toBeInTheDocument()
     })
 
     it('should render chat sidebar', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('chat-sidebar')).toBeInTheDocument()
     })
@@ -201,14 +195,14 @@ describe('ChatInterface', () => {
 
   describe('Input Area', () => {
     it('should render textarea for message input', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       const textarea = screen.getByPlaceholderText(/Ask me anything/i)
       expect(textarea).toBeInTheDocument()
     })
 
     it('should render buttons in the input area', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       // Verify that buttons exist in the form area
       const buttons = screen.getAllByRole('button')
@@ -216,7 +210,7 @@ describe('ChatInterface', () => {
     })
 
     it('should have disabled buttons when input is empty and idle', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       // When input is empty, the send button should be disabled
       const buttons = screen.getAllByRole('button')
@@ -236,7 +230,7 @@ describe('ChatInterface', () => {
         }
       ]
 
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('chat-message')).toBeInTheDocument()
       expect(screen.getByText('Hello')).toBeInTheDocument()
@@ -251,7 +245,7 @@ describe('ChatInterface', () => {
         }
       ]
 
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('assistant-turn')).toBeInTheDocument()
       expect(screen.getByText('Hi there!')).toBeInTheDocument()
@@ -268,7 +262,7 @@ describe('ChatInterface', () => {
         }
       ]
 
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       // Component should render without errors
       expect(screen.getByText('Hello')).toBeInTheDocument()
@@ -284,7 +278,7 @@ describe('ChatInterface', () => {
         }
       ]
 
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       // Component should render without errors when agent is thinking
       expect(document.body).toBeInTheDocument()
@@ -293,7 +287,7 @@ describe('ChatInterface', () => {
 
   describe('File Upload', () => {
     it('should render file upload button', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       // Find the hidden file input
       const fileInput = document.getElementById('file-upload')
@@ -301,23 +295,13 @@ describe('ChatInterface', () => {
     })
   })
 
-  describe('Embedded Mode', () => {
-    it('should show suggested questions in embedded mode when no messages', () => {
-      mockUseChat.availableTools = [{ id: 'tool1', name: 'Tool 1', enabled: true, description: 'Test', icon: 'tool', import_path: '', category: 'test' }]
-
-      render(<ChatInterface mode="embedded" />)
-
-      expect(screen.getByTestId('suggested-questions')).toBeInTheDocument()
-    })
-  })
-
   describe('Interrupt Handling', () => {
-    it('should show interrupt modal when there is a current interrupt', () => {
+    it('should show interrupt modal for email delete approval', () => {
       mockUseChat.currentInterrupt = {
-        interrupts: [{ id: 'int1', name: 'approval', reason: { tool_name: 'research_agent' } }]
+        interrupts: [{ id: 'int1', name: 'chatbot-email-delete-approval', reason: { query: 'test', intent: 'delete emails' } }]
       }
 
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('interrupt-modal')).toBeInTheDocument()
     })
@@ -325,7 +309,17 @@ describe('ChatInterface', () => {
     it('should not show interrupt modal when no current interrupt', () => {
       mockUseChat.currentInterrupt = null
 
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
+
+      expect(screen.queryByTestId('interrupt-modal')).not.toBeInTheDocument()
+    })
+
+    it('should not show interrupt modal for non-email interrupt names', () => {
+      mockUseChat.currentInterrupt = {
+        interrupts: [{ id: 'int1', name: 'other-approval', reason: {} }]
+      }
+
+      render(<ChatInterface />)
 
       expect(screen.queryByTestId('interrupt-modal')).not.toBeInTheDocument()
     })
@@ -333,13 +327,13 @@ describe('ChatInterface', () => {
 
   describe('Controls', () => {
     it('should render tools dropdown', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('tools-dropdown')).toBeInTheDocument()
     })
 
     it('should render model config button', () => {
-      render(<ChatInterface mode="standalone" />)
+      render(<ChatInterface />)
 
       expect(screen.getByTestId('model-config')).toBeInTheDocument()
     })
@@ -364,7 +358,7 @@ describe('ChatInterface - Agent Status', () => {
       }
     ]
 
-    render(<ChatInterface mode="standalone" />)
+    render(<ChatInterface />)
 
     // When agent is not idle, the submit button changes to stop button
     const buttons = screen.getAllByRole('button')
@@ -382,7 +376,7 @@ describe('ChatInterface - Agent Status', () => {
       }
     ]
 
-    render(<ChatInterface mode="standalone" />)
+    render(<ChatInterface />)
 
     // Stop button should be disabled during research
     const stopButton = document.querySelector('button[title*="Stop"]')

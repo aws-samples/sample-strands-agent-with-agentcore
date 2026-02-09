@@ -330,33 +330,37 @@ export async function getUserSessions(
   status?: 'active' | 'archived' | 'deleted'
 ): Promise<SessionMetadata[]> {
   try {
-    const command = new QueryCommand({
-      TableName: TABLE_NAME,
-      KeyConditionExpression: 'userId = :userId AND begins_with(sk, :sessionPrefix)',
-      ExpressionAttributeValues: marshall({
-        ':userId': userId,
-        ':sessionPrefix': 'SESSION#',
-      }),
-      ScanIndexForward: false, // Descending order (newest first)
-      Limit: limit * 2, // Fetch more to account for filtering
-    })
-
-    const response = await dynamoClient.send(command)
-
-    if (!response.Items || response.Items.length === 0) {
-      return []
-    }
-
-    let sessions = response.Items.map((item) => {
-      const record = unmarshall(item) as SessionRecord
-      return sessionRecordToMetadata(record)
-    })
-
-    // Filter by status - default to 'active' if not specified
     const filterStatus = status || 'active'
-    sessions = sessions.filter((s) => s.status === filterStatus)
+    let sessions: SessionMetadata[] = []
+    let lastEvaluatedKey: Record<string, any> | undefined
 
-    // Apply limit after filtering
+    // Paginate through results until we have enough active sessions
+    do {
+      const command = new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: 'userId = :userId AND begins_with(sk, :sessionPrefix)',
+        ExpressionAttributeValues: marshall({
+          ':userId': userId,
+          ':sessionPrefix': 'SESSION#',
+        }),
+        ScanIndexForward: false, // Descending order (newest first)
+        ...(lastEvaluatedKey ? { ExclusiveStartKey: lastEvaluatedKey } : {}),
+      })
+
+      const response = await dynamoClient.send(command)
+      lastEvaluatedKey = response.LastEvaluatedKey as Record<string, any> | undefined
+
+      if (response.Items && response.Items.length > 0) {
+        const pageSessions = response.Items.map((item) => {
+          const record = unmarshall(item) as SessionRecord
+          return sessionRecordToMetadata(record)
+        }).filter((s) => s.status === filterStatus)
+
+        sessions.push(...pageSessions)
+      }
+    } while (lastEvaluatedKey && sessions.length < limit)
+
+    // Apply limit after collecting enough filtered results
     sessions = sessions.slice(0, limit)
 
     // Sort by lastMessageAt descending

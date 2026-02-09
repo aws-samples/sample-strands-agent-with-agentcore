@@ -18,8 +18,8 @@ def validate_presentation_name(name: str) -> Tuple[bool, Optional[str]]:
     """Validate presentation name (without extension).
 
     Rules:
-    - Only letters (a-z, A-Z), numbers (0-9), and hyphens (-)
-    - No spaces, underscores, or special characters
+    - Only letters (a-z, A-Z), numbers (0-9), hyphens (-), and underscores (_)
+    - No spaces or special characters
     - No consecutive hyphens
     - No leading/trailing hyphens
 
@@ -29,9 +29,9 @@ def validate_presentation_name(name: str) -> Tuple[bool, Optional[str]]:
     if not name:
         return False, "Presentation name cannot be empty"
 
-    if not re.match(r'^[a-zA-Z0-9\-]+$', name):
-        invalid_chars = re.findall(r'[^a-zA-Z0-9\-]', name)
-        return False, f"Invalid characters: {set(invalid_chars)}. Use only letters, numbers, hyphens."
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', name):
+        invalid_chars = re.findall(r'[^a-zA-Z0-9_\-]', name)
+        return False, f"Invalid characters: {set(invalid_chars)}. Use only letters, numbers, hyphens, underscores."
 
     if '--' in name:
         return False, "Cannot contain consecutive hyphens (--)"

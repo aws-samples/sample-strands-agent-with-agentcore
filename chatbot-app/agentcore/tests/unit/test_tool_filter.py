@@ -362,5 +362,6 @@ class TestModuleLevelFunctions:
             enabled_tool_ids=["calculator"],
             filters=None,
             log_prefix="[Test]",
+            auth_token=None,
         )
         assert result == mock_result

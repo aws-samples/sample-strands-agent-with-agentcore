@@ -71,6 +71,7 @@ class VoiceAgent(BaseAgent):
         enabled_tools: Optional[List[str]] = None,
         system_prompt: Optional[str] = None,
         auth_token: Optional[str] = None,
+        api_keys: Optional[Dict[str, str]] = None,
     ):
         """
         Initialize voice agent with BidiAgent
@@ -81,7 +82,10 @@ class VoiceAgent(BaseAgent):
             enabled_tools: List of tool IDs to enable
             system_prompt: Optional system prompt override
             auth_token: Cognito JWT for MCP Runtime 3LO authentication
+            api_keys: User-specific API keys for external services
         """
+        self.api_keys = api_keys or {}
+
         # Initialize base agent (handles session_id, user_id, enabled_tools, gateway_client, tools, session_manager)
         super().__init__(
             session_id=session_id,
@@ -267,6 +271,8 @@ class VoiceAgent(BaseAgent):
         invocation_state = {
             "session_id": self.session_id,
             "user_id": self.user_id,
+            "api_keys": self.api_keys,
+            "auth_token": self.auth_token,
         }
 
         try:

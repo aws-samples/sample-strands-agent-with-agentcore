@@ -5,6 +5,7 @@ export interface ToolExecution {
   reasoning: string[]
   reasoningText?: string
   toolResult?: string
+  metadata?: Record<string, any>
   images?: Array<
     | { format: string; data: string }
     | { type: 'url'; url: string; thumbnail?: string }

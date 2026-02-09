@@ -60,7 +60,34 @@ describe('AssistantTurn', () => {
   })
 
   describe('Document Download Rendering', () => {
-    it('should render document download button for Word file', () => {
+    // Note: docx/xlsx/pptx are now handled in Canvas and excluded from turnDocuments.
+    // Only non-canvas doc types (pdf, csv, etc.) are shown in the document section.
+    it('should render document download button for PDF file', () => {
+      const messages: Message[] = [
+        createMessage({
+          documents: [{ filename: 'report.pdf', tool_type: 'pdf' }]
+        })
+      ]
+
+      render(<AssistantTurn messages={messages} sessionId="test-session" />)
+
+      expect(screen.getByText('report.pdf')).toBeInTheDocument()
+      expect(screen.getByText('1 Document')).toBeInTheDocument()
+    })
+
+    it('should render document download button for CSV file', () => {
+      const messages: Message[] = [
+        createMessage({
+          documents: [{ filename: 'data.csv', tool_type: 'csv' }]
+        })
+      ]
+
+      render(<AssistantTurn messages={messages} sessionId="test-session" />)
+
+      expect(screen.getByText('data.csv')).toBeInTheDocument()
+    })
+
+    it('should not render canvas doc types (docx/xlsx/pptx) in document section', () => {
       const messages: Message[] = [
         createMessage({
           documents: [{ filename: 'report.docx', tool_type: 'word' }]
@@ -69,50 +96,26 @@ describe('AssistantTurn', () => {
 
       render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      expect(screen.getByText('report.docx')).toBeInTheDocument()
-      expect(screen.getByText('1 Document')).toBeInTheDocument()
+      expect(screen.queryByText('report.docx')).not.toBeInTheDocument()
+      expect(screen.queryByText('1 Document')).not.toBeInTheDocument()
     })
 
-    it('should render document download button for Excel file', () => {
-      const messages: Message[] = [
-        createMessage({
-          documents: [{ filename: 'data.xlsx', tool_type: 'excel' }]
-        })
-      ]
-
-      render(<AssistantTurn messages={messages} sessionId="test-session" />)
-
-      expect(screen.getByText('data.xlsx')).toBeInTheDocument()
-    })
-
-    it('should render document download button for PowerPoint file', () => {
-      const messages: Message[] = [
-        createMessage({
-          documents: [{ filename: 'presentation.pptx', tool_type: 'powerpoint' }]
-        })
-      ]
-
-      render(<AssistantTurn messages={messages} sessionId="test-session" />)
-
-      expect(screen.getByText('presentation.pptx')).toBeInTheDocument()
-    })
-
-    it('should render multiple documents', () => {
+    it('should render multiple non-canvas documents', () => {
       const messages: Message[] = [
         createMessage({
           documents: [
-            { filename: 'report.docx', tool_type: 'word' },
-            { filename: 'data.xlsx', tool_type: 'excel' },
-            { filename: 'slides.pptx', tool_type: 'powerpoint' }
+            { filename: 'report.pdf', tool_type: 'pdf' },
+            { filename: 'data.csv', tool_type: 'csv' },
+            { filename: 'log.txt', tool_type: 'text' }
           ]
         })
       ]
 
       render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      expect(screen.getByText('report.docx')).toBeInTheDocument()
-      expect(screen.getByText('data.xlsx')).toBeInTheDocument()
-      expect(screen.getByText('slides.pptx')).toBeInTheDocument()
+      expect(screen.getByText('report.pdf')).toBeInTheDocument()
+      expect(screen.getByText('data.csv')).toBeInTheDocument()
+      expect(screen.getByText('log.txt')).toBeInTheDocument()
       expect(screen.getByText('3 Documents')).toBeInTheDocument()
     })
 
@@ -129,13 +132,13 @@ describe('AssistantTurn', () => {
     it('should call download API when document clicked', async () => {
       const messages: Message[] = [
         createMessage({
-          documents: [{ filename: 'report.docx', tool_type: 'word' }]
+          documents: [{ filename: 'report.pdf', tool_type: 'pdf' }]
         })
       ]
 
       render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      const docButton = screen.getByText('report.docx').closest('div[class*="cursor-pointer"]')
+      const docButton = screen.getByText('report.pdf').closest('div[class*="cursor-pointer"]')
       if (docButton) {
         fireEvent.click(docButton)
       }
@@ -145,7 +148,7 @@ describe('AssistantTurn', () => {
           '/api/documents/download',
           expect.objectContaining({
             method: 'POST',
-            body: expect.stringContaining('report.docx')
+            body: expect.stringContaining('report.pdf')
           })
         )
       })
@@ -154,14 +157,14 @@ describe('AssistantTurn', () => {
     it('should not attempt download without sessionId', () => {
       const messages: Message[] = [
         createMessage({
-          documents: [{ filename: 'report.docx', tool_type: 'word' }]
+          documents: [{ filename: 'report.pdf', tool_type: 'pdf' }]
         })
       ]
 
       // No sessionId provided
       render(<AssistantTurn messages={messages} />)
 
-      const docButton = screen.getByText('report.docx').closest('div[class*="cursor-pointer"]')
+      const docButton = screen.getByText('report.pdf').closest('div[class*="cursor-pointer"]')
       if (docButton) {
         fireEvent.click(docButton)
       }
@@ -205,7 +208,7 @@ describe('AssistantTurn', () => {
       const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
       expect(container.innerHTML).toContain('E2E')
-      expect(container.innerHTML).toContain('500ms')
+      expect(container.innerHTML).toContain('0.5s')
     })
 
     it('should not display metrics section when no metrics', () => {
@@ -232,9 +235,9 @@ describe('AssistantTurn', () => {
 
       const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      expect(container.innerHTML).toContain('Token')
-      expect(container.innerHTML).toContain('1,000')
-      expect(container.innerHTML).toContain('500')
+      // Input tokens shown as "1.0k in", output as "500 out"
+      expect(container.innerHTML).toContain('1.0k in')
+      expect(container.innerHTML).toContain('500 out')
     })
 
     it('should display cache read tokens when present', () => {
@@ -310,7 +313,7 @@ describe('AssistantTurn', () => {
       const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
       // Should have token info but not cache hit/write labels
-      expect(container.innerHTML).toContain('Token')
+      expect(container.innerHTML).toContain('1.0k in')
       // Note: The component only shows "hit" text when cacheReadInputTokens > 0
       // and "write" text when cacheWriteInputTokens > 0
       expect(container.innerHTML).not.toContain(' hit')  // space before to avoid matching other words
@@ -319,43 +322,19 @@ describe('AssistantTurn', () => {
   })
 
   describe('File Icon Selection', () => {
-    it('should use correct icon for .docx files', () => {
+    // Note: docx/xlsx/pptx are now handled in Canvas and excluded from turnDocuments.
+    // File icon selection still works for non-canvas doc types using the default icon.
+    it('should use default icon for .pdf files', () => {
       const messages: Message[] = [
         createMessage({
-          documents: [{ filename: 'test.docx', tool_type: 'word' }]
+          documents: [{ filename: 'test.pdf', tool_type: 'pdf' }]
         })
       ]
 
       const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      // Check for blue color class (Word files)
+      // Default icon uses blue color class
       expect(container.innerHTML).toContain('text-blue-600')
-    })
-
-    it('should use correct icon for .xlsx files', () => {
-      const messages: Message[] = [
-        createMessage({
-          documents: [{ filename: 'test.xlsx', tool_type: 'excel' }]
-        })
-      ]
-
-      const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
-
-      // Check for green color class (Excel files)
-      expect(container.innerHTML).toContain('text-green-600')
-    })
-
-    it('should use correct icon for .pptx files', () => {
-      const messages: Message[] = [
-        createMessage({
-          documents: [{ filename: 'test.pptx', tool_type: 'powerpoint' }]
-        })
-      ]
-
-      const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
-
-      // Check for orange color class (PowerPoint files)
-      expect(container.innerHTML).toContain('text-orange-600')
     })
   })
 
@@ -571,7 +550,7 @@ describe('AssistantTurn', () => {
       expect(images.length).toBeGreaterThan(0)
     })
 
-    it('should render research agent separately from other tool executions', () => {
+    it('should render research agent as tool execution alongside other tools', () => {
       const messages: Message[] = [
         createMessage({
           id: 'msg-1',
@@ -602,10 +581,9 @@ describe('AssistantTurn', () => {
 
       const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      // Research container should be present (mocked)
-      expect(screen.getByTestId('research-container')).toBeInTheDocument()
-      // Other tool should also be rendered (formatted name)
+      // Both tools rendered via ToolExecutionContainer (formatted names)
       expect(container.innerHTML).toContain('Used Web Search')
+      expect(container.innerHTML).toContain('Used Research Agent')
     })
 
     it('should always sort by timestamp (id is always string now)', () => {

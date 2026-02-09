@@ -1,11 +1,11 @@
 """
-Tests for Swarm Agent Creation
+Tests for Swarm Agent Configuration and Tool Assignment
 
 Tests cover:
-- Tool assignment per agent (get_tools_for_agent)
-- Agent configuration validation (models, temperatures)
-- Responder handoff removal
-- Swarm configuration parameters
+- Tool assignment per agent (AGENT_TOOL_MAPPING)
+- Agent configuration consistency (14 agents)
+- System prompt generation
+- SwarmAgent tool loading with auth_token
 """
 
 import pytest
@@ -67,7 +67,6 @@ class TestGetToolsForAgent:
             "browser_extract",
             "browser_get_page_info",
             "browser_manage_tabs",
-            "browser_drag",
             "browser_save_screenshot",
         ]
 
@@ -80,6 +79,20 @@ class TestGetToolsForAgent:
 
         for agent_name in AGENT_DESCRIPTIONS.keys():
             assert agent_name in AGENT_TOOL_MAPPING, f"Missing tool mapping for {agent_name}"
+
+    def test_google_workspace_agent_has_tools(self):
+        """Google workspace agent should have Gmail and Calendar tools."""
+        from agent.config.swarm_config import AGENT_TOOL_MAPPING
+
+        tools = AGENT_TOOL_MAPPING.get("google_workspace_agent", [])
+        assert len(tools) > 0
+
+    def test_notion_agent_has_tools(self):
+        """Notion agent should have Notion tools."""
+        from agent.config.swarm_config import AGENT_TOOL_MAPPING
+
+        tools = AGENT_TOOL_MAPPING.get("notion_agent", [])
+        assert len(tools) > 0
 
 
 class TestAgentToolMappingConsistency:
@@ -99,11 +112,11 @@ class TestAgentToolMappingConsistency:
         for agent_name in AGENT_DESCRIPTIONS.keys():
             assert agent_name in AGENT_TOOL_MAPPING, f"Missing tool mapping for {agent_name}"
 
-    def test_twelve_agents_defined(self):
-        """Should have exactly 12 agents defined."""
+    def test_fourteen_agents_defined(self):
+        """Should have exactly 14 agents defined."""
         from agent.config.swarm_config import AGENT_TOOL_MAPPING
 
-        assert len(AGENT_TOOL_MAPPING) == 12
+        assert len(AGENT_TOOL_MAPPING) == 14
 
     def test_no_duplicate_tools_across_agents(self):
         """Each tool should be assigned to exactly one agent (except gateway tools)."""
@@ -156,175 +169,43 @@ class TestBuildAgentSystemPrompt:
         assert "diagram" in data_prompt.lower() or "png" in data_prompt.lower()
 
 
-class TestCreateSwarmAgents:
-    """Test create_swarm_agents function."""
+class TestGetToolsForAgentFunction:
+    """Test the get_tools_for_agent function in swarm_agent module."""
 
-    @patch('agent.swarm_agents.filter_tools')
-    @patch('agent.swarm_agents.BedrockModel')
-    @patch('agent.swarm_agents.Agent')
-    def test_creates_twelve_agents(self, mock_agent, mock_model, mock_filter):
-        """Should create exactly 12 agents."""
-        from agent.swarm_agents import create_swarm_agents
+    @patch('agents.swarm_agent.filter_tools')
+    def test_passes_auth_token_to_filter_tools(self, mock_filter):
+        """Should pass auth_token to filter_tools for OAuth tool initialization."""
+        from agents.swarm_agent import get_tools_for_agent
 
-        mock_filter.return_value = Mock(tools=[])
-        mock_model.return_value = Mock()
-        mock_agent.return_value = Mock()
+        mock_filter.return_value = Mock(tools=[Mock()], validation_errors=[])
 
-        agents = create_swarm_agents(
-            session_id="test-session",
-            user_id="test-user"
+        get_tools_for_agent("web_researcher", auth_token="test-jwt-token")
+
+        mock_filter.assert_called_once()
+        call_kwargs = mock_filter.call_args.kwargs
+        assert call_kwargs.get("auth_token") == "test-jwt-token"
+
+    @patch('agents.swarm_agent.filter_tools')
+    def test_returns_empty_for_no_tools(self, mock_filter):
+        """Should return empty list for agents with no tool mapping."""
+        from agents.swarm_agent import get_tools_for_agent
+
+        result = get_tools_for_agent("coordinator")
+
+        # filter_tools should NOT be called for coordinator (empty tool list)
+        mock_filter.assert_not_called()
+        assert result == []
+
+    @patch('agents.swarm_agent.filter_tools')
+    def test_logs_validation_errors(self, mock_filter):
+        """Should log warnings when tool validation fails."""
+        from agents.swarm_agent import get_tools_for_agent
+
+        mock_filter.return_value = Mock(
+            tools=[],
+            validation_errors=["MCP auth required for gmail"]
         )
 
-        assert len(agents) == 12
-
-    @patch('agent.swarm_agents.filter_tools')
-    @patch('agent.swarm_agents.BedrockModel')
-    @patch('agent.swarm_agents.Agent')
-    def test_coordinator_uses_haiku_model(self, mock_agent, mock_model, mock_filter):
-        """Coordinator should use Haiku model (faster for routing)."""
-        from agent.swarm_agents import create_swarm_agents
-
-        mock_filter.return_value = Mock(tools=[])
-        model_instances = []
-
-        def capture_model(*args, **kwargs):
-            instance = Mock()
-            instance.model_id = kwargs.get('model_id', args[0] if args else None)
-            instance.temperature = kwargs.get('temperature')
-            model_instances.append(instance)
-            return instance
-
-        mock_model.side_effect = capture_model
-        mock_agent.return_value = Mock()
-
-        create_swarm_agents(
-            session_id="test-session",
-            user_id="test-user"
-        )
-
-        # Find coordinator model (Haiku with low temperature)
-        coordinator_model = next(
-            (m for m in model_instances if m.temperature == 0.3),
-            None
-        )
-        assert coordinator_model is not None
-        assert "haiku" in coordinator_model.model_id.lower()
-
-    @patch('agent.swarm_agents.filter_tools')
-    @patch('agent.swarm_agents.BedrockModel')
-    @patch('agent.swarm_agents.Agent')
-    def test_coordinator_has_no_tools(self, mock_agent, mock_model, mock_filter):
-        """Coordinator should be created without tools."""
-        from agent.swarm_agents import create_swarm_agents
-
-        mock_filter.return_value = Mock(tools=[Mock()])
-        mock_model.return_value = Mock()
-
-        agent_calls = []
-        def capture_agent(*args, **kwargs):
-            agent_calls.append(kwargs)
-            return Mock()
-
-        mock_agent.side_effect = capture_agent
-
-        create_swarm_agents(
-            session_id="test-session",
-            user_id="test-user"
-        )
-
-        # Find coordinator agent call
-        coordinator_call = next(
-            (c for c in agent_calls if c.get('name') == 'coordinator'),
-            None
-        )
-        assert coordinator_call is not None
-        assert coordinator_call.get('tools') == []
-
-
-class TestCreateChatbotSwarm:
-    """Test create_chatbot_swarm function."""
-
-    @patch('agent.swarm_agents.create_swarm_agents')
-    @patch('agent.swarm_agents.Swarm')
-    def test_swarm_created_with_correct_config(self, mock_swarm, mock_create_agents):
-        """Should create Swarm with correct configuration parameters."""
-        from agent.swarm_agents import create_chatbot_swarm
-
-        # Mock agents
-        mock_agents = {
-            "coordinator": Mock(),
-            "responder": Mock(executor=Mock(tool_registry=Mock(registry={}))),
-        }
-        mock_create_agents.return_value = mock_agents
-        mock_swarm.return_value = Mock(nodes=Mock(get=lambda x: mock_agents.get(x)))
-
-        create_chatbot_swarm(
-            session_id="test-session",
-            user_id="test-user"
-        )
-
-        # Verify Swarm was called with expected parameters
-        mock_swarm.assert_called_once()
-        call_kwargs = mock_swarm.call_args.kwargs
-
-        assert call_kwargs["entry_point"] == mock_agents["coordinator"]
-        assert call_kwargs["session_manager"] is None  # Disabled for state persistence bugs
-        assert call_kwargs["max_handoffs"] == 15
-        assert call_kwargs["max_iterations"] == 15
-        assert call_kwargs["execution_timeout"] == 600.0
-        assert call_kwargs["node_timeout"] == 180.0
-
-    @patch('agent.swarm_agents.create_swarm_agents')
-    @patch('agent.swarm_agents.Swarm')
-    def test_responder_handoff_removed(self, mock_swarm, mock_create_agents):
-        """Should remove handoff_to_agent from responder's tool registry."""
-        from agent.swarm_agents import create_chatbot_swarm
-
-        # Mock responder with handoff tool
-        mock_registry = Mock()
-        mock_registry.registry = {"handoff_to_agent": Mock(), "create_visualization": Mock()}
-
-        mock_responder = Mock()
-        mock_responder.executor.tool_registry = mock_registry
-
-        mock_agents = {
-            "coordinator": Mock(),
-            "responder": mock_responder,
-        }
-        mock_create_agents.return_value = mock_agents
-
-        mock_swarm_instance = Mock()
-        mock_swarm_instance.nodes.get.return_value = mock_responder
-        mock_swarm.return_value = mock_swarm_instance
-
-        create_chatbot_swarm(
-            session_id="test-session",
-            user_id="test-user"
-        )
-
-        # Verify handoff_to_agent was removed
-        assert "handoff_to_agent" not in mock_registry.registry
-
-    @patch('agent.swarm_agents.create_swarm_agents')
-    @patch('agent.swarm_agents.Swarm')
-    def test_repetitive_handoff_detection_configured(self, mock_swarm, mock_create_agents):
-        """Should configure ping-pong detection parameters."""
-        from agent.swarm_agents import create_chatbot_swarm
-
-        mock_agents = {
-            "coordinator": Mock(),
-            "responder": Mock(executor=Mock(tool_registry=Mock(registry={}))),
-        }
-        mock_create_agents.return_value = mock_agents
-        mock_swarm.return_value = Mock(nodes=Mock(get=lambda x: mock_agents.get(x)))
-
-        create_chatbot_swarm(
-            session_id="test-session",
-            user_id="test-user"
-        )
-
-        call_kwargs = mock_swarm.call_args.kwargs
-
-        # Verify ping-pong detection parameters
-        assert call_kwargs["repetitive_handoff_detection_window"] == 6
-        assert call_kwargs["repetitive_handoff_min_unique_agents"] == 2
+        with patch('agents.swarm_agent.logger') as mock_logger:
+            get_tools_for_agent("google_workspace_agent")
+            mock_logger.warning.assert_called()

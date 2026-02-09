@@ -186,8 +186,6 @@ export function ChatInterface() {
 
   const {
     groupedMessages,
-    inputMessage,
-    setInputMessage,
     isConnected,
     isTyping,
     agentStatus,
@@ -197,6 +195,7 @@ export function ChatInterface() {
     stopGeneration,
     newChat,
     toggleTool,
+    setExclusiveTools,
     refreshTools,
     sessionId,
     isLoadingMessages,
@@ -301,15 +300,23 @@ export function ChatInterface() {
     reloadFromStorageRef.current = reloadFromStorage
   }, [reloadFromStorage])
 
+  // Wrapper for openArtifact to close left sidebar (defined before useEffect that references it)
+  const openArtifact = useCallback((id: string) => {
+    // Opening canvas - close left sidebar
+    setOpen(false)
+    setOpenMobile(false)
+    openArtifactBase(id)
+  }, [openArtifactBase, setOpen, setOpenMobile])
+
   // Connect artifact methods to canvas handlers (to avoid circular dependency with useChat)
   useEffect(() => {
     setArtifactMethods({
       artifacts,
       refreshArtifacts,
       addArtifact,
-      openArtifact: openArtifactBase,
+      openArtifact,
     })
-  }, [artifacts, refreshArtifacts, addArtifact, openArtifactBase, setArtifactMethods])
+  }, [artifacts, refreshArtifacts, addArtifact, openArtifact, setArtifactMethods])
 
   // Composer artifact ID tracking
   const [composeArtifactId, setComposeArtifactId] = useState<string | null>(null)
@@ -443,13 +450,6 @@ export function ChatInterface() {
     }
     toggleCanvasBase()
   }, [isCanvasOpen, toggleCanvasBase, setOpen, setOpenMobile])
-
-  const openArtifact = useCallback((id: string) => {
-    // Opening canvas - close left sidebar
-    setOpen(false)
-    setOpenMobile(false)
-    openArtifactBase(id)
-  }, [openArtifactBase, setOpen, setOpenMobile])
 
   const closeCanvas = useCallback(() => {
     // Clear editing state when closing panel
@@ -1067,12 +1067,9 @@ export function ChatInterface() {
     // Send as JSON string (backend will detect and parse directly)
     const composeMessage = JSON.stringify(composeRequest)
 
-    // Clear input
-    setInputMessage('')
-
     // Start compose workflow using hook
     await startCompose(composeMessage)
-  }, [startCompose, open, setOpen, setOpenMobile, setInputMessage])
+  }, [startCompose, open, setOpen, setOpenMobile])
 
   // Open compose wizard handler (called from ChatInputArea)
   const handleOpenComposeWizard = useCallback((rect: DOMRect) => {
@@ -1080,7 +1077,7 @@ export function ChatInterface() {
     setIsComposeWizardOpen(true)
   }, [])
 
-  const handleSendMessage = async (e: React.FormEvent, files: File[]) => {
+  const handleSendMessage = async (text: string, files: File[]) => {
     if (open) {
       setOpen(false)
     }
@@ -1114,7 +1111,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
       }
     }
 
-    await sendMessage(e, files, additionalTools, artifactContext, selectedArtifactId)
+    await sendMessage(text, files, additionalTools, artifactContext, selectedArtifactId)
   }
 
   // Interrupt approval handlers (for browser interrupts - research is handled via useEffect/Canvas)
@@ -1459,8 +1456,6 @@ If the user asks to modify this document, use the update_artifact tool to find a
 
         {/* Chat Input Area */}
         <ChatInputArea
-          inputMessage={inputMessage}
-          setInputMessage={setInputMessage}
           selectedFiles={selectedFiles}
           setSelectedFiles={setSelectedFiles}
           agentStatus={agentStatus}
@@ -1480,6 +1475,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
           onSendMessage={handleSendMessage}
           onStopGeneration={stopGeneration}
           onToggleTool={handleToggleTool}
+          onSetExclusiveTools={setExclusiveTools}
           onToggleSwarm={toggleSwarm}
           onToggleResearch={toggleResearchAgent}
           onConnectVoice={connectVoice}

@@ -74,6 +74,50 @@ export const toolIconMap: Record<string, IconType> = {
 };
 
 /**
+ * Image-based icons for tools that have actual logo files in /public/tool-icons/
+ * These take priority over react-icon components when available.
+ */
+export const toolImageMap: Record<string, string> = {
+  'mcp_gmail': '/tool-icons/gmail.svg',
+  'mcp_calendar': '/tool-icons/google-calendar.svg',
+  'mcp_notion': '/tool-icons/notion.svg',
+  'calculator': '/tool-icons/calculator.svg',
+  'excel_spreadsheet_tools': '/tool-icons/excel.svg',
+  'generate_diagram_and_validate': '/tool-icons/diagram.svg',
+  'gateway_arxiv_search': '/tool-icons/arxiv.svg',
+  'gateway_arxiv-search': '/tool-icons/arxiv.svg',
+  'gateway_google_maps': '/tool-icons/google-maps.svg',
+  'gateway_google-maps': '/tool-icons/google-maps.svg',
+  'gateway_show_on_map': '/tool-icons/google-maps.svg',
+  'gateway_google_web_search': '/tool-icons/google-search.svg',
+  'gateway_google-web-search': '/tool-icons/google-search.svg',
+  'gateway_google_image_search': '/tool-icons/google-search.svg',
+  'browser_automation': '/tool-icons/nova-act.png',
+  'powerpoint_presentation_tools': '/tool-icons/powerpoint.svg',
+  'word_document_tools': '/tool-icons/word.svg',
+  'fetch_url_content': '/tool-icons/url-fetcher.svg',
+  'create_visualization': '/tool-icons/visualization.svg',
+  'gateway_tavily_search': '/tool-icons/tavily.png',
+  'gateway_tavily-search': '/tool-icons/tavily.png',
+  'gateway_tavily_extract': '/tool-icons/tavily.png',
+  'ddg_web_search': '/tool-icons/duckduckgo.svg',
+  'gateway_weather': '/tool-icons/weather.png',
+  'get_current_weather': '/tool-icons/weather.png',
+  'gateway_wikipedia_search': '/tool-icons/wikipedia.svg',
+  'gateway_wikipedia-search': '/tool-icons/wikipedia.svg',
+  'gateway_financial_news': '/tool-icons/financial.svg',
+  'gateway_financial-news': '/tool-icons/financial.svg',
+};
+
+/**
+ * Get the image path for a tool ID, if one exists.
+ * Returns null if the tool should use a react-icon instead.
+ */
+export function getToolImageSrc(toolId: string): string | null {
+  return toolImageMap[toolId] || null;
+}
+
+/**
  * Get the icon component for a tool ID
  * Returns a default icon if tool ID is not found
  */

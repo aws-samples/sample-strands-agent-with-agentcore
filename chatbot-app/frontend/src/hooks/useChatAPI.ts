@@ -312,7 +312,29 @@ export const useChatAPI = ({
         const data = await response.json()
         // Combine regular tools and MCP servers from unified API response
         const allTools = [...(data.tools || []), ...(data.mcp_servers || [])]
-        setAvailableTools(allTools)
+        // Merge with existing enabled states to prevent flicker on tool refresh
+        setAvailableTools(prevTools => {
+          if (prevTools.length === 0) return allTools
+          const enabledIds = new Set<string>()
+          for (const tool of prevTools) {
+            if ((tool as any).enabled) enabledIds.add(tool.id)
+            if ((tool as any).isDynamic && (tool as any).tools) {
+              for (const nt of (tool as any).tools) {
+                if (nt.enabled) enabledIds.add(nt.id)
+              }
+            }
+          }
+          return allTools.map((tool: any) => {
+            const updated = { ...tool, enabled: enabledIds.has(tool.id) }
+            if (tool.isDynamic && tool.tools) {
+              updated.tools = tool.tools.map((nt: any) => ({
+                ...nt,
+                enabled: enabledIds.has(nt.id)
+              }))
+            }
+            return updated
+          })
+        })
       } else {
         setAvailableTools([])
       }
@@ -635,6 +657,11 @@ export const useChatAPI = ({
             try {
               const eventData = JSON.parse(line.substring(6))
 
+              // Basic validation: event must be an object with a type field
+              if (!eventData || typeof eventData !== 'object') {
+                continue
+              }
+
               // Debug: log metadata events (always show in production for debugging)
               if (eventData.type === 'metadata') {
                 logger.info('[useChatAPI] Received metadata event:', eventData)
@@ -647,8 +674,8 @@ export const useChatAPI = ({
                 // Handle legacy/unknown event types
                 handleLegacyEvent(eventData)
               }
-            } catch (parseError) {
-              logger.error('Error parsing SSE data:', parseError)
+            } catch (error) {
+              logger.error('Error processing SSE event:', error)
             }
           }
         }
@@ -789,10 +816,14 @@ export const useChatAPI = ({
     try {
       logger.info(`Loading session: ${newSessionId}`)
 
-      // Immediately switch session and clear messages for instant UI feedback
+      // Only clear messages when switching to a different session (not during polling refresh)
+      const currentStoredSessionId = sessionStorage.getItem('chat-session-id')
+      const isSameSession = currentStoredSessionId === newSessionId
       setSessionId(newSessionId)
       sessionStorage.setItem('chat-session-id', newSessionId)
-      setMessages([])
+      if (!isSameSession) {
+        setMessages([])
+      }
 
       const authHeaders = await getAuthHeaders()
 
@@ -1019,7 +1050,36 @@ export const useChatAPI = ({
         })
 
       // Update messages (session ID already set at function start for instant UI)
-      setMessages(loadedMessages)
+      // During polling (same session), skip setMessages if content hasn't changed
+      // to prevent unnecessary re-renders and flickering
+      if (isSameSession) {
+        setMessages(prevMessages => {
+          if (prevMessages.length !== loadedMessages.length) {
+            return loadedMessages
+          }
+          // Check tool execution completion status changes in recent messages
+          for (let i = Math.max(0, prevMessages.length - 5); i < prevMessages.length; i++) {
+            const prevTools = prevMessages[i].toolExecutions
+            const nextTools = loadedMessages[i]?.toolExecutions
+            if ((!prevTools) !== (!nextTools)) return loadedMessages
+            if (prevTools && nextTools) {
+              if (prevTools.length !== nextTools.length) return loadedMessages
+              for (let j = 0; j < prevTools.length; j++) {
+                if (prevTools[j].isComplete !== nextTools[j].isComplete) return loadedMessages
+                if (prevTools[j].isCancelled !== nextTools[j].isCancelled) return loadedMessages
+              }
+            }
+          }
+          // Check last message text change
+          const prevLast = prevMessages[prevMessages.length - 1]
+          const nextLast = loadedMessages[loadedMessages.length - 1]
+          if (prevLast?.text !== nextLast?.text) return loadedMessages
+          // No meaningful change - return same reference to prevent re-render
+          return prevMessages
+        })
+      } else {
+        setMessages(loadedMessages)
+      }
 
       logger.info(`Session loaded: ${newSessionId} with ${loadedMessages.length} messages`)
 

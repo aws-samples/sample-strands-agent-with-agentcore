@@ -513,6 +513,9 @@ async def send_a2a_message(
                                             elif artifact_name.startswith('browser_step_'):
                                                 # Skip browser_step_N (UI-only, not for LLM context)
                                                 logger.info(f"Skipping {artifact_name} (UI-only artifact)")
+                                            elif artifact_name.startswith('research_step_'):
+                                                # Skip research_step_N (UI-only progress, not for LLM context)
+                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
                                             else:
                                                 # Include other artifacts (agent_response, browser_result, etc.) in LLM context
                                                 response_text += artifact_text
