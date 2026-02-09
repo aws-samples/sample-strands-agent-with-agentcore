@@ -12,7 +12,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional
 
-from strands.types.session import Session, SessionAgent, SessionMessage
+from strands.types.session import Session, SessionAgent, SessionMessage, SessionType
 from strands.types.exceptions import SessionException
 
 logger = logging.getLogger(__name__)
@@ -95,7 +95,7 @@ class SwarmMessageStore:
         # Local mode: Use FileSessionManager
         from strands.session.file_session_manager import FileSessionManager
 
-        sessions_dir = Path(__file__).parent.parent.parent / "sessions"
+        sessions_dir = Path(__file__).parent.parent.parent.parent / "sessions"
         sessions_dir.mkdir(exist_ok=True)
 
         manager = FileSessionManager(
@@ -132,7 +132,7 @@ class SwarmMessageStore:
         try:
             existing_session = repo.read_session(self.session_id)
             if existing_session is None:
-                session = Session(session_id=self.session_id)
+                session = Session(session_id=self.session_id, session_type=SessionType.AGENT)
                 repo.create_session(session)
                 logger.debug(f"[Swarm] Created session: {self.session_id}")
         except Exception as e:
@@ -142,11 +142,26 @@ class SwarmMessageStore:
         try:
             existing_agent = repo.read_agent(self.session_id, SWARM_AGENT_ID)
             if existing_agent is None:
-                agent = SessionAgent(agent_id=SWARM_AGENT_ID)
+                agent = SessionAgent(agent_id=SWARM_AGENT_ID, state={}, conversation_manager_state={})
                 repo.create_agent(self.session_id, agent)
                 logger.debug(f"[Swarm] Created agent: {SWARM_AGENT_ID}")
         except Exception as e:
             logger.debug(f"[Swarm] Agent check/create: {e}")
+
+    def save_artifacts(self, artifacts: Dict[str, Any]) -> None:
+        """Save artifacts to agent state for history reload."""
+        try:
+            self._ensure_session_and_agent_exist()
+
+            agent = self._repo.read_agent(self.session_id, SWARM_AGENT_ID)
+            if agent:
+                if not hasattr(agent, 'state') or agent.state is None:
+                    agent.state = {}
+                agent.state['artifacts'] = artifacts
+                self._repo.update_agent(self.session_id, agent)
+                logger.info(f"[Swarm] Saved {len(artifacts)} artifacts")
+        except Exception as e:
+            logger.error(f"[Swarm] Failed to save artifacts: {e}")
 
     def save_turn(
         self,

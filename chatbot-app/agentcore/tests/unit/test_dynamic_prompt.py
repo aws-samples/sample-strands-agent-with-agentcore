@@ -633,7 +633,7 @@ class TestStrandsAgentSignatureCompliance:
         """Test cache_prompt configuration for BedrockModel."""
         # When caching is enabled
         model_config_cached = {
-            "model_id": "us.anthropic.claude-sonnet-4-20250514-v1:0",
+            "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
             "temperature": 0.7,
             "cache_prompt": "default"  # Valid value for Strands
         }

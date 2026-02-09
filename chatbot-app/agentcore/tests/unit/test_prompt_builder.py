@@ -74,11 +74,11 @@ class TestBuildTextSystemPrompt:
         """Verify tool guidance adds content blocks."""
         from agent.config.prompt_builder import build_text_system_prompt
 
-        # Mock load_tool_guidance to return test guidance
+        # Mock load_tool_guidance to return test guidance (list of dicts)
         with patch('agent.config.prompt_builder.load_tool_guidance') as mock_load:
             mock_load.return_value = [
-                "Calculator guidance text",
-                "Web search guidance text"
+                {"id": "calculator", "guidance": "Calculator guidance text"},
+                {"id": "web_search", "guidance": "Web search guidance text"}
             ]
 
             result = build_text_system_prompt(enabled_tools=["calculator", "web_search"])
@@ -127,12 +127,12 @@ class TestBuildVoiceSystemPrompt:
         from agent.config.prompt_builder import build_voice_system_prompt
 
         with patch('agent.config.prompt_builder.load_tool_guidance') as mock_load:
-            mock_load.return_value = ["Calculator: Use for math operations"]
+            mock_load.return_value = [{"id": "calculator", "guidance": "Use for math operations"}]
 
             result = build_voice_system_prompt(enabled_tools=["calculator"])
 
-            assert "Tools available:" in result
-            assert "Calculator:" in result
+            assert "calculator_guidance" in result
+            assert "Use for math operations" in result
 
 
 # ============================================================
@@ -229,8 +229,8 @@ class TestLoadToolGuidance:
 
         assert result == []
 
-    def test_returns_list_of_strings(self):
-        """Verify return type is list of strings."""
+    def test_returns_list_of_dicts(self):
+        """Verify return type is list of dicts with id and guidance keys."""
         from agent.config.prompt_builder import load_tool_guidance
 
         # Mock the file reading to avoid actual file dependency
@@ -251,7 +251,9 @@ class TestLoadToolGuidance:
 
             assert isinstance(result, list)
             for item in result:
-                assert isinstance(item, str)
+                assert isinstance(item, dict)
+                assert "id" in item
+                assert "guidance" in item
 
 
 # ============================================================
@@ -325,7 +327,7 @@ class TestPromptBuilderIntegration:
         from agent.config.prompt_builder import build_text_system_prompt, build_voice_system_prompt
 
         with patch('agent.config.prompt_builder.load_tool_guidance') as mock_load:
-            mock_load.return_value = ["Calculator guidance"]
+            mock_load.return_value = [{"id": "calculator", "guidance": "Calculator guidance"}]
 
             text_prompt = build_text_system_prompt(enabled_tools=["calculator"])
             voice_prompt = build_voice_system_prompt(enabled_tools=["calculator"])

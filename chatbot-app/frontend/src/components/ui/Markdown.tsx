@@ -88,6 +88,78 @@ const stripResearchTags = (content: string): string => {
   return content.replace(/<\/?research>/g, '');
 };
 
+/**
+ * Normalizes nested code fences so outer fences use more backticks than inner ones.
+ * Prevents markdown parsers from prematurely closing outer code blocks when
+ * encountering inner fence markers (e.g., ```bash inside ```markdown).
+ */
+const normalizeCodeFences = (text: string): string => {
+  const lines = text.split('\n');
+  const fenceRegex = /^(`{3,})(.*)$/;
+
+  const markers: Array<{
+    lineIndex: number;
+    backticks: number;
+    hasInfo: boolean;
+  }> = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = lines[i].match(fenceRegex);
+    if (match) {
+      markers.push({
+        lineIndex: i,
+        backticks: match[1].length,
+        hasInfo: match[2].trim().length > 0,
+      });
+    }
+  }
+
+  if (markers.length < 2) return text;
+
+  // Pair fences using stack-based approach:
+  // - Fence with info string (language tag) → always opening
+  // - Bare fence → closing if inside a block, opening otherwise
+  const stack: Array<{ markerIdx: number; maxChildBackticks: number }> = [];
+  const adjustments = new Map<number, number>();
+
+  for (let i = 0; i < markers.length; i++) {
+    const marker = markers[i];
+
+    if (stack.length === 0 || marker.hasInfo) {
+      stack.push({ markerIdx: i, maxChildBackticks: 0 });
+    } else {
+      const top = stack.pop()!;
+      const opening = markers[top.markerIdx];
+      const needed = top.maxChildBackticks > 0
+        ? top.maxChildBackticks + 1
+        : opening.backticks;
+
+      if (stack.length > 0) {
+        const parent = stack[stack.length - 1];
+        parent.maxChildBackticks = Math.max(parent.maxChildBackticks, needed);
+      }
+
+      adjustments.set(opening.lineIndex, Math.max(adjustments.get(opening.lineIndex) || 0, needed));
+      adjustments.set(marker.lineIndex, Math.max(adjustments.get(marker.lineIndex) || 0, needed));
+    }
+  }
+
+  let modified = false;
+  const result = lines.map((line, i) => {
+    const needed = adjustments.get(i);
+    if (needed !== undefined) {
+      const match = line.match(fenceRegex);
+      if (match && needed > match[1].length) {
+        modified = true;
+        return '`'.repeat(needed) + match[2];
+      }
+    }
+    return line;
+  });
+
+  return modified ? result.join('\n') : text;
+};
+
 // Helper function to extract domain from URL
 const getDomain = (url: string): string => {
   try {
@@ -320,8 +392,15 @@ const NonMemoizedMarkdown = ({
   sessionId?: string;
   toolUseId?: string;
 }) => {
-  // Memoize parsing result to avoid re-parsing on every render
-  const parts = useMemo(() => parseContentWithCharts(children), [children]);
+  // Memoize parsing result with fence normalization to avoid re-parsing on every render
+  const parts = useMemo(() => {
+    const parsed = parseContentWithCharts(children);
+    return parsed.map(part =>
+      part.type === 'text'
+        ? { ...part, content: normalizeCodeFences(stripResearchTags(part.content)) }
+        : part
+    );
+  }, [children]);
   const remarkPlugins = useMemo(() => getRemarkPlugins(preserveLineBreaks), [preserveLineBreaks]);
 
   // Font size mapping (in pixels)
@@ -365,7 +444,7 @@ const NonMemoizedMarkdown = ({
               components={components}
               urlTransform={customUrlTransform}
             >
-              {stripResearchTags(part.content)}
+              {part.content}
             </ReactMarkdown>
           );
         }

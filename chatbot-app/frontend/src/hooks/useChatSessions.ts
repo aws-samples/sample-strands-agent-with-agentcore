@@ -37,7 +37,7 @@ export function useChatSessions({ sessionId, onNewChat }: UseChatSessionsProps) 
     } finally {
       setIsLoadingSessions(false);
     }
-  }, []);
+  }, [sessionId]);
 
   // Delete a session
   const deleteSession = useCallback(async (sessionIdToDelete: string) => {

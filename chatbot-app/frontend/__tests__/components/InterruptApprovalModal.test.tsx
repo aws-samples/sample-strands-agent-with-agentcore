@@ -2,12 +2,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { InterruptApprovalModal } from '@/components/InterruptApprovalModal'
 
-// Mock lucide-react icons
+// Mock lucide-react icons (include X used by Dialog close button)
 vi.mock('lucide-react', () => ({
-  FlaskConical: () => <div data-testid="flask-icon" />,
-  CheckCircle2: () => <div data-testid="check-icon" />,
-  XCircle: () => <div data-testid="x-icon" />,
-  Globe: () => <div data-testid="globe-icon" />,
+  Trash2: () => <div data-testid="trash-icon" />,
   X: () => <div data-testid="close-icon" />,
 }))
 
@@ -21,205 +18,116 @@ describe('InterruptApprovalModal', () => {
   })
 
   // ============================================================
-  // Research Approval Scenario Tests
+  // Email Delete Approval Scenario Tests
   // ============================================================
 
-  describe('Research Approval', () => {
-    const researchInterrupts = [
+  describe('Email Delete Approval', () => {
+    const emailDeleteInterrupts = [
       {
         id: 'interrupt_001',
-        name: 'chatbot-research-approval',
+        name: 'chatbot-email-delete-approval',
         reason: {
-          tool_name: 'research_agent',
-          plan: 'Step 1: Search for quantum computing basics\nStep 2: Analyze recent papers\nStep 3: Summarize findings',
+          query: 'newsletter emails',
+          intent: 'Delete all newsletter emails from inbox',
+          max_delete: 25,
         },
       },
     ]
 
-    it('should render research approval modal with correct title', () => {
+    it('should render email delete modal with correct title', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={researchInterrupts}
+          interrupts={emailDeleteInterrupts}
         />
       )
 
-      expect(screen.getByText('Research Approval Required')).toBeInTheDocument()
-      expect(screen.getByText('Review the research plan before proceeding')).toBeInTheDocument()
+      expect(screen.getByText('Delete Emails')).toBeInTheDocument()
+      expect(screen.getByText('This action cannot be undone')).toBeInTheDocument()
     })
 
-    it('should display research plan content', () => {
+    it('should display query and max delete count', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={researchInterrupts}
+          interrupts={emailDeleteInterrupts}
         />
       )
 
-      expect(screen.getByText(/Step 1: Search for quantum computing basics/)).toBeInTheDocument()
-      expect(screen.getByText(/Step 2: Analyze recent papers/)).toBeInTheDocument()
+      expect(screen.getByText('newsletter emails')).toBeInTheDocument()
+      expect(screen.getByText('25')).toBeInTheDocument()
     })
 
-    it('should show flask icon for research approval', () => {
+    it('should display intent text', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={researchInterrupts}
+          interrupts={emailDeleteInterrupts}
         />
       )
 
-      expect(screen.getByTestId('flask-icon')).toBeInTheDocument()
+      expect(screen.getByText('Delete all newsletter emails from inbox')).toBeInTheDocument()
     })
 
-    it('should show "Research Plan" label', () => {
+    it('should show trash icon', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={researchInterrupts}
+          interrupts={emailDeleteInterrupts}
         />
       )
 
-      expect(screen.getByText('Research Plan')).toBeInTheDocument()
+      expect(screen.getByTestId('trash-icon')).toBeInTheDocument()
     })
 
-    it('should have "Approve & Start Research" button text', () => {
+    it('should have Delete button', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={researchInterrupts}
+          interrupts={emailDeleteInterrupts}
         />
       )
 
-      expect(screen.getByText('Approve & Start Research')).toBeInTheDocument()
+      expect(screen.getByText('Delete')).toBeInTheDocument()
     })
 
-    it('should call onApprove when approve button is clicked', () => {
+    it('should call onApprove when Delete button is clicked', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={researchInterrupts}
+          interrupts={emailDeleteInterrupts}
         />
       )
 
-      const approveButton = screen.getByText('Approve & Start Research')
-      fireEvent.click(approveButton)
-
+      fireEvent.click(screen.getByText('Delete'))
       expect(mockOnApprove).toHaveBeenCalledTimes(1)
     })
 
-    it('should call onReject when decline button is clicked', () => {
+    it('should call onReject when Cancel button is clicked', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={researchInterrupts}
+          interrupts={emailDeleteInterrupts}
         />
       )
 
-      const declineButton = screen.getByText('Decline')
-      fireEvent.click(declineButton)
-
+      fireEvent.click(screen.getByText('Cancel'))
       expect(mockOnReject).toHaveBeenCalledTimes(1)
     })
-  })
-
-  // ============================================================
-  // Browser Approval Scenario Tests
-  // ============================================================
-
-  describe('Browser Approval', () => {
-    const browserInterrupts = [
-      {
-        id: 'interrupt_002',
-        name: 'chatbot-browser-approval',
-        reason: {
-          tool_name: 'browser_use_agent',
-          task: 'Navigate to Amazon.com and search for "wireless headphones", then compare the top 3 results',
-          max_steps: 20,
-        },
-      },
-    ]
-
-    it('should render browser approval modal with correct title', () => {
-      render(
-        <InterruptApprovalModal
-          isOpen={true}
-          onApprove={mockOnApprove}
-          onReject={mockOnReject}
-          interrupts={browserInterrupts}
-        />
-      )
-
-      expect(screen.getByText('Browser Automation Approval Required')).toBeInTheDocument()
-      expect(screen.getByText('Review the browser task before proceeding')).toBeInTheDocument()
-    })
-
-    it('should display browser task content', () => {
-      render(
-        <InterruptApprovalModal
-          isOpen={true}
-          onApprove={mockOnApprove}
-          onReject={mockOnReject}
-          interrupts={browserInterrupts}
-        />
-      )
-
-      expect(screen.getByText(/Navigate to Amazon.com/)).toBeInTheDocument()
-      expect(screen.getByText(/wireless headphones/)).toBeInTheDocument()
-    })
-
-    it('should show globe icon for browser approval', () => {
-      render(
-        <InterruptApprovalModal
-          isOpen={true}
-          onApprove={mockOnApprove}
-          onReject={mockOnReject}
-          interrupts={browserInterrupts}
-        />
-      )
-
-      expect(screen.getByTestId('globe-icon')).toBeInTheDocument()
-    })
-
-    it('should show "Browser Task" label', () => {
-      render(
-        <InterruptApprovalModal
-          isOpen={true}
-          onApprove={mockOnApprove}
-          onReject={mockOnReject}
-          interrupts={browserInterrupts}
-        />
-      )
-
-      expect(screen.getByText('Browser Task')).toBeInTheDocument()
-    })
-
-    it('should have "Approve & Start Browser Task" button text', () => {
-      render(
-        <InterruptApprovalModal
-          isOpen={true}
-          onApprove={mockOnApprove}
-          onReject={mockOnReject}
-          interrupts={browserInterrupts}
-        />
-      )
-
-      expect(screen.getByText('Approve & Start Browser Task')).toBeInTheDocument()
-    })
-
   })
 
   // ============================================================
@@ -230,23 +138,10 @@ describe('InterruptApprovalModal', () => {
     const defaultInterrupts = [
       {
         id: 'interrupt_001',
-        name: 'chatbot-research-approval',
-        reason: { plan: 'Test plan' },
+        name: 'chatbot-email-delete-approval',
+        reason: { query: 'test', intent: 'test intent', max_delete: 50 },
       },
     ]
-
-    it('should not render when isOpen is false', () => {
-      render(
-        <InterruptApprovalModal
-          isOpen={false}
-          onApprove={mockOnApprove}
-          onReject={mockOnReject}
-          interrupts={defaultInterrupts}
-        />
-      )
-
-      expect(screen.queryByText('Research Approval Required')).not.toBeInTheDocument()
-    })
 
     it('should render when isOpen is true', () => {
       render(
@@ -258,7 +153,7 @@ describe('InterruptApprovalModal', () => {
         />
       )
 
-      expect(screen.getByText('Research Approval Required')).toBeInTheDocument()
+      expect(screen.getByText('Delete Emails')).toBeInTheDocument()
     })
 
     it('should return null when interrupts array is empty', () => {
@@ -271,7 +166,6 @@ describe('InterruptApprovalModal', () => {
         />
       )
 
-      // Modal should not render any content
       expect(container.querySelector('[role="dialog"]')).not.toBeInTheDocument()
     })
   })
@@ -281,11 +175,11 @@ describe('InterruptApprovalModal', () => {
   // ============================================================
 
   describe('Edge Cases', () => {
-    it('should handle empty plan gracefully', () => {
-      const interruptsWithEmptyPlan = [
+    it('should handle empty reason gracefully', () => {
+      const interruptsWithEmptyReason = [
         {
           id: 'interrupt_001',
-          name: 'chatbot-research-approval',
+          name: 'chatbot-email-delete-approval',
           reason: {},
         },
       ]
@@ -295,20 +189,19 @@ describe('InterruptApprovalModal', () => {
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={interruptsWithEmptyPlan}
+          interrupts={interruptsWithEmptyReason}
         />
       )
 
-      // Should render modal without crashing
-      expect(screen.getByText('Research Approval Required')).toBeInTheDocument()
+      expect(screen.getByText('Delete Emails')).toBeInTheDocument()
     })
 
-    it('should handle empty task gracefully for browser approval', () => {
-      const interruptsWithEmptyTask = [
+    it('should use default max_delete of 50 when not provided', () => {
+      const interrupts = [
         {
           id: 'interrupt_001',
-          name: 'chatbot-browser-approval',
-          reason: {},
+          name: 'chatbot-email-delete-approval',
+          reason: { query: 'spam' },
         },
       ]
 
@@ -317,47 +210,24 @@ describe('InterruptApprovalModal', () => {
           isOpen={true}
           onApprove={mockOnApprove}
           onReject={mockOnReject}
-          interrupts={interruptsWithEmptyTask}
+          interrupts={interrupts}
         />
       )
 
-      // Should render modal without crashing
-      expect(screen.getByText('Browser Automation Approval Required')).toBeInTheDocument()
-    })
-
-    it('should handle undefined reason', () => {
-      const interruptsWithUndefinedReason = [
-        {
-          id: 'interrupt_001',
-          name: 'chatbot-research-approval',
-          reason: undefined,
-        },
-      ]
-
-      render(
-        <InterruptApprovalModal
-          isOpen={true}
-          onApprove={mockOnApprove}
-          onReject={mockOnReject}
-          interrupts={interruptsWithUndefinedReason as any}
-        />
-      )
-
-      // Should render modal without crashing
-      expect(screen.getByText('Research Approval Required')).toBeInTheDocument()
+      expect(screen.getByText('50')).toBeInTheDocument()
     })
 
     it('should only process first interrupt when multiple provided', () => {
       const multipleInterrupts = [
         {
           id: 'interrupt_001',
-          name: 'chatbot-research-approval',
-          reason: { plan: 'First research plan' },
+          name: 'chatbot-email-delete-approval',
+          reason: { query: 'first query', intent: 'first' },
         },
         {
           id: 'interrupt_002',
-          name: 'chatbot-browser-approval',
-          reason: { task: 'Browser task' },
+          name: 'chatbot-email-delete-approval',
+          reason: { query: 'second query', intent: 'second' },
         },
       ]
 
@@ -370,9 +240,8 @@ describe('InterruptApprovalModal', () => {
         />
       )
 
-      // Should show first interrupt (research) only
-      expect(screen.getByText('Research Approval Required')).toBeInTheDocument()
-      expect(screen.queryByText('Browser Automation Approval Required')).not.toBeInTheDocument()
+      expect(screen.getByText('first query')).toBeInTheDocument()
+      expect(screen.queryByText('second query')).not.toBeInTheDocument()
     })
   })
 
@@ -384,12 +253,12 @@ describe('InterruptApprovalModal', () => {
     const defaultInterrupts = [
       {
         id: 'interrupt_001',
-        name: 'chatbot-research-approval',
-        reason: { plan: 'Test plan' },
+        name: 'chatbot-email-delete-approval',
+        reason: { query: 'test' },
       },
     ]
 
-    it('should have accessible decline button', () => {
+    it('should have accessible cancel button', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
@@ -399,11 +268,11 @@ describe('InterruptApprovalModal', () => {
         />
       )
 
-      const declineButton = screen.getByRole('button', { name: /decline/i })
-      expect(declineButton).toBeInTheDocument()
+      const cancelButton = screen.getByRole('button', { name: /cancel/i })
+      expect(cancelButton).toBeInTheDocument()
     })
 
-    it('should have accessible approve button', () => {
+    it('should have accessible delete button', () => {
       render(
         <InterruptApprovalModal
           isOpen={true}
@@ -413,8 +282,8 @@ describe('InterruptApprovalModal', () => {
         />
       )
 
-      const approveButton = screen.getByRole('button', { name: /approve/i })
-      expect(approveButton).toBeInTheDocument()
+      const deleteButton = screen.getByRole('button', { name: /delete/i })
+      expect(deleteButton).toBeInTheDocument()
     })
   })
 })

@@ -62,16 +62,6 @@ describe('useChat Hook', () => {
       expect(result.current.messages).toEqual([])
     })
 
-    it('should initialize with default input message', async () => {
-      const { result } = renderHook(() => useChat())
-
-      await act(async () => {
-        await vi.runAllTimersAsync()
-      })
-
-      expect(result.current.inputMessage).toBe('')
-    })
-
     it('should initialize with idle agent status', async () => {
       const { result } = renderHook(() => useChat())
 
@@ -104,38 +94,16 @@ describe('useChat Hook', () => {
   })
 
   describe('Input Message', () => {
-    it('should update input message', async () => {
+    it('should no longer expose inputMessage (moved to ChatInputArea local state)', async () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
         await vi.runAllTimersAsync()
       })
 
-      act(() => {
-        result.current.setInputMessage('Hello, World!')
-      })
-
-      expect(result.current.inputMessage).toBe('Hello, World!')
-    })
-
-    it('should clear input message', async () => {
-      const { result } = renderHook(() => useChat())
-
-      await act(async () => {
-        await vi.runAllTimersAsync()
-      })
-
-      act(() => {
-        result.current.setInputMessage('Test message')
-      })
-
-      expect(result.current.inputMessage).toBe('Test message')
-
-      act(() => {
-        result.current.setInputMessage('')
-      })
-
-      expect(result.current.inputMessage).toBe('')
+      // inputMessage is now local to ChatInputArea, not in useChat
+      expect(result.current).not.toHaveProperty('inputMessage')
+      expect(result.current).not.toHaveProperty('setInputMessage')
     })
   })
 

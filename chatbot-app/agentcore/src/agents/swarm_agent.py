@@ -1,10 +1,8 @@
 """SwarmAgent - Multi-agent orchestration using Strands Swarm
 
-This module encapsulates swarm creation and execution logic:
-- Creates specialist agents with predefined tool sets
-- Orchestrates multi-agent collaboration
-- Streams swarm events (node start/stop, handoffs, tool execution)
-- Saves swarm state to unified storage
+Orchestrates specialist agents via Swarm pattern. All multiagent events are
+flattened into standard tool_use/tool_result/response events so the frontend
+handles them identically to a single agent.
 
 Unlike ChatAgent, SwarmAgent:
 - Does NOT use session_manager for agent state (to avoid SDK bugs)
@@ -33,12 +31,6 @@ from agent.config.swarm_config import (
     build_agent_system_prompt,
 )
 from agent.tool_filter import filter_tools
-from models.swarm_schemas import (
-    SwarmNodeStartEvent,
-    SwarmNodeStopEvent,
-    SwarmHandoffEvent,
-    SwarmCompleteEvent,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -66,26 +58,19 @@ class SwarmAgent(BaseAgent):
         max_iterations: int = 15,
         execution_timeout: float = 600.0,
         node_timeout: float = 180.0,
+        api_keys: Optional[dict] = None,
+        auth_token: Optional[str] = None,
     ):
         """
         Initialize SwarmAgent with swarm configuration
-
-        Args:
-            session_id: Session identifier for message persistence
-            user_id: User identifier (defaults to session_id)
-            model_id: Model ID for specialist agents
-            coordinator_model_id: Model ID for coordinator agent
-            max_handoffs: Maximum agent handoffs allowed
-            max_iterations: Maximum node executions
-            execution_timeout: Total execution timeout in seconds
-            node_timeout: Individual node timeout in seconds
         """
-        # Store swarm-specific parameters before calling super().__init__
         self.coordinator_model_id = coordinator_model_id or "us.anthropic.claude-haiku-4-5-20251001-v1:0"
         self.max_handoffs = max_handoffs
         self.max_iterations = max_iterations
         self.execution_timeout = execution_timeout
         self.node_timeout = node_timeout
+        self.api_keys = api_keys or {}
+        self.auth_token = auth_token
 
         # Initialize base class (will call _load_tools, _build_system_prompt, _create_session_manager)
         # Note: enabled_tools is None - swarm agents use predefined tool sets
@@ -98,6 +83,7 @@ class SwarmAgent(BaseAgent):
             system_prompt=None,  # Not used by swarm
             caching_enabled=False,  # Not used by swarm
             compaction_enabled=False,  # Not used by swarm
+            auth_token=auth_token,  # For MCP Runtime 3LO tools (Gmail, Notion)
         )
 
         # Create swarm with specialist agents
@@ -113,7 +99,7 @@ class SwarmAgent(BaseAgent):
 
     def _get_default_model_id(self) -> str:
         """Get default model ID for specialist agents"""
-        return "us.anthropic.claude-sonnet-4-20250514-v1:0"
+        return "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
 
     def _load_tools(self) -> List:
         """
@@ -210,6 +196,8 @@ class SwarmAgent(BaseAgent):
             ("weather_agent", main_model, True),
             ("finance_agent", main_model, True),
             ("maps_agent", main_model, True),
+            ("google_workspace_agent", main_model, True),
+            ("notion_agent", main_model, True),
             ("responder", responder_model, True),  # Higher max_tokens for final response
         ]
 
@@ -217,7 +205,7 @@ class SwarmAgent(BaseAgent):
             # Get tools if this agent uses them
             tools = []
             if use_tools:
-                tools = get_tools_for_agent(agent_name)
+                tools = get_tools_for_agent(agent_name, auth_token=self.auth_token)
                 # Log tool loading details for debugging
                 expected_tools = AGENT_TOOL_MAPPING.get(agent_name, [])
                 if expected_tools and not tools:
@@ -341,8 +329,10 @@ class SwarmAgent(BaseAgent):
             'user_id': self.user_id,
             'session_id': self.session_id,
             'model_id': self.model_id,
+            'api_keys': self.api_keys,
+            'auth_token': self.auth_token,
         }
-        logger.info(f"[SwarmAgent] Prepared invocation_state: user_id={self.user_id}, session_id={self.session_id}")
+        logger.debug(f"[SwarmAgent] Prepared invocation_state: user_id={self.user_id}, session_id={self.session_id}")
 
         # Yield start event
         yield f"data: {json.dumps({'type': 'start'})}\n\n"
@@ -356,23 +346,19 @@ class SwarmAgent(BaseAgent):
 
         node_history = []
         current_node_id = None
-        responder_tool_ids: set = set()  # Track sent tool_use events for responder (avoid duplicates)
-        # Track accumulated text for each node (for fallback when non-responder ends without handoff)
         node_text_accumulator: Dict[str, str] = {}
-        # Track swarm state for session storage
-        swarm_shared_context = {}
-        # Track responder's content blocks in order: [text, toolUse, toolResult, text, ...]
-        responder_content_blocks: List[Dict] = []
-        responder_current_text: str = ""  # Current text segment (before tool or between tools)
-        responder_pending_tools: Dict[str, Dict] = {}  # toolUseId -> toolUse block
+        content_blocks: List[Dict] = []
+        responder_current_text: str = ""
+        pending_tools: Dict[str, Dict] = {}  # toolUseId -> toolUse block
+        handoff_tool_ids: set = set()
+        sent_tool_ids: set = set()
+        last_emitted_input: Dict[str, dict] = {}  # toolUseId -> last emitted input
 
         try:
             # Execute Swarm with streaming
             last_event_time = asyncio.get_event_loop().time()
-            event_count = 0
 
             async for event in self.swarm.stream_async(user_query, invocation_state=invocation_state):
-                event_count += 1
                 current_time = asyncio.get_event_loop().time()
                 time_since_last = current_time - last_event_time
                 last_event_time = current_time
@@ -396,118 +382,114 @@ class SwarmAgent(BaseAgent):
                 if time_since_last > 10.0:
                     logger.warning(f"[SwarmAgent] Long gap: {time_since_last:.1f}s since last event")
 
-                # Node start
                 if event_type == "multiagent_node_start":
                     node_id = event.get("node_id")
                     current_node_id = node_id
                     node_history.append(node_id)
-
-                    start_event = SwarmNodeStartEvent(
-                        node_id=node_id,
-                        node_description=AGENT_DESCRIPTIONS.get(node_id, "")
-                    )
-                    yield f"data: {json.dumps(start_event.model_dump())}\n\n"
                     logger.debug(f"[SwarmAgent] Node started: {node_id}")
 
-                # Node stream (agent output)
                 elif event_type == "multiagent_node_stream":
                     inner_event = event.get("event", {})
                     node_id = event.get("node_id", current_node_id)
 
-                    # Reasoning event - SDK emits {"reasoningText": str, "reasoning": True}
                     if "reasoningText" in inner_event:
-                        reasoning_text = inner_event["reasoningText"]
-                        if reasoning_text:
-                            yield f"data: {json.dumps({'type': 'reasoning', 'text': reasoning_text, 'node_id': node_id})}\n\n"
+                        if node_id == "responder":
+                            reasoning_text = inner_event["reasoningText"]
+                            if reasoning_text:
+                                yield f"data: {json.dumps({'type': 'reasoning', 'text': reasoning_text})}\n\n"
 
-                    # Text output - SDK emits {"data": str}
                     elif "data" in inner_event:
                         text_data = inner_event["data"]
-                        # Accumulate text for fallback (when non-responder ends without handoff)
                         if node_id not in node_text_accumulator:
                             node_text_accumulator[node_id] = ""
                         node_text_accumulator[node_id] += text_data
 
                         if node_id == "responder":
-                            # Final response - displayed as chat message
                             responder_current_text += text_data
-                            yield f"data: {json.dumps({'type': 'response', 'text': text_data, 'node_id': node_id})}\n\n"
-                        else:
-                            # Intermediate agent text - for SwarmProgress display only
-                            yield f"data: {json.dumps({'type': 'text', 'content': text_data, 'node_id': node_id})}\n\n"
+                            yield f"data: {json.dumps({'type': 'response', 'text': text_data})}\n\n"
 
-                    # Tool events - only responder's tools are sent to frontend for real-time rendering
-                    elif inner_event.get("type") == "tool_use_stream" and node_id == "responder":
-                        # Send first tool_use event only (not streaming deltas)
+                    # Tool use from all agents (skip handoff_to_agent)
+                    elif inner_event.get("type") == "tool_use_stream":
                         current_tool = inner_event.get("current_tool_use", {})
                         tool_id = current_tool.get("toolUseId")
-                        if current_tool and tool_id and tool_id not in responder_tool_ids:
-                            responder_tool_ids.add(tool_id)
-                            tool_event = {
-                                "type": "tool_use",
-                                "toolUseId": tool_id,
-                                "name": current_tool.get("name"),
-                                "input": {}
-                            }
-                            logger.debug(f"[SwarmAgent] Responder tool use: {tool_event.get('name')}")
-                            yield f"data: {json.dumps(tool_event)}\n\n"
+                        tool_name = current_tool.get("name", "")
 
-                            # Save current text segment before tool (if any)
-                            if responder_current_text.strip():
-                                responder_content_blocks.append({"text": responder_current_text})
-                                responder_current_text = ""
-
-                            # Store toolUse block for session storage
-                            # Ensure input is a dict (Bedrock API rejects empty string)
+                        if not current_tool or not tool_id or tool_id in handoff_tool_ids:
+                            pass
+                        elif tool_name == "handoff_to_agent":
+                            handoff_tool_ids.add(tool_id)
+                        elif tool_id not in sent_tool_ids:
+                            # First emission - create tool card in UI
+                            sent_tool_ids.add(tool_id)
                             tool_input = current_tool.get("input")
                             if not isinstance(tool_input, dict):
                                 tool_input = {}
-                            tool_use_block = {
-                                "toolUse": {
-                                    "toolUseId": tool_id,
-                                    "name": current_tool.get("name"),
-                                    "input": tool_input
-                                }
-                            }
-                            responder_pending_tools[tool_id] = tool_use_block
+                            last_emitted_input[tool_id] = tool_input
+                            tool_event = {"type": "tool_use", "toolUseId": tool_id, "name": tool_name, "input": tool_input}
+                            yield f"data: {json.dumps(tool_event)}\n\n"
+                            logger.debug(f"[SwarmAgent] Tool use from {node_id}: {tool_name}")
 
-                    # Tool result comes via 'message' event with role='user' containing toolResult blocks
-                    elif "message" in inner_event and node_id == "responder":
+                            if node_id == "responder" and responder_current_text.strip():
+                                content_blocks.append({"text": responder_current_text})
+                                responder_current_text = ""
+
+                            pending_tools[tool_id] = {
+                                "toolUse": {"toolUseId": tool_id, "name": tool_name, "input": tool_input}
+                            }
+                        else:
+                            # Input update - re-emit if input changed
+                            tool_input = current_tool.get("input")
+                            if isinstance(tool_input, dict) and tool_input and tool_input != last_emitted_input.get(tool_id):
+                                last_emitted_input[tool_id] = tool_input
+                                tool_event = {"type": "tool_use", "toolUseId": tool_id, "name": tool_name, "input": tool_input}
+                                yield f"data: {json.dumps(tool_event)}\n\n"
+                                if tool_id in pending_tools:
+                                    pending_tools[tool_id]["toolUse"]["input"] = tool_input
+
+                    # Browser session detection
+                    elif inner_event.get("tool_stream_event"):
+                        tool_stream = inner_event["tool_stream_event"]
+                        stream_data = tool_stream.get("data", {})
+                        if isinstance(stream_data, dict) and stream_data.get("type") == "browser_session_detected":
+                            metadata = {"browserSessionId": stream_data.get("browserSessionId")}
+                            if stream_data.get("browserId"):
+                                metadata["browserId"] = stream_data["browserId"]
+                            yield f"data: {json.dumps({'type': 'metadata', 'metadata': metadata})}\n\n"
+
+                    # Tool result from all agents (skip handoff results)
+                    elif "message" in inner_event:
                         msg = inner_event.get("message", {})
                         if msg.get("role") == "user" and msg.get("content"):
-                            for content_block in msg["content"]:
-                                if isinstance(content_block, dict) and "toolResult" in content_block:
-                                    tool_result = content_block["toolResult"]
-                                    tool_use_id = tool_result.get("toolUseId")
-                                    # Only send if we haven't already sent this tool result
-                                    if tool_use_id and tool_use_id in responder_tool_ids:
-                                        result_event = {
-                                            "type": "tool_result",
-                                            "toolUseId": tool_use_id,
-                                            "status": tool_result.get("status", "success")
-                                        }
-                                        # Extract text from content
-                                        if tool_result.get("content"):
-                                            for result_content in tool_result["content"]:
-                                                if isinstance(result_content, dict) and "text" in result_content:
-                                                    result_event["result"] = result_content["text"]
-                                        logger.info(f"[SwarmAgent] Responder tool result: {tool_use_id}")
-                                        yield f"data: {json.dumps(result_event)}\n\n"
+                            for cb in msg["content"]:
+                                if not (isinstance(cb, dict) and "toolResult" in cb):
+                                    continue
+                                tool_result = cb["toolResult"]
+                                tool_use_id = tool_result.get("toolUseId")
 
-                                        # Store toolUse + toolResult blocks in content order
-                                        if tool_use_id in responder_pending_tools:
-                                            responder_content_blocks.append(responder_pending_tools.pop(tool_use_id))
-                                            responder_content_blocks.append({"toolResult": tool_result})
+                                if tool_use_id and tool_use_id in handoff_tool_ids:
+                                    continue
+                                if tool_use_id and tool_use_id in sent_tool_ids:
+                                    result_event = {
+                                        "type": "tool_result",
+                                        "toolUseId": tool_use_id,
+                                        "status": tool_result.get("status", "success")
+                                    }
+                                    if tool_result.get("content"):
+                                        for rc in tool_result["content"]:
+                                            if isinstance(rc, dict) and "text" in rc:
+                                                result_event["result"] = rc["text"]
+                                    if tool_result.get("metadata"):
+                                        result_event["metadata"] = tool_result["metadata"]
+                                    yield f"data: {json.dumps(result_event)}\n\n"
 
-                                        # Remove from set to prevent duplicate sends
-                                        responder_tool_ids.discard(tool_use_id)
+                                    if tool_use_id in pending_tools:
+                                        content_blocks.append(pending_tools.pop(tool_use_id))
+                                        content_blocks.append({"toolResult": tool_result})
+                                    sent_tool_ids.discard(tool_use_id)
 
-                # Node stop
                 elif event_type == "multiagent_node_stop":
                     node_id = event.get("node_id")
                     node_result = event.get("node_result", {})
-
-                    # Accumulate usage
                     if hasattr(node_result, "accumulated_usage"):
                         usage = node_result.accumulated_usage
                         total_usage["inputTokens"] += usage.get("inputTokens", 0)
@@ -519,115 +501,60 @@ class SwarmAgent(BaseAgent):
                         total_usage["outputTokens"] += usage.get("outputTokens", 0)
                         total_usage["totalTokens"] += usage.get("totalTokens", 0)
 
-                    status = "completed"
-                    if hasattr(node_result, "status"):
-                        status = node_result.status.value if hasattr(node_result.status, "value") else str(node_result.status)
-                    elif isinstance(node_result, dict):
-                        status = node_result.get("status", "completed")
-
-                    stop_event = SwarmNodeStopEvent(
-                        node_id=node_id,
-                        status=status
-                    )
-                    yield f"data: {json.dumps(stop_event.model_dump())}\n\n"
-                    logger.debug(f"[SwarmAgent] Node stopped: {node_id}")
-
-                # Handoff
                 elif event_type == "multiagent_handoff":
                     from_nodes = event.get("from_node_ids", [])
                     to_nodes = event.get("to_node_ids", [])
-                    handoff_message = event.get("message")
-
-                    # Get context from the handing-off agent's shared_context
                     from_node = from_nodes[0] if from_nodes else ""
-                    agent_context = None
-                    if from_node and hasattr(self.swarm, 'shared_context'):
-                        agent_context = self.swarm.shared_context.context.get(from_node)
-                        # Capture shared context for session storage
-                        if agent_context:
-                            swarm_shared_context[from_node] = agent_context
-                            logger.info(f"[SwarmAgent] Captured context from {from_node}: {agent_context}")
-
-                    handoff_event = SwarmHandoffEvent(
-                        from_node=from_node,
-                        to_node=to_nodes[0] if to_nodes else "",
-                        message=handoff_message,
-                        context=agent_context
-                    )
-                    yield f"data: {json.dumps(handoff_event.model_dump())}\n\n"
                     logger.info(f"[SwarmAgent] Handoff: {from_node or '?'} → {to_nodes[0] if to_nodes else '?'}")
 
-                # Final result
                 elif event_type == "multiagent_result":
-                    result = event.get("result", {})
-
-                    status = "completed"
-                    if hasattr(result, "status"):
-                        status = result.status.value if hasattr(result.status, "value") else str(result.status)
-                    elif isinstance(result, dict):
-                        status = result.get("status", "completed")
-
-                    # Check if last node was NOT responder (fallback case)
                     final_response = None
-                    final_node_id = None
                     if node_history:
                         last_node = node_history[-1]
                         if last_node != "responder":
-                            # Fallback: non-responder ended without handoff
                             accumulated_text = node_text_accumulator.get(last_node, "")
                             if accumulated_text.strip():
                                 final_response = accumulated_text
-                                final_node_id = last_node
-                                logger.info(f"[SwarmAgent] Fallback response from {last_node} ({len(accumulated_text)} chars)")
 
-                    # Add any remaining text segment after the last tool
                     if responder_current_text.strip():
-                        responder_content_blocks.append({"text": responder_current_text})
+                        content_blocks.append({"text": responder_current_text})
+                    if not content_blocks and final_response:
+                        content_blocks.append({"text": final_response})
 
-                    # Fallback: if no content blocks but have fallback response
-                    if not responder_content_blocks and final_response:
-                        responder_content_blocks.append({"text": final_response})
+                    # Stream final_response to frontend if it wasn't already streamed
+                    # (happens when non-responder agent generates the final text)
+                    if final_response and not responder_current_text.strip():
+                        yield f"data: {json.dumps({'type': 'response', 'text': final_response})}\n\n"
 
-                    # Save turn to unified storage (same format as normal agent)
-                    if responder_content_blocks:
-                        swarm_state = {
-                            "node_history": node_history,
-                            "shared_context": swarm_shared_context,
-                        }
+                    if content_blocks:
                         self.message_store.save_turn(
                             user_message=user_query,
-                            content_blocks=responder_content_blocks,
-                            swarm_state=swarm_state
+                            content_blocks=content_blocks,
+                            swarm_state=None
                         )
 
-                    complete_event = SwarmCompleteEvent(
-                        total_nodes=len(node_history),
-                        node_history=node_history,
-                        status=status,
-                        final_response=final_response,
-                        final_node_id=final_node_id,
-                        shared_context=swarm_shared_context
-                    )
-                    yield f"data: {json.dumps(complete_event.model_dump())}\n\n"
+                    # Collect artifacts from all swarm agents and persist
+                    all_artifacts = {}
+                    for node_name, swarm_node in self.swarm.nodes.items():
+                        agent_artifacts = swarm_node.executor.state.get("artifacts")
+                        if agent_artifacts:
+                            all_artifacts.update(agent_artifacts)
+                    if all_artifacts:
+                        self.message_store.save_artifacts(all_artifacts)
 
-                    # Final complete event with usage
                     final_usage = {k: v for k, v in total_usage.items() if v > 0}
                     yield f"data: {json.dumps({'type': 'complete', 'usage': final_usage if final_usage else None})}\n\n"
-
-                    logger.info(f"[SwarmAgent] Complete: {len(node_history)} nodes, tokens={total_usage['inputTokens']+total_usage['outputTokens']}")
+                    logger.info(f"[SwarmAgent] Complete: {len(node_history)} nodes")
 
         except Exception as e:
-            logger.error(f"[SwarmAgent] Error: {e}")
-            import traceback
-            traceback.print_exc()
-            # Error occurred - don't save incomplete turn
+            logger.error(f"[SwarmAgent] Error: {e}", exc_info=True)
             yield f"data: {json.dumps({'type': 'error', 'content': str(e)})}\n\n"
 
         finally:
             yield f"data: {json.dumps({'type': 'end'})}\n\n"
 
 
-def get_tools_for_agent(agent_name: str) -> List:
+def get_tools_for_agent(agent_name: str, auth_token: Optional[str] = None) -> List:
     """
     Get all tools assigned to a specific agent.
 
@@ -636,6 +563,7 @@ def get_tools_for_agent(agent_name: str) -> List:
 
     Args:
         agent_name: Name of the agent (must be in AGENT_TOOL_MAPPING)
+        auth_token: Cognito JWT for MCP Runtime 3LO tools (Gmail, Notion, etc.)
 
     Returns:
         List of tool objects for the agent
@@ -650,7 +578,11 @@ def get_tools_for_agent(agent_name: str) -> List:
     # No user filtering - Swarm agents get ALL their assigned tools
     result = filter_tools(
         enabled_tool_ids=agent_tool_ids,
-        log_prefix=f"[Swarm:{agent_name}]"
+        log_prefix=f"[Swarm:{agent_name}]",
+        auth_token=auth_token,
     )
+
+    if result.validation_errors:
+        logger.warning(f"[Swarm:{agent_name}] Tool validation errors: {result.validation_errors}")
 
     return result.tools

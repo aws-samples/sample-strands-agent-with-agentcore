@@ -98,10 +98,7 @@ describe('useChatSessions', () => {
       })
 
       expect(mockApiGet).toHaveBeenCalledWith(
-        'session/list?limit=20&status=active',
-        expect.objectContaining({
-          headers: { 'X-Session-ID': 'current-session' }
-        })
+        'session/list?limit=20&status=active'
       )
     })
 
@@ -169,7 +166,7 @@ describe('useChatSessions', () => {
       expect(result.current.chatSessions).toEqual([])
     })
 
-    it('should pass empty headers when sessionId is null', async () => {
+    it('should load sessions when sessionId is null', async () => {
       const propsWithNullSession = {
         sessionId: null,
         onNewChat: vi.fn()
@@ -179,10 +176,7 @@ describe('useChatSessions', () => {
 
       await waitFor(() => {
         expect(mockApiGet).toHaveBeenCalledWith(
-          'session/list?limit=20&status=active',
-          expect.objectContaining({
-            headers: {}
-          })
+          'session/list?limit=20&status=active'
         )
       })
     })

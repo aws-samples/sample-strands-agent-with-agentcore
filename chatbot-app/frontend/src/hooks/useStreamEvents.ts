@@ -94,16 +94,13 @@ export const useStreamEvents = ({
             reasoningText: (currentStep.reasoningText || '') + data.text
           }
           swarmModeRef.current.agentSteps[stepIndex] = updatedStep
-          // Use flushSync to force immediate render for real-time progress
-          flushSync(() => {
-            setSessionState(prev => ({
-              ...prev,
-              swarmProgress: prev.swarmProgress ? {
-                ...prev.swarmProgress,
-                agentSteps: [...swarmModeRef.current.agentSteps]
-              } : prev.swarmProgress
-            }))
-          })
+          setSessionState(prev => ({
+            ...prev,
+            swarmProgress: prev.swarmProgress ? {
+              ...prev.swarmProgress,
+              agentSteps: [...swarmModeRef.current.agentSteps]
+            } : prev.swarmProgress
+          }))
         }
         return
       }
@@ -131,16 +128,13 @@ export const useStreamEvents = ({
               responseText: (currentStep.responseText || '') + data.text
             }
             swarmModeRef.current.agentSteps[stepIndex] = updatedStep
-            // Use flushSync to force immediate render for real-time streaming
-            flushSync(() => {
-              setSessionState(prev => ({
-                ...prev,
-                swarmProgress: prev.swarmProgress ? {
-                  ...prev.swarmProgress,
-                  agentSteps: [...swarmModeRef.current.agentSteps]
-                } : prev.swarmProgress
-              }))
-            })
+            setSessionState(prev => ({
+              ...prev,
+              swarmProgress: prev.swarmProgress ? {
+                ...prev.swarmProgress,
+                agentSteps: [...swarmModeRef.current.agentSteps]
+              } : prev.swarmProgress
+            }))
           }
           return // Non-responder: only update SwarmProgress, no chat message
         }
@@ -310,25 +304,22 @@ export const useStreamEvents = ({
 
         currentToolExecutionsRef.current = updatedExecutions
 
-        // Use startTransition to batch state updates and prevent flickering
-        startTransition(() => {
-          setSessionState(prev => ({
-            ...prev,
-            toolExecutions: updatedExecutions
-          }))
+        setSessionState(prev => ({
+          ...prev,
+          toolExecutions: updatedExecutions
+        }))
 
-          setMessages(prevMessages => prevMessages.map(msg => {
-            if (msg.isToolMessage && msg.toolExecutions) {
-              const updatedToolExecutions = msg.toolExecutions.map(tool =>
-                tool.id === data.toolUseId
-                  ? { ...tool, toolInput: normalizedInput }
-                  : tool
-              )
-              return { ...msg, toolExecutions: updatedToolExecutions }
-            }
-            return msg
-          }))
-        })
+        setMessages(prevMessages => prevMessages.map(msg => {
+          if (msg.isToolMessage && msg.toolExecutions) {
+            const updatedToolExecutions = msg.toolExecutions.map(tool =>
+              tool.id === data.toolUseId
+                ? { ...tool, toolInput: normalizedInput }
+                : tool
+            )
+            return { ...msg, toolExecutions: updatedToolExecutions }
+          }
+          return msg
+        }))
       } else {
         // Create new tool execution
         const newToolExecution: ToolExecution = {
@@ -503,7 +494,7 @@ export const useStreamEvents = ({
 
       const updatedExecutions = currentToolExecutionsRef.current.map(tool =>
         tool.id === data.toolUseId
-          ? { ...tool, toolResult: data.result, images: toolImages, isComplete: true, isCancelled }
+          ? { ...tool, toolResult: data.result, metadata: data.metadata, images: toolImages, isComplete: true, isCancelled }
           : tool
       )
 
@@ -552,31 +543,35 @@ export const useStreamEvents = ({
             }).catch(() => {
               // Failed to save browserSession to DynamoDB - non-critical
             })
-          })()
+          })().catch(() => {
+            // Non-critical: browser session save failed
+          })
         }
       }
 
-      // Update state immediately to prevent race conditions with subsequent response events
-      setSessionState(prev => ({
-        ...prev,
-        toolExecutions: updatedExecutions,
-        ...browserSessionUpdate
-      }))
+      // Batch state updates to prevent multiple render cycles
+      startTransition(() => {
+        setSessionState(prev => ({
+          ...prev,
+          toolExecutions: updatedExecutions,
+          ...browserSessionUpdate
+        }))
 
-      setMessages(prev => prev.map(msg => {
-        if (msg.isToolMessage && msg.toolExecutions) {
-          const updatedToolExecutions = msg.toolExecutions.map(tool =>
-            tool.id === data.toolUseId
-              ? { ...tool, toolResult: data.result, images: toolImages, isComplete: true }
-              : tool
-          )
-          return {
-            ...msg,
-            toolExecutions: updatedToolExecutions
+        setMessages(prev => prev.map(msg => {
+          if (msg.isToolMessage && msg.toolExecutions) {
+            const updatedToolExecutions = msg.toolExecutions.map(tool =>
+              tool.id === data.toolUseId
+                ? { ...tool, toolResult: data.result, metadata: data.metadata, images: toolImages, isComplete: true }
+                : tool
+            )
+            return {
+              ...msg,
+              toolExecutions: updatedToolExecutions
+            }
           }
-        }
-        return msg
-      }))
+          return msg
+        }))
+      })
     }
   }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages, setUIState])
 
@@ -586,6 +581,11 @@ export const useStreamEvents = ({
 
       if (completeProcessedRef.current) return
       completeProcessedRef.current = true
+
+      // Stop polling on stream completion - A2A tools are done
+      if (stopPollingRef.current) {
+        stopPollingRef.current()
+      }
 
       // Flush any remaining buffered text before completing
       textBuffer.reset()
@@ -671,80 +671,23 @@ export const useStreamEvents = ({
               // No auth session available - continue without auth header
             }
 
-            // Extract output filenames from Word tool results (only newly created/modified files)
+            // Extract output filenames from tool result metadata
             const wordOutputFilenames = new Set<string>()
-            for (const toolExec of currentToolExecutionsRef.current) {
-              if (toolExec.toolName === 'create_word_document' || toolExec.toolName === 'modify_word_document') {
-                if (toolExec.toolResult) {
-                  // For create: look for "filename.docx" pattern
-                  // For modify: look for "Saved as: filename.docx" pattern (output file)
-                  const savedAsMatch = toolExec.toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.docx)/i)
-                  if (savedAsMatch) {
-                    wordOutputFilenames.add(savedAsMatch[1])
-                  } else {
-                    // Fallback: find any .docx filename
-                    const filenameMatch = toolExec.toolResult.match(/([a-zA-Z0-9\-]+\.docx)/i)
-                    if (filenameMatch) {
-                      wordOutputFilenames.add(filenameMatch[1])
-                    }
-                  }
-                }
-              }
-            }
-
-            // Extract output filenames from Excel tool results (only newly created/modified files)
             const excelOutputFilenames = new Set<string>()
-            for (const toolExec of currentToolExecutionsRef.current) {
-              if (toolExec.toolName === 'create_excel_spreadsheet' || toolExec.toolName === 'modify_excel_spreadsheet') {
-                if (toolExec.toolResult) {
-                  // For create: look for "filename.xlsx" pattern
-                  // For modify: look for "Saved as: filename.xlsx" pattern (output file)
-                  const savedAsMatch = toolExec.toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.xlsx)/i)
-                  if (savedAsMatch) {
-                    excelOutputFilenames.add(savedAsMatch[1])
-                  } else {
-                    // Fallback: find any .xlsx filename
-                    const filenameMatch = toolExec.toolResult.match(/([a-zA-Z0-9\-]+\.xlsx)/i)
-                    if (filenameMatch) {
-                      excelOutputFilenames.add(filenameMatch[1])
-                    }
-                  }
-                }
-              }
-            }
-
-            // Extract output filenames from PowerPoint tool results (only newly created/modified files)
             const pptOutputFilenames = new Set<string>()
-            const PPT_TOOLS = ['create_presentation', 'update_slide_content', 'add_slide', 'delete_slides', 'move_slide', 'duplicate_slide', 'update_slide_notes']
+
             for (const toolExec of currentToolExecutionsRef.current) {
-              if (PPT_TOOLS.includes(toolExec.toolName)) {
-                if (toolExec.toolResult) {
-                  // For update tools: look for "Updated: filename.pptx" pattern
-                  const updatedMatch = toolExec.toolResult.match(/\*\*Updated\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
-                  if (updatedMatch) {
-                    pptOutputFilenames.add(updatedMatch[1])
-                  } else {
-                    // For create: look for "Filename: filename.pptx" pattern
-                    const filenameMatch = toolExec.toolResult.match(/\*\*Filename\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
-                    if (filenameMatch) {
-                      pptOutputFilenames.add(filenameMatch[1])
-                    } else {
-                      // Fallback: find any .pptx filename
-                      const pptxMatch = toolExec.toolResult.match(/([a-zA-Z0-9\-]+\.pptx)/i)
-                      if (pptxMatch) {
-                        pptOutputFilenames.add(pptxMatch[1])
-                      }
-                    }
-                  }
-                }
-              }
+              const filename = toolExec.metadata?.filename
+              if (!filename || !toolExec.isComplete || toolExec.isCancelled) continue
+
+              const docType = TOOL_TO_DOC_TYPE[toolExec.toolName]
+              if (docType === 'word') wordOutputFilenames.add(filename)
+              else if (docType === 'excel') excelOutputFilenames.add(filename)
+              else if (docType === 'powerpoint') pptOutputFilenames.add(filename)
             }
 
-            // Track Word documents separately for artifact creation
             let wordDocumentsForArtifact: WorkspaceDocument[] = []
-            // Track Excel documents separately for artifact creation
             let excelDocumentsForArtifact: WorkspaceDocument[] = []
-            // Track PowerPoint documents separately for artifact creation
             let pptDocumentsForArtifact: WorkspaceDocument[] = []
 
             const fetchPromises = Array.from(usedDocTypes).map(async (docType) => {
@@ -892,7 +835,7 @@ export const useStreamEvents = ({
       completeProcessedRef.current = false
       metadataTracking.reset()
     }
-  }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, currentToolExecutionsRef, textBuffer])
+  }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, currentToolExecutionsRef, textBuffer, stopPollingRef])
 
   const handleInitEvent = useCallback(() => {
     setUIState(prev => {
@@ -910,6 +853,11 @@ export const useStreamEvents = ({
 
   const handleErrorEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'error') {
+      // Stop polling on error
+      if (stopPollingRef.current) {
+        stopPollingRef.current()
+      }
+
       // Reset buffer on error
       textBuffer.reset()
 
@@ -959,7 +907,7 @@ export const useStreamEvents = ({
         swarmModeRef.current = { isActive: false, nodeHistory: [], agentSteps: [] }
       }
     }
-  }, [uiState, setMessages, setUIState, setSessionState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, textBuffer])
+  }, [uiState, setMessages, setUIState, setSessionState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, textBuffer, stopPollingRef])
 
   const handleInterruptEvent = useCallback((data: StreamEvent) => {
     if (data.type === 'interrupt') {
@@ -1315,7 +1263,6 @@ export const useStreamEvents = ({
           responseText: (currentStep.responseText || '') + data.content
         }
         swarmModeRef.current.agentSteps[stepIndex] = updatedStep
-        flushSync(() => {
           setSessionState(prev => ({
             ...prev,
             swarmProgress: prev.swarmProgress ? {
@@ -1323,7 +1270,6 @@ export const useStreamEvents = ({
               agentSteps: [...swarmModeRef.current.agentSteps]
             } : prev.swarmProgress
           }))
-        })
       }
       // If not in swarm mode or no agentSteps, ignore text events
       // (they shouldn't occur outside swarm mode anyway)
@@ -1331,105 +1277,112 @@ export const useStreamEvents = ({
   }, [setSessionState])
 
   const handleStreamEvent = useCallback((event: StreamEvent) => {
-    switch (event.type) {
-      case 'reasoning':
-        handleReasoningEvent(event)
-        break
-      case 'response':
-        handleResponseEvent(event)
-        break
-      case 'text':
-        handleTextEvent(event)
-        break
-      case 'tool_use':
-        handleToolUseEvent(event)
-        break
-      case 'progress':
-        // Handle progress events from streaming tools (no-op for now)
-        break
-      case 'tool_result':
-        handleToolResultEvent(event)
-        break
-      case 'complete':
-        handleCompleteEvent(event)
-        break
-      case 'init':
-      case 'thinking':
-        handleInitEvent()
-        break
-      case 'error':
-        handleErrorEvent(event)
-        break
-      case 'warning':
-        // Show warning as a bot message without stopping the stream
-        setMessages(prev => [...prev, {
-          id: `warning_${Date.now()}`,
-          text: `⚠️ ${event.message}`,
-          sender: 'bot',
-          timestamp: new Date().toISOString()
-        }])
-        break
-      case 'interrupt':
-        handleInterruptEvent(event)
-        break
-      case 'browser_progress':
-        handleBrowserProgressEvent(event)
-        break
-      case 'research_progress':
-        handleResearchProgressEvent(event)
-        break
-      case 'swarm_node_start':
-        handleSwarmNodeStartEvent(event)
-        break
-      case 'swarm_node_stop':
-        handleSwarmNodeStopEvent(event)
-        break
-      case 'swarm_handoff':
-        handleSwarmHandoffEvent(event)
-        break
-      case 'swarm_complete':
-        handleSwarmCompleteEvent(event)
-        break
-      case 'start':
-        // Stream start marker - handled by init event
-        handleInitEvent()
-        break
-      case 'end':
-        // Stream end marker - no special handling needed
-        break
-      case 'metadata':
-        // Handle metadata updates (e.g., browser session during tool execution)
-        // Only set on first metadata event to prevent unnecessary DCV reconnections
-        if (event.metadata?.browserSessionId) {
-          const metadata = event.metadata
-          setSessionState(prev => {
-            if (prev.browserSession) {
-              return prev
-            }
-
-            const browserSession = {
-              sessionId: metadata.browserSessionId,
-              browserId: metadata.browserId || null
-            }
-
-            // Notify parent about browser session detection (for Canvas integration)
-            if (onBrowserSessionDetected && browserSession.sessionId) {
-              onBrowserSessionDetected(browserSession.sessionId, browserSession.browserId || '')
-            }
-
-            // Save to sessionStorage (only on first set)
-            const currentSessionId = sessionStorage.getItem('chat-session-id')
-            if (currentSessionId) {
-              sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
-            }
-
-            return {
-              ...prev,
-              browserSession
-            } as ChatSessionState
+    try {
+      switch (event.type) {
+        case 'reasoning':
+          handleReasoningEvent(event)
+          break
+        case 'response':
+          handleResponseEvent(event)
+          break
+        case 'text':
+          handleTextEvent(event)
+          break
+        case 'tool_use':
+          handleToolUseEvent(event)
+          break
+        case 'progress':
+          // Handle progress events from streaming tools (no-op for now)
+          break
+        case 'tool_result':
+          handleToolResultEvent(event)
+          break
+        case 'complete':
+          // handleCompleteEvent is async - catch rejections to prevent app crash
+          handleCompleteEvent(event).catch(err => {
+            console.error('[useStreamEvents] Error in complete event handler:', err)
           })
-        }
-        break
+          break
+        case 'init':
+        case 'thinking':
+          handleInitEvent()
+          break
+        case 'error':
+          handleErrorEvent(event)
+          break
+        case 'warning':
+          // Show warning as a bot message without stopping the stream
+          setMessages(prev => [...prev, {
+            id: `warning_${Date.now()}`,
+            text: `⚠️ ${event.message}`,
+            sender: 'bot',
+            timestamp: new Date().toISOString()
+          }])
+          break
+        case 'interrupt':
+          handleInterruptEvent(event)
+          break
+        case 'browser_progress':
+          handleBrowserProgressEvent(event)
+          break
+        case 'research_progress':
+          handleResearchProgressEvent(event)
+          break
+        case 'swarm_node_start':
+          handleSwarmNodeStartEvent(event)
+          break
+        case 'swarm_node_stop':
+          handleSwarmNodeStopEvent(event)
+          break
+        case 'swarm_handoff':
+          handleSwarmHandoffEvent(event)
+          break
+        case 'swarm_complete':
+          handleSwarmCompleteEvent(event)
+          break
+        case 'start':
+          // Stream start marker - handled by init event
+          handleInitEvent()
+          break
+        case 'end':
+          // Stream end marker - no special handling needed
+          break
+        case 'metadata':
+          // Handle metadata updates (e.g., browser session during tool execution)
+          // Only set on first metadata event to prevent unnecessary DCV reconnections
+          if (event.metadata?.browserSessionId) {
+            const metadata = event.metadata
+            setSessionState(prev => {
+              if (prev.browserSession) {
+                return prev
+              }
+
+              const browserSession = {
+                sessionId: metadata.browserSessionId,
+                browserId: metadata.browserId || null
+              }
+
+              // Notify parent about browser session detection (for Canvas integration)
+              if (onBrowserSessionDetected && browserSession.sessionId) {
+                onBrowserSessionDetected(browserSession.sessionId, browserSession.browserId || '')
+              }
+
+              // Save to sessionStorage (only on first set)
+              const currentSessionId = sessionStorage.getItem('chat-session-id')
+              if (currentSessionId) {
+                sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
+              }
+
+              return {
+                ...prev,
+                browserSession
+              } as ChatSessionState
+            })
+          }
+          break
+      }
+    } catch (error) {
+      console.error('[useStreamEvents] Error processing stream event:', error, 'Event type:', event?.type)
     }
   }, [
     handleReasoningEvent,

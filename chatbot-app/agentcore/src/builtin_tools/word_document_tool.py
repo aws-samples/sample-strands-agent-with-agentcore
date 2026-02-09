@@ -27,8 +27,8 @@ def _validate_document_name(name: str) -> tuple[bool, Optional[str]]:
     """Validate document name meets requirements (without extension).
 
     Rules:
-    - Only letters (a-z, A-Z), numbers (0-9), and hyphens (-)
-    - No spaces, underscores, or special characters
+    - Only letters (a-z, A-Z), numbers (0-9), hyphens (-), and underscores (_)
+    - No spaces or special characters
     - No consecutive hyphens
     - No leading/trailing hyphens
 
@@ -44,10 +44,10 @@ def _validate_document_name(name: str) -> tuple[bool, Optional[str]]:
     if not name:
         return False, "Document name cannot be empty"
 
-    # Check for valid characters: only letters, numbers, hyphens
-    if not re.match(r'^[a-zA-Z0-9\-]+$', name):
-        invalid_chars = re.findall(r'[^a-zA-Z0-9\-]', name)
-        return False, f"Invalid characters in name: {set(invalid_chars)}. Use only letters, numbers, and hyphens (-)."
+    # Check for valid characters: letters, numbers, hyphens, underscores
+    if not re.match(r'^[a-zA-Z0-9_\-]+$', name):
+        invalid_chars = re.findall(r'[^a-zA-Z0-9_\-]', name)
+        return False, f"Invalid characters in name: {set(invalid_chars)}. Use only letters, numbers, hyphens, and underscores."
 
     # Check for consecutive hyphens
     if '--' in name:

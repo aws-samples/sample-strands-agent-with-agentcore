@@ -1,8 +1,23 @@
-@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Skills dialog scrollbar */
+.skills-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+.skills-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.skills-scrollbar::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 3px;
+}
+.skills-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.4);
+}
 
 /* Prevent FOUC - Initial loading screen with smooth transition */
 @layer base {

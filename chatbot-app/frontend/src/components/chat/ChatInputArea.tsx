@@ -12,13 +12,12 @@ import { ToolsDropdown } from "@/components/ToolsDropdown"
 import { VoiceAnimation } from "@/components/VoiceAnimation"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
 import { SlashCommandPopover } from "@/components/chat/SlashCommandPopover"
-import { filterCommands, SlashCommand } from "@/components/chat/slashCommands"
+import { ToolSuggestionsPopover } from "@/components/chat/ToolSuggestionsPopover"
+import { filterCommands, SlashCommand, parseToolCommand, getToolSuggestions, matchTools } from "@/components/chat/slashCommands"
 import { Tool } from "@/types/chat"
 import { AgentStatus } from "@/types/events"
 
 interface ChatInputAreaProps {
-  inputMessage: string
-  setInputMessage: (message: string) => void
   selectedFiles: File[]
   setSelectedFiles: React.Dispatch<React.SetStateAction<File[]>>
   agentStatus: AgentStatus
@@ -35,9 +34,10 @@ interface ChatInputAreaProps {
   }
   currentModelId?: string
   onModelChange?: (modelId: string) => void
-  onSendMessage: (e: React.FormEvent, files: File[]) => Promise<void>
+  onSendMessage: (text: string, files: File[]) => Promise<void>
   onStopGeneration: () => void
   onToggleTool: (toolId: string) => Promise<void>
+  onSetExclusiveTools: (toolIds: string[]) => void
   onToggleSwarm: (enabled?: boolean) => void
   onToggleResearch: () => void
   onConnectVoice: () => Promise<void>
@@ -56,8 +56,6 @@ function useDebounce<T extends (...args: any[]) => any>(callback: T, delay: numb
 }
 
 export function ChatInputArea({
-  inputMessage,
-  setInputMessage,
   selectedFiles,
   setSelectedFiles,
   agentStatus,
@@ -74,6 +72,7 @@ export function ChatInputArea({
   onSendMessage,
   onStopGeneration,
   onToggleTool,
+  onSetExclusiveTools,
   onToggleSwarm,
   onToggleResearch,
   onConnectVoice,
@@ -82,6 +81,7 @@ export function ChatInputArea({
   onExportConversation,
   onNewChat,
 }: ChatInputAreaProps) {
+  const [inputMessage, setInputMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const isComposingRef = useRef(false)
 
@@ -89,31 +89,51 @@ export function ChatInputArea({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
   const [inputRect, setInputRect] = useState<DOMRect | null>(null)
 
-  // Slash command autocomplete
+  // Tool suggestions for /tool command
+  const [toolSuggestions, setToolSuggestions] = useState<Tool[]>([])
+  const [selectedToolIndex, setSelectedToolIndex] = useState(0)
+
+  // Slash command and tool autocomplete
   useEffect(() => {
     const trimmed = inputMessage.trim()
-    if (trimmed.startsWith('/')) {
+    if (trimmed.startsWith('/tool ')) {
+      // Show tool suggestions
+      const suggestions = getToolSuggestions(trimmed, availableTools)
+      setToolSuggestions(suggestions)
+      setSelectedToolIndex(0)
+      setSlashCommands([])
+      if (textareaRef.current) {
+        setInputRect(textareaRef.current.getBoundingClientRect())
+      }
+    } else if (trimmed.startsWith('/')) {
+      // Show slash commands
       const filtered = filterCommands(trimmed)
       setSlashCommands(filtered)
       setSelectedCommandIndex(0)
+      setToolSuggestions([])
       if (textareaRef.current) {
         setInputRect(textareaRef.current.getBoundingClientRect())
       }
     } else {
       setSlashCommands([])
+      setToolSuggestions([])
     }
-  }, [inputMessage])
+  }, [inputMessage, availableTools])
 
-  // Wrap onToggleTool to disable research mode when selecting a tool
+  // Delegate to onToggleTool which handles research mode deactivation
   const handleToolToggle = useCallback(async (toolId: string) => {
-    if (isResearchEnabled) {
-      onToggleResearch();
-    }
     await onToggleTool(toolId);
-  }, [isResearchEnabled, onToggleResearch, onToggleTool]);
+  }, [onToggleTool]);
 
   const handleSlashCommand = useCallback((command: SlashCommand) => {
     setSlashCommands([])
+
+    // For /tool command, just clear the slash command and keep the input for tool selection
+    if (command.name === '/tool') {
+      setInputMessage('/tool ')
+      return
+    }
+
     setInputMessage('')
 
     switch (command.name) {
@@ -131,6 +151,73 @@ export function ChatInputArea({
     }
   }, [onOpenComposeWizard, onExportConversation, onNewChat, setInputMessage])
 
+  const handleToolSuggestionSelect = useCallback((tool: Tool) => {
+    const trimmed = inputMessage.trim()
+    const afterTool = trimmed.slice(5).trim() // Remove '/tool'
+
+    let newInput: string
+    if (!afterTool) {
+      // First tool
+      newInput = `/tool ${tool.name}, `
+    } else {
+      // Find position of last comma
+      const lastCommaIndex = afterTool.lastIndexOf(',')
+      if (lastCommaIndex === -1) {
+        // No comma yet, replace entire input
+        newInput = `/tool ${tool.name}, `
+      } else {
+        // Replace text after last comma
+        const beforeLastComma = afterTool.slice(0, lastCommaIndex + 1)
+        newInput = `/tool ${beforeLastComma} ${tool.name}, `
+      }
+    }
+
+    setInputMessage(newInput)
+    setToolSuggestions([])
+  }, [inputMessage])
+
+  const handleExecuteToolCommand = useCallback(() => {
+    const trimmed = inputMessage.trim()
+    const afterTool = trimmed.slice(5).trim()
+
+    if (!afterTool) {
+      setInputMessage('')
+      return
+    }
+
+    const toolQueries = parseToolCommand(trimmed) || []
+    if (toolQueries.length === 0) {
+      setInputMessage('')
+      return
+    }
+
+    // Match each query to actual tools
+    const matchedToolIds: string[] = []
+    for (const query of toolQueries) {
+      // Exact name match first
+      let tool = availableTools.find(t =>
+        t.name.toLowerCase() === query.toLowerCase()
+      )
+      // Fuzzy match fallback
+      if (!tool) {
+        const matches = matchTools(query, availableTools)
+        if (matches.length > 0) tool = matches[0]
+      }
+      if (tool) matchedToolIds.push(tool.id)
+    }
+
+    if (matchedToolIds.length === 0) {
+      setInputMessage('')
+      return
+    }
+
+    // Disable all tools, then enable only matched ones (single state update)
+    onSetExclusiveTools(matchedToolIds)
+
+    setInputMessage('')
+    setToolSuggestions([])
+  }, [inputMessage, availableTools, onSetExclusiveTools])
+
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
     setSelectedFiles(prev => [...prev, ...files])
@@ -142,6 +229,39 @@ export function ChatInputArea({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // Handle /tool command execution with Enter (even if suggestions are showing)
+    if (inputMessage.trim().startsWith('/tool ') && e.key === "Enter" && !e.shiftKey) {
+      if (isComposingRef.current) return
+      e.preventDefault()
+      handleExecuteToolCommand()
+      return
+    }
+
+    // Handle tool suggestions navigation
+    if (toolSuggestions.length > 0) {
+      if (e.key === "ArrowDown") {
+        e.preventDefault()
+        setSelectedToolIndex(prev => prev < toolSuggestions.length - 1 ? prev + 1 : 0)
+        return
+      }
+      if (e.key === "ArrowUp") {
+        e.preventDefault()
+        setSelectedToolIndex(prev => prev > 0 ? prev - 1 : toolSuggestions.length - 1)
+        return
+      }
+      if (e.key === "Tab") {
+        e.preventDefault()
+        handleToolSuggestionSelect(toolSuggestions[selectedToolIndex])
+        return
+      }
+      if (e.key === "Escape") {
+        e.preventDefault()
+        setToolSuggestions([])
+        return
+      }
+    }
+
+    // Handle slash commands navigation
     if (slashCommands.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault()
@@ -173,8 +293,8 @@ export function ChatInputArea({
 
       e.preventDefault()
       if (agentStatus === 'idle' && !composerState.isComposing && (inputMessage.trim() || selectedFiles.length > 0)) {
-        const syntheticEvent = { preventDefault: () => {} } as React.FormEvent
-        onSendMessage(syntheticEvent, selectedFiles)
+        onSendMessage(inputMessage, selectedFiles)
+        setInputMessage('')
         setSelectedFiles([])
       }
     }
@@ -247,8 +367,15 @@ export function ChatInputArea({
             onSubmit={async (e) => {
               e.preventDefault()
               if (isVoiceActive) return
-              await onSendMessage(e, selectedFiles)
-              setSelectedFiles([])
+
+              // Ignore slash commands (they're handled in handleKeyDown)
+              if (inputMessage.trim().startsWith('/')) return
+
+              if (inputMessage.trim() || selectedFiles.length > 0) {
+                await onSendMessage(inputMessage, selectedFiles)
+                setInputMessage('')
+                setSelectedFiles([])
+              }
             }}
           >
             <Input
@@ -358,7 +485,8 @@ export function ChatInputArea({
                     onClick={async (e) => {
                       e.preventDefault()
                       if (agentStatus !== 'idle' || composerState.showOutlineConfirm || composerState.isComposing || (!inputMessage.trim() && selectedFiles.length === 0)) return
-                      await onSendMessage(e as any, selectedFiles)
+                      await onSendMessage(inputMessage, selectedFiles)
+                      setInputMessage('')
                       setSelectedFiles([])
                     }}
                     disabled={agentStatus !== 'idle' || composerState.showOutlineConfirm || composerState.isComposing || (!inputMessage.trim() && selectedFiles.length === 0)}
@@ -441,6 +569,15 @@ export function ChatInputArea({
         selectedIndex={selectedCommandIndex}
         onSelect={handleSlashCommand}
         onClose={() => setSlashCommands([])}
+        anchorRect={inputRect}
+      />
+
+      {/* Tool Suggestions Autocomplete */}
+      <ToolSuggestionsPopover
+        tools={toolSuggestions}
+        selectedIndex={selectedToolIndex}
+        onSelect={handleToolSuggestionSelect}
+        onClose={() => setToolSuggestions([])}
         anchorRect={inputRect}
       />
     </>

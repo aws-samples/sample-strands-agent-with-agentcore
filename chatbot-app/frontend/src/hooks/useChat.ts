@@ -30,8 +30,6 @@ interface UseChatReturn {
     messages: Message[]
     id: string
   }>
-  inputMessage: string
-  setInputMessage: (message: string) => void
   isConnected: boolean
   isTyping: boolean
   agentStatus: AgentStatus
@@ -40,10 +38,11 @@ interface UseChatReturn {
   currentReasoning: ReasoningState | null
   showProgressPanel: boolean
   toggleProgressPanel: () => void
-  sendMessage: (e: React.FormEvent, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => Promise<void>
+  sendMessage: (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => Promise<void>
   stopGeneration: () => void
   newChat: () => Promise<void>
   toggleTool: (toolId: string) => Promise<void>
+  setExclusiveTools: (toolIds: string[]) => void
   refreshTools: () => Promise<void>
   sessionId: string | null
   isLoadingMessages: boolean
@@ -90,7 +89,6 @@ const DEFAULT_PREFERENCES: SessionPreferences = {
 export const useChat = (props?: UseChatProps): UseChatReturn => {
   // ==================== STATE ====================
   const [messages, setMessages] = useState<Message[]>([])
-  const [inputMessage, setInputMessage] = useState('')
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000')
   const [availableTools, setAvailableTools] = useState<Tool[]>([])
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
@@ -134,6 +132,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const currentToolExecutionsRef = useRef<ToolExecution[]>([])
   const currentTurnIdRef = useRef<string | null>(null)
   const currentSessionIdRef = useRef<string | null>(null)
+  const messagesRef = useRef<Message[]>([])
 
   // Keep refs in sync with state
   useEffect(() => {
@@ -143,6 +142,10 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   useEffect(() => {
     currentSessionIdRef.current = sessionId
   }, [sessionId])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
 
   // ==================== BACKEND DETECTION ====================
   useEffect(() => {
@@ -298,9 +301,23 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         }
         return prev
       })
+    } else {
+      // No ongoing A2A tools - transition to idle if currently stuck in A2A status.
+      // This handles the case where SSE stream dropped (disconnect, session switch)
+      // but the A2A agent completed in the background. Without this, agentStatus
+      // would stay 'researching'/'browser_automation' forever since only stream
+      // event handlers (complete/error) used to set idle.
+      setUIState(prev => {
+        if (prev.agentStatus === 'researching' || prev.agentStatus === 'browser_automation') {
+          console.log('[useChat] A2A tools completed, transitioning to idle')
+          return { ...prev, isTyping: false, agentStatus: 'idle' }
+        }
+        return prev
+      })
+      // Stop polling since A2A tools are no longer ongoing
+      stopPolling()
     }
-    // Note: We do NOT set idle here. Only stream event handlers (complete/error) set idle.
-  }, [messages, sessionId])
+  }, [messages, sessionId, stopPolling])
 
   // ==================== SESSION LOADING ====================
   const loadSessionWithPreferences = useCallback(async (newSessionId: string) => {
@@ -342,12 +359,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
 
     // Check for ongoing A2A tools and start polling if needed
-    // Use setTimeout to ensure messages state is updated
+    // Use setTimeout to ensure messages state is updated, read from ref to avoid triggering re-render
     setTimeout(() => {
-      setMessages(currentMessages => {
-        checkAndStartPollingForA2ATools(currentMessages, newSessionId)
-        return currentMessages
-      })
+      checkAndStartPollingForA2ATools(messagesRef.current, newSessionId)
     }, 100)
 
     // Merge saved preferences with defaults
@@ -395,30 +409,15 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
   // ==================== INITIALIZATION EFFECTS ====================
-  // Load tools when backend is ready, then re-apply session tool states if needed
+  // Load tools when backend is ready (enabled states are preserved via merge in loadTools)
   useEffect(() => {
     if (uiState.isConnected) {
-      const timeoutId = setTimeout(async () => {
-        await loadTools()
-        // Re-apply session-specific tool enabled states after loadTools overwrites them
-        const savedEnabledTools = sessionEnabledToolsRef.current
-        if (savedEnabledTools) {
-          setAvailableTools(prevTools => prevTools.map(tool => {
-            const updated: any = { ...tool, enabled: savedEnabledTools.includes(tool.id) }
-            if ((tool as any).isDynamic && (tool as any).tools) {
-              updated.tools = (tool as any).tools.map((nt: any) => ({
-                ...nt,
-                enabled: savedEnabledTools.includes(nt.id)
-              }))
-            }
-            return updated
-          }))
-          console.log(`[useChat] Re-applied session tool states after loadTools: ${savedEnabledTools.length} enabled`)
-        }
+      const timeoutId = setTimeout(() => {
+        loadTools()
       }, 1000)
       return () => clearTimeout(timeoutId)
     }
-  }, [uiState.isConnected, loadTools, setAvailableTools])
+  }, [uiState.isConnected, loadTools])
 
   // Restore last session on page load
   useEffect(() => {
@@ -558,6 +557,26 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     await apiToggleTool(toolId)
   }, [apiToggleTool])
 
+  // Set only specific tools as enabled; disable everything else in one state update
+  const setExclusiveTools = useCallback((toolIds: string[]) => {
+    const idSet = new Set(toolIds)
+    setAvailableTools(prev => prev.map(tool => {
+      const isDynamic = (tool as any).isDynamic === true
+      const nestedTools = (tool as any).tools || []
+
+      if (isDynamic && nestedTools.length > 0) {
+        // For dynamic groups, enable/disable nested tools
+        const updatedNested = nestedTools.map((nt: any) => ({
+          ...nt,
+          enabled: idSet.has(tool.id)
+        }))
+        return { ...tool, enabled: idSet.has(tool.id), tools: updatedNested }
+      }
+
+      return { ...tool, enabled: idSet.has(tool.id) }
+    }))
+  }, [setAvailableTools])
+
   const refreshTools = useCallback(async () => {
     await loadTools()
   }, [loadTools])
@@ -630,13 +649,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   }, [sessionState.interrupt, apiSendMessage])
 
-  const sendMessage = useCallback(async (e: React.FormEvent, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => {
-    e.preventDefault()
-    if (!inputMessage.trim() && (!files || files.length === 0)) return
+  const sendMessage = useCallback(async (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => {
+    if (!text.trim() && (!files || files.length === 0)) return
 
     const userMessage: Message = {
       id: String(Date.now()),
-      text: inputMessage,
+      text,
       sender: 'user',
       timestamp: new Date().toLocaleTimeString(),
       ...(files && files.length > 0 ? {
@@ -671,8 +689,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }))
     currentToolExecutionsRef.current = []
 
-    const messageToSend = inputMessage || (files && files.length > 0 ? "Please analyze the uploaded file(s)." : "")
-    setInputMessage('')
+    const messageToSend = text.trim() || (files && files.length > 0 ? "Please analyze the uploaded file(s)." : "")
 
     await apiSendMessage(
       messageToSend,
@@ -696,7 +713,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       systemPrompt, // Pass system prompt (e.g., artifact context)
       selectedArtifactId // Pass selected artifact ID for tool context
     )
-  }, [inputMessage, apiSendMessage, swarmEnabled])
+  }, [apiSendMessage, swarmEnabled])
 
   const stopGeneration = useCallback(() => {
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
@@ -980,8 +997,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   return {
     messages,
     groupedMessages,
-    inputMessage,
-    setInputMessage,
     isConnected: uiState.isConnected,
     isTyping: uiState.isTyping,
     agentStatus: uiState.agentStatus,
@@ -994,6 +1009,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     stopGeneration,
     newChat,
     toggleTool,
+    setExclusiveTools,
     refreshTools,
     sessionId,
     isLoadingMessages,
