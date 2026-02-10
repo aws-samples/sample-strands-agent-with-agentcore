@@ -23,6 +23,7 @@ import {
   SiGooglecalendar,
   SiNotion,
 } from 'react-icons/si';
+import toolsConfig from './tools-config.json';
 
 /**
  * Icon mapping for tools using react-icons
@@ -110,11 +111,55 @@ export const toolImageMap: Record<string, string> = {
 };
 
 /**
+ * Sub-tool ID → parent group ID mapping, built from tools-config.json.
+ * e.g. "create_word_document" → "word_document_tools"
+ */
+const subToolToParent: Record<string, string> = {};
+const allGroups = [
+  ...toolsConfig.local_tools,
+  ...toolsConfig.builtin_tools,
+  ...toolsConfig.browser_automation,
+  ...toolsConfig.gateway_targets,
+  ...toolsConfig.agentcore_runtime_a2a,
+  ...toolsConfig.agentcore_runtime_mcp,
+];
+for (const group of allGroups) {
+  if ('tools' in group && Array.isArray((group as any).tools)) {
+    for (const sub of (group as any).tools) {
+      subToolToParent[sub.id] = group.id;
+
+      // MCP/Gateway tools: backend may strip the prefix (e.g., "mcp_notion_search" → "notion_search")
+      // Also map the unprefixed version so icons resolve correctly.
+      for (const prefix of ['mcp_', 'gateway_']) {
+        if (sub.id.startsWith(prefix)) {
+          const unprefixed = sub.id.slice(prefix.length);
+          if (!(unprefixed in subToolToParent)) {
+            subToolToParent[unprefixed] = group.id;
+          }
+        }
+      }
+    }
+  }
+}
+
+/**
+ * Resolve a tool ID to the one that has an icon mapping.
+ * Checks direct match first, then falls back to parent group ID.
+ */
+function resolveIconId(toolId: string, map: Record<string, any>): string | null {
+  if (toolId in map) return toolId;
+  const parentId = subToolToParent[toolId];
+  if (parentId && parentId in map) return parentId;
+  return null;
+}
+
+/**
  * Get the image path for a tool ID, if one exists.
  * Returns null if the tool should use a react-icon instead.
  */
 export function getToolImageSrc(toolId: string): string | null {
-  return toolImageMap[toolId] || null;
+  const resolved = resolveIconId(toolId, toolImageMap);
+  return resolved ? toolImageMap[resolved] : null;
 }
 
 /**
@@ -122,5 +167,6 @@ export function getToolImageSrc(toolId: string): string | null {
  * Returns a default icon if tool ID is not found
  */
 export function getToolIcon(toolId: string): IconType {
-  return toolIconMap[toolId] || TbSearch;
+  const resolved = resolveIconId(toolId, toolIconMap);
+  return resolved ? toolIconMap[resolved] : TbSearch;
 }

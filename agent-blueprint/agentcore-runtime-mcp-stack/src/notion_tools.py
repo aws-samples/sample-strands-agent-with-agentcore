@@ -278,17 +278,22 @@ def register_notion_tools(mcp):
     ) -> str:
         """Query a Notion database with optional filters and sorts.
 
+        IMPORTANT: filter_json and sorts_json must be plain JSON strings, NOT parsed objects or arrays.
+        Pass them as a single escaped string value, not as a JSON structure.
+
         Args:
             database_id: The database ID to query.
-            filter_json: JSON string of filter object (Notion filter format). Optional.
-            sorts_json: JSON string of sorts array (Notion sort format). Optional.
+            filter_json: A string containing JSON for the filter. Must be a string, not an object. Example: '{"property": "Status", "select": {"equals": "Done"}}'
+            sorts_json: A string containing JSON for sorts. Must be a string, not an array. Example: '[{"property": "Created", "direction": "descending"}]'
             page_size: Number of results (1-100, default 10).
 
-        Example filter_json:
-            '{"property": "Status", "select": {"equals": "Done"}}'
+        Correct usage:
+            filter_json = '{"property": "Status", "select": {"equals": "Done"}}'
+            sorts_json = '[{"property": "Created", "direction": "descending"}]'
 
-        Example sorts_json:
-            '[{"property": "Created", "direction": "descending"}]'
+        Wrong usage (DO NOT pass as objects/arrays):
+            filter_json = {"property": "Status", "select": {"equals": "Done"}}
+            sorts_json = [{"property": "Created", "direction": "descending"}]
         """
         page_size = max(1, min(100, page_size))
 
@@ -366,7 +371,7 @@ def register_notion_tools(mcp):
             parent_type: Parent type - "database" or "page".
             parent_id: Parent database or page ID.
             title: Page title.
-            properties_json: Additional properties as JSON (for database pages). Optional.
+            properties_json: A string containing JSON for additional properties (for database pages). Must be a string, not an object. Example: '{"Status": {"select": {"name": "In Progress"}}}'. Optional.
             content_markdown: Initial page content as simple text/markdown. Optional.
         """
         try:
@@ -436,11 +441,8 @@ def register_notion_tools(mcp):
 
         Args:
             page_id: The page ID to update.
-            properties_json: Properties to update as JSON.
+            properties_json: A string containing JSON for properties to update. Must be a string, not an object. Example: '{"Status": {"select": {"name": "Done"}}}'
             archived: Set to True to archive, False to unarchive. Optional.
-
-        Example properties_json:
-            '{"Status": {"select": {"name": "Done"}}}'
         """
         try:
             access_token = await _notion_oauth.get_access_token()

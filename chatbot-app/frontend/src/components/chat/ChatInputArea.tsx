@@ -93,6 +93,9 @@ export function ChatInputArea({
   const [toolSuggestions, setToolSuggestions] = useState<Tool[]>([])
   const [selectedToolIndex, setSelectedToolIndex] = useState(0)
 
+  // Border glow effect when tool is activated
+  const [toolActivated, setToolActivated] = useState(false)
+
   // Slash command and tool autocomplete
   useEffect(() => {
     const trimmed = inputMessage.trim()
@@ -213,6 +216,10 @@ export function ChatInputArea({
 
     // Disable all tools, then enable only matched ones (single state update)
     onSetExclusiveTools(matchedToolIds)
+
+    // Trigger border glow
+    setToolActivated(true)
+    setTimeout(() => setToolActivated(false), 1000)
 
     setInputMessage('')
     setToolSuggestions([])
@@ -362,7 +369,9 @@ export function ChatInputArea({
 
       {/* Input Area */}
       <div className="mx-auto px-4 pb-4 md:pb-6 w-full md:max-w-4xl">
-        <div className="bg-muted/40 dark:bg-zinc-900 rounded-2xl p-3 shadow-sm border border-border/50">
+        <div className={`bg-muted/40 dark:bg-zinc-900 rounded-2xl p-3 shadow-sm border border-border/50 ${
+          toolActivated ? 'tool-activated-glow' : ''
+        }`}>
           <form
             onSubmit={async (e) => {
               e.preventDefault()

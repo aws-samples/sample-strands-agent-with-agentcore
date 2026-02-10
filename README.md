@@ -9,6 +9,23 @@ It is intended as a realistic, extensible sample for teams exploring advanced ag
 
 ---
 
+## Demo
+
+https://github.com/user-attachments/assets/11b383c2-2e14-4135-833f-b0b2bce62953
+
+> **[Full demo (6 min)](https://drive.google.com/file/d/1Hk4hgiqqMntNRUN1xDkwcbJUA8MVEJEA/view?usp=sharing)**
+
+**Scenarios covered in the demo:**
+
+| Scenario | Tools | What it does |
+|----------|-------|--------------|
+| **Personal AI Agent** | Notion, Gmail, Google Maps, Google Calendar | Check to-dos, find emails, get directions, set reminders |
+| **Financial Research** | Finance, Google Search, Deep Research | Analyze crypto price history, summarize market news, compare bear markets |
+| **Document Generation** | Presentation, Code Interpreter | Build an executive deck with charts from research results |
+| **Autonomous Browsing** | Amazon Nova Act, AgentCore Browser | Search Google Flights and extract results |
+
+---
+
 ## What this repository demonstrates
 
 - Multi-agent orchestration with **Strands Agents**
@@ -23,150 +40,6 @@ this repository is designed to be read, run, and extended.
 
 **Quick links:**  
 [Architecture](#architecture-overview) · [Key Features](#key-features) · [Quick Start](#quick-start)
-
----
-
-## Demo Scenarios
-
-This sample includes multiple real-world agent workflows:
-
-- Financial research and analysis
-- Travel planning with external data sources
-- Autonomous web browsing and information extraction
-- Tool-augmented reasoning with structured outputs
-- Multi-agent research with human approval loops
-
-> **▶️ Click any thumbnail to watch the demo video**
-
-<table>
-<tr>
-<td width="400">
-<a href="https://drive.google.com/file/d/1swDfKm6U-SmXTPtn_Y_jZ1H-9UaU_cEU/view?usp=sharing">
-<img src="docs/images/demo-home.svg" alt="UI Overview Demo" width="400">
-</a>
-</td>
-<td>
-
-### 0. UI Overview
-
-Interactive demonstration of the chatbot interface, dynamic tool filtering,
-multi-model selection, and real-time streaming responses.
-
-**Highlights**
-- Tool selection sidebar  
-- Multi-model support (20+ models)  
-- SSE streaming  
-- Session management  
-- Multimodal file upload  
-
-</td>
-</tr>
-
-<tr>
-<td width="400">
-<a href="https://drive.google.com/file/d/1mN62tmRPSiYv1mlYnMrwjM2nQbA4ll1_/view?usp=sharing">
-<img src="docs/images/demo-finance.svg" alt="Finance Assistant Demo" width="400">
-</a>
-</td>
-<td>
-
-### 1. Finance Assistant
-
-Analyzes FAANG stocks using real-time quotes and historical performance data,
-performs statistical analysis, and generates Excel reports with visualizations.
-
-**Highlights**
-- Yahoo Finance via MCP Gateway  
-- Secure code execution with AgentCore Code Interpreter  
-- Chart generation and document creation  
-
-</td>
-</tr>
-
-<tr>
-<td width="400">
-<a href="https://drive.google.com/file/d/1porEklKoxSZEZt1wNYvBjFiRUZ12fIwI/view?usp=sharing">
-<img src="docs/images/demo-travel.svg" alt="Travel Planning Demo" width="400">
-</a>
-</td>
-<td>
-
-### 2. Travel Planning
-
-Plans a Honolulu trip by gathering articles, location data, routes,
-and weather information through interactive dialogue.
-
-**Highlights**
-- Google Search, Maps, and Places via MCP Gateway  
-- Open-Meteo Weather API  
-- Embedded maps and rich content  
-
-</td>
-</tr>
-
-<tr>
-<td width="400">
-<a href="https://drive.google.com/file/d/17DfB_2evHWIiddpH3NwUlkAXLGMF8z3I/view?usp=sharing">
-<img src="docs/images/demo-browsing.svg" alt="Agentic Web Browsing Demo" width="400">
-</a>
-</td>
-<td>
-
-### 3. Agentic Web Browsing
-
-Searches Michelin seafood restaurants in NYC, checks reservation availability,
-and compiles results into a Word document with screenshots.
-
-**Highlights**
-- AgentCore Browser with Amazon Nova Act  
-- Live view streaming for monitoring and intervention  
-- Word document generation via Code Interpreter  
-
-</td>
-</tr>
-
-<tr>
-<td width="400">
-<a href="https://drive.google.com/file/d/1uF-ZbeDemFeZ_Va1R5Fmli6P5FGzFx6r/view?usp=sharing">
-<img src="docs/images/demo-ui-analysis.svg" alt="Web UI Analysis Demo" width="400">
-</a>
-</td>
-<td>
-
-### 4. Web UI Analysis
-
-Inspects website UI components and service design patterns,
-then generates a structured PowerPoint analysis report.
-
-**Highlights**
-- Autonomous UI inspection with AgentCore Browser  
-- Live monitoring  
-- PowerPoint generation via Code Interpreter  
-
-</td>
-</tr>
-
-<tr>
-<td width="400">
-<a href="https://drive.google.com/file/d/1bb_wtKjlZLw6RArmhg-FAEAPllTZ-1sN/view?usp=sharing">
-<img src="docs/images/demo-research.svg" alt="Deep Research Demo" width="400">
-</a>
-</td>
-<td>
-
-### 5. Deep Research (Multi-Agent)
-
-Investigates Denver’s real-estate market using a multi-agent workflow.
-A supervisor agent requests human approval, then delegates work to a remote research agent via A2A.
-
-**Highlights**
-- Agent-to-Agent (A2A) protocol  
-- Human-in-the-loop approval  
-- Web research with citations and visualizations  
-
-</td>
-</tr>
-</table>
 
 ---
 
