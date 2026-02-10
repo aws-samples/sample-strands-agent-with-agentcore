@@ -549,8 +549,12 @@ export const useStreamEvents = ({
         }
       }
 
-      // Batch state updates to prevent multiple render cycles
-      startTransition(() => {
+      // Update state - A2A tools use high-priority updates so the artifact
+      // creation chain (messages → researchData → useEffect) fires immediately.
+      // Regular tools use startTransition to avoid blocking the UI.
+      const isA2AResult = toolName && isA2ATool(toolName)
+
+      const applyUpdates = () => {
         setSessionState(prev => ({
           ...prev,
           toolExecutions: updatedExecutions,
@@ -571,7 +575,13 @@ export const useStreamEvents = ({
           }
           return msg
         }))
-      })
+      }
+
+      if (isA2AResult) {
+        applyUpdates()
+      } else {
+        startTransition(applyUpdates)
+      }
     }
   }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages, setUIState])
 
@@ -922,11 +932,17 @@ export const useStreamEvents = ({
         }
       }))
 
-      // Transition to idle status (waiting for user input)
+      // For A2A tool interrupts (research plan approval), keep current agentStatus
+      // to avoid flickering from rapid researching → idle → researching transitions.
+      // The Canvas will handle user interaction (plan approval) while chat stays in current state.
+      const isA2AInterrupt = data.interrupts?.some(
+        (int: any) => int.reason?.tool_name === 'research_agent' || int.reason?.tool_name === 'browser_use_agent'
+      )
+
       setUIState(prev => ({
         ...prev,
         isTyping: false,
-        agentStatus: 'idle'
+        ...(isA2AInterrupt ? {} : { agentStatus: 'idle' })
       }))
     }
   }, [setSessionState, setUIState, stopPollingRef])

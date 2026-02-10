@@ -19,8 +19,31 @@ from typing import Dict, Any, Optional
 from strands import tool, ToolContext
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from workspace import ExcelManager
+from builtin_tools.lib.excel_recalc import recalc_spreadsheet
 
 logger = logging.getLogger(__name__)
+
+
+def _format_recalc_report(report: dict) -> str:
+    """Format recalc report as a message string for the response."""
+    status = report.get("status", "skipped")
+    if status == "skipped":
+        return ""
+
+    formulas = report.get("total_formulas", 0)
+    if formulas == 0:
+        return ""
+
+    parts = [f"**Formulas**: {formulas} recalculated"]
+
+    if status == "errors_found":
+        errors = report.get("total_errors", 0)
+        parts.append(f"**Formula Errors**: {errors} found")
+        for err_type, info in report.get("error_summary", {}).items():
+            locations = ", ".join(info["locations"][:5])
+            parts.append(f"  - {err_type} ({info['count']}): {locations}")
+
+    return "\n".join(parts)
 
 
 def _validate_spreadsheet_name(name: str) -> tuple[bool, Optional[str]]:
@@ -437,6 +460,10 @@ print(f"Spreadsheet created: {ci_path}")
             # Download from Code Interpreter
             file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, spreadsheet_filename)
 
+            # Recalculate formulas using LibreOffice
+            file_bytes, recalc_report = recalc_spreadsheet(file_bytes, spreadsheet_filename)
+            recalc_msg = _format_recalc_report(recalc_report)
+
             # Save to S3 for persistence
             s3_info = doc_manager.save_to_s3(
                 spreadsheet_filename,
@@ -463,6 +490,9 @@ print(f"Spreadsheet created: {ci_path}")
 
 **File**: {spreadsheet_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} spreadsheet{'s' if other_files_count != 1 else ''}"""
+
+            if recalc_msg:
+                message += f"\n{recalc_msg}"
 
             # Return success message
             return {
@@ -690,6 +720,10 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
             # Download modified spreadsheet from Code Interpreter
             file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, output_filename)
 
+            # Recalculate formulas using LibreOffice
+            file_bytes, recalc_report = recalc_spreadsheet(file_bytes, output_filename)
+            recalc_msg = _format_recalc_report(recalc_report)
+
             # Save to S3 with output filename
             s3_info = doc_manager.save_to_s3(
                 output_filename,
@@ -722,6 +756,9 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
 **Source**: {source_filename}
 **Saved as**: {output_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} spreadsheet{'s' if other_files_count != 1 else ''}"""
+
+            if recalc_msg:
+                message += f"\n{recalc_msg}"
 
             # Return success message with metadata for download button
             return {

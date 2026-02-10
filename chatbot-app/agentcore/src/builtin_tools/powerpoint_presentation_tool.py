@@ -40,18 +40,19 @@ _upload_ppt_helpers_to_ci = upload_ppt_helpers_to_ci
 
 @tool
 def get_slide_code_examples(category: str = "text_layout") -> Dict[str, Any]:
-    """Get python-pptx code examples as reference for creating slides.
+    """Get python-pptx code examples as reference for creating professional slides.
 
-    These are reference examples - adapt them to your content needs.
-    Also useful when debugging code errors.
+    These are reference examples with named color palettes and visual design patterns.
+    Adapt them to your content needs. Also useful when debugging code errors.
 
     Args:
         category: Example category to retrieve:
-            - "text_layout": Text arrangement, hierarchy, bullets
-            - "number_highlight": Numbers/KPI emphasis
-            - "grid_layout": Multiple items, comparisons
-            - "image_text": Image + text combinations
-            - "visual_emphasis": Highlights, color boxes, accents
+            - "text_layout": Icon rows, accent bars, structured text (icon_text_rows, left_accent_bar)
+            - "number_highlight": Hero stats, metric cards (hero_stat_dark, metric_cards)
+            - "grid_layout": Comparison cards, feature columns (comparison_cards, three_column_feature)
+            - "image_text": Half-bleed layouts, overlays (half_bleed_layout, full_bg_overlay)
+            - "visual_emphasis": Quotes, process steps (quote_callout, process_steps)
+            - "design_reference": Color palettes table and font pairing reference (text, not code)
             - "all": Get all categories
 
     Returns:
@@ -79,7 +80,12 @@ def get_slide_code_examples(category: str = "text_layout") -> Dict[str, Any]:
 
             for example in cat_data['examples']:
                 output_parts.append(f"\n### {example['name']}\n")
-                output_parts.append(f"```python\n{example['code'].strip()}\n```\n")
+                if 'text' in example:
+                    # Text reference (design_reference category)
+                    output_parts.append(f"{example['text'].strip()}\n")
+                else:
+                    # Code example
+                    output_parts.append(f"```python\n{example['code'].strip()}\n```\n")
 
         return {
             "content": [{"text": "\n".join(output_parts)}],

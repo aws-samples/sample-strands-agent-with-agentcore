@@ -859,10 +859,10 @@ export function ChatInterface() {
           sessionStorage.setItem(artifactsKey, JSON.stringify(existingArtifacts))
         }
 
-        // Select the artifact and clean up research state (synchronous updates)
-        setSelectedArtifactId(targetArtifactId)
+        // Open the artifact in Canvas and clean up research state
         setResearchArtifactId(null)
         researchRef.current.reset()
+        openArtifact(targetArtifactId)
       } else if (data.status === 'error' || data.status === 'declined') {
         processedResearchIdsRef.current.add(executionId)
         // Only cleanup if this is the active research (not 'in-progress' waiting for new one)
@@ -873,7 +873,7 @@ export function ChatInterface() {
         }
       }
     }
-  }, [researchData, researchArtifactId, closeCanvas, addArtifact, sessionId, extractResearchContent, setSelectedArtifactId])
+  }, [researchData, researchArtifactId, closeCanvas, addArtifact, sessionId, extractResearchContent, openArtifact])
 
   // Toggle Research Agent
   const toggleResearchAgent = useCallback(async () => {

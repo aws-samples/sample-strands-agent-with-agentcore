@@ -1,7 +1,8 @@
 import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
-import { ChevronRight, Download, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { Download, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
+import { getToolImageSrc, getToolIcon } from '@/config/tool-icons'
 import { ChartRenderer } from '@/components/canvas'
 import { ChartToolResult } from '@/types/chart'
 import { MapRenderer } from '@/components/MapRenderer'
@@ -10,7 +11,7 @@ import { JsonDisplay } from '@/components/ui/JsonDisplay'
 import { Markdown } from '@/components/ui/Markdown'
 import { LazyImage } from '@/components/ui/LazyImage'
 import { getApiUrl } from '@/config/environment'
-import { cn } from '@/lib/utils'
+
 import type { ImageData } from '@/utils/imageExtractor'
 
 // Word document tool names
@@ -491,6 +492,8 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
         {toolExecutions.map((toolExecution) => {
           const isExpanded = isToolExpanded(toolExecution.id)
           const displayName = getToolDisplayName(toolExecution.toolName, toolExecution.isComplete)
+          const toolImageSrc = getToolImageSrc(toolExecution.toolName)
+          const ToolIconComponent = !toolImageSrc ? getToolIcon(toolExecution.toolName) : null
 
           // Render visualization/map tools directly
           if ((toolExecution.toolName === 'create_visualization' || toolExecution.toolName === 'show_on_map') &&
@@ -514,12 +517,11 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                   onClick={() => toggleToolExpansion(toolExecution.id)}
                   className="flex items-center gap-2 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors w-full text-left group cursor-pointer"
                 >
-                  <ChevronRight
-                    className={cn(
-                      "h-4 w-4 text-muted-foreground transition-transform duration-200",
-                      isExpanded && "rotate-90"
-                    )}
-                  />
+                  {toolImageSrc ? (
+                    <img src={toolImageSrc} alt="" className="h-4 w-4 object-contain" />
+                  ) : ToolIconComponent ? (
+                    <ToolIconComponent className="h-4 w-4 text-muted-foreground" />
+                  ) : null}
                   <span className="text-label text-foreground">
                     {displayName}
                   </span>

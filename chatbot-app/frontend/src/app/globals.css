@@ -355,6 +355,38 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
   animation: gradient-x 3s ease infinite;
 }
 
+/* Tool activation glow effect */
+.tool-activated-glow {
+  position: relative;
+}
+
+.tool-activated-glow::before {
+  content: "";
+  position: absolute;
+  inset: -1.5px;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--primary)),
+    hsl(var(--secondary)),
+    hsl(var(--accent)),
+    hsl(var(--primary))
+  );
+  background-size: 300% 300%;
+  animation: glow-blink 0.8s ease forwards;
+  opacity: 0;
+  z-index: -1;
+}
+
+@keyframes glow-blink {
+  0%   { opacity: 0; }
+  15%  { opacity: 0.7; }
+  35%  { opacity: 0; }
+  55%  { opacity: 0.5; }
+  75%  { opacity: 0; }
+  100% { opacity: 0; }
+}
+
 /* Content Areas - Clean Tailwind + Prose Integration */
 
 /* Chat Chart Content - Tailwind-first approach */

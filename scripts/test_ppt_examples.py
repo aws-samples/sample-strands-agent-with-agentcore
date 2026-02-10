@@ -111,6 +111,12 @@ def test_example_code_syntax():
 
         all_valid = True
         for cat_name, cat_data in SLIDE_EXAMPLES.items():
+            # Skip text-only reference categories (no code to syntax-check)
+            if cat_data.get('is_text_reference'):
+                for example in cat_data['examples']:
+                    print(f"   ⏭️  {cat_name}/{example['name']}: Text reference (skipped)")
+                continue
+
             for example in cat_data['examples']:
                 code = example['code']
                 try:
