@@ -13,25 +13,17 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional, Dict, List
 
-from strands.hooks import MessageAddedEvent
-from strands.hooks.events import AfterInvocationEvent, AgentInitializedEvent
-from strands.hooks.registry import HookRegistry
-from strands.types.session import Session, SessionAgent, SessionMessage
+from strands.types.session import SessionAgent, SessionMessage
 from typing_extensions import override
 
 from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
 from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
-from bedrock_agentcore.memory.integrations.strands.bedrock_converter import AgentCoreMemoryConverter
+
 
 if TYPE_CHECKING:
     from strands.agent.agent import Agent
 
 logger = logging.getLogger(__name__)
-
-# Payload type markers for unified storage
-PAYLOAD_TYPE_MESSAGE = "message"
-PAYLOAD_TYPE_AGENT_STATE = "agent_state"
-PAYLOAD_TYPE_SESSION = "session"
 
 
 @dataclass
@@ -174,16 +166,8 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         return result
 
     @override
-    def register_hooks(self, registry: HookRegistry, **kwargs: Any) -> None:
-        """Register hooks for session management."""
-        registry.add_callback(AgentInitializedEvent, lambda event: self.initialize(event.agent))
-        registry.add_callback(MessageAddedEvent, lambda event: self._append_message_tracked(event.message, event.agent))
-        registry.add_callback(MessageAddedEvent, lambda event: self._sync_agent_tracked(event.agent))
-        registry.add_callback(MessageAddedEvent, lambda event: self.retrieve_customer_context(event))
-        registry.add_callback(AfterInvocationEvent, lambda event: self._sync_agent_tracked(event.agent))
-
-    def _append_message_tracked(self, message: Dict, agent: "Agent") -> None:
-        """Append message with API call tracking."""
+    def append_message(self, message: Dict, agent: "Agent", **kwargs: Any) -> None:
+        """Append message with empty content filtering and API call tracking."""
         # Filter out empty content blocks before saving
         filtered_message = self._filter_empty_text(message)
 
@@ -194,64 +178,19 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
             return
 
         start = time.time()
-        super().append_message(filtered_message, agent)
-        elapsed_ms = (time.time() - start) * 1000
-        self._api_call_count += 1
-        self._api_call_total_ms += elapsed_ms
-
-    def _sync_agent_tracked(self, agent: "Agent") -> None:
-        """Sync agent with API call tracking."""
-        start = time.time()
-        super().sync_agent(agent)
+        super().append_message(filtered_message, agent, **kwargs)
         elapsed_ms = (time.time() - start) * 1000
         self._api_call_count += 1
         self._api_call_total_ms += elapsed_ms
 
     @override
-    def list_messages(
-        self,
-        session_id: str,
-        agent_id: str,
-        limit: Optional[int] = None,
-        offset: int = 0,
-        **kwargs: Any,
-    ) -> List[SessionMessage]:
-        """List messages - tries unified format first, falls back to legacy."""
-        messages = self._list_messages_unified(session_id, limit, offset)
-        if messages:
-            return messages
-        return super().list_messages(session_id, agent_id, limit, offset, **kwargs)
-
-    def _list_messages_unified(
-        self,
-        session_id: str,
-        limit: Optional[int] = None,
-        offset: int = 0,
-    ) -> List[SessionMessage]:
-        """List messages from unified storage format."""
-        max_results = (limit + offset) if limit else 10000
-
-        events = self.memory_client.list_events(
-            memory_id=self.config.memory_id,
-            actor_id=self.config.actor_id,
-            session_id=session_id,
-            max_results=max_results,
-        )
-
-        messages = []
-        for event in events:
-            for payload_item in event.get("payload", []):
-                msg = self._parse_message_from_payload(payload_item)
-                if msg:
-                    messages.append(msg)
-
-        # Reverse to chronological order (list_events returns newest first)
-        messages = list(reversed(messages))
-
-        # Apply offset and limit
-        if limit is not None:
-            return messages[offset : offset + limit]
-        return messages[offset:]
+    def sync_agent(self, agent: "Agent", **kwargs: Any) -> None:
+        """Sync agent with API call tracking."""
+        start = time.time()
+        super().sync_agent(agent, **kwargs)
+        elapsed_ms = (time.time() - start) * 1000
+        self._api_call_count += 1
+        self._api_call_total_ms += elapsed_ms
 
     @staticmethod
     def _filter_empty_text(message: dict) -> dict:
@@ -280,160 +219,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
         filtered = [block for block in content if is_valid_block(block)]
         return {**message, "content": filtered}
-
-    def _parse_message_from_payload(self, payload_item: dict) -> Optional[SessionMessage]:
-        """Parse a message from a payload item."""
-        try:
-            if "conversational" in payload_item:
-                conv = payload_item["conversational"]
-                data = json.loads(conv["content"]["text"])
-
-                if data.get("_payload_type") == PAYLOAD_TYPE_MESSAGE or "message" in data:
-                    data.pop("_payload_type", None)
-                    session_msg = SessionMessage.from_dict(data)
-                    session_msg.message = self._filter_empty_text(session_msg.message)
-                    if session_msg.message.get("content"):
-                        return session_msg
-
-            elif "blob" in payload_item:
-                blob_data = json.loads(payload_item["blob"])
-
-                if isinstance(blob_data, dict):
-                    if blob_data.get("_payload_type") == PAYLOAD_TYPE_AGENT_STATE:
-                        return None
-                    if blob_data.get("_payload_type") == PAYLOAD_TYPE_MESSAGE:
-                        blob_data.pop("_payload_type", None)
-                        session_msg = SessionMessage.from_dict(blob_data)
-                        session_msg.message = self._filter_empty_text(session_msg.message)
-                        if session_msg.message.get("content"):
-                            return session_msg
-
-                # Legacy blob format (tuple)
-                if isinstance(blob_data, (tuple, list)) and len(blob_data) == 2:
-                    session_msg = SessionMessage.from_dict(json.loads(blob_data[0]))
-                    session_msg.message = self._filter_empty_text(session_msg.message)
-                    if session_msg.message.get("content"):
-                        return session_msg
-
-        except (json.JSONDecodeError, ValueError, KeyError) as e:
-            logger.debug(f"Failed to parse message from payload: {e}")
-
-        return None
-
-    @override
-    def read_agent(self, session_id: str, agent_id: str, **kwargs: Any) -> Optional[SessionAgent]:
-        """Read agent with dual-read support.
-
-        Tries unified format first, falls back to legacy format.
-        """
-        # Try unified format first
-        agent = self._read_agent_unified(session_id, agent_id)
-
-        if agent:
-            return agent
-
-        # Fallback to legacy format
-        logger.debug("No unified agent found, falling back to legacy format")
-        return super().read_agent(session_id, agent_id, **kwargs)
-
-    def _read_agent_unified(self, session_id: str, agent_id: str) -> Optional[SessionAgent]:
-        """Read agent state from unified storage format."""
-        events = self.memory_client.list_events(
-            memory_id=self.config.memory_id,
-            actor_id=self.config.actor_id,
-            session_id=session_id,
-            max_results=100,
-        )
-
-        # Find latest agent state for this agent_id
-        for event in events:
-            for payload_item in event.get("payload", []):
-                if "blob" in payload_item:
-                    try:
-                        blob_data = json.loads(payload_item["blob"])
-                        if (
-                            isinstance(blob_data, dict)
-                            and blob_data.get("_payload_type") == PAYLOAD_TYPE_AGENT_STATE
-                            and blob_data.get("_agent_id") == agent_id
-                        ):
-                            blob_data.pop("_payload_type", None)
-                            blob_data.pop("_agent_id", None)
-                            return SessionAgent.from_dict(blob_data)
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-
-        return None
-
-    @override
-    def create_session(self, session: Session, **kwargs: Any) -> Session:
-        """Create session in unified format (under config.actor_id)."""
-        session_data = session.to_dict()
-        session_data["_payload_type"] = PAYLOAD_TYPE_SESSION
-
-        self.memory_client.gmdp_client.create_event(
-            memoryId=self.config.memory_id,
-            actorId=self.config.actor_id,  # Unified actorId
-            sessionId=self.session_id,
-            payload=[{"blob": json.dumps(session_data)}],
-            eventTimestamp=self._get_monotonic_timestamp(),
-        )
-
-        logger.info(f"Created session (unified): {session.session_id}")
-        return session
-
-    @override
-    def create_agent(self, session_id: str, session_agent: SessionAgent, **kwargs: Any) -> None:
-        """Create agent in unified format (under config.actor_id)."""
-        agent_data = session_agent.to_dict()
-        agent_data["_payload_type"] = PAYLOAD_TYPE_AGENT_STATE
-        agent_data["_agent_id"] = session_agent.agent_id
-
-        self.memory_client.gmdp_client.create_event(
-            memoryId=self.config.memory_id,
-            actorId=self.config.actor_id,  # Unified actorId
-            sessionId=self.session_id,
-            payload=[{"blob": json.dumps(agent_data)}],
-            eventTimestamp=self._get_monotonic_timestamp(),
-        )
-
-        logger.info(f"Created agent (unified): {session_agent.agent_id}")
-
-    @override
-    def read_session(self, session_id: str, **kwargs: Any) -> Optional[Session]:
-        """Read session with dual-read support."""
-        # Try unified format first
-        session = self._read_session_unified(session_id)
-
-        if session:
-            return session
-
-        # Fallback to legacy format
-        return super().read_session(session_id, **kwargs)
-
-    def _read_session_unified(self, session_id: str) -> Optional[Session]:
-        """Read session from unified storage format."""
-        events = self.memory_client.list_events(
-            memory_id=self.config.memory_id,
-            actor_id=self.config.actor_id,
-            session_id=session_id,
-            max_results=50,
-        )
-
-        for event in events:
-            for payload_item in event.get("payload", []):
-                if "blob" in payload_item:
-                    try:
-                        blob_data = json.loads(payload_item["blob"])
-                        if (
-                            isinstance(blob_data, dict)
-                            and blob_data.get("_payload_type") == PAYLOAD_TYPE_SESSION
-                        ):
-                            blob_data.pop("_payload_type", None)
-                            return Session.from_dict(blob_data)
-                    except (json.JSONDecodeError, ValueError):
-                        continue
-
-        return None
 
     def _get_dynamodb_table(self):
         """Lazy initialization of DynamoDB table."""
