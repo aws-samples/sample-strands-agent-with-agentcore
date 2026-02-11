@@ -18,6 +18,7 @@ if [ -f "$ENV_FILE" ]; then
     echo "  - ENABLE_COGNITO: ${ENABLE_COGNITO:-true}"
     echo "  - CORS_ORIGINS: ${CORS_ORIGINS:-not set}"
     echo "  - ALLOWED_IP_RANGES: ${ALLOWED_IP_RANGES:-not set}"
+    echo "  - PROJECT_NAME: ${PROJECT_NAME}"
 else
     echo "No .env file found at $ENV_FILE, using environment defaults"
 fi
@@ -46,8 +47,8 @@ echo "Deploying to AWS Account: $ACCOUNT_ID in region: $AWS_REGION"
 
 # Check if DynamoDB tables already exist
 echo "🔍 Checking for existing DynamoDB tables..."
-USERS_TABLE_EXISTS=$(aws dynamodb describe-table --table-name strands-agent-chatbot-users --region $AWS_REGION 2>/dev/null && echo "true" || echo "false")
-SESSIONS_TABLE_EXISTS=$(aws dynamodb describe-table --table-name strands-agent-chatbot-sessions --region $AWS_REGION 2>/dev/null && echo "true" || echo "false")
+USERS_TABLE_EXISTS=$(aws dynamodb describe-table --table-name "${PROJECT_NAME}-users" --region $AWS_REGION 2>/dev/null && echo "true" || echo "false")
+SESSIONS_TABLE_EXISTS=$(aws dynamodb describe-table --table-name "${PROJECT_NAME}-sessions" --region $AWS_REGION 2>/dev/null && echo "true" || echo "false")
 
 if [ "$USERS_TABLE_EXISTS" = "true" ] && [ "$SESSIONS_TABLE_EXISTS" = "true" ]; then
     echo "✅ Existing DynamoDB tables found - will import them"
