@@ -86,6 +86,7 @@ def create_mcp_runtime_client(
     prefix: str = "mcp",
     region: Optional[str] = None,
     auth_token: Optional[str] = None,
+    elicitation_bridge=None,
 ) -> Optional[FilteredMCPClient]:
     """
     Create MCP client for AgentCore Runtime (MCP protocol) with tool filtering.
@@ -153,6 +154,7 @@ def create_mcp_runtime_client(
         lambda: streamablehttp_client(captured_url, headers=captured_headers),
         enabled_tool_ids=mcp_tool_ids,
         prefix=prefix,
+        elicitation_callback=elicitation_bridge.elicitation_callback if elicitation_bridge else None,
     )
 
     logger.info(f"MCP Runtime client created: {invocation_url}")
@@ -166,6 +168,7 @@ MCP_RUNTIME_ENABLED = os.environ.get("MCP_RUNTIME_ENABLED", "true").lower() == "
 def get_mcp_runtime_client_if_enabled(
     enabled_tool_ids: Optional[List[str]] = None,
     auth_token: Optional[str] = None,
+    elicitation_bridge=None,
 ) -> Optional[FilteredMCPClient]:
     """
     Get MCP Runtime client if enabled via environment variable.
@@ -173,6 +176,7 @@ def get_mcp_runtime_client_if_enabled(
     Args:
         enabled_tool_ids: List of enabled tool IDs for filtering
         auth_token: Cognito JWT for MCP Runtime Bearer auth
+        elicitation_bridge: OAuthElicitationBridge for MCP elicitation protocol
 
     Returns:
         FilteredMCPClient or None if disabled or no tools enabled
@@ -188,5 +192,7 @@ def get_mcp_runtime_client_if_enabled(
         return None
 
     if enabled_tool_ids:
-        return create_mcp_runtime_client(enabled_tool_ids, auth_token=auth_token)
+        return create_mcp_runtime_client(
+            enabled_tool_ids, auth_token=auth_token, elicitation_bridge=elicitation_bridge
+        )
     return None

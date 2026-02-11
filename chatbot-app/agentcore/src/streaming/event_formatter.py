@@ -422,6 +422,20 @@ class StreamEventFormatter:
         })
 
     @staticmethod
+    def create_oauth_elicitation_event(elicit_data: dict) -> str:
+        """Create OAuth elicitation event for MCP elicit_url() protocol.
+
+        Sent when an MCP tool requires user consent via OAuth.
+        The frontend opens a popup and signals completion back.
+        """
+        return StreamEventFormatter.format_sse_event({
+            "type": "oauth_elicitation",
+            "authUrl": elicit_data["auth_url"],
+            "message": elicit_data.get("message", ""),
+            "elicitationId": elicit_data["elicitation_id"],
+        })
+
+    @staticmethod
     def _extract_images_from_json_response(response_data):
         """Extract images from any JSON tool response automatically"""
         images = []

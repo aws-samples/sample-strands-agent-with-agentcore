@@ -20,11 +20,8 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
-from agentcore_oauth import (
-    OAuthRequiredException,
-    OAuthHelper,
-    format_auth_required_response,
-)
+from mcp.server.fastmcp import Context
+from agentcore_oauth import OAuthHelper, get_token_with_elicitation
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +35,6 @@ _calendar_oauth = OAuthHelper(
         "https://www.googleapis.com/auth/calendar",  # Full calendar access
     ],
 )
-
-
-def _format_calendar_auth_response(auth_url: str) -> str:
-    """Format Calendar-specific OAuth authorization response."""
-    return format_auth_required_response(auth_url, service_name="Google Calendar")
 
 
 # ── Calendar API Callers ─────────────────────────────────────────────────
@@ -202,7 +194,7 @@ def register_calendar_tools(mcp):
     """
 
     @mcp.tool()
-    async def list_calendars() -> str:
+    async def list_calendars(ctx: Context) -> str:
         """List all calendars accessible to the user.
 
         Returns calendars from the user's calendar list including
@@ -211,7 +203,9 @@ def register_calendar_tools(mcp):
         logger.debug("[Tool] list_calendars called")
 
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             data = await call_calendar_api_get(access_token, "users/me/calendarList")
             calendars = data.get("items", [])
@@ -233,9 +227,6 @@ def register_calendar_tools(mcp):
                 "total_count": len(results),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error listing calendars: {e}")
             return f"Error listing calendars: {str(e)}"
@@ -248,6 +239,7 @@ def register_calendar_tools(mcp):
         time_max: Optional[str] = None,
         query: Optional[str] = None,
         show_deleted: bool = False,
+        ctx: Context = None,
     ) -> str:
         """List events from a calendar.
 
@@ -262,7 +254,9 @@ def register_calendar_tools(mcp):
         max_results = max(1, min(100, max_results))
 
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             params = {
                 "maxResults": max_results,
@@ -297,9 +291,6 @@ def register_calendar_tools(mcp):
                 "total_count": len(results),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error listing events: {e}")
             return f"Error listing events: {str(e)}"
@@ -308,6 +299,7 @@ def register_calendar_tools(mcp):
     async def get_event(
         event_id: str,
         calendar_id: str = "primary",
+        ctx: Context = None,
     ) -> str:
         """Get detailed information about a specific event.
 
@@ -316,7 +308,9 @@ def register_calendar_tools(mcp):
             calendar_id: Calendar ID containing the event. Default: primary.
         """
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             event = await call_calendar_api_get(
                 access_token,
@@ -326,9 +320,6 @@ def register_calendar_tools(mcp):
             result = _format_event_response(event)
             return json.dumps(result, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error getting event: {e}")
             return f"Error getting event: {str(e)}"
@@ -345,6 +336,7 @@ def register_calendar_tools(mcp):
         timezone: str = "UTC",
         all_day: bool = False,
         reminder_minutes: Optional[str] = None,
+        ctx: Context = None,
     ) -> str:
         """Create a new calendar event.
 
@@ -361,7 +353,9 @@ def register_calendar_tools(mcp):
             reminder_minutes: Comma-separated reminder times in minutes (e.g., "10,30,60"). Optional.
         """
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             # Parse attendees
             attendee_list = None
@@ -397,9 +391,6 @@ def register_calendar_tools(mcp):
                 "event": _format_event_response(result),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error creating event: {e}")
             return f"Error creating event: {str(e)}"
@@ -415,6 +406,7 @@ def register_calendar_tools(mcp):
         location: Optional[str] = None,
         attendees: Optional[str] = None,
         timezone: Optional[str] = None,
+        ctx: Context = None,
     ) -> str:
         """Update an existing calendar event.
 
@@ -432,7 +424,9 @@ def register_calendar_tools(mcp):
             timezone: New timezone. Optional.
         """
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             # First, get the existing event
             existing = await call_calendar_api_get(
@@ -484,9 +478,6 @@ def register_calendar_tools(mcp):
                 "event": _format_event_response(result),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error updating event: {e}")
             return f"Error updating event: {str(e)}"
@@ -496,6 +487,7 @@ def register_calendar_tools(mcp):
         event_id: str,
         calendar_id: str = "primary",
         send_notifications: bool = False,
+        ctx: Context = None,
     ) -> str:
         """Delete a calendar event.
 
@@ -505,7 +497,9 @@ def register_calendar_tools(mcp):
             send_notifications: Send cancellation notifications to attendees. Default: False.
         """
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             # Build endpoint with query param
             endpoint = f"calendars/{calendar_id}/events/{event_id}"
@@ -521,9 +515,6 @@ def register_calendar_tools(mcp):
                 "notifications_sent": send_notifications,
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error deleting event: {e}")
             return f"Error deleting event: {str(e)}"
@@ -532,6 +523,7 @@ def register_calendar_tools(mcp):
     async def quick_add_event(
         text: str,
         calendar_id: str = "primary",
+        ctx: Context = None,
     ) -> str:
         """Create an event from natural language text.
 
@@ -546,7 +538,9 @@ def register_calendar_tools(mcp):
             calendar_id: Calendar ID to create event in. Default: primary.
         """
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             result = await call_calendar_api_post(
                 access_token,
@@ -561,9 +555,6 @@ def register_calendar_tools(mcp):
                 "event": _format_event_response(result),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error quick adding event: {e}")
             return f"Error quick adding event: {str(e)}"
@@ -574,6 +565,7 @@ def register_calendar_tools(mcp):
         time_max: str,
         calendars: Optional[str] = None,
         timezone: str = "UTC",
+        ctx: Context = None,
     ) -> str:
         """Check free/busy status for calendars.
 
@@ -587,7 +579,9 @@ def register_calendar_tools(mcp):
             timezone: Timezone for the query. Default: UTC.
         """
         try:
-            access_token = await _calendar_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             # Parse calendar IDs
             calendar_ids = ["primary"]
@@ -631,9 +625,6 @@ def register_calendar_tools(mcp):
                 "calendars": calendars_result,
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_calendar_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error checking availability: {e}")
             return f"Error checking availability: {str(e)}"

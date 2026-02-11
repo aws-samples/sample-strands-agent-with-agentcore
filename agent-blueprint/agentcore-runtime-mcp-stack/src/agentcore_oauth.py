@@ -4,31 +4,26 @@ AgentCore OAuth Helper for 3LO MCP Servers
 Provides reusable OAuth/Identity functionality for MCP servers that need
 per-user authentication via AgentCore Identity 3LO (Three-Legged OAuth).
 
-Usage:
-    from agentcore_oauth import (
-        OAuthRequiredException,
-        OAuthHelper,
-        format_auth_required_response,
-    )
+Uses MCP elicit_url() protocol for seamless OAuth consent flow:
+    from agentcore_oauth import OAuthHelper, get_token_with_elicitation
 
-    # Create helper for your OAuth provider
     oauth = OAuthHelper(
         provider_name="google-oauth-provider",
         scopes=["https://www.googleapis.com/auth/gmail.modify"],
     )
 
-    # In your tool handler
-    async def my_tool():
-        try:
-            token = await oauth.get_access_token()
-            # Use token to call external API
-        except OAuthRequiredException as e:
-            return format_auth_required_response(e.auth_url)
+    # In your tool handler (receives ctx: Context from FastMCP)
+    async def my_tool(ctx: Context):
+        token = await get_token_with_elicitation(ctx, oauth, "Gmail")
+        if token is None:
+            return "Authorization was declined by the user."
+        # Use token to call external API
 """
 import os
-import json
+import uuid
 import logging
 import boto3
+from dataclasses import dataclass
 from typing import List, Optional
 
 from bedrock_agentcore.services.identity import IdentityClient
@@ -37,25 +32,16 @@ from bedrock_agentcore.runtime import BedrockAgentCoreContext
 logger = logging.getLogger(__name__)
 
 
-# ── Custom Exception ─────────────────────────────────────────────────────
+# ── Token Result ─────────────────────────────────────────────────────
 
-class OAuthRequiredException(Exception):
-    """Raised when OAuth authorization is required.
+@dataclass
+class TokenResult:
+    """Result from Identity API token retrieval.
 
-    This exception is raised when the Identity service returns an
-    authorizationUrl instead of a cached token. Tool handlers should
-    catch this and return the auth URL to the client.
-
-    The client displays this URL to the user. After consent completion,
-    calling the tool again succeeds because the token is now cached
-    in AgentCore Token Vault.
-
-    Attributes:
-        auth_url: The authorization URL for user consent
+    Either token is set (cache hit) or auth_url is set (consent needed).
     """
-    def __init__(self, auth_url: str):
-        self.auth_url = auth_url
-        super().__init__(f"OAUTH_REQUIRED:{auth_url}")
+    token: Optional[str] = None
+    auth_url: Optional[str] = None
 
 
 # ── Callback URL Loading ─────────────────────────────────────────────────
@@ -120,37 +106,6 @@ def get_oauth_callback_url(
         ) from e
 
 
-# ── Response Formatting ──────────────────────────────────────────────────
-
-def format_auth_required_response(
-    auth_url: str,
-    service_name: str = "external service",
-) -> str:
-    """Format OAuth authorization required response for client.
-
-    Returns a JSON response that the client can parse to display
-    the authorization URL to the user.
-
-    Args:
-        auth_url: The authorization URL for user consent
-        service_name: Human-readable service name (e.g., "Gmail", "Calendar")
-
-    Returns:
-        str: JSON-formatted response with auth URL and instructions
-    """
-    return json.dumps({
-        "oauth_required": True,
-        "auth_url": auth_url,
-        "message": f"{service_name} authorization required. Please click the link below to authorize access.",
-        "instructions": [
-            "1. Click the authorization link below",
-            "2. Sign in with your account",
-            "3. Grant the requested permissions",
-            "4. After authorization completes, try this action again"
-        ]
-    }, indent=2)
-
-
 # ── OAuth Helper Class ───────────────────────────────────────────────────
 
 class OAuthHelper:
@@ -159,7 +114,7 @@ class OAuthHelper:
     This class encapsulates the common pattern for getting OAuth tokens
     from AgentCore Token Vault. It handles:
     - Token retrieval from cache
-    - Raising OAuthRequiredException when consent is needed
+    - Returning TokenResult with auth_url when consent is needed
     - Provider and scope configuration
 
     Usage:
@@ -168,10 +123,8 @@ class OAuthHelper:
             scopes=["https://www.googleapis.com/auth/gmail.modify"],
         )
 
-        try:
-            token = await oauth.get_access_token()
-        except OAuthRequiredException as e:
-            return format_auth_required_response(e.auth_url, "Gmail")
+        # In a tool handler with MCP Context:
+        token = await get_token_with_elicitation(ctx, oauth, "Gmail")
 
     Attributes:
         provider_name: OAuth credential provider name registered in AgentCore
@@ -211,20 +164,19 @@ class OAuthHelper:
         logger.info(f"[OAuth] Scopes: {scopes}")
         logger.info(f"[OAuth] Callback URL: {self.callback_url}")
 
-    async def get_access_token(self) -> str:
+    async def get_access_token(self) -> TokenResult:
         """Get OAuth access token from AgentCore Token Vault.
 
         This method bypasses the @requires_access_token decorator and directly
         calls the Identity API. This approach:
         1. Avoids SDK polling mechanism that blocks for up to 10 minutes
-        2. Returns auth URL to client immediately when consent is needed
+        2. Returns TokenResult with auth_url when consent is needed
         3. Solves the N+1 token request problem
 
         Returns:
-            str: OAuth2 access token
+            TokenResult: Contains either token (cache hit) or auth_url (consent needed)
 
         Raises:
-            OAuthRequiredException: When user consent is required (contains auth URL)
             ValueError: When WorkloadAccessToken is not set in context
             RuntimeError: When Identity service returns unexpected response
         """
@@ -252,16 +204,61 @@ class OAuthHelper:
         # Token cached in Token Vault? Return it directly
         if "accessToken" in response:
             logger.debug("[OAuth] Token retrieved from Token Vault (cache hit)")
-            return response["accessToken"]
+            return TokenResult(token=response["accessToken"])
 
-        # Need user consent? Raise exception with auth URL
+        # Need user consent? Return auth URL
         if "authorizationUrl" in response:
             auth_url = response["authorizationUrl"]
-            logger.warning("[OAuth] User consent required - returning auth URL to client")
-            raise OAuthRequiredException(auth_url)
+            logger.warning("[OAuth] User consent required - returning auth URL via elicitation")
+            return TokenResult(auth_url=auth_url)
 
         # Unexpected response
         raise RuntimeError(
             f"Identity service returned neither accessToken nor authorizationUrl. "
             f"Response: {response}"
         )
+
+
+# ── Elicitation Helper ───────────────────────────────────────────────────
+
+async def get_token_with_elicitation(
+    ctx,
+    oauth: OAuthHelper,
+    service_name: str,
+) -> Optional[str]:
+    """Get OAuth token, using MCP elicit_url() if user consent is needed.
+
+    This is the primary entry point for tool functions. It:
+    1. Tries to get a cached token
+    2. If consent is needed, calls ctx.elicit_url() to pause the tool
+       and prompt the user via the MCP elicitation protocol
+    3. After consent completes, retrieves the newly cached token
+
+    Args:
+        ctx: FastMCP Context (provides elicit_url())
+        oauth: OAuthHelper instance for the service
+        service_name: Human-readable name (e.g., "Gmail", "Google Calendar")
+
+    Returns:
+        Access token string, or None if user declined/cancelled
+    """
+    from mcp.server.elicitation import AcceptedUrlElicitation
+
+    result = await oauth.get_access_token()
+
+    if result.token:
+        return result.token
+
+    if result.auth_url:
+        elicit_result = await ctx.elicit_url(
+            message=f"{service_name} authorization required",
+            url=result.auth_url,
+            elicitation_id=str(uuid.uuid4()),
+        )
+
+        if isinstance(elicit_result, AcceptedUrlElicitation):
+            # Token should be cached after user completed consent
+            result2 = await oauth.get_access_token()
+            return result2.token
+
+    return None

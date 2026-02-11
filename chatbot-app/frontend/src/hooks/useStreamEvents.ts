@@ -363,55 +363,6 @@ export const useStreamEvents = ({
       const toolName = toolExecution?.toolName
       const isCancelled = data.status === 'error'
 
-      // Check for OAuth authorization required in tool result
-      if (data.result) {
-        try {
-          const resultJson = JSON.parse(data.result)
-          if (resultJson.oauth_required === true && resultJson.auth_url) {
-            // Extract service name from message or use default
-            const serviceName = resultJson.message?.match(/^(\w+)\s+authorization/i)?.[1] || 'Service'
-
-            console.log(`[OAuth] Authorization required for ${serviceName}:`, resultJson.auth_url)
-
-            // Set pending OAuth state - this will trigger UI to show OAuth prompt
-            setSessionState(prev => ({
-              ...prev,
-              pendingOAuth: {
-                toolUseId: data.toolUseId,
-                toolName: toolName || 'unknown',
-                authUrl: resultJson.auth_url,
-                serviceName,
-                popupOpened: false
-              }
-            }))
-
-            // Auto-open OAuth popup
-            const popup = window.open(
-              resultJson.auth_url,
-              'oauth_popup',
-              'width=500,height=700,scrollbars=yes,resizable=yes'
-            )
-
-            if (popup) {
-              popup.focus()
-              // Mark popup as opened
-              setSessionState(prev => ({
-                ...prev,
-                pendingOAuth: prev.pendingOAuth ? {
-                  ...prev.pendingOAuth,
-                  popupOpened: true
-                } : null
-              }))
-            }
-
-            // Don't process further - wait for OAuth completion
-            return
-          }
-        } catch {
-          // Not JSON or doesn't have oauth_required - continue normal processing
-        }
-      }
-
       // Track tool completion in swarm mode for expanded view
       if (swarmModeRef.current.isActive && swarmModeRef.current.agentSteps.length > 0) {
         const stepIndex = swarmModeRef.current.agentSteps.length - 1
@@ -976,6 +927,43 @@ export const useStreamEvents = ({
     }
   }, [setSessionState])
 
+  // OAuth Elicitation event handler (MCP elicit_url protocol)
+  const handleOAuthElicitationEvent = useCallback((data: StreamEvent) => {
+    if (data.type === 'oauth_elicitation') {
+      const serviceName = data.message?.match(/^(\w+)\s+authorization/i)?.[1] || 'Service'
+
+      console.log(`[OAuth Elicitation] Authorization required for ${serviceName}:`, data.authUrl)
+
+      setSessionState(prev => ({
+        ...prev,
+        pendingOAuth: {
+          authUrl: data.authUrl,
+          serviceName,
+          popupOpened: false,
+          elicitationId: data.elicitationId,
+        }
+      }))
+
+      // Auto-open OAuth popup
+      const popup = window.open(
+        data.authUrl,
+        'oauth_popup',
+        'width=500,height=700,scrollbars=yes,resizable=yes'
+      )
+
+      if (popup) {
+        popup.focus()
+        setSessionState(prev => ({
+          ...prev,
+          pendingOAuth: prev.pendingOAuth ? {
+            ...prev.pendingOAuth,
+            popupOpened: true
+          } : null
+        }))
+      }
+    }
+  }, [setSessionState])
+
   // Swarm Mode event handlers
   const handleSwarmNodeStartEvent = useCallback((event: StreamEvent) => {
     if (event.type === 'swarm_node_start') {
@@ -1344,6 +1332,9 @@ export const useStreamEvents = ({
         case 'research_progress':
           handleResearchProgressEvent(event)
           break
+        case 'oauth_elicitation':
+          handleOAuthElicitationEvent(event)
+          break
         case 'swarm_node_start':
           handleSwarmNodeStartEvent(event)
           break
@@ -1412,6 +1403,7 @@ export const useStreamEvents = ({
     handleInterruptEvent,
     handleBrowserProgressEvent,
     handleResearchProgressEvent,
+    handleOAuthElicitationEvent,
     handleSwarmNodeStartEvent,
     handleSwarmNodeStopEvent,
     handleSwarmHandoffEvent,

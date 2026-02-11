@@ -133,6 +133,14 @@ export interface ResearchProgressEvent {
   stepNumber: number;
 }
 
+// MCP Elicitation Events (OAuth consent via elicit_url protocol)
+export interface OAuthElicitationEvent {
+  type: 'oauth_elicitation';
+  authUrl: string;
+  message: string;
+  elicitationId: string;
+}
+
 // Swarm Mode Events (Multi-Agent Orchestration)
 export type SwarmState = 'idle' | 'running' | 'completed' | 'failed';
 
@@ -233,6 +241,7 @@ export type StreamEvent =
   | MetadataEvent
   | BrowserProgressEvent
   | ResearchProgressEvent
+  | OAuthElicitationEvent
   | SwarmNodeStartEvent
   | SwarmNodeStopEvent
   | SwarmHandoffEvent
@@ -263,11 +272,12 @@ export interface InterruptState {
 
 // OAuth authorization pending state
 export interface PendingOAuthState {
-  toolUseId: string;
-  toolName: string;
+  toolUseId?: string;
+  toolName?: string;
   authUrl: string;
   serviceName: string;
   popupOpened: boolean;
+  elicitationId?: string;
 }
 
 export interface ChatSessionState {
@@ -343,6 +353,8 @@ export const STREAM_EVENT_TYPES = [
   'interrupt', 'progress', 'metadata',
   // Progress events
   'browser_progress', 'research_progress',
+  // Elicitation events
+  'oauth_elicitation',
   // Swarm events
   'swarm_node_start', 'swarm_node_stop', 'swarm_handoff', 'swarm_complete',
 ] as const;

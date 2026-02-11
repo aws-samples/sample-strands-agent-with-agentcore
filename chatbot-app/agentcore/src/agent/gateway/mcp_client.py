@@ -28,7 +28,8 @@ class FilteredMCPClient(MCPClient):
         client_factory: Callable[[], Any],
         enabled_tool_ids: List[str],
         prefix: str = "gateway",
-        api_keys: Optional[dict] = None
+        api_keys: Optional[dict] = None,
+        elicitation_callback=None,
     ):
         """
         Initialize filtered MCP client.
@@ -38,8 +39,9 @@ class FilteredMCPClient(MCPClient):
             enabled_tool_ids: List of tool IDs that should be enabled
             prefix: Prefix used for tool IDs (default: 'gateway')
             api_keys: User-specific API keys for external services
+            elicitation_callback: MCP elicitation callback for OAuth consent flows
         """
-        super().__init__(client_factory)
+        super().__init__(client_factory, elicitation_callback=elicitation_callback)
         self.enabled_tool_ids = enabled_tool_ids
         self.prefix = prefix
         self._session_started = False

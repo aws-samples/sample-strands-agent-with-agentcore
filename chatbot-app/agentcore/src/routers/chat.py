@@ -112,6 +112,18 @@ async def invocations(request: InvocationRequest, http_request: Request):
         logger.info(f"[Stop] Stop signal set via /invocations for session={input_data.session_id}")
         return {"status": "stop_requested", "session_id": input_data.session_id}
 
+    # Handle elicitation_complete action - signal waiting MCP elicitation callback
+    if input_data.action == "elicitation_complete":
+        from agent.mcp.elicitation_bridge import get_bridge
+        bridge = get_bridge(input_data.session_id)
+        elicitation_id = getattr(input_data, 'elicitation_id', None)
+        if bridge:
+            bridge.complete_elicitation(elicitation_id)
+            logger.info(f"[Elicitation] Complete signal sent for session={input_data.session_id}")
+        else:
+            logger.warning(f"[Elicitation] No bridge found for session={input_data.session_id}")
+        return {"status": "elicitation_completed"}
+
     # Add tracing attributes
     span = trace.get_current_span()
     span.set_attribute("user.id", input_data.user_id or "anonymous")

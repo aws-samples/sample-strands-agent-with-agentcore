@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import React, { useState, useCallback, useMemo } from 'react'
 import { Download, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
@@ -95,51 +95,6 @@ const CollapsibleMarkdown = React.memo<{
 export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
-
-  // Track which OAuth URLs we've already opened to prevent duplicate popups
-  const openedAuthUrls = useRef<Set<string>>(new Set())
-
-  // Auto-open OAuth authorization popup (legacy text pattern - fallback)
-  // Primary OAuth detection is now handled in useStreamEvents via JSON parsing
-  useEffect(() => {
-    toolExecutions.forEach((toolExecution) => {
-      if (toolExecution.isComplete && toolExecution.toolResult) {
-        // Check for legacy text pattern (Google authorization)
-        const authMatch = toolExecution.toolResult.match(/Google authorization required\. Please visit:\s*(https:\/\/[^\s]+)/)
-        if (authMatch) {
-          const authUrl = authMatch[1]
-          // Only open if we haven't opened this URL before
-          if (!openedAuthUrls.current.has(authUrl)) {
-            openedAuthUrls.current.add(authUrl)
-            // Open OAuth popup
-            const popup = window.open(
-              authUrl,
-              'oauth_popup',
-              'width=500,height=700,scrollbars=yes,resizable=yes'
-            )
-            if (popup) {
-              popup.focus()
-            }
-          }
-        }
-      }
-    })
-  }, [toolExecutions])
-
-  // Check if tool result is an OAuth required response
-  const isOAuthResult = (toolResult: string | undefined): { isOAuth: boolean; serviceName?: string; authUrl?: string } => {
-    if (!toolResult) return { isOAuth: false }
-    try {
-      const result = JSON.parse(toolResult)
-      if (result.oauth_required === true && result.auth_url) {
-        const serviceName = result.message?.match(/^(\w+)\s+authorization/i)?.[1] || 'Service'
-        return { isOAuth: true, serviceName, authUrl: result.auth_url }
-      }
-    } catch {
-      // Not JSON
-    }
-    return { isOAuth: false }
-  }
 
   // Extract output filename from Word tool result
   // For modify_word_document: extracts the "Saved as" filename (output)
@@ -684,33 +639,6 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
 
                     {/* Tool result */}
                     {toolExecution.toolResult && (() => {
-                      const oauthCheck = isOAuthResult(toolExecution.toolResult)
-                      if (oauthCheck.isOAuth) {
-                        // Show friendly OAuth status
-                        return (
-                          <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
-                            <div className="flex-shrink-0">
-                              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                                <svg className="w-4 h-4 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" />
-                                </svg>
-                              </div>
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
-                                {oauthCheck.serviceName} authorization required
-                              </p>
-                              <p className="text-xs text-blue-700 dark:text-blue-300 mt-0.5">
-                                A popup should open automatically. Complete the authorization and your request will continue.
-                              </p>
-                            </div>
-                            <div className="flex-shrink-0">
-                              <div className="animate-spin h-4 w-4 border-2 border-blue-500 border-t-transparent rounded-full" />
-                            </div>
-                          </div>
-                        )
-                      }
-                      // Normal tool result display
                       return (
                         <div className="text-label">
                           {containsMarkdown(toolExecution.toolResult) ? (

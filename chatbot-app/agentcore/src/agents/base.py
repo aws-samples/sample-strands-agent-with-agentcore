@@ -94,11 +94,15 @@ class BaseAgent(ABC):
             enabled_tool_ids=self.enabled_tools,
             log_prefix=f"[{self.__class__.__name__}]",
             auth_token=self.auth_token,
+            session_id=self.session_id,
         )
 
         # Store gateway client for lifecycle management
         if result.clients.get("gateway"):
             self.gateway_client = result.clients["gateway"]
+
+        # Store elicitation bridge for SSE multiplexing
+        self.elicitation_bridge = result.clients.get("elicitation_bridge")
 
         # Store validation errors for surfacing to user (e.g., MCP auth missing)
         self.tool_validation_errors = result.validation_errors

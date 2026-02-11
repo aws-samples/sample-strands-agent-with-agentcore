@@ -50,6 +50,7 @@ class InvocationInput(BaseModel):
     selected_artifact_id: Optional[str] = None  # Currently selected artifact for tool context
     api_keys: Optional[Dict[str, str]] = None  # User-specific API keys for external services
     auth_token: Optional[str] = None  # Cognito JWT for MCP Runtime 3LO OAuth
+    elicitation_id: Optional[str] = None  # MCP elicitation ID for OAuth completion signal
 
 
 class InvocationRequest(BaseModel):

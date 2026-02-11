@@ -47,6 +47,10 @@ export default function OAuthCompletePage() {
         if (window.opener && !window.opener.closed) {
           try {
             window.opener.postMessage(
+              { type: 'oauth_elicitation_complete', sessionId },
+              window.location.origin
+            )
+            window.opener.postMessage(
               { type: 'oauth_complete', sessionId, success: true },
               window.location.origin
             )
@@ -104,11 +108,21 @@ export default function OAuthCompletePage() {
         // Notify parent window that OAuth is complete
         if (window.opener && !window.opener.closed) {
           try {
+            // Signal elicitation-based flow (MCP elicit_url protocol)
+            window.opener.postMessage(
+              { type: 'oauth_elicitation_complete', sessionId },
+              window.location.origin
+            )
+            // Also signal legacy flow for backward compatibility
+            window.opener.postMessage(
+              { type: 'oauth_elicitation_complete', sessionId },
+              window.location.origin
+            )
             window.opener.postMessage(
               { type: 'oauth_complete', sessionId, success: true },
               window.location.origin
             )
-            console.log('[OAuth] Notified parent window of success')
+            console.log('[OAuth] Notified parent window of success (elicitation + legacy)')
           } catch (e) {
             console.warn('[OAuth] Could not notify parent window:', e)
           }

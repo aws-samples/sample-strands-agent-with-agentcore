@@ -209,6 +209,7 @@ class ToolFilterRegistry:
         filters: Optional[ToolFilters] = None,
         log_prefix: str = "",
         auth_token: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> FilteredToolResult:
         """
         Filter and load tools from all sources.
@@ -294,11 +295,15 @@ class ToolFilterRegistry:
 
         # Process MCP Runtime tools
         if mcp_tool_ids:
-            mcp_result = self._load_mcp_runtime_tools(mcp_tool_ids, log_prefix, auth_token=auth_token)
+            mcp_result = self._load_mcp_runtime_tools(
+                mcp_tool_ids, log_prefix, auth_token=auth_token, session_id=session_id,
+            )
             if mcp_result.get("client"):
                 result.tools.append(mcp_result["client"])
                 result.clients["mcp_runtime"] = mcp_result["client"]
                 result.tool_ids_by_source["mcp"] = mcp_tool_ids
+            if mcp_result.get("elicitation_bridge"):
+                result.clients["elicitation_bridge"] = mcp_result["elicitation_bridge"]
             if mcp_result.get("error"):
                 result.validation_errors.append(mcp_result["error"])
 
@@ -384,6 +389,7 @@ class ToolFilterRegistry:
         tool_ids: List[str],
         log_prefix: str,
         auth_token: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Load MCP Runtime tools (e.g., Gmail 3LO).
@@ -392,19 +398,37 @@ class ToolFilterRegistry:
             tool_ids: List of MCP runtime tool IDs
             log_prefix: Prefix for log messages
             auth_token: Cognito JWT for MCP Runtime Bearer auth
+            session_id: Session ID for elicitation bridge registration
 
         Returns:
-            Dict with "client" and/or "error"
+            Dict with "client", "elicitation_bridge", and/or "error"
         """
         factory = self._get_mcp_runtime_client_factory()
         if not factory:
             return {"error": "MCP Runtime client factory not available"}
 
         try:
-            client = factory(enabled_tool_ids=tool_ids, auth_token=auth_token)
+            # Create elicitation bridge for OAuth consent flows
+            elicitation_bridge = None
+            if session_id:
+                from agent.mcp.elicitation_bridge import (
+                    OAuthElicitationBridge, register_bridge,
+                )
+                elicitation_bridge = OAuthElicitationBridge(session_id)
+                register_bridge(session_id, elicitation_bridge)
+                logger.debug(f"{log_prefix} Elicitation bridge created for session {session_id}")
+
+            client = factory(
+                enabled_tool_ids=tool_ids,
+                auth_token=auth_token,
+                elicitation_bridge=elicitation_bridge,
+            )
             if client:
                 logger.info(f"{log_prefix} MCP Runtime client created: {tool_ids}")
-                return {"client": client}
+                result: Dict[str, Any] = {"client": client}
+                if elicitation_bridge:
+                    result["elicitation_bridge"] = elicitation_bridge
+                return result
             else:
                 if not auth_token:
                     return {"error": "MCP tools (e.g. Gmail) require sign-in. Please authenticate to use these tools."}
@@ -431,6 +455,7 @@ def filter_tools(
     filters: Optional[ToolFilters] = None,
     log_prefix: str = "",
     auth_token: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> FilteredToolResult:
     """
     Convenience function to filter tools using the default registry.
@@ -440,6 +465,7 @@ def filter_tools(
         filters: Optional ToolFilters (allowed/rejected patterns)
         log_prefix: Prefix for log messages
         auth_token: Cognito JWT for MCP Runtime Bearer auth
+        session_id: Session ID for elicitation bridge registration
 
     Returns:
         FilteredToolResult with tools, metadata, clients, and errors
@@ -461,4 +487,5 @@ def filter_tools(
         filters=filters,
         log_prefix=log_prefix,
         auth_token=auth_token,
+        session_id=session_id,
     )

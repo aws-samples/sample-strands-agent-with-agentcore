@@ -365,7 +365,8 @@ class ChatAgent(BaseAgent):
                 prompt,  # Can be str or list[ContentBlock]
                 file_paths=None,
                 session_id=self.session_id,
-                invocation_state=invocation_state
+                invocation_state=invocation_state,
+                elicitation_bridge=getattr(self, 'elicitation_bridge', None),
             ):
                 yield event
 

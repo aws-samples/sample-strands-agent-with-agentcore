@@ -496,6 +496,31 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     const handleOAuthMessage = async (event: MessageEvent) => {
       // Verify origin for security
       if (event.origin !== window.location.origin) return
+
+      // Handle MCP elicitation-based OAuth completion (new protocol)
+      if (event.data?.type === 'oauth_elicitation_complete') {
+        console.log('[useChat] OAuth elicitation completion message received:', event.data)
+
+        // Signal backend that elicitation is complete (unblocks the waiting MCP tool)
+        try {
+          await fetch('/api/stream/elicitation-complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: event.data.sessionId || sessionId,
+              elicitationId: sessionState.pendingOAuth?.elicitationId,
+            }),
+          })
+        } catch (error) {
+          console.error('[useChat] Failed to signal elicitation complete:', error)
+        }
+
+        // Clear pending OAuth state
+        setSessionState(prev => ({ ...prev, pendingOAuth: null }))
+        return
+      }
+
+      // Handle legacy OAuth completion (pre-elicitation protocol)
       if (event.data?.type !== 'oauth_complete') return
 
       console.log('[useChat] OAuth completion message received:', event.data)
@@ -550,7 +575,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     window.addEventListener('message', handleOAuthMessage)
     return () => window.removeEventListener('message', handleOAuthMessage)
-  }, [sessionState.pendingOAuth, apiSendMessage])
+  }, [sessionState.pendingOAuth, apiSendMessage, sessionId])
 
   // ==================== ACTIONS ====================
   const toggleTool = useCallback(async (toolId: string) => {

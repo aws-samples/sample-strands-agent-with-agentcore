@@ -242,7 +242,7 @@ class StreamEventProcessor:
         
         return cleaned_text
 
-    async def process_stream(self, agent, message: str, file_paths: list = None, session_id: str = None, invocation_state: dict = None) -> AsyncGenerator[str, None]:
+    async def process_stream(self, agent, message: str, file_paths: list = None, session_id: str = None, invocation_state: dict = None, elicitation_bridge=None) -> AsyncGenerator[str, None]:
         """Process streaming events from agent with proper error handling and event separation"""
 
         # Store current session ID and invocation_state for tools to use
@@ -291,6 +291,7 @@ class StreamEventProcessor:
             return
 
         stream_iterator = None
+        next_event_task = None  # Task for async generator polling (used with elicitation bridge)
         stream_completed_normally = False  # Track if stream completed without interruption
         try:
             multimodal_message = self._create_multimodal_message(message, file_paths)
@@ -307,7 +308,42 @@ class StreamEventProcessor:
             # Documents are now fetched by frontend via S3 workspace API
             # No longer need to track documents in backend
 
-            async for event in stream_iterator:
+            # Use task-based polling when elicitation bridge is present
+            # so we can emit elicitation SSE events while agent is blocked.
+            # IMPORTANT: We use asyncio.wait() instead of asyncio.wait_for()
+            # because wait_for() cancels the coroutine on timeout, which
+            # corrupts the async generator's internal state.
+            stream_aiter = stream_iterator.__aiter__()
+            next_event_task = None
+
+            while True:
+                # Check elicitation bridge for pending events (non-blocking)
+                if elicitation_bridge:
+                    elicit_event = elicitation_bridge.get_pending_event_nowait()
+                    if elicit_event:
+                        yield self.formatter.create_oauth_elicitation_event(elicit_event)
+
+                # Create a task for the next event if we don't have one pending
+                if next_event_task is None:
+                    next_event_task = asyncio.ensure_future(stream_aiter.__anext__())
+
+                if elicitation_bridge:
+                    # Wait with timeout so we can periodically check the bridge
+                    done, _ = await asyncio.wait({next_event_task}, timeout=0.5)
+                    if not done:
+                        # Timeout — task still running, loop back to check bridge
+                        continue
+                else:
+                    # No bridge — wait indefinitely (zero overhead)
+                    await asyncio.wait({next_event_task})
+
+                # Task completed — extract result
+                try:
+                    event = next_event_task.result()
+                except StopAsyncIteration:
+                    break
+                finally:
+                    next_event_task = None
                 # Check stop signal periodically (throttled to reduce DB calls)
                 if self._check_stop_signal():
                     logger.debug(f"[StopSignal] Stopping stream for session {session_id}")
@@ -659,9 +695,21 @@ class StreamEventProcessor:
             if not stream_completed_normally:
                 self._save_partial_response(agent, session_id)
 
+            # Cancel any pending next-event task to avoid leaks
+            if next_event_task is not None and not next_event_task.done():
+                next_event_task.cancel()
+
             if stream_iterator and hasattr(stream_iterator, 'aclose'):
                 try:
                     await stream_iterator.aclose()
+                except Exception:
+                    pass
+
+            # Cleanup elicitation bridge for this session
+            if elicitation_bridge and session_id:
+                try:
+                    from agent.mcp.elicitation_bridge import cleanup_bridge
+                    cleanup_bridge(session_id)
                 except Exception:
                     pass
 

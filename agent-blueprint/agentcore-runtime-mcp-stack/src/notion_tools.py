@@ -19,11 +19,8 @@ import httpx
 import logging
 from typing import Any, Dict, List, Optional
 
-from agentcore_oauth import (
-    OAuthRequiredException,
-    OAuthHelper,
-    format_auth_required_response,
-)
+from mcp.server.fastmcp import Context
+from agentcore_oauth import OAuthHelper, get_token_with_elicitation
 
 logger = logging.getLogger(__name__)
 
@@ -36,11 +33,6 @@ _notion_oauth = OAuthHelper(
     provider_name="notion-oauth-provider",
     scopes=[],  # Notion uses page picker instead of scopes
 )
-
-
-def _format_notion_auth_response(auth_url: str) -> str:
-    """Format Notion-specific OAuth authorization response."""
-    return format_auth_required_response(auth_url, service_name="Notion")
 
 
 # ── Notion API Callers ─────────────────────────────────────────────────
@@ -194,6 +186,7 @@ def register_notion_tools(mcp):
         query: str = "",
         filter_type: Optional[str] = None,
         page_size: int = 10,
+        ctx: Context = None,
     ) -> str:
         """Search Notion pages and databases.
 
@@ -205,7 +198,9 @@ def register_notion_tools(mcp):
         page_size = max(1, min(100, page_size))
 
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             body: Dict[str, Any] = {"page_size": page_size}
             if query:
@@ -228,15 +223,12 @@ def register_notion_tools(mcp):
                 "has_more": data.get("has_more", False),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error searching Notion: {e}")
             return f"Error searching Notion: {str(e)}"
 
     @mcp.tool()
-    async def notion_list_databases(page_size: int = 10) -> str:
+    async def notion_list_databases(page_size: int = 10, ctx: Context = None) -> str:
         """List all accessible Notion databases.
 
         Args:
@@ -245,7 +237,9 @@ def register_notion_tools(mcp):
         page_size = max(1, min(100, page_size))
 
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             body = {
                 "filter": {"value": "database", "property": "object"},
@@ -262,9 +256,6 @@ def register_notion_tools(mcp):
                 "has_more": data.get("has_more", False),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error listing databases: {e}")
             return f"Error listing databases: {str(e)}"
@@ -275,6 +266,7 @@ def register_notion_tools(mcp):
         filter_json: Optional[str] = None,
         sorts_json: Optional[str] = None,
         page_size: int = 10,
+        ctx: Context = None,
     ) -> str:
         """Query a Notion database with optional filters and sorts.
 
@@ -298,7 +290,9 @@ def register_notion_tools(mcp):
         page_size = max(1, min(100, page_size))
 
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             body: Dict[str, Any] = {"page_size": page_size}
 
@@ -329,30 +323,26 @@ def register_notion_tools(mcp):
                 "has_more": data.get("has_more", False),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error querying database: {e}")
             return f"Error querying database: {str(e)}"
 
     @mcp.tool()
-    async def notion_get_page(page_id: str) -> str:
+    async def notion_get_page(page_id: str, ctx: Context = None) -> str:
         """Get a Notion page's properties.
 
         Args:
             page_id: The page ID to retrieve.
         """
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             page = await call_notion_api_get(access_token, f"pages/{page_id}")
 
             return json.dumps(_format_page_response(page), ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error getting page: {e}")
             return f"Error getting page: {str(e)}"
@@ -364,6 +354,7 @@ def register_notion_tools(mcp):
         title: str,
         properties_json: Optional[str] = None,
         content_markdown: Optional[str] = None,
+        ctx: Context = None,
     ) -> str:
         """Create a new Notion page.
 
@@ -375,7 +366,9 @@ def register_notion_tools(mcp):
             content_markdown: Initial page content as simple text/markdown. Optional.
         """
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             # Build parent
             if parent_type == "database":
@@ -424,9 +417,6 @@ def register_notion_tools(mcp):
                 "page": _format_page_response(page),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error creating page: {e}")
             return f"Error creating page: {str(e)}"
@@ -436,6 +426,7 @@ def register_notion_tools(mcp):
         page_id: str,
         properties_json: str,
         archived: Optional[bool] = None,
+        ctx: Context = None,
     ) -> str:
         """Update a Notion page's properties.
 
@@ -445,7 +436,9 @@ def register_notion_tools(mcp):
             archived: Set to True to archive, False to unarchive. Optional.
         """
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             try:
                 properties = json.loads(properties_json)
@@ -464,9 +457,6 @@ def register_notion_tools(mcp):
                 "page": _format_page_response(page),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error updating page: {e}")
             return f"Error updating page: {str(e)}"
@@ -475,6 +465,7 @@ def register_notion_tools(mcp):
     async def notion_get_block_children(
         block_id: str,
         page_size: int = 50,
+        ctx: Context = None,
     ) -> str:
         """Get the content blocks of a page or block.
 
@@ -487,7 +478,9 @@ def register_notion_tools(mcp):
         page_size = max(1, min(100, page_size))
 
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             data = await call_notion_api_get(
                 access_token,
@@ -504,9 +497,6 @@ def register_notion_tools(mcp):
                 "has_more": data.get("has_more", False),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error getting block children: {e}")
             return f"Error getting block children: {str(e)}"
@@ -515,6 +505,7 @@ def register_notion_tools(mcp):
     async def notion_append_blocks(
         page_id: str,
         content_markdown: str,
+        ctx: Context = None,
     ) -> str:
         """Append content blocks to a Notion page.
 
@@ -524,7 +515,9 @@ def register_notion_tools(mcp):
                              Paragraphs separated by blank lines become separate blocks.
         """
         try:
-            access_token = await _notion_oauth.get_access_token()
+            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
+            if access_token is None:
+                return "Authorization was declined by the user."
 
             # Split by paragraphs and create blocks
             paragraphs = content_markdown.strip().split("\n\n")
@@ -620,9 +613,6 @@ def register_notion_tools(mcp):
                 "blocks_added": len(children),
             }, ensure_ascii=False, indent=2)
 
-        except OAuthRequiredException as e:
-            logger.warning("[Tool] OAuth required, returning auth URL to client")
-            return _format_notion_auth_response(e.auth_url)
         except Exception as e:
             logger.error(f"[Tool] Error appending blocks: {e}")
             return f"Error appending blocks: {str(e)}"
