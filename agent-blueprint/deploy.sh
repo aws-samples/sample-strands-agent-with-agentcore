@@ -669,7 +669,7 @@ display_deployment_summary() {
         echo ""
         echo "Test User Credentials:"
         echo "  Email:             test@example.com"
-        echo "  Password:          TestUser123!"
+        echo "  Password:          (the password you set during deployment)"
         echo ""
     fi
 
