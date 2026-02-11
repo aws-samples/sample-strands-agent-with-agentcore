@@ -132,8 +132,8 @@ Design notes:
 | Gateway Tools | MCP | Google Search, Maps, Wikipedia, ArXiv, Finance | SigV4 |
 | A2A Tools | A2A | Research Agent, Browser-Use Agent | SigV4 |
 
-Total: **50+ tools across 18+ tool sets**  
-See [docs/TOOLS.md](docs/TOOLS.md) for full details.
+Total: **80+ tools across 18 tool groups**
+See [docs/guides/TOOLS.md](docs/guides/TOOLS.md) for full details.
 
 ---
 
