@@ -4,23 +4,29 @@ This document provides detailed specifications for all tools in the Strands Agen
 
 ## Overview
 
-The platform implements **30 tools** across 4 protocol types:
-- **21 tools** are production-ready (✅ Implemented)
-- **9 tools** are in development (🚧 In Progress)
+The platform implements **81 tools** across 6 protocol categories and **18 tool groups**:
+
+| Category | Tool Groups | Tools | Protocol |
+|----------|-------------|-------|----------|
+| Local Tools | 4 | 4 | Direct call |
+| Built-in Tools | 4 | 23 | AWS SDK (Code Interpreter) |
+| Browser Automation | 2 | 7 | AWS SDK + WebSocket / A2A |
+| Gateway Tools | 7 | 20 | MCP + SigV4 (Lambda) |
+| Runtime A2A | 1 | 1 | A2A |
+| Runtime MCP (3LO) | 3 | 26 | MCP (OAuth) |
 
 ## Tool Categories
 
-### 1. Local Tools (5 tools)
+### 1. Local Tools (4 tools)
 
-Local tools are Python functions executed directly in the AgentCore Runtime container using Strands `@tool` decorator.
+Python functions executed directly in the AgentCore Runtime container using Strands `@tool` decorator.
 
-| Tool | Function ID | Description | Protocol | API Keys | Status |
-|------|------------|-------------|----------|----------|--------|
-| **Calculator** | `calculator` | Mathematical computations and calculations | Direct call | No | ✅ |
-| **Weather Lookup** | `get_current_weather` | Current weather by city (worldwide) | Direct call | No | ✅ |
-| **Visualization Creator** | `create_visualization` | Interactive charts using Plotly | Direct call | No | ✅ |
-| **Web Search** | `ddg_web_search` | Web search via DuckDuckGo | Direct call | No | ✅ |
-| **URL Fetcher** | `fetch_url_content` | Extract content from web URLs | Direct call | No | ✅ |
+| Tool | ID | Description |
+|------|----|-------------|
+| Calculator | `calculator` | Mathematical computations and calculations |
+| Visualization Creator | `create_visualization` | Interactive charts using Plotly |
+| Web Search (DuckDuckGo) | `ddg_web_search` | Web search via DuckDuckGo |
+| URL Fetcher | `fetch_url_content` | Extract content from web URLs |
 
 **Implementation:**
 - Location: `chatbot-app/agentcore/src/local_tools/`
@@ -32,193 +38,188 @@ Local tools are Python functions executed directly in the AgentCore Runtime cont
 from strands import tool
 
 @tool
-def get_current_weather(city: str) -> str:
-    """Get current weather for a city"""
-    # Implementation using wttr.in API
+def ddg_web_search(query: str, max_results: int = 5) -> str:
+    """Search the web using DuckDuckGo"""
     ...
 ```
 
 ---
 
-### 2. Built-in Tools (4 tools)
+### 2. Built-in Tools (23 tools in 4 groups)
 
-Built-in tools leverage AWS Bedrock AgentCore services via AWS SDK. These tools require IAM permissions.
+Built-in tools leverage AWS Bedrock AgentCore Code Interpreter for sandboxed Python execution. Used for diagram generation and document creation/editing.
 
-| Tool | Function ID | Description | AgentCore Service | API Key |
-|------|------------|-------------|-------------------|---------|
-| **Diagram Generator** | `generate_diagram_and_validate` | Generate diagrams/charts using Python code | Code Interpreter | No |
-| **Browser Navigate** | `browser_navigate` | Navigate browser to URL and capture screenshot | Browser + Nova Act | Yes |
-| **Browser Action** | `browser_act` | Execute browser actions via natural language | Browser + Nova Act | Yes |
-| **Browser Extract** | `browser_extract` | Extract structured data from web pages | Browser + Nova Act | Yes |
+#### Diagram Generator (1 tool)
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Diagram Generator | `generate_diagram_and_validate` | Generate diagrams/charts using Python code |
+
+- Executes Python in sandboxed Code Interpreter
+- Available libraries: matplotlib, pandas, numpy
+- Returns PNG images as raw bytes
+
+#### Word Documents (5 tools)
+
+Create, modify, and manage Word documents with automatic S3 storage.
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Create Document | `create_word_document` | Create new Word document from Markdown content |
+| Modify Document | `modify_word_document` | Edit existing document using python-docx code |
+| List Documents | `list_my_word_documents` | List all Word documents in workspace |
+| Read Document | `read_word_document` | Read and download document from workspace |
+| Preview Pages | `preview_word_page` | Get page screenshots for visual inspection |
+
+- Sequential execution required (prevents S3 race conditions)
+- Available libraries: python-docx, matplotlib, pandas, numpy
+
+#### Excel Spreadsheets (5 tools)
+
+Create, modify, and manage Excel spreadsheets with automatic S3 storage.
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Create Spreadsheet | `create_excel_spreadsheet` | Create new Excel spreadsheet with openpyxl code |
+| Modify Spreadsheet | `modify_excel_spreadsheet` | Edit existing spreadsheet using openpyxl code |
+| List Spreadsheets | `list_my_excel_spreadsheets` | List all spreadsheets in workspace |
+| Read Spreadsheet | `read_excel_spreadsheet` | Read and download spreadsheet from workspace |
+| Preview Sheets | `preview_excel_sheets` | Get sheet screenshots for visual inspection |
+
+- Formulas auto-recalculated via LibreOffice after save
+- Available libraries: openpyxl, matplotlib, pandas, numpy
+
+#### PowerPoint Presentations (12 tools)
+
+Create, modify, and manage PowerPoint presentations with full slide manipulation.
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Get Slide Examples | `get_slide_code_examples` | Get python-pptx code examples for slide creation |
+| List Presentations | `list_my_powerpoint_presentations` | List all presentations in workspace |
+| Get Layouts | `get_presentation_layouts` | Get available slide layouts from presentation |
+| Analyze Presentation | `analyze_presentation` | Analyze structure with element IDs for editing |
+| Create Presentation | `create_presentation` | Create from outline or blank |
+| Update Slides | `update_slide_content` | Edit slides using operations (replace_text, replace_image, etc.) |
+| Add Slide | `add_slide` | Add new slide at specified position |
+| Delete Slides | `delete_slides` | Delete one or more slides by indices |
+| Move Slide | `move_slide` | Move slide from one position to another |
+| Duplicate Slide | `duplicate_slide` | Copy slide to specified position |
+| Update Notes | `update_slide_notes` | Update speaker notes for a slide |
+| Preview Slides | `preview_presentation_slides` | Get slide screenshots for visual inspection |
+
+- Uses python-pptx for slide generation
 
 **Implementation:**
 - Location: `chatbot-app/agentcore/src/builtin_tools/`
-- Protocol: AWS SDK (boto3) + WebSocket for browser automation
+- Protocol: AWS SDK (boto3) for Code Interpreter invocation
 - Authentication: IAM role-based
-- Browser automation requires AgentCore Browser API access
-
-#### Diagram Generator
-
-**Service:** AgentCore Code Interpreter
-
-**Capabilities:**
-- Execute Python code in sandboxed environment
-- Generate charts and diagrams (matplotlib, seaborn, pandas, numpy)
-- Return PNG images as raw bytes
-
-**Example Usage:**
-```python
-generate_diagram_and_validate(
-    python_code="""
-import matplotlib.pyplot as plt
-import numpy as np
-
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-
-plt.figure(figsize=(10, 6))
-plt.plot(x, y)
-plt.savefig('chart.png', dpi=300, bbox_inches='tight')
-    """,
-    diagram_filename="chart.png"
-)
-```
-
-**Output Format:**
-```python
-{
-    "content": [
-        {"text": "✅ Diagram generated successfully: chart.png"},
-        {"image": {"format": "png", "source": {"bytes": b"..."}}}
-    ],
-    "status": "success"
-}
-```
-
-#### Browser Tools (Nova Act)
-
-**Service:** AgentCore Browser with Nova Act AI model
-
-**Protocol:** AWS SDK + WebSocket
-- AWS SDK for session management and control
-- WebSocket for real-time bidirectional communication
-- Enables streaming browser interactions
-
-**Capabilities:**
-- Visual understanding of web pages
-- Natural language interaction with UI elements
-- Structured data extraction from visual content
-
-**Browser Navigate:**
-- Navigate to URL and capture screenshot
-- Returns current page state as PNG image
-
-**Browser Action:**
-- Execute actions via natural language instructions (English only)
-- Examples: "Click the first product", "Type 'laptop' in search box and click search"
-- Returns screenshot showing action result
-
-**Browser Extract:**
-- Extract structured data from current page
-- AI-powered visual analysis (no pre-defined schema required)
-- Returns JSON data
-
-**Implementation Details:**
-- Location: `chatbot-app/agentcore/src/builtin_tools/nova_act_browser_tools.py`
-- Controller: `browser_controller.py` manages session lifecycle and WebSocket connection
-- Session isolation: Each conversation has isolated browser via `SESSION_ID` env var
 
 ---
 
-### 3. Gateway Tools (12 tools via 5 Lambda functions)
+### 3. Browser Automation (7 tools in 2 groups)
 
-Gateway tools are Lambda functions or OpenAPI implementations exposed through AgentCore Gateway, which converts them to MCP (Model Context Protocol) endpoints. This implementation uses SigV4 authentication (AgentCore Gateway supports multiple auth methods).
+#### Nova Act Browser Control (6 tools)
 
-#### Wikipedia (2 tools)
+Web browser automation powered by Nova Act AI model with WebSocket-based real-time interaction.
 
-**Lambda:** `mcp-wikipedia`
-**API Keys:** None
-**Status:** ✅ Implemented
+| Tool | ID | Description |
+|------|----|-------------|
+| Navigate | `browser_navigate` | Navigate browser to a URL and capture screenshot |
+| Browser Action | `browser_act` | Execute actions via natural language (click, type, scroll) |
+| Extract Data | `browser_extract` | Extract structured data (auto-scrolls entire page) |
+| Get Page Info | `browser_get_page_info` | Get page structure and all open tabs (fast, no AI) |
+| Manage Tabs | `browser_manage_tabs` | Switch, close, or create browser tabs |
+| Save Screenshot | `browser_save_screenshot` | Save screenshot to workspace for document use |
 
-| Tool | MCP Function | Description |
-|------|--------------|-------------|
-| Wikipedia Search | `wikipedia_search` | Search Wikipedia articles |
-| Wikipedia Get Article | `wikipedia_get_article` | Get full article content |
+- Protocol: AWS SDK + WebSocket for real-time bidirectional communication
+- Session isolation: Each conversation has isolated browser via `SESSION_ID`
+- Location: `chatbot-app/agentcore/src/builtin_tools/nova_act_browser_tools.py`
 
-#### ArXiv (2 tools)
+#### Browser-Use Agent (1 tool)
 
-**Lambda:** `mcp-arxiv`
-**API Keys:** None
-**Status:** ✅ Implemented
+Autonomous browser automation powered by browser-use AI, deployed as a separate AgentCore Runtime.
 
-| Tool | MCP Function | Description |
-|------|--------------|-------------|
-| ArXiv Search | `arxiv_search` | Search scientific papers |
-| ArXiv Get Paper | `arxiv_get_paper` | Get paper content by paper ID |
+| Tool | ID | Description |
+|------|----|-------------|
+| Browser Automation Skill | `agentcore_browser-use-agent` | Execute multi-step browser tasks with AI-driven adaptive navigation |
 
-#### Google Search (2 tools)
+- Protocol: A2A (Agent-to-Agent) communication between runtimes
+- Supports live view of browser activity
 
-**Lambda:** `mcp-google-search`
-**API Keys:** Google API Key + Custom Search Engine ID
-**Status:** ✅ Implemented
+---
 
-| Tool | MCP Function | Description |
-|------|--------------|-------------|
-| Google Web Search | `google_web_search` | Web search via Google Custom Search |
-| Google Image Search | `google_image_search` | Image search via Google |
+### 4. Gateway Tools (20 tools in 7 groups)
 
-**Setup:**
-```bash
-aws secretsmanager put-secret-value \
-  --secret-id strands-agent-chatbot/mcp/google-credentials \
-  --secret-string '{"api_key":"YOUR_KEY","search_engine_id":"YOUR_ID"}'
-```
+Lambda functions exposed through AgentCore Gateway as MCP (Model Context Protocol) endpoints with SigV4 authentication.
 
-#### Tavily AI (2 tools)
+#### Weather (2 tools)
 
-**Lambda:** `mcp-tavily`
-**API Keys:** Tavily API Key
-**Status:** ✅ Implemented
+| Tool | ID | Description |
+|------|----|-------------|
+| Today's Weather | `gateway_get_today_weather` | Current weather and today's hourly forecast |
+| Weather Forecast | `gateway_get_weather_forecast` | Multi-day forecast (up to 16 days) |
 
-| Tool | MCP Function | Description |
-|------|--------------|-------------|
-| Tavily AI Search | `tavily_search` | AI-powered web search |
-| Tavily Extract | `tavily_extract` | Clean content extraction from URLs |
-
-**Setup:**
-```bash
-aws secretsmanager put-secret-value \
-  --secret-id strands-agent-chatbot/mcp/tavily-api-key \
-  --secret-string "YOUR_KEY"
-```
+- API: Open-Meteo (no API key required)
 
 #### Financial Market (4 tools)
 
-**Lambda:** `mcp-finance`
-**Data Source:** Yahoo Finance
-**API Keys:** None
-**Status:** ✅
+| Tool | ID | Description |
+|------|----|-------------|
+| Stock Quote | `gateway_stock_quote` | Current stock quote with key metrics |
+| Stock History | `gateway_stock_history` | Historical stock price data |
+| Financial News | `gateway_financial_news` | Latest financial news articles |
+| Stock Analysis | `gateway_stock_analysis` | Comprehensive stock analysis |
 
-| Tool | MCP Function | Description |
-|------|--------------|-------------|
-| Stock Quote | `stock_quote` | Current stock quote with key metrics |
-| Stock History | `stock_history` | Historical price data |
-| Financial News | `financial_news` | Latest financial news articles |
-| Stock Analysis | `stock_analysis` | Comprehensive stock analysis |
+- API: Yahoo Finance (no API key required)
 
-**Features:**
-- Real-time stock quotes and historical data via Yahoo Finance API
-- No API key required (public data access)
-- Supports major global stock exchanges
+#### ArXiv (2 tools)
 
-**Implementation Details:**
+| Tool | ID | Description |
+|------|----|-------------|
+| Search Papers | `gateway_arxiv_search` | Search scientific papers on ArXiv |
+| Get Paper | `gateway_arxiv_get_paper` | Get full paper content by paper ID |
 
-**Protocol:** MCP (Model Context Protocol)
-- Lambda functions expose MCP-compatible endpoints
-- Strands `MCPClient` connects via streamable HTTP transport
-- SigV4 authentication via `httpx.Auth` class
+#### Google Search (1 tool)
 
-**Code Reference:**
+| Tool | ID | Description |
+|------|----|-------------|
+| Web Search (Google) | `gateway_google_web_search` | Web search via Google Custom Search (includes image results) |
+
+- API Keys: Google API Key + Custom Search Engine ID
+
+#### Google Maps (7 tools)
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Search Places | `gateway_search_places` | Search for places using text query |
+| Nearby Places | `gateway_search_nearby_places` | Search for places near a specific location |
+| Place Details | `gateway_get_place_details` | Get detailed info about a place including reviews |
+| Get Directions | `gateway_get_directions` | Step-by-step directions between two locations |
+| Geocode Address | `gateway_geocode_address` | Convert address to geographic coordinates |
+| Reverse Geocode | `gateway_reverse_geocode` | Convert coordinates to address |
+| Show on Map | `gateway_show_on_map` | Display locations and routes on interactive Google Map |
+
+- API Keys: Google Maps API Key
+
+#### Wikipedia (2 tools)
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Search Articles | `gateway_wikipedia_search` | Search Wikipedia for articles |
+| Get Article | `gateway_wikipedia_get_article` | Get full content of a Wikipedia article |
+
+#### Tavily AI (2 tools)
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Web Search (Tavily) | `gateway_tavily_search` | AI-powered web search using Tavily |
+| Content Extract | `gateway_tavily_extract` | Extract clean content from web URLs |
+
+- API Keys: Tavily API Key
+
+**Implementation:**
+
 ```python
 # gateway_mcp_client.py
 mcp_client = MCPClient(
@@ -229,45 +230,77 @@ mcp_client = MCPClient(
 )
 ```
 
-**Tool Filtering:**
-- `FilteredMCPClient` filters tools based on user selection
-- Reduces token usage by excluding disabled tools from model prompt
+- Lambda functions expose MCP-compatible endpoints
+- `FilteredMCPClient` filters tools based on user selection to reduce token usage
 
 ---
 
-### 4. Runtime Tools (9 tools - Work in Progress)
+### 5. Runtime A2A Tools (1 tool)
 
-Runtime tools use Agent-to-Agent (A2A) protocol for communication between AgentCore Runtimes.
+Agent-to-Agent protocol for communication between AgentCore Runtimes.
 
-#### Report Writer (9 tools)
+#### Research Agent
 
-**Runtime:** AgentCore Report Writer
-**Protocol:** A2A (Agent-to-Agent)
-**API Keys:** None
-**Status:** 🚧 In Progress
+| Tool | ID | Description |
+|------|----|-------------|
+| Research Agent | `agentcore_research-agent` | Web research and markdown report generation |
 
-| Tool | MCP Function | Description | Status |
-|------|--------------|-------------|--------|
-| Create Report | `create_report` | Create new report with title and outline | 🚧 |
-| Write Section | `write_section` | Write section with markdown content | 🚧 |
-| Generate Chart | `generate_chart` | Generate charts using Python code | 🚧 |
-| Insert Chart | `insert_chart` | Insert generated chart into report | 🚧 |
-| Read Report | `read_report` | Read current report content | 🚧 |
-| Replace Text | `replace_text` | Find and replace text in report | 🚧 |
-| Get Outline | `get_outline` | Get report outline | 🚧 |
-| Finalize Report | `finalize_report` | Convert to DOCX and save to S3 | 🚧 |
-| Clear Report | `clear_report` | Clear current report | 🚧 |
+- Separate AgentCore Runtime dedicated to research
+- Results displayed directly in Research Modal UI
+- Protocol: A2A (Agent-to-Agent)
 
-**Planned Capabilities:**
-- Multi-section research report generation
-- Chart generation via Code Interpreter
-- DOCX export with S3 storage
-- Collaborative report editing
+---
 
-**Architecture:**
-- Separate AgentCore Runtime dedicated to report generation
-- A2A protocol enables runtime-to-runtime communication
-- Main agent delegates complex report tasks to Report Writer agent
+### 6. Runtime MCP Tools - 3LO OAuth (26 tools in 3 groups)
+
+MCP servers running on AgentCore Runtime with Google/Notion OAuth (3-Legged OAuth) for user-level authentication.
+
+#### Gmail (10 tools)
+
+Full email management via Google OAuth.
+
+| Tool | ID | Description |
+|------|----|-------------|
+| List Labels | `mcp_list_labels` | List all Gmail labels |
+| List Emails | `mcp_list_emails` | List emails by label |
+| Search Emails | `mcp_search_emails` | Search using Gmail query syntax |
+| Read Email | `mcp_read_email` | Read full email message |
+| Send Email | `mcp_send_email` | Send email with CC, BCC, HTML body |
+| Draft Email | `mcp_draft_email` | Create email draft |
+| Delete Email | `mcp_delete_email` | Delete email (trash or permanent) |
+| Bulk Delete Emails | `mcp_bulk_delete_emails` | Permanently delete multiple emails by query |
+| Modify Email | `mcp_modify_email` | Add/remove labels (read/unread, star, archive) |
+| Get Thread | `mcp_get_email_thread` | Get all messages in a conversation thread |
+
+#### Google Calendar (8 tools)
+
+Calendar management via Google OAuth.
+
+| Tool | ID | Description |
+|------|----|-------------|
+| List Calendars | `mcp_list_calendars` | List all user's calendars |
+| List Events | `mcp_list_events` | List events with date range and search filters |
+| Get Event | `mcp_get_event` | Get detailed event information |
+| Create Event | `mcp_create_event` | Create event with attendees and reminders |
+| Update Event | `mcp_update_event` | Update existing event |
+| Delete Event | `mcp_delete_event` | Delete event with optional notification |
+| Quick Add Event | `mcp_quick_add_event` | Create event from natural language text |
+| Check Availability | `mcp_check_availability` | Check free/busy status for scheduling |
+
+#### Notion (8 tools)
+
+Notion workspace management via Notion OAuth.
+
+| Tool | ID | Description |
+|------|----|-------------|
+| Search Notion | `mcp_notion_search` | Search across all accessible pages and databases |
+| List Databases | `mcp_notion_list_databases` | List all shared databases |
+| Query Database | `mcp_notion_query_database` | Query database with filters and sorts |
+| Get Page | `mcp_notion_get_page` | Get page properties and metadata |
+| Create Page | `mcp_notion_create_page` | Create new page in database or as child page |
+| Update Page | `mcp_notion_update_page` | Update page properties |
+| Get Page Content | `mcp_notion_get_block_children` | Get content blocks (paragraphs, headings, lists) |
+| Append Content | `mcp_notion_append_blocks` | Add content blocks to a page |
 
 ---
 
@@ -283,7 +316,9 @@ Users can enable/disable tools via UI sidebar. Selected tools are filtered befor
 {
   "local_tools": [...],
   "builtin_tools": [...],
+  "browser_automation": [...],
   "gateway_targets": [...],
+  "agentcore_runtime_a2a": [...],
   "agentcore_runtime_mcp": [...]
 }
 ```
@@ -295,52 +330,23 @@ Users can enable/disable tools via UI sidebar. Selected tools are filtered befor
 - `category`: Tool category (utilities, search, etc.)
 - `enabled`: Default enabled state
 - `isDynamic`: Whether users can toggle on/off
-
-**Implementation:**
-```python
-# agent.py:277-318
-def get_filtered_tools(enabled_tools):
-    filtered_tools = []
-    for tool_id in enabled_tools:
-        if tool_id in TOOL_REGISTRY:
-            filtered_tools.append(TOOL_REGISTRY[tool_id])
-        elif tool_id.startswith("gateway_"):
-            # Add to Gateway tool filter list
-            gateway_tool_ids.append(tool_id)
-
-    # Create filtered Gateway MCP client
-    if gateway_tool_ids:
-        gateway_client = create_filtered_gateway_client(gateway_tool_ids)
-        filtered_tools.append(gateway_client)
-
-    return filtered_tools
-```
-
-### Benefits of Dynamic Filtering
-
-1. **Token Optimization**: Only selected tool definitions sent to model
-2. **Per-User Customization**: Each user has custom tool combination
-3. **Real-Time Updates**: Tool changes without redeployment
-4. **Cost Efficiency**: Reduced input tokens = lower API costs
+- `tools`: Sub-tools for grouped tool entries
+- `systemPromptGuidance`: Tool-specific instructions injected into system prompt
+- `usesCitation`: Whether tool results should include source citations
+- `tags`: Used for smart tool recommendation
 
 ---
 
 ## Protocol Comparison
 
-| Protocol | Latency | Deployment | Auth | Use Case |
-|----------|---------|------------|------|----------|
-| **Direct call** | Lowest | In-container | N/A | Simple utilities |
-| **AWS SDK** | Low | AWS services | IAM | AgentCore-powered features (Code Interpreter, Browser) |
-| **WebSocket** | Low | AWS services | IAM | Real-time browser automation |
-| **MCP + SigV4** | Medium | Lambda via AgentCore Gateway | AWS SigV4 | External APIs, scalable services |
-| **A2A** | Medium-High | AgentCore Runtime | AgentCore | Complex agent collaboration |
-
-**Selection Criteria:**
-- **Direct call**: Lightweight utilities, no external dependencies
-- **AWS SDK**: Leverage AgentCore capabilities (Code Interpreter, Browser)
-- **WebSocket**: Real-time bidirectional communication for browser automation
-- **MCP + SigV4**: Lambda/OpenAPI implementations exposed as MCP endpoints via AgentCore Gateway
-- **A2A**: Complex multi-agent workflows, specialized agents
+| Protocol | Deployment | Auth | Use Case |
+|----------|------------|------|----------|
+| **Direct call** | In-container | N/A | Simple utilities |
+| **AWS SDK** | AWS services | IAM | Code Interpreter, Document generation |
+| **WebSocket** | AWS services | IAM | Real-time browser automation |
+| **MCP + SigV4** | Lambda via Gateway | AWS SigV4 | External APIs, scalable services |
+| **MCP + 3LO** | AgentCore Runtime | OAuth | User-authenticated services (Gmail, Calendar, Notion) |
+| **A2A** | AgentCore Runtime | AgentCore | Agent collaboration (Research, Browser-Use) |
 
 ---
 
@@ -367,12 +373,18 @@ def get_filtered_tools(enabled_tools):
 3. Configure in `tools-config.json` with `gateway_` prefix
 4. Add API key setup to documentation (if required)
 
-### Runtime Tool
+### Runtime A2A Tool
 
 1. Create new AgentCore Runtime with specialized agent
 2. Implement A2A protocol endpoints
-3. Configure endpoint ARN in `tools-config.json`
-4. Add to `agentcore_runtime_mcp` section
+3. Configure endpoint ARN in `tools-config.json` under `agentcore_runtime_a2a`
+
+### Runtime MCP Tool (3LO)
+
+1. Create MCP server with OAuth provider integration
+2. Deploy as AgentCore Runtime
+3. Configure in `tools-config.json` under `agentcore_runtime_mcp`
+4. Set up OAuth credentials and callback URLs
 
 ---
 
