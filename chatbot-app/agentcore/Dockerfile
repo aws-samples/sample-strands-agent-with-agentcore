@@ -28,8 +28,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Dependencies for nova-act are already in requirements.txt (numpy, pandas, pillow, playwright, etc.)
 RUN pip install --no-cache-dir --no-deps nova-act
 
-# Copy application code
+# Copy application code and skill definitions
 COPY src/ ./src/
+COPY skills/ ./skills/
 
 # Expose port (AgentCore Runtime will map this)
 EXPOSE 8080

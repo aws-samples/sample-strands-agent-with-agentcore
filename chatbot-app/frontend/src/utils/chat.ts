@@ -45,14 +45,34 @@ const buildDisplayNameMap = (): Record<string, DisplayName> => {
 // Pre-built map for performance
 const displayNameMap = buildDisplayNameMap()
 
+// Format a skill or tool name for display: "web-search" → "Web Search", "ddg_web_search" → "Ddg Web Search"
+const formatName = (name: string): string =>
+  name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+
 // Tool name to user-friendly display name
-export const getToolDisplayName = (toolId: string, isComplete: boolean): string => {
+export const getToolDisplayName = (toolId: string, isComplete: boolean, toolInput?: any): string => {
+  // skill_dispatcher: "Activating web-search" / "Activated web-search"
+  if (toolId === 'skill_dispatcher' && toolInput?.skill_name) {
+    const skill = formatName(toolInput.skill_name)
+    return isComplete ? `Activated ${skill}` : `Activating ${skill}`
+  }
+
+  // skill_executor: resolve the inner tool's displayName
+  if (toolId === 'skill_executor' && toolInput?.tool_name) {
+    const innerMapping = displayNameMap[toolInput.tool_name]
+    if (innerMapping) {
+      return isComplete ? innerMapping.complete : innerMapping.running
+    }
+    const formatted = formatName(toolInput.tool_name)
+    return isComplete ? `Used ${formatted}` : `Using ${formatted}`
+  }
+
   const mapping = displayNameMap[toolId]
   if (mapping) {
     return isComplete ? mapping.complete : mapping.running
   }
   // Fallback: tool_name → "Using Tool Name"
-  const formatted = toolId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  const formatted = formatName(toolId)
   return isComplete ? `Used ${formatted}` : `Using ${formatted}`
 }
 

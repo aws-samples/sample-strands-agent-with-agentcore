@@ -7,6 +7,7 @@ Generated diagrams are automatically saved to workspace for reuse in Word/Excel/
 """
 
 from strands import tool, ToolContext
+from skill import register_skill
 from typing import Dict, Any, Optional
 import logging
 import os
@@ -284,7 +285,15 @@ Saved to workspace for reuse in documents.
                     }
                 }
             ],
-            "status": "success"
+            "status": "success",
+            "metadata": {
+                "filename": diagram_filename,
+                "s3_key": s3_info['s3_key'],
+                "size_kb": f"{file_size_kb:.1f}",
+                "tool_type": "diagram",
+                "user_id": user_id,
+                "session_id": session_id,
+            }
         }
 
     except Exception as e:
@@ -306,3 +315,7 @@ Saved to workspace for reuse in documents.
             }],
             "status": "error"
         }
+
+
+# --- Skill registration ---
+register_skill("diagram-generator", tools=[generate_diagram_and_validate])

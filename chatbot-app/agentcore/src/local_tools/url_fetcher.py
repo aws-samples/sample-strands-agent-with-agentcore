@@ -7,6 +7,7 @@ import json
 import logging
 from typing import Optional
 from strands import tool
+from skill import skill
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,7 @@ def extract_text_from_html(html: str, max_length: int = 50000) -> str:
         return text
 
 
+@skill("url-fetcher")
 @tool
 async def fetch_url_content(
     url: str,

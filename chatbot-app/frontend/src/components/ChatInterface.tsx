@@ -117,11 +117,13 @@ export function ChatInterface() {
     handleWordDocumentsCreated,
     handleExcelDocumentsCreated,
     handlePptDocumentsCreated,
+    handleDiagramCreated,
     handleExtractedDataCreated,
     handleOpenResearchArtifact,
     handleOpenWordArtifact,
     handleOpenExcelArtifact,
     handleOpenPptArtifact,
+    handleOpenDiagramArtifact,
     handleOpenExtractedDataArtifact,
     setArtifactMethods,
   } = useCanvasHandlers()
@@ -208,6 +210,8 @@ export function ChatInterface() {
     currentInterrupt,
     swarmEnabled,
     toggleSwarm: toggleSwarmHook,
+    skillsEnabled,
+    toggleSkills: toggleSkillsHook,
     swarmProgress,
     addVoiceToolExecution,
     updateVoiceMessage,
@@ -221,6 +225,7 @@ export function ChatInterface() {
     onWordDocumentsCreated: handleWordDocumentsCreated,
     onExcelDocumentsCreated: handleExcelDocumentsCreated,
     onPptDocumentsCreated: handlePptDocumentsCreated,
+    onDiagramCreated: handleDiagramCreated,
     onBrowserSessionDetected: handleBrowserSessionDetected,
     onExtractedDataCreated: handleExtractedDataCreated,
     onSessionLoaded: () => reloadFromStorageRef.current?.(),
@@ -881,10 +886,10 @@ export function ChatInterface() {
     if (researchTool) {
       const willBeEnabled = !researchTool.enabled
 
-      // If enabling research, disable all other tools and swarm
+      // If enabling research, disable all other tools, swarm, and skills
       if (willBeEnabled) {
-        // Disable swarm
         toggleSwarmHook(false)
+        toggleSkillsHook(false)
 
         // Disable all tools except research agent
         const enabledTools = availableTools.filter(tool =>
@@ -896,7 +901,6 @@ export function ChatInterface() {
           const nestedTools = (tool as any).tools || []
 
           if (isDynamic && nestedTools.length > 0) {
-            // Disable all nested tools
             for (const nestedTool of nestedTools) {
               if (nestedTool.enabled) {
                 await toggleTool(nestedTool.id)
@@ -908,13 +912,48 @@ export function ChatInterface() {
         }
       }
 
-      // Toggle research agent
       await toggleTool(researchTool.id)
       setIsResearchEnabled(willBeEnabled)
     }
-  }, [availableTools, toggleTool, toggleSwarmHook])
+  }, [availableTools, toggleTool, toggleSwarmHook, toggleSkillsHook])
 
-  // Handle tool toggle - disable research if a non-research tool is toggled
+  // Toggle Skills Mode
+  const toggleSkillsMode = useCallback(async () => {
+    const willBeEnabled = !skillsEnabled
+    if (willBeEnabled) {
+      // Disable swarm
+      toggleSwarmHook(false)
+
+      // Disable research
+      if (isResearchEnabled) {
+        const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
+        if (researchTool && researchTool.enabled) {
+          await toggleTool('agentcore_research-agent')
+          setIsResearchEnabled(false)
+        }
+      }
+
+      // Disable all enabled tools
+      const enabledTools = availableTools.filter(tool => tool.enabled)
+      for (const tool of enabledTools) {
+        const isDynamic = (tool as any).isDynamic === true
+        const nestedTools = (tool as any).tools || []
+
+        if (isDynamic && nestedTools.length > 0) {
+          for (const nestedTool of nestedTools) {
+            if (nestedTool.enabled) {
+              await toggleTool(nestedTool.id)
+            }
+          }
+        } else {
+          await toggleTool(tool.id)
+        }
+      }
+    }
+    toggleSkillsHook(willBeEnabled)
+  }, [skillsEnabled, isResearchEnabled, availableTools, toggleTool, toggleSwarmHook, toggleSkillsHook])
+
+  // Handle tool toggle - disable research/skills if a non-research tool is toggled
   const handleToggleTool = useCallback(async (toolId: string) => {
     // If research is enabled and we're toggling a non-research tool, disable research
     if (isResearchEnabled && toolId !== 'agentcore_research-agent') {
@@ -924,8 +963,12 @@ export function ChatInterface() {
         setIsResearchEnabled(false)
       }
     }
+    // Disable skills mode when manually toggling tools
+    if (skillsEnabled) {
+      toggleSkillsHook(false)
+    }
     await toggleTool(toolId)
-  }, [toggleTool, isResearchEnabled, availableTools])
+  }, [toggleTool, isResearchEnabled, skillsEnabled, availableTools, toggleSkillsHook])
 
   // Toggle Swarm (using hook from useChat)
   const toggleSwarm = useCallback((enabled?: boolean) => {
@@ -1463,6 +1506,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
           isVoiceSupported={isVoiceSupported}
           swarmEnabled={swarmEnabled}
           isResearchEnabled={isResearchEnabled}
+          isSkillsEnabled={skillsEnabled}
           isCanvasOpen={isCanvasOpen}
           availableTools={availableTools}
           sessionId={sessionId}
@@ -1478,6 +1522,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
           onSetExclusiveTools={setExclusiveTools}
           onToggleSwarm={toggleSwarm}
           onToggleResearch={toggleResearchAgent}
+          onToggleSkills={toggleSkillsMode}
           onConnectVoice={connectVoice}
           onDisconnectVoice={disconnectVoice}
           onOpenComposeWizard={handleOpenComposeWizard}

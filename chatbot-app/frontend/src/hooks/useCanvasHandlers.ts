@@ -41,6 +41,7 @@ interface UseCanvasHandlersReturn {
   handleWordDocumentsCreated: (documents: WorkspaceDocument[]) => void
   handleExcelDocumentsCreated: (documents: WorkspaceDocument[]) => void
   handlePptDocumentsCreated: (documents: WorkspaceDocument[]) => void
+  handleDiagramCreated: (s3Key: string, filename: string) => void
   handleExtractedDataCreated: (data: ExtractedDataInfo) => void
 
   // Handlers for opening artifacts from chat
@@ -48,6 +49,7 @@ interface UseCanvasHandlersReturn {
   handleOpenWordArtifact: (filename: string) => void
   handleOpenExcelArtifact: (filename: string) => void
   handleOpenPptArtifact: (filename: string) => void
+  handleOpenDiagramArtifact: (filename: string) => void
   handleOpenExtractedDataArtifact: (artifactId: string) => void
 
   // Connect artifact methods after useArtifacts is initialized
@@ -156,6 +158,40 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     }, 100)
   }, [])
 
+  // Callback for diagram creation - fetches presigned URL and opens in Canvas
+  const handleDiagramCreated = useCallback(async (s3Key: string, filename: string) => {
+    if (!addArtifactRef.current || !openArtifactRef.current) return
+
+    try {
+      // Get presigned URL for the S3 image
+      const response = await fetch('/api/s3/presigned-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ s3Key }),
+      })
+
+      if (!response.ok) return
+      const { url } = await response.json()
+
+      const artifactId = `diagram-${filename}-${Date.now()}`
+      addArtifactRef.current({
+        id: artifactId,
+        type: 'image' as ArtifactType,
+        title: filename,
+        content: url,
+        description: 'Diagram',
+        timestamp: new Date().toISOString(),
+        metadata: { filename, s3_key: s3Key },
+      })
+
+      setTimeout(() => {
+        openArtifactRef.current!(artifactId)
+      }, 100)
+    } catch (error) {
+      // Failed to create diagram artifact - non-critical
+    }
+  }, [])
+
   // Callback for extracted data creation - creates artifact and opens Canvas
   const handleExtractedDataCreated = useCallback((data: ExtractedDataInfo) => {
     if (!addArtifactRef.current || !openArtifactRef.current) return
@@ -225,6 +261,16 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     }
   }, [])
 
+  // Handle "View in Canvas" from diagram tool - find artifact by filename
+  const handleOpenDiagramArtifact = useCallback((filename: string) => {
+    const artifact = artifactsRef.current.find(a =>
+      a.type === 'image' && a.title === filename
+    )
+    if (artifact && openArtifactRef.current) {
+      openArtifactRef.current(artifact.id)
+    }
+  }, [])
+
   // Handle "View in Canvas" from browser_extract - open artifact by ID
   const handleOpenExtractedDataArtifact = useCallback((artifactId: string) => {
     if (openArtifactRef.current) {
@@ -238,6 +284,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     handleWordDocumentsCreated,
     handleExcelDocumentsCreated,
     handlePptDocumentsCreated,
+    handleDiagramCreated,
     handleExtractedDataCreated,
 
     // Handlers for opening artifacts
@@ -245,6 +292,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     handleOpenWordArtifact,
     handleOpenExcelArtifact,
     handleOpenPptArtifact,
+    handleOpenDiagramArtifact,
     handleOpenExtractedDataArtifact,
 
     // Connect artifact methods

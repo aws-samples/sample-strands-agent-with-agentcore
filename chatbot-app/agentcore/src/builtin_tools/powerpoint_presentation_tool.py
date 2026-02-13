@@ -9,6 +9,7 @@ import os
 import logging
 from typing import Dict, Any
 from strands import tool, ToolContext
+from skill import register_skill
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from workspace import PowerPointManager
 
@@ -2098,3 +2099,12 @@ def preview_presentation_slides(
             }],
             "status": "error"
         }
+
+
+# --- Skill registration ---
+register_skill("powerpoint-presentations", tools=[
+    get_slide_code_examples, list_my_powerpoint_presentations, get_presentation_layouts,
+    analyze_presentation, create_presentation, update_slide_content,
+    add_slide, delete_slides, move_slide, duplicate_slide,
+    update_slide_notes, preview_presentation_slides,
+])

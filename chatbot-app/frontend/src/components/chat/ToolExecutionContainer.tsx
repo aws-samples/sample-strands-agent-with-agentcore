@@ -2,7 +2,7 @@ import React, { useState, useCallback, useMemo } from 'react'
 import { Download, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
-import { getToolImageSrc, getToolIcon } from '@/config/tool-icons'
+import { getToolImageSrc, getToolIcon, resolveEffectiveToolId } from '@/config/tool-icons'
 import { ChartRenderer } from '@/components/canvas'
 import { ChartToolResult } from '@/types/chart'
 import { MapRenderer } from '@/components/MapRenderer'
@@ -191,7 +191,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     const cache = new Map<string, { parsed: ChartToolResult, resultString: string }>();
 
     toolExecutionsDeps.forEach((deps) => {
-      if ((deps.toolName === 'create_visualization' || deps.toolName === 'show_on_map') &&
+      if ((deps.toolName === 'create_visualization' || deps.toolName === 'show_on_map' || deps.toolName === 'skill_executor') &&
           deps.toolResult &&
           deps.isComplete) {
         try {
@@ -209,6 +209,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
             } catch (unwrapError) {
               console.warn('Failed to unwrap Lambda response:', unwrapError);
             }
+          }
+
+          // For skill_executor, only cache if result contains chart_data or map_data
+          // (otherwise it's a non-visualization result like web search)
+          if (deps.toolName === 'skill_executor' && !parsed.chart_data && !parsed.map_data) {
+            return;
           }
 
           cache.set(deps.id, {
@@ -446,12 +452,13 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       <div className="space-y-0.5">
         {toolExecutions.map((toolExecution) => {
           const isExpanded = isToolExpanded(toolExecution.id)
-          const displayName = getToolDisplayName(toolExecution.toolName, toolExecution.isComplete)
-          const toolImageSrc = getToolImageSrc(toolExecution.toolName)
-          const ToolIconComponent = !toolImageSrc ? getToolIcon(toolExecution.toolName) : null
+          const effectiveToolId = resolveEffectiveToolId(toolExecution.toolName, toolExecution.toolInput)
+          const displayName = getToolDisplayName(toolExecution.toolName, toolExecution.isComplete, toolExecution.toolInput)
+          const toolImageSrc = getToolImageSrc(effectiveToolId)
+          const ToolIconComponent = !toolImageSrc ? getToolIcon(effectiveToolId) : null
 
-          // Render visualization/map tools directly
-          if ((toolExecution.toolName === 'create_visualization' || toolExecution.toolName === 'show_on_map') &&
+          // Render visualization/map tools directly (including skill_executor results with chart/map data)
+          if ((toolExecution.toolName === 'create_visualization' || toolExecution.toolName === 'show_on_map' || toolExecution.toolName === 'skill_executor') &&
               toolExecution.toolResult &&
               toolExecution.isComplete) {
             const chartResult = renderVisualizationResult(toolExecution.id);

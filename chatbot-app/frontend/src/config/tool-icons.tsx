@@ -12,6 +12,7 @@ import {
   TbTable,
   TbPresentation,
   TbChartLine,
+  TbCode,
 } from 'react-icons/tb';
 import {
   SiDuckduckgo,
@@ -40,6 +41,9 @@ export const toolIconMap: Record<string, IconType> = {
   powerpoint_presentation_tools: TbPresentation,
   gateway_financial_news: TbChartLine,
   'gateway_financial-news': TbChartLine,
+
+  // Code Execution
+  code_interpreter_tools: TbCode,
 
   // Research & Search
   ddg_web_search: SiDuckduckgo,
@@ -108,6 +112,7 @@ export const toolImageMap: Record<string, string> = {
   'gateway_wikipedia-search': '/tool-icons/wikipedia.svg',
   'gateway_financial_news': '/tool-icons/financial.svg',
   'gateway_financial-news': '/tool-icons/financial.svg',
+  'code_interpreter_tools': '/tool-icons/code-interpreter.svg',
 };
 
 /**
@@ -151,6 +156,48 @@ function resolveIconId(toolId: string, map: Record<string, any>): string | null 
   const parentId = subToolToParent[toolId];
   if (parentId && parentId in map) return parentId;
   return null;
+}
+
+/**
+ * Skill name → representative tool ID mapping.
+ * Used to resolve icons for skill_dispatcher / skill_executor.
+ */
+const skillToToolId: Record<string, string> = {
+  'web-search': 'ddg_web_search',
+  'url-fetcher': 'fetch_url_content',
+  'visualization': 'create_visualization',
+  'diagram-generator': 'generate_diagram_and_validate',
+  'word-documents': 'word_document_tools',
+  'excel-spreadsheets': 'excel_spreadsheet_tools',
+  'powerpoint-presentations': 'powerpoint_presentation_tools',
+  'browser-automation': 'browser_automation',
+  'code-interpreter': 'code_interpreter_tools',
+  'weather': 'gateway_weather',
+  'financial-news': 'gateway_financial-news',
+  'arxiv-search': 'gateway_arxiv-search',
+  'google-web-search': 'gateway_google-web-search',
+  'google-maps': 'gateway_google-maps',
+  'wikipedia-search': 'gateway_wikipedia-search',
+  'tavily-search': 'gateway_tavily-search',
+  'gmail': 'mcp_gmail',
+  'google-calendar': 'mcp_calendar',
+  'notion': 'mcp_notion',
+};
+
+/**
+ * Resolve the effective tool ID for icon lookup.
+ * For skill_dispatcher: uses toolInput.skill_name → representative tool ID.
+ * For skill_executor: uses toolInput.tool_name directly.
+ * For regular tools: returns the tool ID as-is.
+ */
+export function resolveEffectiveToolId(toolId: string, toolInput?: any): string {
+  if (toolId === 'skill_dispatcher' && toolInput?.skill_name) {
+    return skillToToolId[toolInput.skill_name] || toolId;
+  }
+  if (toolId === 'skill_executor' && toolInput?.tool_name) {
+    return toolInput.tool_name;
+  }
+  return toolId;
 }
 
 /**

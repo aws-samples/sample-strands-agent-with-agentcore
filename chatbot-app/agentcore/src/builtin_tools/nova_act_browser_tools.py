@@ -7,6 +7,7 @@ import os
 import logging
 from typing import Dict, Any, Optional, List, Union
 from strands import tool, ToolContext
+from skill import register_skill
 from .lib.browser_controller import get_or_create_controller
 
 logger = logging.getLogger(__name__)
@@ -932,3 +933,7 @@ This image is now available in workspace and can be referenced by filename in do
             }],
             "status": "error"
         }
+
+
+# --- Skill registration ---
+register_skill("browser-automation", tools=[browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs, browser_save_screenshot])

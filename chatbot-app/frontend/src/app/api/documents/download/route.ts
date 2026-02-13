@@ -70,7 +70,8 @@ export async function POST(request: NextRequest) {
       'excel': { docType: 'excel', extension: '.xlsx' },
       'powerpoint_presentation': { docType: 'powerpoint', extension: '.pptx' },
       'powerpoint': { docType: 'powerpoint', extension: '.pptx' },
-      'image': { docType: 'image', extension: '' }  // PNG files already have extension
+      'image': { docType: 'image', extension: '' },  // PNG files already have extension
+      'diagram': { docType: 'image', extension: '' }  // Diagrams stored as images
     }
 
     const config = toolTypeConfig[toolType] || { docType: toolType, extension: '' }

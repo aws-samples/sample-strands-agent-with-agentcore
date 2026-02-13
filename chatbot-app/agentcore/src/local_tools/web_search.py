@@ -6,10 +6,12 @@ Uses DuckDuckGo for web search without external dependencies
 import json
 import logging
 from strands import tool
+from skill import skill
 
 logger = logging.getLogger(__name__)
 
 
+@skill("web-search")
 @tool
 async def ddg_web_search(query: str, max_results: int = 5) -> str:
     """

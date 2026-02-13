@@ -17,6 +17,7 @@ import re
 import logging
 from typing import Dict, Any, Optional
 from strands import tool, ToolContext
+from skill import register_skill
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from workspace import WordManager
 
@@ -1292,3 +1293,7 @@ def preview_word_page(
             }],
             "status": "error"
         }
+
+
+# --- Skill registration ---
+register_skill("word-documents", tools=[create_word_document, modify_word_document, list_my_word_documents, read_word_document, preview_word_page])

@@ -42,6 +42,9 @@ from .excel_spreadsheet_tool import (
     read_excel_spreadsheet,
     preview_excel_sheets
 )
+# Code Interpreter (general-purpose sandbox)
+from .code_interpreter_tool import execute_code, execute_command, file_operations
+
 from .powerpoint_presentation_tool import (
     get_slide_code_examples,
     list_my_powerpoint_presentations,
@@ -88,7 +91,11 @@ __all__ = [
     'move_slide',
     'duplicate_slide',
     'update_slide_notes',
-    'preview_presentation_slides'
+    'preview_presentation_slides',
+    # Code Interpreter tools
+    'execute_code',
+    'execute_command',
+    'file_operations',
 ]
 
 # Collection of all builtin tools for registry sync
@@ -118,6 +125,9 @@ BUILTIN_TOOLS = [
     update_slide_notes,
     preview_presentation_slides
 ]
+
+# Code Interpreter tools
+BUILTIN_TOOLS.extend([execute_code, execute_command, file_operations])
 
 # Nova Act browser tools
 BUILTIN_TOOLS.extend([

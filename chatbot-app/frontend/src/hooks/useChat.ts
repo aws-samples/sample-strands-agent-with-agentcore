@@ -18,6 +18,7 @@ interface UseChatProps {
   onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
   onExcelDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Excel documents are created
   onPptDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when PowerPoint documents are created
+  onDiagramCreated?: (s3Key: string, filename: string) => void  // Callback when diagram is generated
   onBrowserSessionDetected?: (browserSessionId: string, browserId: string) => void  // Callback when browser session is first detected
   onExtractedDataCreated?: (data: ExtractedDataInfo) => void  // Callback when browser_extract creates artifact
   onSessionLoaded?: () => void  // Callback when session load completes (artifacts ready in sessionStorage)
@@ -60,6 +61,8 @@ interface UseChatReturn {
   // Swarm mode (Multi-Agent)
   swarmEnabled: boolean
   toggleSwarm: (enabled: boolean) => void
+  skillsEnabled: boolean
+  toggleSkills: (enabled: boolean) => void
   swarmProgress?: {
     isActive: boolean
     currentNode: string
@@ -94,6 +97,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [swarmEnabled, setSwarmEnabled] = useState(false)
+  const [skillsEnabled, setSkillsEnabled] = useState(false)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
 
   // Per-session model/temperature state (not written to global profile on session switch)
@@ -218,6 +222,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     onWordDocumentsCreated: props?.onWordDocumentsCreated,
     onExcelDocumentsCreated: props?.onExcelDocumentsCreated,
     onPptDocumentsCreated: props?.onPptDocumentsCreated,
+    onDiagramCreated: props?.onDiagramCreated,
     onBrowserSessionDetected: props?.onBrowserSessionDetected,
     onExtractedDataCreated: props?.onExtractedDataCreated
   })
@@ -401,6 +406,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setSwarmEnabled(swarmRestored)
     console.log(`[useChat] Swarm mode restored: ${swarmRestored}`)
 
+    // Restore skills mode preference from sessionStorage
+    const savedSkillsEnabled = sessionStorage.getItem(`skills-enabled-${newSessionId}`)
+    const skillsRestored = savedSkillsEnabled === 'true'
+    setSkillsEnabled(skillsRestored)
+    console.log(`[useChat] Skills mode restored: ${skillsRestored}`)
+
     // Notify that session loading is complete (artifacts are in sessionStorage)
     onSessionLoadedRef.current?.()
     } finally {
@@ -564,7 +575,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
                 interrupt: null,
                 pendingOAuth: null
               }))
-            }
+            },
+            undefined, // overrideEnabledTools
+            skillsEnabled ? "skill" : swarmEnabled ? "swarm" : undefined // preserve request type
           )
         } catch (error) {
           console.error('[useChat] Failed to send retry message:', error)
@@ -575,7 +588,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     window.addEventListener('message', handleOAuthMessage)
     return () => window.removeEventListener('message', handleOAuthMessage)
-  }, [sessionState.pendingOAuth, apiSendMessage, sessionId])
+  }, [sessionState.pendingOAuth, apiSendMessage, sessionId, skillsEnabled, swarmEnabled])
 
   // ==================== ACTIONS ====================
   const toggleTool = useCallback(async (toolId: string) => {
@@ -666,13 +679,14 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         undefined,
         undefined,
         () => setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' })),
-        overrideTools
+        overrideTools,
+        skillsEnabled ? "skill" : swarmEnabled ? "swarm" : undefined // preserve request type
       )
     } catch (error) {
       console.error('[Interrupt] Failed to respond to interrupt:', error)
       setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
     }
-  }, [sessionState.interrupt, apiSendMessage])
+  }, [sessionState.interrupt, apiSendMessage, skillsEnabled, swarmEnabled])
 
   const sendMessage = useCallback(async (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => {
     if (!text.trim() && (!files || files.length === 0)) return
@@ -733,12 +747,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         }))
       },
       undefined, // overrideEnabledTools
-      swarmEnabled ? "swarm" : undefined, // Pass request type to backend
+      skillsEnabled ? "skill" : swarmEnabled ? "swarm" : undefined, // Pass request type to backend
       additionalTools, // Pass additional tools (e.g., artifact editor)
       systemPrompt, // Pass system prompt (e.g., artifact context)
       selectedArtifactId // Pass selected artifact ID for tool context
     )
-  }, [apiSendMessage, swarmEnabled])
+  }, [apiSendMessage, swarmEnabled, skillsEnabled])
 
   const stopGeneration = useCallback(() => {
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
@@ -816,12 +830,24 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
   const toggleSwarm = useCallback((enabled: boolean) => {
     setSwarmEnabled(enabled)
+    if (enabled) setSkillsEnabled(false) // Mutual exclusion
     // Persist swarm mode preference to sessionStorage
     const currentSessionId = sessionStorage.getItem('chat-session-id')
     if (currentSessionId) {
       sessionStorage.setItem(`swarm-enabled-${currentSessionId}`, String(enabled))
     }
     console.log(`[useChat] Swarm ${enabled ? 'enabled' : 'disabled'}`)
+  }, [])
+
+  const toggleSkills = useCallback((enabled: boolean) => {
+    setSkillsEnabled(enabled)
+    if (enabled) setSwarmEnabled(false) // Mutual exclusion
+    // Persist skills mode preference to sessionStorage
+    const currentSessionId = sessionStorage.getItem('chat-session-id')
+    if (currentSessionId) {
+      sessionStorage.setItem(`skills-enabled-${currentSessionId}`, String(enabled))
+    }
+    console.log(`[useChat] Skills ${enabled ? 'enabled' : 'disabled'}`)
   }, [])
 
   // Add voice tool execution (mirrors text mode's handleToolUseEvent pattern)
@@ -1052,6 +1078,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Swarm mode (Multi-Agent)
     swarmEnabled,
     toggleSwarm,
+    skillsEnabled,
+    toggleSkills,
     swarmProgress: sessionState.swarmProgress,
     // Voice mode
     addVoiceToolExecution,

@@ -7,7 +7,7 @@ import { useTextBuffer } from './useTextBuffer'
 import { A2A_TOOLS_REQUIRING_POLLING, isA2ATool, getAgentStatusForTool } from './usePolling'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { updateLastActivity } from '@/config/session'
-import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, DocumentType } from '@/config/document-tools'
+import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, TOOL_TYPE_TO_DOC_TYPE, DocumentType } from '@/config/document-tools'
 import { ExtractedDataInfo } from './useCanvasHandlers'
 
 // Word document info from workspace API
@@ -39,6 +39,7 @@ interface UseStreamEventsProps {
   onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
   onExcelDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Excel documents are created
   onPptDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when PowerPoint documents are created
+  onDiagramCreated?: (s3Key: string, filename: string) => void  // Callback when diagram is generated
   onBrowserSessionDetected?: (browserSessionId: string, browserId: string) => void  // Callback when browser session is first detected
   onExtractedDataCreated?: (data: ExtractedDataInfo) => void  // Callback when browser_extract creates artifact
 }
@@ -59,6 +60,7 @@ export const useStreamEvents = ({
   onWordDocumentsCreated,
   onExcelDocumentsCreated,
   onPptDocumentsCreated,
+  onDiagramCreated,
   onBrowserSessionDetected,
   onExtractedDataCreated
 }: UseStreamEventsProps) => {
@@ -606,10 +608,25 @@ export const useStreamEvents = ({
         // Detect used document tools and fetch workspace files from S3
         let workspaceDocuments: Array<{ filename: string; tool_type: string }> = []
 
+        // Resolve document type — for skill_executor, unwrap the inner tool_name
+        const resolveDocType = (toolExec: { toolName: string; toolInput?: any; metadata?: any }): DocumentType | undefined => {
+          const docType = TOOL_TO_DOC_TYPE[toolExec.toolName]
+          if (docType) return docType
+          // skill_executor wraps the actual tool — check toolInput.tool_name
+          if (toolExec.toolName === 'skill_executor' && toolExec.toolInput?.tool_name) {
+            return TOOL_TO_DOC_TYPE[toolExec.toolInput.tool_name]
+          }
+          // Fallback: check metadata.tool_type (e.g. "powerpoint_presentation")
+          if (toolExec.metadata?.tool_type) {
+            return TOOL_TYPE_TO_DOC_TYPE[toolExec.metadata.tool_type]
+          }
+          return undefined
+        }
+
         // Check tool executions for document tools
         const usedDocTypes = new Set<DocumentType>()
         for (const toolExec of currentToolExecutionsRef.current) {
-          const docType = TOOL_TO_DOC_TYPE[toolExec.toolName]
+          const docType = resolveDocType(toolExec)
           if (docType) {
             usedDocTypes.add(docType)
           }
@@ -641,7 +658,7 @@ export const useStreamEvents = ({
               const filename = toolExec.metadata?.filename
               if (!filename || !toolExec.isComplete || toolExec.isCancelled) continue
 
-              const docType = TOOL_TO_DOC_TYPE[toolExec.toolName]
+              const docType = resolveDocType(toolExec)
               if (docType === 'word') wordOutputFilenames.add(filename)
               else if (docType === 'excel') excelOutputFilenames.add(filename)
               else if (docType === 'powerpoint') pptOutputFilenames.add(filename)
@@ -712,6 +729,17 @@ export const useStreamEvents = ({
             }
           } catch (error) {
             // Failed to fetch workspace files - non-critical, will use backend-provided documents
+          }
+        }
+
+        // Trigger diagram artifact creation (uses s3_key from metadata directly, no workspace API needed)
+        if (onDiagramCreated) {
+          for (const toolExec of currentToolExecutionsRef.current) {
+            if (!toolExec.isComplete || toolExec.isCancelled) continue
+            const docType = resolveDocType(toolExec)
+            if (docType === 'diagram' && toolExec.metadata?.s3_key && toolExec.metadata?.filename) {
+              onDiagramCreated(toolExec.metadata.s3_key, toolExec.metadata.filename)
+            }
           }
         }
 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Send, Square, Loader2, Mic, FlaskConical } from "lucide-react"
+import { Upload, Send, Square, Loader2, Mic, FlaskConical, Layers } from "lucide-react"
 import { FilePreview } from "@/components/ui/file-preview"
 import { AnimatePresence } from "framer-motion"
 import { ToolsDropdown } from "@/components/ToolsDropdown"
@@ -25,6 +25,7 @@ interface ChatInputAreaProps {
   isVoiceSupported: boolean
   swarmEnabled: boolean
   isResearchEnabled: boolean
+  isSkillsEnabled: boolean
   isCanvasOpen: boolean
   availableTools: Tool[]
   sessionId: string | null
@@ -40,6 +41,7 @@ interface ChatInputAreaProps {
   onSetExclusiveTools: (toolIds: string[]) => void
   onToggleSwarm: (enabled?: boolean) => void
   onToggleResearch: () => void
+  onToggleSkills: () => void
   onConnectVoice: () => Promise<void>
   onDisconnectVoice: () => void
   onOpenComposeWizard: (rect: DOMRect) => void
@@ -63,6 +65,7 @@ export function ChatInputArea({
   isVoiceSupported,
   swarmEnabled,
   isResearchEnabled,
+  isSkillsEnabled,
   isCanvasOpen,
   availableTools,
   sessionId,
@@ -75,6 +78,7 @@ export function ChatInputArea({
   onSetExclusiveTools,
   onToggleSwarm,
   onToggleResearch,
+  onToggleSkills,
   onConnectVoice,
   onDisconnectVoice,
   onOpenComposeWizard,
@@ -531,14 +535,6 @@ export function ChatInputArea({
                   </TooltipContent>
                 </Tooltip>
 
-                <ToolsDropdown
-                  availableTools={availableTools}
-                  onToggleTool={handleToolToggle}
-                  disabled={isVoiceActive || composerState.showOutlineConfirm}
-                  autoEnabled={swarmEnabled}
-                  onToggleAuto={onToggleSwarm}
-                />
-
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
@@ -560,6 +556,38 @@ export function ChatInputArea({
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>{isResearchEnabled ? 'Research mode (click to disable)' : 'Enable Research mode'}</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                <ToolsDropdown
+                  availableTools={availableTools}
+                  onToggleTool={handleToolToggle}
+                  disabled={isVoiceActive || composerState.showOutlineConfirm}
+                  autoEnabled={swarmEnabled}
+                  onToggleAuto={onToggleSwarm}
+                />
+
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={onToggleSkills}
+                      disabled={isVoiceActive || composerState.showOutlineConfirm}
+                      className={`h-9 w-9 p-0 transition-all duration-200 ${
+                        isSkillsEnabled
+                          ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-500'
+                          : (isVoiceActive || composerState.showOutlineConfirm)
+                          ? 'opacity-40 cursor-not-allowed'
+                          : 'hover:bg-muted-foreground/10 text-muted-foreground'
+                      }`}
+                    >
+                      <Layers className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{isSkillsEnabled ? 'Skills mode (click to disable)' : 'Enable Skills mode'}</p>
                   </TooltipContent>
                 </Tooltip>
               </div>

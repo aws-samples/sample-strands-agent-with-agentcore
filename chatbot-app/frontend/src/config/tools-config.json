@@ -235,6 +235,36 @@
           "displayName": { "running": "Previewing slides", "complete": "Previewed slides" }
         }
       ]
+    },
+    {
+      "id": "code_interpreter_tools",
+      "name": "Code Interpreter",
+      "description": "Execute code (Python/JS/TS), run shell commands, and manage files in a sandboxed environment with 200+ pre-installed libraries (3 tools)",
+      "category": "code_execution_tools",
+      "icon": "",
+      "enabled": true,
+      "isDynamic": true,
+      "tags": ["code", "python", "data", "analysis", "ml", "visualization"],
+      "tools": [
+        {
+          "id": "execute_code",
+          "name": "Execute Code",
+          "description": "Execute Python, JavaScript, or TypeScript code in a sandboxed environment",
+          "displayName": { "running": "Executing code", "complete": "Executed code" }
+        },
+        {
+          "id": "execute_command",
+          "name": "Execute Command",
+          "description": "Execute shell commands (pip install, ls, curl, etc.)",
+          "displayName": { "running": "Executing command", "complete": "Executed command" }
+        },
+        {
+          "id": "file_operations",
+          "name": "File Operations",
+          "description": "Read, write, list, or remove files in the sandbox",
+          "displayName": { "running": "Managing files", "complete": "Managed files" }
+        }
+      ]
     }
   ],
   "browser_automation": [

@@ -11,7 +11,7 @@
  * constant for runtime efficiency (no JSON parsing needed).
  */
 
-export type DocumentType = 'word' | 'excel' | 'powerpoint'
+export type DocumentType = 'word' | 'excel' | 'powerpoint' | 'diagram'
 
 /**
  * Maps tool names to document types.
@@ -47,6 +47,9 @@ export const TOOL_TO_DOC_TYPE: Record<string, DocumentType> = {
   'get_presentation_layouts': 'powerpoint',
   'list_my_powerpoint_presentations': 'powerpoint',
   'preview_presentation_slides': 'powerpoint',
+
+  // Diagram tools (from diagram_tool)
+  'generate_diagram_and_validate': 'diagram',
 }
 
 /**
@@ -57,6 +60,7 @@ export const DOC_TYPE_TO_TOOL_TYPE: Record<DocumentType, string> = {
   'word': 'word_document',
   'excel': 'excel_spreadsheet',
   'powerpoint': 'powerpoint_presentation',
+  'diagram': 'diagram',
 }
 
 /**
@@ -67,6 +71,7 @@ export const TOOL_TYPE_TO_DOC_TYPE: Record<string, DocumentType> = {
   'word_document': 'word',
   'excel_spreadsheet': 'excel',
   'powerpoint_presentation': 'powerpoint',
+  'diagram': 'diagram',
 }
 
 /**

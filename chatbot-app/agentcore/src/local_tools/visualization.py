@@ -7,6 +7,7 @@ import json
 import logging
 from typing import Any, Literal
 from strands import tool
+from skill import skill
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ def _generate_chart_config(data: list[dict[str, Any]], chart_type: str) -> dict:
     return config
 
 
+@skill("visualization")
 @tool
 def create_visualization(
     chart_type: Literal["bar", "line", "pie"],

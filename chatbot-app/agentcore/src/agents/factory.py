@@ -11,6 +11,7 @@ from agents.base import BaseAgent
 from agents.chat_agent import ChatAgent
 from agents.swarm_agent import SwarmAgent
 from agents.workflow_agent import WorkflowAgent
+from agents.skill_chat_agent import SkillChatAgent
 # VoiceAgent imported conditionally in create_agent
 
 logger = logging.getLogger(__name__)
@@ -110,6 +111,20 @@ def create_agent(
             temperature=temperature,
         )
 
+    elif request_type == "skill":
+        return SkillChatAgent(
+            session_id=session_id,
+            user_id=user_id,
+            enabled_tools=enabled_tools,
+            model_id=model_id,
+            temperature=temperature,
+            system_prompt=system_prompt,
+            caching_enabled=caching_enabled,
+            compaction_enabled=compaction_enabled,
+            api_keys=api_keys,
+            auth_token=auth_token,
+        )
+
     elif request_type == "voice":
         # Import VoiceAgent here to avoid circular imports
         from agent.voice_agent import VoiceAgent
@@ -126,7 +141,7 @@ def create_agent(
     else:
         raise ValueError(
             f"Unknown request_type: {request_type}. "
-            f"Valid types: normal, swarm, compose, voice"
+            f"Valid types: normal, swarm, compose, skill, voice"
         )
 
 
@@ -144,6 +159,7 @@ def get_agent_type_description(request_type: str) -> str:
         "normal": "Text-based conversation with streaming",
         "swarm": "Multi-agent orchestration with specialist agents",
         "compose": "Document composition workflow",
+        "skill": "Progressive skill disclosure with skill_dispatcher/executor",
         "voice": "Bidirectional audio streaming (Nova Sonic)",
     }
 
