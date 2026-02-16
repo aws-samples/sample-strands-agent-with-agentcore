@@ -140,6 +140,9 @@ export async function POST(request: NextRequest) {
         enabled_tools = JSON.parse(enabledToolsJson)
       }
 
+      request_type = formData.get('request_type') as string | undefined
+      system_prompt = formData.get('system_prompt') as string | undefined
+
       // Extract and convert files to AgentCore format
       const uploadedFiles: File[] = []
       for (const [key, value] of formData.entries()) {

@@ -558,6 +558,11 @@ export const useChatAPI = ({
         formData.append('model_id', currentModelId)
         formData.append('temperature', String(currentTemperature))
 
+        // Add request type if provided (e.g., "skill", "swarm")
+        if (requestType) {
+          formData.append('request_type', requestType)
+        }
+
         // Add system prompt if provided
         if (systemPrompt) {
           formData.append('system_prompt', systemPrompt)

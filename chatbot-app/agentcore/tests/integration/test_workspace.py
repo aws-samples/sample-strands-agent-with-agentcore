@@ -340,13 +340,13 @@ class TestDocumentTypeManagers:
                 manager = ImageManager("user1", "session1")
 
                 # Valid formats
-                valid_formats = ["image.png", "photo.jpg", "pic.jpeg", "anim.gif", "modern.webp"]
+                valid_formats = ["image.png", "photo.jpg", "pic.jpeg", "anim.gif", "modern.webp", "design.pdf"]
                 for filename in valid_formats:
                     assert manager.validate_image_filename(filename) is True
 
                 # Invalid format
-                with pytest.raises(ValueError, match="supported image format"):
-                    manager.validate_image_filename("document.pdf")
+                with pytest.raises(ValueError, match="supported image/document format"):
+                    manager.validate_image_filename("document.txt")
 
     def test_image_manager_returns_correct_mime_type(self, mock_s3):
         """Test ImageManager returns correct MIME types."""
@@ -361,6 +361,7 @@ class TestDocumentTypeManagers:
                 assert manager.get_image_mime_type("photo.jpeg") == "image/jpeg"
                 assert manager.get_image_mime_type("anim.gif") == "image/gif"
                 assert manager.get_image_mime_type("modern.webp") == "image/webp"
+                assert manager.get_image_mime_type("design.pdf") == "application/pdf"
 
 
 # ============================================================

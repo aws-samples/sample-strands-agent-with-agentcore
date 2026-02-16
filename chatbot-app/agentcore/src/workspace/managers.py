@@ -207,9 +207,9 @@ class ImageManager(BaseDocumentManager):
 
     def validate_image_filename(self, filename: str) -> bool:
         """Validate that filename is a supported image format"""
-        valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')
+        valid_extensions = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.pdf')
         if not filename.lower().endswith(valid_extensions):
-            raise ValueError(f"Filename must be a supported image format: {filename}")
+            raise ValueError(f"Filename must be a supported image/document format: {filename}")
         return True
 
     def get_image_mime_type(self, filename: str) -> str:
@@ -221,7 +221,8 @@ class ImageManager(BaseDocumentManager):
             'jpeg': 'image/jpeg',
             'gif': 'image/gif',
             'webp': 'image/webp',
-            'bmp': 'image/bmp'
+            'bmp': 'image/bmp',
+            'pdf': 'application/pdf'
         }
         return mime_type_map.get(extension, 'image/png')
 

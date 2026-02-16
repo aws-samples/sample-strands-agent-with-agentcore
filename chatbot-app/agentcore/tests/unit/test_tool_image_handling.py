@@ -370,7 +370,7 @@ class TestCodeInterpreterImageResponse:
 
     def test_code_interpreter_diagram_response_format(self, sample_png_bytes):
         """Test expected format from Code Interpreter diagram generation."""
-        # Simulates what generate_diagram_and_validate returns
+        # Simulates what generate_chart / create_visual_design returns
         ci_response = {
             "content": [
                 {

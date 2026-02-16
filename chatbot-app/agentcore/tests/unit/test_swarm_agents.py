@@ -42,9 +42,10 @@ class TestGetToolsForAgent:
 
         tools = AGENT_TOOL_MAPPING.get("data_analyst", [])
 
-        assert "generate_diagram_and_validate" in tools
+        assert "generate_chart" in tools
+        assert "create_visual_design" in tools
         assert "calculator" in tools
-        assert len(tools) == 2  # Only these two tools
+        assert len(tools) == 3
 
     def test_responder_has_visualization_only(self):
         """Responder should only have visualization tool."""

@@ -106,7 +106,7 @@ A general-purpose code execution environment powered by AWS Bedrock AgentCore Co
 | Task | Use This Skill | Use Specialized Skill Instead |
 |------|---------------|-------------------------------|
 | Quick calculation or data analysis | Yes | |
-| Generate matplotlib/plotly chart | Yes | diagram-generator also works |
+| Generate matplotlib/plotly chart | Yes | visual-design also works |
 | Build ML model or run statistics | Yes | |
 | Parse/transform data files | Yes | |
 | Prototype and test code | Yes | |

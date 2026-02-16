@@ -97,7 +97,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [swarmEnabled, setSwarmEnabled] = useState(false)
-  const [skillsEnabled, setSkillsEnabled] = useState(false)
+  const [skillsEnabled, setSkillsEnabled] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
 
   // Per-session model/temperature state (not written to global profile on session switch)
@@ -901,10 +901,32 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     })
   }, [])
 
+  // Track pre-voice mode states for restoration after voice ends
+  const preVoiceModeRef = useRef<{ skills: boolean; swarm: boolean } | null>(null)
+
   // Set voice status (called by useVoiceChat via callback)
   const setVoiceStatus = useCallback((status: AgentStatus) => {
+    const wasVoice = uiState.agentStatus.startsWith('voice_')
+    const isVoice = status.startsWith('voice_')
+
+    // Voice activated: save current mode and disable skills/swarm
+    if (!wasVoice && isVoice) {
+      preVoiceModeRef.current = { skills: skillsEnabled, swarm: swarmEnabled }
+      setSkillsEnabled(false)
+      setSwarmEnabled(false)
+      console.log('[useChat] Voice activated — disabled skills/swarm')
+    }
+
+    // Voice deactivated: restore previous mode
+    if (wasVoice && !isVoice && preVoiceModeRef.current) {
+      setSkillsEnabled(preVoiceModeRef.current.skills)
+      setSwarmEnabled(preVoiceModeRef.current.swarm)
+      console.log('[useChat] Voice deactivated — restored skills/swarm')
+      preVoiceModeRef.current = null
+    }
+
     setUIState(prev => ({ ...prev, agentStatus: status }))
-  }, [])
+  }, [uiState.agentStatus, skillsEnabled, swarmEnabled])
 
   // Add artifact message (called when composer workflow creates an artifact)
   const addArtifactMessage = useCallback((artifact: { id: string; type: string; title: string; wordCount?: number }) => {

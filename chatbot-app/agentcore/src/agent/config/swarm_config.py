@@ -71,7 +71,8 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
         "preview_presentation_slides",
     ],
     "data_analyst": [
-        "generate_diagram_and_validate",
+        "generate_chart",
+        "create_visual_design",
         "calculator",
     ],
     "browser_agent": [

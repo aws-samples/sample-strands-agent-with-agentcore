@@ -1,9 +1,10 @@
-"""Diagram generation tool using Bedrock Code Interpreter
+"""Visual design and chart generation tools using Bedrock Code Interpreter
 
-This tool generates diagrams and charts by executing Python code in AWS Bedrock Code Interpreter.
-It supports matplotlib, pandas, and numpy for creating visualizations.
+Two tools for different use cases:
+- generate_chart: Data visualization with matplotlib/plotly
+- create_visual_design: Posters, infographics, artwork with reportlab/Pillow/svgwrite
 
-Generated diagrams are automatically saved to workspace for reuse in Word/Excel/PowerPoint documents.
+Generated outputs are automatically saved to workspace for reuse in Word/Excel/PowerPoint documents.
 """
 
 from strands import tool, ToolContext
@@ -56,52 +57,40 @@ def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
     return user_id, session_id
 
 
-@tool(context=True)
-def generate_diagram_and_validate(
+def _execute_code_interpreter(
     python_code: str,
-    diagram_filename: str,
-    tool_context: ToolContext
+    output_filename: str,
+    tool_context: ToolContext,
+    tool_name: str
 ) -> Dict[str, Any]:
-    """Generate diagrams and charts using Python code via Bedrock Code Interpreter.
+    """Common Code Interpreter execution logic for both chart and design tools.
 
-    Available libraries: matplotlib.pyplot, pandas, numpy
+    Handles: initialization -> code execution -> file download -> S3 save -> result return.
 
     Args:
-        python_code: Python code for diagram generation.
-                    Must include: plt.savefig(diagram_filename, dpi=300, bbox_inches='tight')
-                    Best practices:
-                    - Use figsize=(10, 6) or larger for readable diagrams
-                    - Include proper labels, titles, and legends
-                    - Use high DPI (300) for crisp output
-        diagram_filename: PNG filename (must end with .png).
-                         Example: 'revenue-chart.png'
+        python_code: Python code to execute
+        output_filename: Expected output filename (.png or .pdf)
+        tool_context: Strands ToolContext
+        tool_name: Name of the calling tool (for metadata)
 
     Returns:
-        Diagram as image in ToolResult format:
-        {
-            "content": [
-                {"text": "Diagram generated: ..."},
-                {"image": {"format": "png", "source": {"bytes": b"..."}}}
-            ],
-            "status": "success"
-        }
-        - The diagram is returned as raw PNG bytes (not base64)
-        - Automatically saved to workspace for reuse in Word/Excel/PowerPoint documents
+        ToolResult dict with content and status
     """
     from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
     from workspace import ImageManager
 
-    # Validate diagram_filename
-    if not diagram_filename or not diagram_filename.endswith('.png'):
+    # Validate filename extension
+    valid_extensions = ('.png', '.pdf')
+    if not output_filename or not output_filename.lower().endswith(valid_extensions):
         return {
             "content": [{
-                "text": f"Invalid filename. Must end with .png (e.g., 'my_diagram.png')\nYou provided: {diagram_filename}"
+                "text": f"Invalid filename. Must end with .png or .pdf (e.g., 'my-design.png')\nYou provided: {output_filename}"
             }],
             "status": "error"
         }
 
     try:
-        logger.info(f"Generating diagram via Code Interpreter: {diagram_filename}")
+        logger.info(f"[{tool_name}] Generating output via Code Interpreter: {output_filename}")
 
         # 1. Get Custom Code Interpreter ID
         code_interpreter_id = _get_code_interpreter_id()
@@ -121,10 +110,10 @@ Please deploy AgentCore Runtime Stack to create Custom Code Interpreter."""
         region = os.getenv('AWS_REGION', 'us-west-2')
         code_interpreter = CodeInterpreter(region)
 
-        logger.info(f"🔐 Starting Custom Code Interpreter (ID: {code_interpreter_id})")
+        logger.info(f"Starting Custom Code Interpreter (ID: {code_interpreter_id})")
         code_interpreter.start(identifier=code_interpreter_id)
 
-        logger.info(f"Code Interpreter started - executing code for {diagram_filename}")
+        logger.info(f"Code Interpreter started - executing code for {output_filename}")
 
         # 3. Execute Python code
         response = code_interpreter.invoke("executeCode", {
@@ -133,7 +122,7 @@ Please deploy AgentCore Runtime Stack to create Custom Code Interpreter."""
             "clearContext": False
         })
 
-        logger.info(f"Code execution completed for {diagram_filename}")
+        logger.info(f"Code execution completed for {output_filename}")
 
         # 4. Check for errors
         execution_success = False
@@ -186,13 +175,12 @@ Please try again or simplify your code."""
         # 5. Download the generated file
         file_content = None
         try:
-            download_response = code_interpreter.invoke("readFiles", {"paths": [diagram_filename]})
+            download_response = code_interpreter.invoke("readFiles", {"paths": [output_filename]})
 
             for event in download_response.get("stream", []):
                 result = event.get("result", {})
                 if "content" in result and len(result["content"]) > 0:
                     content_block = result["content"][0]
-                    # File content can be in 'data' (bytes) or 'resource.blob'
                     if "data" in content_block:
                         file_content = content_block["data"]
                     elif "resource" in content_block and "blob" in content_block["resource"]:
@@ -202,22 +190,22 @@ Please try again or simplify your code."""
                         break
 
             if not file_content:
-                raise Exception(f"No file content returned for {diagram_filename}")
+                raise Exception(f"No file content returned for {output_filename}")
 
-            logger.info(f"Successfully downloaded diagram: {diagram_filename} ({len(file_content)} bytes)")
+            logger.info(f"Successfully downloaded output: {output_filename} ({len(file_content)} bytes)")
 
             # Save to workspace for reuse in documents
             user_id, session_id = _get_user_session_ids(tool_context)
             image_manager = ImageManager(user_id, session_id)
             s3_info = image_manager.save_to_s3(
-                diagram_filename,
+                output_filename,
                 file_content,
-                metadata={'source': 'diagram_tool', 'tool': 'generate_diagram_and_validate'}
+                metadata={'source': 'diagram_tool', 'tool': tool_name}
             )
-            logger.info(f"Saved diagram to workspace: {s3_info['s3_key']}")
+            logger.info(f"Saved output to workspace: {s3_info['s3_key']}")
 
         except Exception as e:
-            logger.error(f"Failed to download diagram file: {str(e)}")
+            logger.error(f"Failed to download output file: {str(e)}")
             code_interpreter.stop()
 
             # List available files for debugging
@@ -237,17 +225,14 @@ Please try again or simplify your code."""
 
             return {
                 "content": [{
-                    "text": f"""Failed to download diagram file
+                    "text": f"""Failed to download output file
 
-**Error:** Could not download '{diagram_filename}'
+**Error:** Could not download '{output_filename}'
 **Exception:** {str(e)}
 
 **Available files in session:** {', '.join(available_files) if available_files else 'None'}
 
-**Fix:** Make sure your code creates the file with the exact filename:
-```python
-plt.savefig('{diagram_filename}', dpi=300, bbox_inches='tight')
-```"""
+**Fix:** Make sure your code saves to the exact filename: '{output_filename}'"""
                 }],
                 "status": "error"
             }
@@ -259,38 +244,47 @@ plt.savefig('{diagram_filename}', dpi=300, bbox_inches='tight')
         user_id, session_id = _get_user_session_ids(tool_context)
         image_manager = ImageManager(user_id, session_id)
         workspace_images = image_manager.list_s3_documents()
-        other_images_count = len([img for img in workspace_images if img['filename'] != diagram_filename])
+        other_images_count = len([img for img in workspace_images if img['filename'] != output_filename])
 
         file_size_kb = len(file_content) / 1024
-        logger.info(f"Diagram successfully generated: {file_size_kb:.1f} KB")
+        logger.info(f"Output successfully generated: {file_size_kb:.1f} KB")
 
-        # 7. Return ToolResult in Strands SDK format
-        from strands.types.tools import ToolResult
+        # 7. Build result content
+        is_pdf = output_filename.lower().endswith('.pdf')
+        file_format = "pdf" if is_pdf else "png"
 
-        return {
-            "content": [
-                {
-                    "text": f"""**Diagram generated: {diagram_filename}**
+        result_content = [
+            {
+                "text": f"""**Generated: {output_filename}**
 
 Saved to workspace for reuse in documents.
 **Size:** {file_size_kb:.1f} KB
-**Other images in workspace:** {other_images_count} image{'s' if other_images_count != 1 else ''}"""
-                },
-                {
-                    "image": {
-                        "format": "png",
-                        "source": {
-                            "bytes": file_content  # Raw bytes, not base64
-                        }
+**Other files in workspace:** {other_images_count} file{'s' if other_images_count != 1 else ''}"""
+            }
+        ]
+
+        # Add image preview for PNG files
+        if not is_pdf:
+            result_content.append({
+                "image": {
+                    "format": "png",
+                    "source": {
+                        "bytes": file_content
                     }
                 }
-            ],
+            })
+        else:
+            result_content[0]["text"] += "\n\n*PDF generated. Use the document download feature to view.*"
+
+        return {
+            "content": result_content,
             "status": "success",
             "metadata": {
-                "filename": diagram_filename,
+                "filename": output_filename,
                 "s3_key": s3_info['s3_key'],
                 "size_kb": f"{file_size_kb:.1f}",
-                "tool_type": "diagram",
+                "format": file_format,
+                "tool_type": tool_name,
                 "user_id": user_id,
                 "session_id": session_id,
             }
@@ -298,13 +292,11 @@ Saved to workspace for reuse in documents.
 
     except Exception as e:
         import traceback
-        logger.error(f"Diagram generation failed: {str(e)}")
-
-        from strands.types.tools import ToolResult
+        logger.error(f"[{tool_name}] Generation failed: {str(e)}")
 
         return {
             "content": [{
-                "text": f"""Failed to generate diagram
+                "text": f"""Failed to generate output
 
 **Error:** {str(e)}
 
@@ -317,5 +309,45 @@ Saved to workspace for reuse in documents.
         }
 
 
+@tool(context=True)
+def generate_chart(
+    python_code: str,
+    output_filename: str,
+    tool_context: ToolContext
+) -> Dict[str, Any]:
+    """Generate data charts and graphs using matplotlib or plotly via Bedrock Code Interpreter.
+
+    Args:
+        python_code: Python code for chart generation.
+                    Must save to output_filename (e.g., plt.savefig(output_filename, dpi=300, bbox_inches='tight')).
+                    Available: matplotlib, plotly, pandas, numpy, bokeh.
+        output_filename: Output PNG filename (must end with .png).
+
+    Returns:
+        Chart image in ToolResult format with workspace save confirmation.
+    """
+    return _execute_code_interpreter(python_code, output_filename, tool_context, "generate_chart")
+
+
+@tool(context=True)
+def create_visual_design(
+    python_code: str,
+    output_filename: str,
+    tool_context: ToolContext
+) -> Dict[str, Any]:
+    """Create visual designs (posters, infographics, artwork, flow diagrams) via Bedrock Code Interpreter.
+
+    Args:
+        python_code: Python code for visual design generation.
+                    Must save to output_filename.
+                    Available: reportlab, Pillow, svgwrite, matplotlib, fonttools, Wand, opencv-python.
+        output_filename: Output filename (must end with .png or .pdf).
+
+    Returns:
+        Design output in ToolResult format with workspace save confirmation.
+    """
+    return _execute_code_interpreter(python_code, output_filename, tool_context, "create_visual_design")
+
+
 # --- Skill registration ---
-register_skill("diagram-generator", tools=[generate_diagram_and_validate])
+register_skill("visual-design", tools=[generate_chart, create_visual_design])

@@ -43,32 +43,21 @@ this repository is designed to be read, run, and extended.
 
 ---
 
-## Overview
+## Architecture Overview
 
 This sample combines **Strands Agent orchestration** with **Amazon Bedrock AgentCore services**:
 
-- **Strands Agents** – Multi-turn reasoning and tool orchestration  
-- **AgentCore Runtime** – Managed, containerized agent execution  
-- **AgentCore Memory** – Persistent conversation state and summarization  
-- **AgentCore Gateway** – MCP-based tool integration with SigV4 authentication  
-- **AgentCore Code Interpreter** – Secure execution for analysis and document generation  
-- **AgentCore Browser** – Headless browser automation with live view  
-- **Amazon Nova Act** – Visual reasoning model for browser automation  
-
----
-
-## Architecture Overview
-
-The system is composed of the following layers:
-
-- **Frontend / UI** – User interaction  
-- **Backend (BFF)** – Request routing and streaming  
-- **AgentCore Runtime** – Agent execution  
-- **AgentCore Gateway** – Tool access  
-- **Strands Agents** – Multi-agent coordination  
-- **Tools & Memory** – External APIs and state  
-
-This design emphasizes **extensibility, observability, and clear separation of concerns**.
+| Component | Role |
+|-----------|------|
+| **Strands Agents** | Multi-turn reasoning and tool orchestration |
+| **AgentCore Runtime** | Managed, containerized agent execution |
+| **AgentCore Memory** | Persistent conversation state and summarization |
+| **AgentCore Gateway** | MCP-based tool integration with SigV4 authentication |
+| **AgentCore Code Interpreter** | Secure Python execution for analysis and document generation |
+| **AgentCore Browser** | Headless browser automation with live view |
+| **AgentCore Identity** | End-user authentication and 3LO OAuth delegation |
+| **AgentCore Observability** | Trace collection and agent execution monitoring |
+| **Amazon Nova Act** | Visual reasoning model for browser automation |
 
 <img src="docs/images/architecture-overview.svg"
      alt="Architecture Overview"
@@ -84,42 +73,7 @@ This design emphasizes **extensibility, observability, and clear separation of c
 - Agent-to-Agent (A2A) collaboration
 - Built-in Code Interpreter for charts and documents
 - Multimodal input and output (vision, charts, documents, screenshots)
-- Real-time voice interaction with Amazon Nova Sonic 2  
-
----
-
-## Use Cases
-
-- Financial research agents  
-- Technical research assistants using multi-agent patterns  
-- Autonomous web automation agents  
-- Memory-backed conversational assistants  
-- Hybrid research workflows using MCP, A2A, and AWS SDK tools  
-
----
-
-## Voice Mode
-
-Real-time voice interaction using **Amazon Nova Sonic 2**, **Strands BidiAgent**,
-and **AgentCore Runtime WebSocket**.
-
-- Seamless switching between voice and text within a single session
-- Shared conversation history across both modes
-- Full tool execution support during voice conversations
-
----
-
-## Multi-Agent Architecture
-
-This sample demonstrates a **Supervisor–Worker multi-agent pattern** using the
-**Agent-to-Agent (A2A) protocol**.
-
-<img src="docs/images/multi-agent-architecture.svg"
-     alt="Multi-agent Architecture"
-     width="900">
-
-Design notes:
-- https://medium.com/@revoir07/extend-your-chatbot-with-deep-research-using-a2a-ba4de3ed23e9
+- Real-time voice interaction with Amazon Nova Sonic 2
 
 ---
 
@@ -137,6 +91,29 @@ See [docs/guides/TOOLS.md](docs/guides/TOOLS.md) for full details.
 
 ---
 
+## Skill System (Progressive Disclosure)
+
+Tools are organized into **skills** — grouped units with SKILL.md instructions that the agent loads on demand.
+Instead of injecting all tool documentation into every prompt, the agent activates only the skills it needs:
+
+1. **L1 Catalog** — Skill names and one-line descriptions (always in system prompt)
+2. **L2 Instructions** — Full SKILL.md loaded via `skill_dispatcher` when activated
+3. **L3 Execution** — Tool calls via `skill_executor`
+
+This keeps prompt size small while giving the agent access to detailed instructions when needed.
+
+```
+skills/
+├── visual-design/          # Charts, posters, infographics (Code Interpreter)
+├── code-interpreter/       # General code execution
+├── browser-automation/     # Nova Act browser tools
+├── word-documents/         # Word document generation
+├── excel-spreadsheets/     # Excel spreadsheet generation
+└── powerpoint-presentations/  # PowerPoint generation
+```
+
+---
+
 ## Dynamic Tool Filtering
 
 <img src="docs/images/tool-filtering-flow.svg"
@@ -145,6 +122,17 @@ See [docs/guides/TOOLS.md](docs/guides/TOOLS.md) for full details.
 
 Only user-selected tools are included in each model invocation,
 reducing prompt size and execution cost.
+
+---
+
+## Voice Mode
+
+Real-time voice interaction using **Amazon Nova Sonic 2**, **Strands BidiAgent**,
+and **AgentCore Runtime WebSocket**.
+
+- Seamless switching between voice and text within a single session
+- Shared conversation history across both modes
+- Full tool execution support during voice conversations
 
 ---
 
@@ -164,15 +152,48 @@ Design notes:
 
 ## Token Optimization via Prompt Caching
 
-Prompt caching is implemented via Strands hooks to reuse:
-- System prompts
-- Stable instruction blocks
-- Repeated conversation context
+Prompt caching reduces input token usage by reusing system prompts, stable instruction blocks,
+and repeated conversation context across agent loop iterations.
 
-This reduces input token usage while preserving agent behavior.
+This project originally implemented caching via custom Strands hooks.
+The approach has since been upstreamed into the Strands SDK as a built-in feature
+([strands-agents/sdk-python#1438](https://github.com/strands-agents/sdk-python/pull/1438)):
+
+```python
+from strands.models import BedrockModel, CacheConfig
+
+model = BedrockModel(
+    model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    cache_config=CacheConfig(strategy="auto")
+)
+```
 
 Design notes:
 - https://medium.com/@revoir07/agent-loop-caching-the-missing-optimization-for-agent-workflows-230cc530eb72
+
+---
+
+## Multi-Agent Architecture
+
+This sample demonstrates a **Supervisor–Worker multi-agent pattern** using the
+**Agent-to-Agent (A2A) protocol**.
+
+<img src="docs/images/multi-agent-architecture.svg"
+     alt="Multi-agent Architecture"
+     width="900">
+
+Design notes:
+- https://medium.com/@revoir07/extend-your-chatbot-with-deep-research-using-a2a-ba4de3ed23e9
+
+---
+
+## Use Cases
+
+- Financial research agents
+- Technical research assistants using multi-agent patterns
+- Autonomous web automation agents
+- Memory-backed conversational assistants
+- Hybrid research workflows using MCP, A2A, and AWS SDK tools
 
 ---
 

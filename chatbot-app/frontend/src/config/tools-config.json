@@ -54,16 +54,30 @@
   ],
   "builtin_tools": [
     {
-      "id": "generate_diagram_and_validate",
-      "name": "Diagram Generator",
-      "description": "Generate diagrams and charts using Python code with Bedrock Code Interpreter",
+      "id": "visual_design",
+      "name": "Visual Design",
+      "description": "Generate charts, diagrams, posters, infographics, and visual designs using Python code",
       "category": "code_execution_tools",
       "icon": "",
       "enabled": true,
-      "isDynamic": false,
-      "displayName": { "running": "Generating diagram", "complete": "Generated diagram" },
-      "systemPromptGuidance": "**Code Requirements:**\n- Must include: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- Available libraries: matplotlib, pandas, numpy\n- Recommended: plt.grid(True, alpha=0.3) for readability",
-      "tags": ["report", "presentation", "analysis", "business", "data"]
+      "isDynamic": true,
+      "displayName": { "running": "Creating visual", "complete": "Created visual" },
+      "systemPromptGuidance": "**Tool Selection:**\n- generate_chart: Data charts/graphs (matplotlib, plotly, bokeh) → PNG\n- create_visual_design: Posters, infographics, artwork, flow diagrams (reportlab, Pillow, svgwrite) → PNG or PDF\n\n**Code Requirements:**\n- Charts: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- PDF designs: canvas.save() (reportlab) or equivalent\n- Image designs: image.save(filename) (Pillow)\n- PNG: dpi=300+ recommended\n- PDF: A4 or Letter size recommended",
+      "tags": ["chart", "diagram", "design", "poster", "infographic", "visualization", "report", "presentation", "analysis"],
+      "tools": [
+        {
+          "id": "generate_chart",
+          "name": "Generate Chart",
+          "description": "Generate data charts and graphs using matplotlib or plotly",
+          "displayName": { "running": "Generating chart", "complete": "Generated chart" }
+        },
+        {
+          "id": "create_visual_design",
+          "name": "Create Visual Design",
+          "description": "Create posters, infographics, artwork, and flow diagrams",
+          "displayName": { "running": "Creating design", "complete": "Created design" }
+        }
+      ]
     },
     {
       "id": "word_document_tools",

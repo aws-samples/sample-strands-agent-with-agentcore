@@ -363,5 +363,6 @@ class TestModuleLevelFunctions:
             filters=None,
             log_prefix="[Test]",
             auth_token=None,
+            session_id=None,
         )
         assert result == mock_result
