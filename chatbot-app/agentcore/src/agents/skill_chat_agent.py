@@ -99,6 +99,19 @@ class SkillChatAgent(ChatAgent):
     The rest of the ChatAgent behavior (streaming, session, hooks) is inherited.
     """
 
+    def _build_system_prompt(self):
+        """Build system prompt for skill-based agent.
+
+        Skill tools get their guidance from SKILL.md (loaded on-demand).
+        System prompt only includes base prompt + date.
+        """
+        from agent.config.prompt_builder import BASE_TEXT_PROMPT, get_current_date_pacific
+
+        return [
+            {"text": BASE_TEXT_PROMPT},
+            {"text": f"Current date: {get_current_date_pacific()}"}
+        ]
+
     def _load_tools(self):
         """Override: always include all @skill-decorated local tools + MCP skill tools.
 
