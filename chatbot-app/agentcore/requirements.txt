@@ -7,7 +7,7 @@ uvicorn[standard]==0.35.0
 
 # Strands Agent Framework
 strands-agents[a2a]>=1.24.0
-strands-agents-tools[a2a_client]==0.2.3
+strands-agents-tools[a2a_client]>=0.2.20
 
 # Voice Chat (BidiAgent)
 aws-sdk-bedrock-runtime  # Required by strands BidiNovaSonicModel

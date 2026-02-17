@@ -314,6 +314,87 @@ class SkillRegistry:
         return self._skills[skill_name].get("type", "tool")
 
     # ------------------------------------------------------------------
+    # Level 3+: scripts (executed via skill_executor)
+    # ------------------------------------------------------------------
+
+    def list_scripts(self, skill_name: str) -> list[str]:
+        """List available scripts in a skill's scripts/ directory.
+
+        Returns filenames (.py, .sh) that can be executed
+        via skill_executor(skill_name, script_name="...").
+
+        Args:
+            skill_name: The skill identifier
+
+        Returns:
+            List of script filenames
+        """
+        if skill_name not in self._skills:
+            raise KeyError(f"Unknown skill: '{skill_name}'. Available: {self.skill_names}")
+
+        skill_dir = os.path.join(self.skills_dir, skill_name)
+        scripts_dir = os.path.join(skill_dir, "scripts")
+
+        if not os.path.isdir(scripts_dir):
+            return []
+
+        # Only allow .py and .sh files
+        allowed_extensions = ('.py', '.sh')
+        return sorted(
+            f for f in os.listdir(scripts_dir)
+            if f.endswith(allowed_extensions) and os.path.isfile(os.path.join(scripts_dir, f))
+        )
+
+    def get_script(self, skill_name: str, script_name: str) -> dict:
+        """Get script info from a skill's scripts/ directory.
+
+        Args:
+            skill_name: The skill identifier
+            script_name: Script filename (e.g., "cleanup_cache.py")
+
+        Returns:
+            Dict with:
+                - path: Absolute path to script
+                - executable: Whether script has execute permission
+
+        Raises:
+            KeyError: If skill or script not found
+            ValueError: If script_name contains path separators (security)
+        """
+        if skill_name not in self._skills:
+            raise KeyError(f"Unknown skill: '{skill_name}'. Available: {self.skill_names}")
+
+        # Prevent path traversal
+        if os.sep in script_name or "/" in script_name or ".." in script_name:
+            raise ValueError(
+                f"Invalid script name: '{script_name}'. "
+                f"Must be a plain filename without path separators."
+            )
+
+        # Validate extension
+        if not (script_name.endswith('.py') or script_name.endswith('.sh')):
+            raise ValueError(
+                f"Invalid script type: '{script_name}'. "
+                f"Only .py and .sh files are allowed."
+            )
+
+        skill_dir = os.path.join(self.skills_dir, skill_name)
+        scripts_dir = os.path.join(skill_dir, "scripts")
+        script_path = os.path.join(scripts_dir, script_name)
+
+        if not os.path.isfile(script_path):
+            available = self.list_scripts(skill_name)
+            raise KeyError(
+                f"Script '{script_name}' not found in skill '{skill_name}'. "
+                f"Available: {available}"
+            )
+
+        return {
+            "path": os.path.abspath(script_path),
+            "executable": os.access(script_path, os.X_OK),
+        }
+
+    # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 

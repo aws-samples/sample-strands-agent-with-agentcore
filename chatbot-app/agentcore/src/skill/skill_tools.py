@@ -92,11 +92,12 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
                 "status": "ok",
             })
 
-        # Normal activation: return SKILL.md + tool list with schemas + sources + references
+        # Normal activation: return SKILL.md + tool list with schemas + sources + references + scripts
         instructions = _registry.load_instructions(skill_name)
         tools = _registry.get_tools(skill_name)
         sources = _registry.list_sources(skill_name)
         references = _registry.list_references(skill_name)
+        scripts = _registry.list_scripts(skill_name)
 
         # Build tool info with input schemas so the LLM knows exact parameters
         tool_schemas = []
@@ -119,7 +120,7 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
             "instructions": instructions,
             "available_tools": tool_schemas,
             "status": "activated",
-            "next_step": "Use skill_executor to call any of the available_tools listed above.",
+            "next_step": "Use skill_executor to call tools or run scripts.",
         }
 
         if sources:
@@ -127,6 +128,13 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
 
         if references:
             result["available_references"] = references
+
+        if scripts:
+            result["available_scripts"] = scripts
+            result["script_usage"] = (
+                "To run a script: skill_executor("
+                "skill_name='...', script_name='...', script_input={...})"
+            )
 
         return json.dumps(result)
 
@@ -152,22 +160,36 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
 def skill_executor(
     tool_context: ToolContext,
     skill_name: str,
-    tool_name: str,
-    tool_input: dict,
+    tool_name: str = None,
+    tool_input: dict = None,
+    script_name: str = None,
+    script_input: dict = None,
 ) -> str:
-    """Execute a tool from an activated skill.
+    """Execute a tool or script from an activated skill.
 
-    After activating a skill with skill_dispatcher, use this tool to call
-    the skill's tools. Pass the tool name and its input parameters.
+    Tool execution:
+        skill_executor(
+            skill_name="web-search",
+            tool_name="ddg_web_search",
+            tool_input={"query": "AI", "max_results": 5}
+        )
+
+    Script execution:
+        skill_executor(
+            skill_name="web-search",
+            script_name="cleanup_cache.py",
+            script_input={"days": 30}
+        )
 
     Args:
         skill_name: Name of the activated skill (e.g. "web-search")
-        tool_name: Name of the tool to execute (e.g. "ddg_web_search")
+        tool_name: Name of the tool to execute (mutually exclusive with script_name)
         tool_input: Dictionary of input parameters for the tool
-                    (e.g. {"query": "AI trends 2025", "max_results": 5})
+        script_name: Name of the script to run (mutually exclusive with tool_name)
+        script_input: Dictionary of input parameters for the script
 
     Returns:
-        The tool's execution result
+        The tool/script execution result
     """
     if _registry is None:
         return json.dumps({
@@ -175,6 +197,54 @@ def skill_executor(
             "status": "error",
         })
 
+    # Validation: must specify either tool_name or script_name, not both
+    if tool_name and script_name:
+        return json.dumps({
+            "error": "Cannot specify both tool_name and script_name",
+            "status": "error",
+        })
+
+    if not tool_name and not script_name:
+        return json.dumps({
+            "error": "Must specify either tool_name or script_name",
+            "status": "error",
+        })
+
+    try:
+        # ========== Script Execution Path ==========
+        if script_name:
+            return _execute_script(
+                tool_context=tool_context,
+                skill_name=skill_name,
+                script_name=script_name,
+                script_input=script_input or {},
+            )
+
+        # ========== Tool Execution Path ==========
+        if tool_name:
+            return _execute_tool(
+                tool_context=tool_context,
+                skill_name=skill_name,
+                tool_name=tool_name,
+                tool_input=tool_input or {},
+            )
+
+    except Exception as e:
+        logger.error(f"Error executing {skill_name}/{tool_name or script_name}: {e}")
+        return json.dumps({
+            "error": str(e),
+            "skill": skill_name,
+            "status": "error",
+        })
+
+
+def _execute_tool(
+    tool_context: ToolContext,
+    skill_name: str,
+    tool_name: str,
+    tool_input: dict,
+) -> str:
+    """Execute a tool (existing logic extracted for clarity)."""
     try:
         # Find the tool in the skill's tool list
         tools = _registry.get_tools(skill_name)
@@ -250,5 +320,142 @@ def skill_executor(
             "error": str(e),
             "skill": skill_name,
             "tool": tool_name,
+            "status": "error",
+        })
+
+
+def _execute_script(
+    tool_context: ToolContext,
+    skill_name: str,
+    script_name: str,
+    script_input: dict,
+) -> str:
+    """Execute a script from a skill's scripts/ directory using shell tool."""
+    import os
+    import sys
+    import tempfile
+    from strands_tools.shell import shell
+
+    try:
+        # Get script info from registry
+        script_info = _registry.get_script(skill_name, script_name)
+        script_path = script_info["path"]
+
+        logger.info(f"Executing script: {skill_name}/{script_name}")
+        logger.debug(f"Script path: {script_path}")
+        logger.debug(f"Script input: {script_input}")
+
+        # Security: verify script is within skill directory
+        skill_dir = os.path.join(_registry.skills_dir, skill_name)
+        script_abs = os.path.abspath(script_path)
+        skill_abs = os.path.abspath(skill_dir)
+
+        if not script_abs.startswith(skill_abs):
+            return json.dumps({
+                "error": "Security violation: script outside skill directory",
+                "status": "error",
+            })
+
+        # Build command based on file extension
+        if script_name.endswith('.py'):
+            cmd = f"{sys.executable} {script_path}"
+        elif script_name.endswith('.sh'):
+            cmd = f"/bin/bash {script_path}"
+        else:
+            return json.dumps({
+                "error": f"Unsupported script type: {script_name}",
+                "status": "error",
+            })
+
+        # Write script_input to temporary file for stdin
+        input_file = None
+        try:
+            if script_input:
+                input_file = tempfile.NamedTemporaryFile(
+                    mode='w',
+                    suffix='.json',
+                    delete=False
+                )
+                json.dump(script_input, input_file)
+                input_file.close()
+
+                # Redirect stdin from temp file
+                cmd = f"{cmd} < {input_file.name}"
+
+            # Get user context from invocation_state
+            session_id = tool_context.invocation_state.get("session_id", "")
+            user_id = tool_context.invocation_state.get("user_id", "")
+
+            # Set environment variables via shell command
+            env_vars = [
+                f"SKILL_NAME={skill_name}",
+                f"SCRIPT_NAME={script_name}",
+            ]
+            if session_id:
+                env_vars.append(f"SESSION_ID={session_id}")
+            if user_id:
+                env_vars.append(f"USER_ID={user_id}")
+
+            # Prepend env vars to command
+            cmd = " ".join(env_vars) + " " + cmd
+
+            logger.debug(f"Executing command: {cmd}")
+
+            # Execute script with shell tool
+            result = shell(
+                command=cmd,
+                work_dir=skill_dir,
+                timeout=300,  # 5 minutes default
+                non_interactive=True,  # Auto-execute without user prompt
+            )
+
+            # Parse result from shell tool
+            # shell() returns dict with status and content
+            if isinstance(result, dict):
+                status = result.get("status", "error")
+                content = result.get("content", [])
+
+                # Extract text from content
+                output_texts = []
+                for item in content:
+                    if isinstance(item, dict) and "text" in item:
+                        output_texts.append(item["text"])
+
+                output = "\n".join(output_texts)
+
+                logger.info(
+                    f"Script execution completed: {skill_name}/{script_name} "
+                    f"(status={status})"
+                )
+
+                return json.dumps({
+                    "status": status,
+                    "script": script_name,
+                    "output": output,
+                })
+            else:
+                # Fallback: treat as string result
+                return json.dumps({
+                    "status": "success",
+                    "script": script_name,
+                    "output": str(result),
+                })
+
+        finally:
+            # Clean up temp file
+            if input_file and os.path.exists(input_file.name):
+                os.unlink(input_file.name)
+
+    except KeyError as e:
+        return json.dumps({
+            "error": str(e),
+            "available_scripts": _registry.list_scripts(skill_name),
+            "status": "error",
+        })
+
+    except Exception as e:
+        logger.error(f"Script execution failed: {e}", exc_info=True)
+        return json.dumps({
+            "error": f"Script execution failed: {str(e)}",
             "status": "error",
         })
