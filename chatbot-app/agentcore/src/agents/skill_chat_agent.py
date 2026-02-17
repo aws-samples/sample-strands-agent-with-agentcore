@@ -10,7 +10,7 @@ import os
 from typing import Optional, List, Dict
 
 from agents.chat_agent import ChatAgent
-from skill.skill_dispatcher import set_dispatcher_registry
+from skill.skill_tools import set_dispatcher_registry
 from skill.skill_registry import SkillRegistry
 from skill.decorators import _apply_skill_metadata
 
@@ -221,7 +221,7 @@ class SkillChatAgent(ChatAgent):
         handles hooks, SequentialToolExecutor, NullConversationManager, and all
         other Agent configuration.
         """
-        from skill.skill_dispatcher import skill_dispatcher, skill_executor
+        from skill.skill_tools import skill_dispatcher, skill_executor
         from agent.config.prompt_builder import system_prompt_to_string
 
         # Separate skill tools from non-skill tools
