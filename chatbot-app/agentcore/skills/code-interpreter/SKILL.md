@@ -1,6 +1,6 @@
 ---
 name: code-interpreter
-description: Execute code (Python/JS/TS), run shell commands, and manage files in a sandboxed environment with 200+ pre-installed libraries.
+description: Test and prototype code in a sandboxed environment. Use for debugging, verifying logic, or installing packages.
 ---
 
 # Code Interpreter
@@ -103,17 +103,26 @@ A general-purpose code execution environment powered by AWS Bedrock AgentCore Co
 
 ## When to Use This Skill
 
-| Task | Use This Skill | Use Specialized Skill Instead |
-|------|---------------|-------------------------------|
-| Quick calculation or data analysis | Yes | |
-| Generate matplotlib/plotly chart | Yes | visual-design also works |
-| Build ML model or run statistics | Yes | |
-| Parse/transform data files | Yes | |
-| Prototype and test code | Yes | |
-| Install packages and run scripts | Yes | |
-| Create Word document | | word-documents (has template support) |
-| Create Excel spreadsheet | | excel-spreadsheets (has formatting pipeline) |
-| Create PowerPoint | | powerpoint-presentations (has layout system) |
+Use code-interpreter as a **sandbox for testing and prototyping code**.
+For production tasks (creating documents, charts, presentations), prefer specialized skills.
+
+**Do NOT use for:**
+- Formatting or displaying code examples (respond directly with markdown code blocks)
+- Explaining code or algorithms (respond directly with text)
+- Simple calculations you can do mentally (just provide the answer)
+- Any task that doesn't require actual code execution
+
+| Task | Recommended Skill | Notes |
+|------|-------------------|-------|
+| Create charts/diagrams | **visual-design** | Use this first for production charts |
+| Create Word documents | **word-documents** | Has template support and styling |
+| Create Excel spreadsheets | **excel-spreadsheets** | Has formatting pipeline and validation |
+| Create PowerPoint | **powerpoint-presentations** | Has layout system and design patterns |
+| **Test code snippets** | **code-interpreter** | Debug, verify logic, check output |
+| **Prototype algorithms** | **code-interpreter** | Experiment before implementing |
+| **Install/test packages** | **code-interpreter** | Check compatibility, test APIs |
+| Debug code logic | code-interpreter | Isolate and test specific functions |
+| Verify calculations | code-interpreter | Quick math or data checks |
 
 ## Environment
 

@@ -23,7 +23,6 @@ You can verify the sync with: GET http://localhost:3000/api/tools
 """
 
 from .diagram_tool import generate_chart, create_visual_design
-from .artifact_editor_tool import update_artifact
 
 # Nova Act browser tools
 from .nova_act_browser_tools import browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs, browser_save_screenshot
@@ -63,7 +62,6 @@ from .powerpoint_presentation_tool import (
 __all__ = [
     'generate_chart',
     'create_visual_design',
-    'update_artifact',
     'browser_navigate',
     'browser_act',
     'browser_extract',
@@ -103,7 +101,6 @@ __all__ = [
 BUILTIN_TOOLS = [
     generate_chart,
     create_visual_design,
-    update_artifact,
     create_word_document,
     modify_word_document,
     list_my_word_documents,
