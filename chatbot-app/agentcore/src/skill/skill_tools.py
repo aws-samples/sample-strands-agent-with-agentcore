@@ -324,6 +324,34 @@ def _execute_tool(
         })
 
 
+def _dict_to_cli_args(params: dict) -> str:
+    """Convert a dict to CLI argument string.
+
+    Conversion rules:
+      - key "fetch_url" or "fetch-url" → --fetch-url
+      - bool True  → --flag (present)
+      - bool False → omitted
+      - list       → --key v1 --key v2
+      - other      → --key 'value'
+    """
+    import shlex
+
+    args = []
+    for key, value in params.items():
+        flag = "--" + key.replace("_", "-")
+
+        if isinstance(value, bool):
+            if value:
+                args.append(flag)
+        elif isinstance(value, list):
+            for item in value:
+                args.append(f"{flag} {shlex.quote(str(item))}")
+        else:
+            args.append(f"{flag} {shlex.quote(str(value))}")
+
+    return " ".join(args)
+
+
 def _execute_script(
     tool_context: ToolContext,
     skill_name: str,
@@ -333,7 +361,6 @@ def _execute_script(
     """Execute a script from a skill's scripts/ directory using shell tool."""
     import os
     import sys
-    import tempfile
     from strands_tools.shell import shell
 
     try:
@@ -367,84 +394,68 @@ def _execute_script(
                 "status": "error",
             })
 
-        # Write script_input to temporary file for stdin
-        input_file = None
-        try:
-            if script_input:
-                input_file = tempfile.NamedTemporaryFile(
-                    mode='w',
-                    suffix='.json',
-                    delete=False
-                )
-                json.dump(script_input, input_file)
-                input_file.close()
+        # Convert script_input dict to CLI arguments
+        if script_input:
+            cmd = cmd + " " + _dict_to_cli_args(script_input)
 
-                # Redirect stdin from temp file
-                cmd = f"{cmd} < {input_file.name}"
+        # Get user context from invocation_state
+        session_id = tool_context.invocation_state.get("session_id", "")
+        user_id = tool_context.invocation_state.get("user_id", "")
 
-            # Get user context from invocation_state
-            session_id = tool_context.invocation_state.get("session_id", "")
-            user_id = tool_context.invocation_state.get("user_id", "")
+        # Set environment variables via shell command
+        env_vars = [
+            f"SKILL_NAME={skill_name}",
+            f"SCRIPT_NAME={script_name}",
+        ]
+        if session_id:
+            env_vars.append(f"SESSION_ID={session_id}")
+        if user_id:
+            env_vars.append(f"USER_ID={user_id}")
 
-            # Set environment variables via shell command
-            env_vars = [
-                f"SKILL_NAME={skill_name}",
-                f"SCRIPT_NAME={script_name}",
-            ]
-            if session_id:
-                env_vars.append(f"SESSION_ID={session_id}")
-            if user_id:
-                env_vars.append(f"USER_ID={user_id}")
+        # Prepend env vars to command
+        cmd = " ".join(env_vars) + " " + cmd
 
-            # Prepend env vars to command
-            cmd = " ".join(env_vars) + " " + cmd
+        logger.debug(f"Executing command: {cmd}")
 
-            logger.debug(f"Executing command: {cmd}")
+        # Execute script with shell tool
+        result = shell(
+            command=cmd,
+            work_dir=skill_dir,
+            timeout=300,  # 5 minutes default
+            non_interactive=True,  # Auto-execute without user prompt
+        )
 
-            # Execute script with shell tool
-            result = shell(
-                command=cmd,
-                work_dir=skill_dir,
-                timeout=300,  # 5 minutes default
-                non_interactive=True,  # Auto-execute without user prompt
+        # Parse result from shell tool
+        # shell() returns dict with status and content
+        if isinstance(result, dict):
+            status = result.get("status", "error")
+            content = result.get("content", [])
+
+            # Extract text from content
+            output_texts = []
+            for item in content:
+                if isinstance(item, dict) and "text" in item:
+                    output_texts.append(item["text"])
+
+            output = "\n".join(output_texts)
+
+            logger.info(
+                f"Script execution completed: {skill_name}/{script_name} "
+                f"(status={status})"
             )
 
-            # Parse result from shell tool
-            # shell() returns dict with status and content
-            if isinstance(result, dict):
-                status = result.get("status", "error")
-                content = result.get("content", [])
-
-                # Extract text from content
-                output_texts = []
-                for item in content:
-                    if isinstance(item, dict) and "text" in item:
-                        output_texts.append(item["text"])
-
-                output = "\n".join(output_texts)
-
-                logger.info(
-                    f"Script execution completed: {skill_name}/{script_name} "
-                    f"(status={status})"
-                )
-
-                return json.dumps({
-                    "status": status,
-                    "script": script_name,
-                    "output": output,
-                })
-            else:
-                # Fallback: treat as string result
-                return json.dumps({
-                    "status": "success",
-                    "script": script_name,
-                    "output": str(result),
-                })
-
-        finally:
-            # Clean up temp file
-            if input_file and os.path.exists(input_file.name):
-                os.unlink(input_file.name)
+            return json.dumps({
+                "status": status,
+                "script": script_name,
+                "output": output,
+            })
+        else:
+            # Fallback: treat as string result
+            return json.dumps({
+                "status": "success",
+                "script": script_name,
+                "output": str(result),
+            })
 
     except KeyError as e:
         return json.dumps({
