@@ -23,5 +23,8 @@
   "dependencies": {
     "aws-cdk-lib": "^2.180.0",
     "constructs": "^10.0.0"
+  },
+  "overrides": {
+    "ajv": "^8.18.0"
   }
 }

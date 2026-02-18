@@ -28,5 +28,8 @@
     "aws-cdk-lib": "2.224.0",
     "constructs": "^10.0.0",
     "source-map-support": "^0.5.21"
+  },
+  "overrides": {
+    "ajv": "^8.18.0"
   }
 }
