@@ -163,7 +163,7 @@ The approach has since been upstreamed into the Strands SDK as a built-in featur
 from strands.models import BedrockModel, CacheConfig
 
 model = BedrockModel(
-    model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+    model_id="us.anthropic.claude-sonnet-4-6-v1",
     cache_config=CacheConfig(strategy="auto")
 )
 ```

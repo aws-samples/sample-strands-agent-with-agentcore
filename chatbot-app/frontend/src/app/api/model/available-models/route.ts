@@ -15,8 +15,8 @@ const AVAILABLE_MODELS = [
     description: 'Most intelligent model, best for complex tasks'
   },
   {
-    id: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-    name: 'Claude Sonnet 4.5',
+    id: 'us.anthropic.claude-sonnet-4-6',
+    name: 'Claude Sonnet 4.6',
     provider: 'Anthropic',
     description: 'Most capable model, balanced performance'
   },

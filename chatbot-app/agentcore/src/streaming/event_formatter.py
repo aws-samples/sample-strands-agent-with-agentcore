@@ -202,10 +202,10 @@ class StreamEventFormatter:
                                                     "height": img.get("height", 0)
                                                 })
 
-                                    # Handle A2A tool response format: {"status": "...", "text": "...", "metadata": {...}}
+                                    # Handle structured tool response: {"text": "...", "metadata": {...}}
                                     if "text" in parsed_json:
                                         result_text += parsed_json["text"]
-                                        # Extract metadata for browserSessionId
+                                        # Extract metadata (filename, tool_type, etc.)
                                         if "metadata" in parsed_json and isinstance(parsed_json["metadata"], dict):
                                             if "metadata" not in tool_result:
                                                 tool_result["metadata"] = {}

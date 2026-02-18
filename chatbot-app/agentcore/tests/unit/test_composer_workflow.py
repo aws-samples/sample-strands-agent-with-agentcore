@@ -84,7 +84,7 @@ def writing_agent():
     return ComposerWorkflow(
         session_id="test-session-123",
         user_id="test-user-456",
-        model_id="us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        model_id="us.anthropic.claude-sonnet-4-6",
         temperature=0.7
     )
 
@@ -112,7 +112,7 @@ class TestComposerWorkflowInit:
         agent = ComposerWorkflow(session_id="sess-123")
         assert agent.session_id == "sess-123"
         assert agent.user_id == "sess-123"  # defaults to session_id
-        assert agent.model_id == "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        assert agent.model_id == "us.anthropic.claude-sonnet-4-6"
         assert agent.temperature == 0.7
 
     def test_init_with_custom_values(self):

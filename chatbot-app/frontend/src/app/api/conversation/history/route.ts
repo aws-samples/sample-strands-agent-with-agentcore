@@ -159,8 +159,8 @@ export async function GET(request: NextRequest) {
       messages = []
       let msgIndex = 0
 
-      // Also look for agent_state (artifacts are stored in agent.state.artifacts)
-      // Events are newest-first, so we find the latest agent_state first
+      // Find latest agent_state (artifacts stored in agent.state.artifacts)
+      // Events are newest-first, so first match is the latest
       let latestAgentState: any = null
 
       for (const event of events) {
@@ -170,18 +170,19 @@ export async function GET(request: NextRequest) {
               const blobData = JSON.parse(payloadItem.blob)
               if (
                 typeof blobData === 'object' &&
-                blobData._payload_type === 'agent_state' &&
-                blobData._agent_id === 'default'  // ChatAgent uses 'default' agent_id
+                blobData.agent_id &&
+                blobData.state &&
+                blobData.conversation_manager_state !== undefined
               ) {
                 latestAgentState = blobData
-                break  // Found latest, stop searching
+                break
               }
             } catch {
               // Not JSON or invalid format, skip
             }
           }
         }
-        if (latestAgentState) break  // Found latest agent_state
+        if (latestAgentState) break
       }
 
       // Extract artifacts from agent_state
@@ -214,8 +215,8 @@ export async function GET(request: NextRequest) {
             continue
           }
 
-          // Skip agent_state payloads (already processed above)
-          if (parsed._payload_type === 'agent_state') {
+          // Skip agent_state payloads (fetched separately via actorId="agent_default")
+          if (parsed.agent_id && parsed.state && parsed.conversation_manager_state !== undefined) {
             continue
           }
 
@@ -237,8 +238,8 @@ export async function GET(request: NextRequest) {
           try {
             const blobParsed = JSON.parse(payload.blob)
 
-            // Skip agent_state blobs (already processed above)
-            if (typeof blobParsed === 'object' && blobParsed._payload_type === 'agent_state') {
+            // Skip agent_state blobs (fetched separately via actorId="agent_default")
+            if (typeof blobParsed === 'object' && blobParsed.agent_id && blobParsed.state) {
               continue
             }
 
@@ -312,8 +313,8 @@ export async function GET(request: NextRequest) {
       // Include session preferences for restoration
       sessionPreferences: sessionMetadata ? {
         lastModel: sessionMetadata.lastModel,
-        lastTemperature: sessionMetadata.lastTemperature,
         enabledTools: sessionMetadata.enabledTools,
+        skillsEnabled: sessionMetadata.skillsEnabled,
       } : null,
     })
   } catch (error) {

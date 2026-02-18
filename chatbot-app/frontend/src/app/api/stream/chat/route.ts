@@ -265,11 +265,11 @@ export async function POST(request: NextRequest) {
     }
 
     // Load model configuration from storage (only if not provided in request)
-    const defaultModelId = model_id || 'us.anthropic.claude-haiku-4-5-20251001-v1:0'
+    const defaultModelId = model_id || 'us.anthropic.claude-sonnet-4-6'
 
     let modelConfig = {
       model_id: defaultModelId,
-      temperature: temperature ?? 0.7,
+      temperature: temperature ?? 0.5,
       system_prompt: getSystemPrompt(),
       caching_enabled: defaultModelId.toLowerCase().includes('claude')
     }
@@ -550,6 +550,7 @@ export async function POST(request: NextRequest) {
                   lastModel: modelConfig.model_id,
                   lastTemperature: modelConfig.temperature,
                   enabledTools: enabledToolsList,
+                  skillsEnabled: request_type === 'skill',
                 },
               }
 

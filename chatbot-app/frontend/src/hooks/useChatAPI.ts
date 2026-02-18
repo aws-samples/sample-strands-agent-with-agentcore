@@ -172,8 +172,8 @@ interface UseChatAPIProps {
 // Session preferences returned when loading a session
 export interface SessionPreferences {
   lastModel?: string
-  lastTemperature?: number
   enabledTools?: string[]
+  skillsEnabled?: boolean
   selectedPromptId?: string
   customPromptText?: string
 }

@@ -212,8 +212,5 @@ def make_error_response(message: str) -> Dict[str, Any]:
 
 def make_success_response(message: str, **metadata) -> Dict[str, Any]:
     """Create standard success response."""
-    return {
-        "content": [{"text": message}],
-        "status": "success",
-        "metadata": metadata
-    }
+    from .tool_response import build_success_response
+    return build_success_response(message, metadata)

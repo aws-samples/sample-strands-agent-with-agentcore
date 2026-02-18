@@ -498,7 +498,7 @@ class TestA2AProtocolContract:
             metadata={
                 "session_id": "s1",
                 "user_id": "u1",
-                "model_id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+                "model_id": "us.anthropic.claude-sonnet-4-6",
                 "temperature": 0.7
             }
         )

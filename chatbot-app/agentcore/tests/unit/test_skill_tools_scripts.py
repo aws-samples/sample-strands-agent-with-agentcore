@@ -121,7 +121,7 @@ class TestSkillExecutorScriptValidation:
 class TestExecuteScriptFunction:
     """Test the _execute_script helper function."""
 
-    @patch('skill.skill_tools.shell')
+    @patch('strands_tools.shell.shell')
     def test_execute_script_python(self, mock_shell, tool_context, registry):
         """_execute_script should execute Python scripts correctly."""
         skill_tools._registry = registry
@@ -149,7 +149,7 @@ class TestExecuteScriptFunction:
         assert "python" in call_args[1]["command"] or "python3" in call_args[1]["command"]
         assert "echo.py" in call_args[1]["command"]
 
-    @patch('skill.skill_tools.shell')
+    @patch('strands_tools.shell.shell')
     def test_execute_script_bash(self, mock_shell, tool_context, registry):
         """_execute_script should execute shell scripts correctly."""
         skill_tools._registry = registry
@@ -175,7 +175,7 @@ class TestExecuteScriptFunction:
         call_args = mock_shell.call_args
         assert "/bin/bash" in call_args[1]["command"]
 
-    @patch('skill.skill_tools.shell')
+    @patch('strands_tools.shell.shell')
     def test_execute_script_passes_environment_vars(self, mock_shell, tool_context, registry):
         """_execute_script should pass environment variables."""
         skill_tools._registry = registry
@@ -237,7 +237,7 @@ class TestExecuteScriptFunction:
             assert result_dict["status"] == "error"
             assert "Security violation" in result_dict["error"]
 
-    @patch('skill.skill_tools.shell')
+    @patch('strands_tools.shell.shell')
     def test_execute_script_with_json_input(self, mock_shell, tool_context, registry):
         """_execute_script should pass JSON input via stdin."""
         skill_tools._registry = registry
@@ -261,7 +261,7 @@ class TestExecuteScriptFunction:
         command = call_args[1]["command"]
         assert "<" in command  # stdin redirection
 
-    @patch('skill.skill_tools.shell')
+    @patch('strands_tools.shell.shell')
     def test_execute_script_timeout_parameter(self, mock_shell, tool_context, registry):
         """_execute_script should set timeout for shell execution."""
         skill_tools._registry = registry
@@ -282,7 +282,7 @@ class TestExecuteScriptFunction:
         call_args = mock_shell.call_args
         assert call_args[1]["timeout"] == 300  # 5 minutes default
 
-    @patch('skill.skill_tools.shell')
+    @patch('strands_tools.shell.shell')
     def test_execute_script_non_interactive_mode(self, mock_shell, tool_context, registry):
         """_execute_script should run in non-interactive mode."""
         skill_tools._registry = registry
@@ -307,7 +307,7 @@ class TestExecuteScriptFunction:
 class TestSkillExecutorIntegration:
     """Integration tests for skill_executor with scripts."""
 
-    @patch('skill.skill_tools.shell')
+    @patch('strands_tools.shell.shell')
     def test_skill_executor_full_flow(self, mock_shell, tool_context, registry):
         """Test full flow from skill_executor to script execution."""
         skill_tools._registry = registry
