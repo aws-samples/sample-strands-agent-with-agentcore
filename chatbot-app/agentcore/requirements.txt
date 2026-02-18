@@ -27,7 +27,7 @@ httpx>=0.24.0
 anyio>=3.6.0
 
 # Web Search
-ddgs>=9.0.0
+ddgs==9.10.0
 
 # OpenTelemetry (for observability)
 aws-opentelemetry-distro>=0.10.1

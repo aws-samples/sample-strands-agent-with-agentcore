@@ -3,6 +3,7 @@ Simple Web Search Tool - Strands Native
 Uses DuckDuckGo for web search without external dependencies
 """
 
+import asyncio
 import json
 import logging
 from strands import tool
@@ -42,9 +43,12 @@ async def ddg_web_search(query: str, max_results: int = 5) -> str:
         # Limit max_results to prevent abuse
         max_results = min(max_results, 10)
 
-        # Perform search
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=max_results))
+        # Run blocking DDGS call in a thread with a 30s timeout
+        def _search():
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=max_results))
+
+        results = await asyncio.wait_for(asyncio.to_thread(_search), timeout=30.0)
 
         # Format results
         formatted_results = []
@@ -64,6 +68,14 @@ async def ddg_web_search(query: str, max_results: int = 5) -> str:
             "result_count": len(formatted_results),
             "results": formatted_results
         }, indent=2)
+
+    except asyncio.TimeoutError:
+        logger.error(f"Web search timed out for query: '{query}'")
+        return json.dumps({
+            "success": False,
+            "error": "Search timed out after 30 seconds",
+            "query": query
+        })
 
     except ImportError:
         error_msg = "ddgs library not installed. Please install it with: pip install ddgs"
