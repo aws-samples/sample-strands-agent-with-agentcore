@@ -7,7 +7,7 @@ import { useChatAPI, SessionPreferences } from './useChatAPI'
 import { usePolling, hasOngoingA2ATools, A2A_TOOLS_REQUIRING_POLLING } from './usePolling'
 import { getApiUrl } from '@/config/environment'
 import { fetchAuthSession } from 'aws-amplify/auth'
-import { apiPost } from '@/lib/api-client'
+import { apiGet, apiPost } from '@/lib/api-client'
 
 import { WorkspaceDocument } from './useStreamEvents'
 import { ExtractedDataInfo } from './useCanvasHandlers'
@@ -83,8 +83,7 @@ interface UseChatReturn {
 
 // Default preferences when session has no saved preferences
 const DEFAULT_PREFERENCES: SessionPreferences = {
-  lastModel: 'us.anthropic.claude-sonnet-4-5-20250929-v1:0',
-  lastTemperature: 0.7,
+  lastModel: 'us.anthropic.claude-sonnet-4-6',
   enabledTools: [],
   selectedPromptId: 'general',
 }
@@ -100,9 +99,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [skillsEnabled, setSkillsEnabled] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
 
-  // Per-session model/temperature state (not written to global profile on session switch)
+  // Per-session model state (not written to global profile on session switch)
   const [currentModelId, setCurrentModelId] = useState(DEFAULT_PREFERENCES.lastModel!)
-  const [currentTemperature, setCurrentTemperature] = useState(DEFAULT_PREFERENCES.lastTemperature!)
+  const [currentTemperature, setCurrentTemperature] = useState(0.5)
 
   // Ref to hold session-specific enabled tools for re-application after loadTools
   const sessionEnabledToolsRef = useRef<string[] | null>(null)
@@ -374,7 +373,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       ...DEFAULT_PREFERENCES,
       ...preferences,
       lastModel: preferences?.lastModel || DEFAULT_PREFERENCES.lastModel,
-      lastTemperature: preferences?.lastTemperature ?? DEFAULT_PREFERENCES.lastTemperature,
     }
 
     console.log(`[useChat] ${preferences ? 'Restoring session' : 'Using default'} preferences:`, effectivePreferences)
@@ -395,10 +393,20 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     sessionEnabledToolsRef.current = enabledTools
     console.log(`[useChat] Tool states updated: ${enabledTools.length} enabled`)
 
-    // Restore model configuration via React state only (no global profile mutation)
-    setCurrentModelId(effectivePreferences.lastModel!)
-    setCurrentTemperature(effectivePreferences.lastTemperature!)
-    console.log(`[useChat] Model state updated: ${effectivePreferences.lastModel}, temp=${effectivePreferences.lastTemperature}`)
+    // Restore model configuration with validation against available models
+    let restoredModel = effectivePreferences.lastModel!
+    try {
+      const modelsResponse = await apiGet<{ models: { id: string }[] }>('model/available-models')
+      const validModelIds = modelsResponse.models?.map(m => m.id) || []
+      if (validModelIds.length > 0 && !validModelIds.includes(restoredModel)) {
+        console.warn(`[useChat] Saved model ${restoredModel} not in available models, falling back to default`)
+        restoredModel = DEFAULT_PREFERENCES.lastModel!
+      }
+    } catch {
+      // If fetch fails, use saved model as-is
+    }
+    setCurrentModelId(restoredModel)
+    console.log(`[useChat] Model state updated: ${restoredModel}`)
 
     // Restore swarm mode preference from sessionStorage
     const savedSwarmEnabled = sessionStorage.getItem(`swarm-enabled-${newSessionId}`)
@@ -406,9 +414,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setSwarmEnabled(swarmRestored)
     console.log(`[useChat] Swarm mode restored: ${swarmRestored}`)
 
-    // Restore skills mode preference from sessionStorage
-    const savedSkillsEnabled = sessionStorage.getItem(`skills-enabled-${newSessionId}`)
-    const skillsRestored = savedSkillsEnabled === 'true'
+    // Restore skills mode from session preferences (DynamoDB), fallback to sessionStorage, default true
+    const skillsRestored = effectivePreferences.skillsEnabled ??
+      (sessionStorage.getItem(`skills-enabled-${newSessionId}`) !== 'false')
     setSkillsEnabled(skillsRestored)
     console.log(`[useChat] Skills mode restored: ${skillsRestored}`)
 
@@ -640,9 +648,17 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       })
       setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
       setMessages([])
-      // Keep current tool and model selections for new session (inherit from previous)
+      // Reset to defaults: skills enabled, all tools disabled, swarm off
+      setSkillsEnabled(true)
       setSwarmEnabled(false)
-      sessionEnabledToolsRef.current = null
+      setAvailableTools(prevTools => prevTools.map(tool => {
+        const updated: any = { ...tool, enabled: false }
+        if ((tool as any).isDynamic && (tool as any).tools) {
+          updated.tools = (tool as any).tools.map((nt: any) => ({ ...nt, enabled: false }))
+        }
+        return updated
+      }))
+      sessionEnabledToolsRef.current = []
       if (oldSessionId) {
         sessionStorage.removeItem(`browser-session-${oldSessionId}`)
       }

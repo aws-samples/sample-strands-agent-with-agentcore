@@ -10,6 +10,7 @@ Generated outputs are automatically saved to workspace for reuse in Word/Excel/P
 from strands import tool, ToolContext
 from skill import register_skill
 from typing import Dict, Any, Optional
+from builtin_tools.lib.tool_response import build_success_response, build_image_response
 import logging
 import os
 
@@ -263,32 +264,30 @@ Saved to workspace for reuse in documents.
             }
         ]
 
+        metadata = {
+            "filename": output_filename,
+            "s3_key": s3_info['s3_key'],
+            "size_kb": f"{file_size_kb:.1f}",
+            "format": file_format,
+            "tool_type": tool_name,
+            "user_id": user_id,
+            "session_id": session_id,
+        }
+
         # Add image preview for PNG files
         if not is_pdf:
-            result_content.append({
+            image_blocks = [{
                 "image": {
                     "format": "png",
                     "source": {
                         "bytes": file_content
                     }
                 }
-            })
+            }]
+            return build_image_response(result_content, image_blocks, metadata)
         else:
             result_content[0]["text"] += "\n\n*PDF generated. Use the document download feature to view.*"
-
-        return {
-            "content": result_content,
-            "status": "success",
-            "metadata": {
-                "filename": output_filename,
-                "s3_key": s3_info['s3_key'],
-                "size_kb": f"{file_size_kb:.1f}",
-                "format": file_format,
-                "tool_type": tool_name,
-                "user_id": user_id,
-                "session_id": session_id,
-            }
-        }
+            return build_success_response(result_content[0]["text"], metadata)
 
     except Exception as e:
         import traceback

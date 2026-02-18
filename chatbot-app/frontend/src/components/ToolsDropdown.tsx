@@ -58,7 +58,7 @@ const TOOL_BRAND_COLORS: Record<string, string> = {
   'word_document_tools':         '#2B579A',
   'excel_spreadsheet_tools':     '#217346',
   'powerpoint_presentation_tools': '#D24726',
-  'generate_diagram_and_validate': '#8B5CF6',
+  'visual_design':               '#8B5CF6',
   'calculator':                  '#6366F1',
   'create_visualization':        '#F59E0B',
   // Browser
@@ -79,7 +79,7 @@ function getToolColor(toolId: string): string {
 const TOOL_DISPLAY_NAMES: Record<string, string> = {
   'browser_automation': 'Nova Act Browser',
   'create_visualization': 'Visualization',
-  'generate_diagram_and_validate': 'Diagram',
+  'visual_design': 'Visual Design',
   'excel_spreadsheet_tools': 'Excel',
   'powerpoint_presentation_tools': 'PowerPoint',
   'word_document_tools': 'Word',
@@ -123,7 +123,7 @@ const CATEGORY_TOOL_IDS: Record<Exclude<ToolCategory, 'all'>, string[]> = {
     'word_document_tools',
     'excel_spreadsheet_tools',
     'powerpoint_presentation_tools',
-    'generate_diagram_and_validate',
+    'visual_design',
     'calculator',
     'create_visualization',
   ],

@@ -99,7 +99,7 @@ class SwarmAgent(BaseAgent):
 
     def _get_default_model_id(self) -> str:
         """Get default model ID for specialist agents"""
-        return "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        return "us.anthropic.claude-sonnet-4-6"
 
     def _load_tools(self) -> List:
         """

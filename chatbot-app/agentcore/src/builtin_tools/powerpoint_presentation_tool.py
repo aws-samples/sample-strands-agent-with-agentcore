@@ -25,6 +25,7 @@ from .lib.ppt_utils import (
     make_error_response,
 )
 from .lib.slide_examples import get_examples, get_all_categories
+from .lib.tool_response import build_success_response, build_image_response
 
 logger = logging.getLogger(__name__)
 
@@ -88,11 +89,7 @@ def get_slide_code_examples(category: str = "text_layout") -> Dict[str, Any]:
                     # Code example
                     output_parts.append(f"```python\n{example['code'].strip()}\n```\n")
 
-        return {
-            "content": [{"text": "\n".join(output_parts)}],
-            "status": "success",
-            "metadata": {"category": category}
-        }
+        return build_success_response("\n".join(output_parts), {"category": category})
 
     except Exception as e:
         logger.error(f"get_slide_code_examples error: {e}")
@@ -121,14 +118,10 @@ def list_my_powerpoint_presentations(tool_context: ToolContext) -> Dict[str, Any
         # Format list
         workspace_list = ppt_manager.format_file_list(documents)
 
-        return {
-            "content": [{"text": workspace_list}],
-            "status": "success",
-            "metadata": {
-                "count": len(documents),
-                "presentations": [doc['filename'] for doc in documents]
-            }
-        }
+        return build_success_response(workspace_list, {
+            "count": len(documents),
+            "presentations": [doc['filename'] for doc in documents]
+        })
 
     except Exception as e:
         logger.error(f"list_my_powerpoint_presentations error: {e}", exc_info=True)
@@ -269,17 +262,13 @@ except Exception as e:
                 output_text += f"- \"{layout['name']}\"\n"
 
             code_interpreter.stop()
-            return {
-                "content": [{"text": output_text}],
-                "status": "success",
-                "metadata": {
-                    "filename": presentation_filename,
-                    "layouts": layout_data['layouts'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(output_text, {
+                "filename": presentation_filename,
+                "layouts": layout_data['layouts'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         finally:
             code_interpreter.stop()
@@ -583,18 +572,14 @@ def analyze_presentation(
                         output_text += f"  (Non-editable: {format_ranges(excluded_indices)})\n"
 
             code_interpreter.stop()
-            return {
-                "content": [{"text": output_text}],
-                "status": "success",
-                "metadata": {
-                    "filename": presentation_filename,
-                    "slide_index": slide_index,
-                    "analysis": analysis,
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(output_text, {
+                "filename": presentation_filename,
+                "slide_index": slide_index,
+                "analysis": analysis,
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         finally:
             code_interpreter.stop()
@@ -627,7 +612,8 @@ def update_slide_content(
                     "operations": [
                         {"action": "set_text", "element_id": int, "text": str},
                         {"action": "replace_text", "element_id": int, "find": str, "replace": str},
-                        {"action": "replace_image", "element_id": int, "image_path": str}
+                        {"action": "replace_image", "element_id": int, "image_path": str},
+                        {"action": "run_code", "code": str}
                     ]
                 }
             ]
@@ -637,6 +623,7 @@ def update_slide_content(
         - set_text: Replace entire element text (works on type: text)
         - replace_text: Find and replace within element (works on type: text)
         - replace_image: Replace element image (works on type: picture)
+        - run_code: Execute raw python-pptx code on the slide. Available variables: slide, prs, Inches, Pt, RGBColor
 
     Element IDs:
         - Get element_id from analyze_presentation output
@@ -804,6 +791,7 @@ def update_slide_content(
             })
 
             # Check for errors
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -822,6 +810,11 @@ def update_slide_content(
                         }],
                         "status": "error"
                     }
+
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             # Download result
             output_ci_path = ppt_manager.get_ci_path(output_filename)
@@ -889,22 +882,22 @@ def update_slide_content(
 - Use `analyze_presentation` to verify changes
 """
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                success_msg += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             code_interpreter.stop()
-            return {
-                "content": [{"text": success_msg}],
-                "status": "success",
-                "metadata": {
-                    "source_filename": source_filename,
-                    "filename": output_filename,
-                    "slide_updates": slide_updates,
-                    "total_operations": total_operations,
-                    "size_kb": s3_info['size_kb'],
-                    "s3_key": s3_info['s3_key'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(success_msg, {
+                "source_filename": source_filename,
+                "filename": output_filename,
+                "slide_updates": slide_updates,
+                "total_operations": total_operations,
+                "size_kb": s3_info['size_kb'],
+                "s3_key": s3_info['s3_key'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -997,6 +990,7 @@ def add_slide(
 
             response = code_interpreter.invoke("executeCode", {"code": safe_code, "language": "python", "clearContext": False})
 
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -1010,6 +1004,11 @@ def add_slide(
 
                     # Other errors
                     return {"content": [{"text": f"**Failed to add slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
@@ -1043,21 +1042,21 @@ def add_slide(
 **Size:** {s3_info['size_kb']}
 **Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                success_msg += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             code_interpreter.stop()
-            return {
-                "content": [{"text": success_msg}],
-                "status": "success",
-                "metadata": {
-                    "filename": output_filename,
-                    "layout_name": layout_name,
-                    "position": position,
-                    "size_kb": s3_info['size_kb'],
-                    "s3_key": s3_info['s3_key'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(success_msg, {
+                "filename": output_filename,
+                "layout_name": layout_name,
+                "position": position,
+                "size_kb": s3_info['size_kb'],
+                "s3_key": s3_info['s3_key'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -1130,6 +1129,7 @@ def delete_slides(
 
             response = code_interpreter.invoke("executeCode", {"code": safe_code, "language": "python", "clearContext": False})
 
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -1143,6 +1143,11 @@ def delete_slides(
 
                     # Other errors
                     return {"content": [{"text": f"**Failed to delete slides**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
@@ -1176,20 +1181,20 @@ def delete_slides(
 **Size:** {s3_info['size_kb']}
 **Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                success_msg += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             code_interpreter.stop()
-            return {
-                "content": [{"text": success_msg}],
-                "status": "success",
-                "metadata": {
-                    "filename": output_filename,
-                    "deleted_count": len(slide_indices),
-                    "size_kb": s3_info['size_kb'],
-                    "s3_key": s3_info['s3_key'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(success_msg, {
+                "filename": output_filename,
+                "deleted_count": len(slide_indices),
+                "size_kb": s3_info['size_kb'],
+                "s3_key": s3_info['s3_key'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -1261,6 +1266,7 @@ def move_slide(
 
             response = code_interpreter.invoke("executeCode", {"code": safe_code, "language": "python", "clearContext": False})
 
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -1274,6 +1280,11 @@ def move_slide(
 
                     # Other errors
                     return {"content": [{"text": f"**Failed to move slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
@@ -1306,21 +1317,21 @@ def move_slide(
 **Size:** {s3_info['size_kb']}
 **Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                success_msg += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             code_interpreter.stop()
-            return {
-                "content": [{"text": success_msg}],
-                "status": "success",
-                "metadata": {
-                    "filename": output_filename,
-                    "from_index": from_index,
-                    "to_index": to_index,
-                    "size_kb": s3_info['size_kb'],
-                    "s3_key": s3_info['s3_key'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(success_msg, {
+                "filename": output_filename,
+                "from_index": from_index,
+                "to_index": to_index,
+                "size_kb": s3_info['size_kb'],
+                "s3_key": s3_info['s3_key'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -1392,6 +1403,7 @@ def duplicate_slide(
 
             response = code_interpreter.invoke("executeCode", {"code": safe_code, "language": "python", "clearContext": False})
 
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -1405,6 +1417,11 @@ def duplicate_slide(
 
                     # Other errors
                     return {"content": [{"text": f"**Failed to duplicate slide**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
@@ -1438,21 +1455,21 @@ def duplicate_slide(
 **Size:** {s3_info['size_kb']}
 **Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                success_msg += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             code_interpreter.stop()
-            return {
-                "content": [{"text": success_msg}],
-                "status": "success",
-                "metadata": {
-                    "filename": output_filename,
-                    "slide_index": slide_index,
-                    "position": position,
-                    "size_kb": s3_info['size_kb'],
-                    "s3_key": s3_info['s3_key'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(success_msg, {
+                "filename": output_filename,
+                "slide_index": slide_index,
+                "position": position,
+                "size_kb": s3_info['size_kb'],
+                "s3_key": s3_info['s3_key'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -1534,6 +1551,7 @@ def update_slide_notes(
 
             response = code_interpreter.invoke("executeCode", {"code": safe_code, "language": "python", "clearContext": False})
 
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -1545,6 +1563,11 @@ def update_slide_notes(
                         return _get_file_compatibility_error_response(source_filename, error_msg, "update notes in")
 
                     return {"content": [{"text": f"**Failed to update notes**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             output_ci_path = ppt_manager.get_ci_path(output_filename)
             file_bytes = ppt_manager.download_from_code_interpreter(code_interpreter, output_ci_path)
@@ -1579,20 +1602,20 @@ def update_slide_notes(
 **Size:** {s3_info['size_kb']}
 **Other files in workspace:** {other_files_count} presentation{'s' if other_files_count != 1 else ''}"""
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                success_msg += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             code_interpreter.stop()
-            return {
-                "content": [{"text": success_msg}],
-                "status": "success",
-                "metadata": {
-                    "filename": output_filename,
-                    "slide_index": slide_index,
-                    "size_kb": s3_info['size_kb'],
-                    "s3_key": s3_info['s3_key'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(success_msg, {
+                "filename": output_filename,
+                "slide_index": slide_index,
+                "size_kb": s3_info['size_kb'],
+                "s3_key": s3_info['s3_key'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -1842,6 +1865,7 @@ print(f"Created blank presentation with {{len(prs.slides)}} slide(s)")
             response = code_interpreter.invoke("executeCode", {"code": code, "language": "python", "clearContext": False})
 
             # Check for errors
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -1849,6 +1873,11 @@ print(f"Created blank presentation with {{len(prs.slides)}} slide(s)")
                     logger.error(f"Create presentation failed: {error_msg[:500]}")
                     code_interpreter.stop()
                     return {"content": [{"text": f"**Failed to create presentation**\n\n```\n{error_msg[:1000]}\n```"}], "status": "error"}
+
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             # Download result
             output_ci_path = ppt_manager.get_ci_path(presentation_filename)
@@ -1902,21 +1931,21 @@ print(f"Created blank presentation with {{len(prs.slides)}} slide(s)")
 - Use `add_slide` to add more slides with custom_code
 """
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                success_msg += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             code_interpreter.stop()
-            return {
-                "content": [{"text": success_msg}],
-                "status": "success",
-                "metadata": {
-                    "filename": presentation_filename,
-                    "slide_count": len(slides) if slides else 1,
-                    "template": template_filename,
-                    "size_kb": s3_info['size_kb'],
-                    "s3_key": s3_info['s3_key'],
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(success_msg, {
+                "filename": presentation_filename,
+                "slide_count": len(slides) if slides else 1,
+                "template": template_filename,
+                "size_kb": s3_info['size_kb'],
+                "s3_key": s3_info['s3_key'],
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -2069,19 +2098,17 @@ def preview_presentation_slides(
 
             logger.info(f"Successfully generated {len(target_slides)} preview(s)")
 
-            return {
-                "content": content,
-                "status": "success",
-                "metadata": {
-                    "filename": presentation_filename,
-                    "slide_numbers": target_slides,
-                    "total_slides": total_slides,
-                    "tool_type": "powerpoint_presentation",
-                    "user_id": user_id,
-                    "session_id": session_id,
-                    "hideImageInChat": True
-                }
-            }
+            text_blocks = [b for b in content if "text" in b]
+            image_blocks = [b for b in content if "image" in b]
+            return build_image_response(text_blocks, image_blocks, {
+                "filename": presentation_filename,
+                "slide_numbers": target_slides,
+                "total_slides": total_slides,
+                "tool_type": "powerpoint_presentation",
+                "user_id": user_id,
+                "session_id": session_id,
+                "hideImageInChat": True
+            })
 
     except subprocess.TimeoutExpired:
         logger.error("LibreOffice conversion timed out")

@@ -49,7 +49,8 @@ export const TOOL_TO_DOC_TYPE: Record<string, DocumentType> = {
   'preview_presentation_slides': 'powerpoint',
 
   // Diagram tools (from diagram_tool)
-  'generate_diagram_and_validate': 'diagram',
+  'generate_chart': 'diagram',
+  'create_visual_design': 'diagram',
 }
 
 /**

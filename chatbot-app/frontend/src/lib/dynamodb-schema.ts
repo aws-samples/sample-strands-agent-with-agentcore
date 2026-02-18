@@ -87,7 +87,7 @@ export interface UserApiKeys {
 
 export interface UserPreferences {
   // Model Configuration
-  defaultModel?: string // e.g., "anthropic.claude-sonnet-4-5-20250929-v1:0"
+  defaultModel?: string // e.g., "us.anthropic.claude-sonnet-4-6"
   defaultTemperature?: number // 0.0 - 1.0
   systemPrompt?: string // Custom system prompt
   customPromptName?: string // Name of custom prompt
@@ -261,8 +261,8 @@ export const EXAMPLE_USER_RECORD: UserProfileRecord = {
   createdAt: '2025-01-14T10:00:00Z',
   lastAccessAt: '2025-01-14T15:30:00Z',
   preferences: {
-    defaultModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
-    defaultTemperature: 0.7,
+    defaultModel: 'us.anthropic.claude-sonnet-4-6',
+    defaultTemperature: 0.5,
     systemPrompt: 'You are a helpful AI assistant.',
     enabledTools: ['calculator', 'web_search', 'code_interpreter'],
     theme: 'dark',
@@ -282,8 +282,8 @@ export const EXAMPLE_SESSION_RECORD: SessionRecord = {
   tags: ['aws', 'lambda', 'deployment'],
   starred: true,
   metadata: {
-    lastModel: 'anthropic.claude-sonnet-4-5-20250929-v1:0',
-    lastTemperature: 0.7,
+    lastModel: 'us.anthropic.claude-sonnet-4-6',
+    lastTemperature: 0.5,
     totalTokens: 8500,
     agentCoreTraceId: 'trace-abc123',
   },

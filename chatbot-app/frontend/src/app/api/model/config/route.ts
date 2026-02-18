@@ -19,8 +19,8 @@ export async function GET(request: NextRequest) {
 
     // Default configuration
     let config = {
-      model_id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0',
-      temperature: 0.7,
+      model_id: 'us.anthropic.claude-sonnet-4-6',
+      temperature: 0.5,
     }
 
     // Load user preferences from storage (local file or DynamoDB)

@@ -133,4 +133,4 @@ Get sheet screenshots for visual inspection before editing.
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
 | `spreadsheet_name` | str | Yes | Spreadsheet name without extension |
-| `sheet_names` | list[str] | Yes | Sheet names to preview |
+| `sheet_names` | list[str] | Yes | Sheet names to preview (empty list `[]` for all sheets) |

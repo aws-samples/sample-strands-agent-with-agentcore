@@ -134,6 +134,8 @@ Update one or more slides with operations in a single call.
 | `slide_updates` | list | Yes | List of update operations |
 | `output_name` | str | Yes | Output filename (MUST differ from source) |
 
+Supported actions per operation: `set_text`, `replace_text`, `replace_image`, `run_code`. See [editing-guide.md](editing-guide.md) for details.
+
 ### add_slide
 Add a new slide at a specific position.
 
@@ -141,7 +143,7 @@ Add a new slide at a specific position.
 |-----------|------|----------|-------------|
 | `presentation_name` | str | Yes | Source presentation |
 | `layout_name` | str | Yes | Layout name from `get_presentation_layouts` |
-| `position` | int | Yes | 0-based index |
+| `position` | int | Yes | 0-based index (-1 to append at end) |
 | `output_name` | str | Yes | Output filename |
 | `custom_code` | str | No | Python-pptx code to customize the slide |
 

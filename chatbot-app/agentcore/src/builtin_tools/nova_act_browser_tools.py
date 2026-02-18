@@ -9,8 +9,20 @@ from typing import Dict, Any, Optional, List, Union
 from strands import tool, ToolContext
 from skill import register_skill
 from .lib.browser_controller import get_or_create_controller
+from .lib.tool_response import build_success_response, build_image_response
 
 logger = logging.getLogger(__name__)
+
+
+def _build_browser_response(content: list, metadata: dict) -> Dict[str, Any]:
+    """Build structured response for browser tools, handling mixed text+image content."""
+    text_blocks = [b for b in content if "text" in b]
+    image_blocks = [b for b in content if "image" in b]
+    if image_blocks:
+        return build_image_response(text_blocks, image_blocks, metadata)
+    else:
+        text = text_blocks[0]["text"] if text_blocks else ""
+        return build_success_response(text, metadata)
 
 
 def _format_tab_summary(tabs: List[Dict], current_tab: int = 0) -> str:
@@ -231,11 +243,7 @@ Current page is shown in the screenshot below."""
                 if controller.browser_id:
                     metadata["browserId"] = controller.browser_id
 
-            return {
-                "content": content,
-                "status": "success",
-                "metadata": metadata
-            }
+            return _build_browser_response(content, metadata)
         else:
             return {
                 "content": [{
@@ -443,11 +451,7 @@ def browser_extract(description: str, extraction_schema: dict, tool_context: Too
             if artifact_id:
                 metadata["artifactId"] = artifact_id
 
-            return {
-                "content": content,
-                "status": "success",
-                "metadata": metadata
-            }
+            return _build_browser_response(content, metadata)
         else:
             import json
             schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
@@ -583,11 +587,7 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
                 if controller.browser_id:
                     metadata["browserId"] = controller.browser_id
 
-            return {
-                "content": content,
-                "status": "success",
-                "metadata": metadata
-            }
+            return _build_browser_response(content, metadata)
         else:
             return {
                 "content": [{
@@ -702,11 +702,7 @@ Current tab screenshot shown below."""
                     if controller.browser_id:
                         metadata["browserId"] = controller.browser_id
 
-                return {
-                    "content": content,
-                    "status": "success",
-                    "metadata": metadata
-                }
+                return _build_browser_response(content, metadata)
             else:
                 return {
                     "content": [{
@@ -757,11 +753,7 @@ Current tab screenshot shown below."""
                     if controller.browser_id:
                         metadata["browserId"] = controller.browser_id
 
-                return {
-                    "content": content,
-                    "status": "success",
-                    "metadata": metadata
-                }
+                return _build_browser_response(content, metadata)
             else:
                 return {
                     "content": [{
@@ -807,11 +799,7 @@ Current tab screenshot shown below."""
                     if controller.browser_id:
                         metadata["browserId"] = controller.browser_id
 
-                return {
-                    "content": content,
-                    "status": "success",
-                    "metadata": metadata
-                }
+                return _build_browser_response(content, metadata)
             else:
                 return {
                     "content": [{

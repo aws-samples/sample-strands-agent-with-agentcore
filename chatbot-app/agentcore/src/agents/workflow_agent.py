@@ -78,7 +78,7 @@ class WorkflowAgent(BaseAgent):
     def _get_default_model_id(self) -> str:
         """Get default model ID for workflow agents"""
         # Use Sonnet for workflow orchestration (better reasoning)
-        return "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        return "us.anthropic.claude-sonnet-4-6"
 
     def _create_session_manager(self):
         """

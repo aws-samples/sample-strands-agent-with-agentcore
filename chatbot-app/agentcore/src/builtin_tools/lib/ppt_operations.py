@@ -43,9 +43,17 @@ def generate_batch_update_slides_code(
     Example slide_updates:
         [
             {"slide_index": 0, "operations": [{"action": "set_text", ...}]},
-            {"slide_index": 2, "operations": [{"action": "replace_text", ...}]}
+            {"slide_index": 2, "operations": [{"action": "replace_text", ...}]},
+            {"slide_index": 3, "operations": [{"action": "run_code", "code": "slide.shapes[0].text = 'Hi'"}]}
         ]
     """
+    # Check if any operation uses run_code (needs extra imports)
+    has_run_code = any(
+        op.get('action') == 'run_code'
+        for update in slide_updates
+        for op in update.get('operations', [])
+    )
+
     # Build code for each slide
     all_slide_code = []
 
@@ -69,8 +77,10 @@ def generate_batch_update_slides_code(
                     code_line = _generate_replace_text(slide_index, op)
                 elif action == 'replace_image':
                     code_line = _generate_replace_image(slide_index, op)
+                elif action == 'run_code':
+                    code_line = _generate_run_code(slide_index, op)
                 else:
-                    raise ValueError(f"Unknown action '{action}' in operation {op_idx}. Supported: 'set_text', 'replace_text', 'replace_image'")
+                    raise ValueError(f"Unknown action '{action}' in operation {op_idx}. Supported: 'set_text', 'replace_text', 'replace_image', 'run_code'")
 
                 operation_lines.append(f"# Operation {op_idx + 1}: {action}")
                 operation_lines.append(code_line)
@@ -97,9 +107,19 @@ def generate_batch_update_slides_code(
 
     # Generate final code
     total_operations = sum(len(update['operations']) for update in slide_updates)
+
+    extra_imports = ""
+    if has_run_code:
+        extra_imports = """
+from pptx.util import Inches, Pt
+from pptx.dml.color import RGBColor
+from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.chart.data import CategoryChartData
+from pptx.enum.chart import XL_CHART_TYPE"""
+
     code = f"""
 from pptx import Presentation
-from presentation_editor import PresentationEditor
+from presentation_editor import PresentationEditor{extra_imports}
 
 # Load presentation
 prs = Presentation('{source_filename}')
@@ -157,6 +177,26 @@ def _generate_replace_text(slide_index: int, op: dict) -> str:
     replace_repr = repr(replace_text)
 
     return f"editor.find_and_replace_in_element({slide_index}, {element_id}, {find_repr}, {replace_repr})"
+
+
+def _generate_run_code(slide_index: int, op: dict) -> str:
+    """Generate code for run_code operation - executes raw python-pptx code on a slide
+
+    Args:
+        slide_index: Slide index (0-based)
+        op: Operation dict with 'code' field
+
+    Returns:
+        Python code string for execution
+
+    Available variables in user code: slide, prs, Inches, Pt, RGBColor
+    """
+    user_code = op['code']
+
+    # Indent the user code to run inside a slide context block
+    indented = '\n'.join('    ' + line if line.strip() else '' for line in user_code.split('\n'))
+
+    return f"slide = prs.slides[{slide_index}]\nif True:\n{indented}"
 
 
 def _generate_replace_image(slide_index: int, op: dict) -> str:

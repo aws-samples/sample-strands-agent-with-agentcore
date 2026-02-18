@@ -20,6 +20,7 @@ from strands import tool, ToolContext
 from skill import register_skill
 from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from workspace import WordManager
+from builtin_tools.lib.tool_response import build_success_response, build_image_response
 
 logger = logging.getLogger(__name__)
 
@@ -397,7 +398,8 @@ print(f"Document created: {ci_path}")
                 "clearContext": False
             })
 
-            # Check for errors
+            # Capture stdout and check for errors
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -410,6 +412,10 @@ print(f"Document created: {ci_path}")
                         }],
                         "status": "error"
                     }
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             logger.info("Document creation completed")
 
@@ -443,17 +449,17 @@ print(f"Document created: {ci_path}")
 **File**: {document_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} document{'s' if other_files_count != 1 else ''}"""
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                message += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             # Return success message
-            return {
-                "content": [{"text": message}],
-                "status": "success",
-                "metadata": {
-                    "filename": document_filename,
-                    "tool_type": "word_document",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(message, {
+                "filename": document_filename,
+                "tool_type": "word_document",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         finally:
             code_interpreter.stop()
@@ -684,7 +690,8 @@ print(f"Document modified and saved: {output_ci_path}")
                 "clearContext": False
             })
 
-            # Check for errors
+            # Capture stdout and check for errors
+            stdout_output = ""
             for event in response.get("stream", []):
                 result = event.get("result", {})
                 if result.get("isError", False):
@@ -697,6 +704,10 @@ print(f"Document modified and saved: {output_ci_path}")
                         }],
                         "status": "error"
                     }
+                # Capture stdout
+                stdout = result.get("structuredContent", {}).get("stdout", "")
+                if stdout:
+                    stdout_output += stdout
 
             logger.info("Document modification completed")
 
@@ -736,17 +747,17 @@ print(f"Document modified and saved: {output_ci_path}")
 **Saved as**: {output_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} document{'s' if other_files_count != 1 else ''}"""
 
+            # Include stdout output if any
+            if stdout_output.strip():
+                message += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+
             # Return success message with metadata for download button
-            return {
-                "content": [{"text": message}],
-                "status": "success",
-                "metadata": {
-                    "filename": output_filename,
-                    "tool_type": "word_document",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(message, {
+                "filename": output_filename,
+                "tool_type": "word_document",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         finally:
             code_interpreter.stop()
@@ -846,11 +857,7 @@ def list_my_word_documents(
             ]
         }
 
-        return {
-            "content": [{"text": message}],
-            "status": "success",
-            "metadata": metadata
-        }
+        return build_success_response(message, metadata)
 
     except Exception as e:
         logger.error(f"list_my_word_documents failed: {e}")
@@ -1067,19 +1074,15 @@ print(json.dumps(result, ensure_ascii=False))
 
             code_interpreter.stop()
 
-            return {
-                "content": [{"text": output_text}],
-                "status": "success",
-                "metadata": {
-                    "filename": document_filename,
-                    "s3_key": doc_manager.get_s3_key(document_filename),
-                    "size_kb": doc_info['size_kb'],
-                    "last_modified": doc_info['last_modified'],
-                    "tool_type": "word_document",
-                    "user_id": user_id,
-                    "session_id": session_id
-                }
-            }
+            return build_success_response(output_text, {
+                "filename": document_filename,
+                "s3_key": doc_manager.get_s3_key(document_filename),
+                "size_kb": doc_info['size_kb'],
+                "last_modified": doc_info['last_modified'],
+                "tool_type": "word_document",
+                "user_id": user_id,
+                "session_id": session_id
+            })
 
         except Exception as e:
             code_interpreter.stop()
@@ -1263,19 +1266,17 @@ def preview_word_page(
 
             logger.info(f"Successfully generated {len(page_numbers)} preview(s)")
 
-            return {
-                "content": content,
-                "status": "success",
-                "metadata": {
-                    "filename": document_filename,
-                    "page_numbers": sorted(set(page_numbers)),
-                    "total_pages": total_pages,
-                    "tool_type": "word_document",
-                    "user_id": user_id,
-                    "session_id": session_id,
-                    "hideImageInChat": True
-                }
-            }
+            text_blocks = [b for b in content if "text" in b]
+            image_blocks = [b for b in content if "image" in b]
+            return build_image_response(text_blocks, image_blocks, {
+                "filename": document_filename,
+                "page_numbers": sorted(set(page_numbers)),
+                "total_pages": total_pages,
+                "tool_type": "word_document",
+                "user_id": user_id,
+                "session_id": session_id,
+                "hideImageInChat": True
+            })
 
     except subprocess.TimeoutExpired:
         logger.error("LibreOffice conversion timed out")
