@@ -308,42 +308,43 @@ class StreamEventProcessor:
             # Documents are now fetched by frontend via S3 workspace API
             # No longer need to track documents in backend
 
-            # Use task-based polling when elicitation bridge is present
+            # Use task-based polling only when elicitation bridge is present
             # so we can emit elicitation SSE events while agent is blocked.
-            # IMPORTANT: We use asyncio.wait() instead of asyncio.wait_for()
-            # because wait_for() cancels the coroutine on timeout, which
-            # corrupts the async generator's internal state.
+            # IMPORTANT: Without elicitation bridge, use direct await to preserve
+            # OTel context across iterations. ensure_future() copies the current
+            # context into a new Task on each call, causing OTel span tokens to be
+            # created in one Task context and detached in another, which raises
+            # ValueError: Token was created in a different Context.
             stream_aiter = stream_iterator.__aiter__()
             next_event_task = None
 
             while True:
-                # Check elicitation bridge for pending events (non-blocking)
                 if elicitation_bridge:
+                    # Task-based polling: check bridge for pending elicitation events
                     elicit_event = elicitation_bridge.get_pending_event_nowait()
                     if elicit_event:
                         yield self.formatter.create_oauth_elicitation_event(elicit_event)
 
-                # Create a task for the next event if we don't have one pending
-                if next_event_task is None:
-                    next_event_task = asyncio.ensure_future(stream_aiter.__anext__())
+                    if next_event_task is None:
+                        next_event_task = asyncio.ensure_future(stream_aiter.__anext__())
 
-                if elicitation_bridge:
-                    # Wait with timeout so we can periodically check the bridge
                     done, _ = await asyncio.wait({next_event_task}, timeout=0.5)
                     if not done:
                         # Timeout — task still running, loop back to check bridge
                         continue
-                else:
-                    # No bridge — wait indefinitely (zero overhead)
-                    await asyncio.wait({next_event_task})
 
-                # Task completed — extract result
-                try:
-                    event = next_event_task.result()
-                except StopAsyncIteration:
-                    break
-                finally:
-                    next_event_task = None
+                    try:
+                        event = next_event_task.result()
+                    except StopAsyncIteration:
+                        break
+                    finally:
+                        next_event_task = None
+                else:
+                    # Direct await — preserves OTel context across loop iterations
+                    try:
+                        event = await stream_aiter.__anext__()
+                    except StopAsyncIteration:
+                        break
                 # Check stop signal periodically (throttled to reduce DB calls)
                 if self._check_stop_signal():
                     logger.debug(f"[StopSignal] Stopping stream for session {session_id}")
