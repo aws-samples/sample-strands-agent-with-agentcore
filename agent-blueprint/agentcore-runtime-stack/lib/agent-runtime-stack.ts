@@ -681,7 +681,7 @@ async function sendResponse(event, status, data, reason) {
       {
         name: codeInterpreterName,
         networkConfiguration: {
-          networkMode: 'SANDBOX', // Isolated sandbox environment without internet access
+          networkMode: 'PUBLIC', // Public network with internet access
         },
         description: 'Shared Code Interpreter for all agents',
       }
