@@ -83,12 +83,10 @@ MCP_TOOL_SKILL_MAP: Dict[str, str] = {
     "check_availability": "google-calendar",
     # MCP Runtime: notion
     "notion_search": "notion",
-    "notion_list_databases": "notion",
-    "notion_query_database": "notion",
-    "notion_get_page": "notion",
+    "notion_fetch": "notion",
     "notion_create_page": "notion",
     "notion_update_page": "notion",
-    "notion_get_block_children": "notion",
+    "notion_update_block": "notion",
     "notion_append_blocks": "notion",
 }
 

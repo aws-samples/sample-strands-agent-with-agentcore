@@ -724,7 +724,7 @@
       "isDynamic": true,
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/mcp/mcp-3lo-runtime-arn",
       "tags": ["notion", "productivity", "notes", "database", "wiki", "knowledge"],
-      "systemPromptGuidance": "**Notion Tool Usage:**\n- notion_search: Search across all accessible pages and databases\n- notion_list_databases: List all databases the user has shared with the integration\n- notion_query_database: Query a database with filters and sorts\n- notion_get_page: Get page properties and metadata\n- notion_create_page: Create new page in database or as child of another page\n- notion_update_page: Update page properties (not content)\n- notion_get_block_children: Get page content (blocks - paragraphs, headings, lists, etc.)\n- notion_append_blocks: Add content blocks to a page\n\n**Block Types for append_blocks:**\n- paragraph: {\"type\": \"paragraph\", \"paragraph\": {\"rich_text\": [{\"type\": \"text\", \"text\": {\"content\": \"text\"}}]}}\n- heading_1/2/3: {\"type\": \"heading_1\", \"heading_1\": {\"rich_text\": [...]}}\n- bulleted_list_item: {\"type\": \"bulleted_list_item\", \"bulleted_list_item\": {\"rich_text\": [...]}}\n- numbered_list_item: {\"type\": \"numbered_list_item\", \"numbered_list_item\": {\"rich_text\": [...]}}\n- to_do: {\"type\": \"to_do\", \"to_do\": {\"rich_text\": [...], \"checked\": false}}\n- toggle: {\"type\": \"toggle\", \"toggle\": {\"rich_text\": [...]}}\n- code: {\"type\": \"code\", \"code\": {\"rich_text\": [...], \"language\": \"python\"}}\n- quote: {\"type\": \"quote\", \"quote\": {\"rich_text\": [...]}}\n- divider: {\"type\": \"divider\", \"divider\": {}}\n\n**Common Operations:**\n- Find pages: notion_search with query text\n- Read page content: notion_get_page for properties, then notion_get_block_children for content\n- Add notes: notion_append_blocks to existing page\n- Create new page: notion_create_page with parent (database_id or page_id)",
+      "systemPromptGuidance": "**Notion Tool Usage:**\n- notion_search: Search pages and databases. Use filter_type='database' to list databases.\n- notion_fetch: Read a page's full content as markdown (metadata + all blocks in one call).\n- notion_create_page: Create a new page with markdown content.\n- notion_update_page: Update page properties (not content — use notion_append_blocks for content).\n- notion_append_blocks: Add markdown content to an existing page.\n\n**Typical workflows:**\n- Find and read: notion_search → notion_fetch\n- Create from scratch: notion_create_page with content_markdown\n- Update content: notion_append_blocks with markdown\n\n**Markdown support in content_markdown/notion_append_blocks:**\n- Headings: # H1 / ## H2 / ### H3\n- Lists: - bullet / 1. numbered\n- To-do: - [ ] unchecked / - [x] checked\n- Code: ```python ... ```\n- Quote: > text\n- Divider: ---\n- Inline: **bold**, *italic*, `code`",
       "tools": [
         {
           "id": "mcp_notion_search",
@@ -733,22 +733,10 @@
           "displayName": { "running": "Searching Notion", "complete": "Searched Notion" }
         },
         {
-          "id": "mcp_notion_list_databases",
-          "name": "List Databases",
-          "description": "List all Notion databases shared with the integration",
-          "displayName": { "running": "Listing databases", "complete": "Listed databases" }
-        },
-        {
-          "id": "mcp_notion_query_database",
-          "name": "Query Database",
-          "description": "Query a Notion database with filters and sorts",
-          "displayName": { "running": "Querying database", "complete": "Queried database" }
-        },
-        {
-          "id": "mcp_notion_get_page",
-          "name": "Get Page",
-          "description": "Get Notion page properties and metadata",
-          "displayName": { "running": "Getting page", "complete": "Got page" }
+          "id": "mcp_notion_fetch",
+          "name": "Fetch Page",
+          "description": "Fetch a Notion page with full content as readable markdown",
+          "displayName": { "running": "Reading page", "complete": "Read page" }
         },
         {
           "id": "mcp_notion_create_page",
@@ -759,19 +747,19 @@
         {
           "id": "mcp_notion_update_page",
           "name": "Update Page",
-          "description": "Update Notion page properties",
+          "description": "Update Notion page properties (metadata and database fields)",
           "displayName": { "running": "Updating page", "complete": "Updated page" }
         },
         {
-          "id": "mcp_notion_get_block_children",
-          "name": "Get Page Content",
-          "description": "Get page content blocks (paragraphs, headings, lists, etc.)",
-          "displayName": { "running": "Getting content", "complete": "Got content" }
+          "id": "mcp_notion_update_block",
+          "name": "Update Block",
+          "description": "Replace the content of a specific block in a Notion page",
+          "displayName": { "running": "Updating block", "complete": "Updated block" }
         },
         {
           "id": "mcp_notion_append_blocks",
           "name": "Append Content",
-          "description": "Add content blocks to a Notion page",
+          "description": "Append markdown content blocks to an existing Notion page",
           "displayName": { "running": "Adding content", "complete": "Added content" }
         }
       ]

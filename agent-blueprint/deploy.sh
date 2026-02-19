@@ -105,7 +105,7 @@ display_menu() {
     echo "  3) Runtime + Frontend     (1 + 2 combined)"
     echo "  4) AgentCore Gateway MCP  (Gateway + Lambda functions)"
     echo "  5) AgentCore Runtime A2A  (Research Agent, Browser Use Agent)"
-    echo "  6) AgentCore Runtime MCP  (Gmail OAuth via 3LO)"
+    echo "  6) AgentCore Runtime MCP  (Private 3LO Auth)"
     echo "  7) Full Stack             (All components: Runtime + Frontend + Gateway + A2A + 3LO)"
     echo ""
     echo "  0) Exit"

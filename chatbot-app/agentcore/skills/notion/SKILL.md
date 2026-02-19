@@ -1,65 +1,105 @@
 ---
 name: notion
-description: Search, read, create, and update Notion pages and databases
+description: Search, read, create, and update Notion pages and databases. Supports knowledge capture, meeting prep, research documentation, and spec-to-task workflows.
 ---
 
 # Notion
 
 ## Available Tools
 
-- **notion_search(query?, filter_type?, page_size?)**: Search across all accessible Notion pages and databases.
-  - `query` (string, optional, default: ""): Search text. Empty returns all accessible pages.
-  - `filter_type` (string, optional): Filter by "page" or "database"
-  - `page_size` (integer, optional, default: 10, max: 100): Number of results
-
-- **notion_list_databases(page_size?)**: List all databases shared with the integration.
+- **notion_search(query?, filter_type?, page_size?)**: Search across all accessible pages and databases.
+  - `query` (string, optional): Search text. Empty string returns all accessible pages.
+  - `filter_type` (string, optional): `"page"` or `"database"`. Use `"database"` to list databases.
   - `page_size` (integer, optional, default: 10, max: 100)
 
-- **notion_query_database(database_id, filter_json?, sorts_json?, page_size?)**: Query a database with optional filters and sorts.
-  - `database_id` (string, required): Database ID
-  - `filter_json` (string, optional): Filter as a **JSON string** (e.g., `'{"property": "Status", "select": {"equals": "Done"}}'`)
-  - `sorts_json` (string, optional): Sorts as a **JSON string** (e.g., `'[{"property": "Created", "direction": "descending"}]'`)
-  - `page_size` (integer, optional, default: 10, max: 100)
-
-- **notion_get_page(page_id)**: Get page properties and metadata.
-  - `page_id` (string, required)
+- **notion_fetch(page_id, include_block_ids?)**: Fetch a page's full content as readable markdown (metadata + all blocks in one call).
+  - `page_id` (string, required): Page or database entry ID.
+  - `include_block_ids` (boolean, optional, default: false): If true, appends each block's ID as `<!-- id:... -->`. Use this when you need to update a specific block with `notion_update_block`.
+  - Returns: title, URL, last-edited time, and full body as markdown.
 
 - **notion_create_page(parent_type, parent_id, title, properties_json?, content_markdown?)**: Create a new page.
-  - `parent_type` (string, required): "database" or "page"
-  - `parent_id` (string, required): Parent database or page ID
+  - `parent_type` (string, required): `"database"`, `"page"`, or `"workspace"` (workspace root)
+  - `parent_id` (string, required): Parent UUID — ignored when `parent_type="workspace"`
   - `title` (string, required): Page title
-  - `properties_json` (string, optional): Additional properties as a **JSON string** (e.g., `'{"Status": {"select": {"name": "In Progress"}}}'`)
-  - `content_markdown` (string, optional): Initial page content in markdown. Paragraphs separated by blank lines become separate blocks.
+  - `properties_json` (string, optional): Database properties as a **JSON string** — e.g., `'{"Status": {"select": {"name": "In Progress"}}}'`
+  - `content_markdown` (string, optional): Initial body content as markdown (see Markdown Support below)
 
-- **notion_update_page(page_id, properties_json, archived?)**: Update page properties.
+- **notion_update_page(page_id, properties_json, archived?)**: Update page properties (metadata/database fields only, not content blocks).
+
+- **notion_update_block(block_id, content_markdown)**: Replace the content of a specific existing block.
+  - `block_id` (string, required): Block ID — obtain via `notion_fetch(include_block_ids=True)`
+  - `content_markdown` (string, required): New content as a single markdown line (only the first block is used)
   - `page_id` (string, required)
-  - `properties_json` (string, required): Properties as a **JSON string** (e.g., `'{"Status": {"select": {"name": "Done"}}}'`)
-  - `archived` (boolean, optional): Set true to archive, false to unarchive
+  - `properties_json` (string, required): Properties as a **JSON string**
+  - `archived` (boolean, optional): `true` to archive, `false` to unarchive
 
-- **notion_get_block_children(block_id, page_size?)**: Get content blocks of a page.
-  - `block_id` (string, required): Page or block ID
-  - `page_size` (integer, optional, default: 50, max: 100)
+- **notion_append_blocks(page_id, content_markdown)**: Append new content blocks to the end of an existing page.
+  - `page_id` (string, required)
+  - `content_markdown` (string, required): Markdown content to append (see Markdown Support below)
 
-- **notion_append_blocks(page_id, content_markdown)**: Append content blocks to a page.
-  - `page_id` (string, required): Page ID to append to
-  - `content_markdown` (string, required): Content as markdown. Supports: headings (# ## ###), bullets (- *), numbered lists (1.), code blocks, quotes (>)
+## Markdown Support
 
-## Common Operations
+Both `notion_create_page` (content_markdown) and `notion_append_blocks` support:
 
-**Find pages**: `notion_search(query)` to locate pages and databases by keyword.
+| Syntax | Block type |
+|--------|-----------|
+| `# Title` / `## Heading` / `### Sub` | heading_1 / heading_2 / heading_3 |
+| `- item` or `* item` | bulleted_list_item |
+| `1. item` | numbered_list_item |
+| `- [ ] task` | to_do (unchecked) |
+| `- [x] task` | to_do (checked) |
+| ` ```python\ncode\n``` ` | code block with language |
+| `> text` | quote |
+| `---` | divider |
+| `**bold**` | bold inline |
+| `*italic*` | italic inline |
+| `` `code` `` | inline code |
 
-**Read page content** (two-step):
-1. `notion_get_page(page_id)` — get properties and metadata
-2. `notion_get_block_children(page_id)` — get the actual content blocks
+## Common Workflows
 
-**Add content to existing page**: `notion_append_blocks(page_id, content_markdown)` with markdown-formatted text.
+**Find and read a page:**
+```
+1. notion_search(query="page name") → get page id
+2. notion_fetch(page_id) → read full content
+```
 
-**Create new page**:
-- In a database: `notion_create_page(parent_type="database", parent_id="...", title="...", properties_json='{"Status": {"select": {"name": "To Do"}}}')`
-- As child of a page: `notion_create_page(parent_type="page", parent_id="...", title="...")`
+**Create a new page with content:**
+```
+notion_create_page(
+  parent_type="page",
+  parent_id="<parent-page-id>",
+  title="My Page",
+  content_markdown="## Overview\n\nContent here..."
+)
+```
 
-**Update page properties**: `notion_update_page(page_id, properties_json='{"Status": {"select": {"name": "Done"}}}')` — changes properties only, not content blocks.
+**Add content to existing page:**
+```
+notion_append_blocks(
+  page_id="<page-id>",
+  content_markdown="## New Section\n\n- Point 1\n- Point 2"
+)
+```
 
-**Important**: `filter_json`, `sorts_json`, and `properties_json` must be **JSON strings**, not parsed objects.
+**Edit a specific block:**
+```
+1. notion_fetch(page_id, include_block_ids=True)
+   → ## Old Heading  <!-- id:abc-123 -->
+2. notion_update_block(block_id="abc-123", content_markdown="## New Heading")
+```
 
-When creating pages in databases, match the database's property schema. Use `notion_query_database` first to inspect existing entries.
+**List databases:**
+```
+notion_search(filter_type="database")
+```
+
+## Use-Case Guides
+
+For specific workflow patterns, load the reference files:
+
+- **knowledge-capture.md** — Save conversation insights, decisions, and how-to guides to Notion wikis and databases
+- **meeting-intelligence.md** — Prepare meeting materials by gathering Notion context and creating pre-reads and agendas
+- **research-documentation.md** — Research across Notion pages, synthesize findings, and write structured reports
+- **spec-to-implementation.md** — Turn spec pages into implementation plans, tasks, and progress tracking
+
+Load a reference with: `skill_dispatcher("notion", reference="knowledge-capture.md")`

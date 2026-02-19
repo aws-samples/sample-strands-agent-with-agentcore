@@ -121,12 +121,10 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
     ],
     "notion_agent": [
         "mcp_notion_search",
-        "mcp_notion_list_databases",
-        "mcp_notion_query_database",
-        "mcp_notion_get_page",
+        "mcp_notion_fetch",
         "mcp_notion_create_page",
         "mcp_notion_update_page",
-        "mcp_notion_get_block_children",
+        "mcp_notion_update_block",
         "mcp_notion_append_blocks",
     ],
     "responder": [
