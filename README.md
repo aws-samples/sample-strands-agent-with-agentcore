@@ -77,20 +77,6 @@ This sample combines **Strands Agent orchestration** with **Amazon Bedrock Agent
 
 ---
 
-## Multi-Protocol Tool Architecture
-
-| Tool Category | Protocol | Examples | Authentication |
-|--------------|----------|----------|----------------|
-| Local Tools | Direct Python | Web Search, URL Fetcher, Visualization | None |
-| Built-in Tools | AWS SDK / WebSocket | Code Interpreter, Browser (Nova Act) | IAM |
-| Gateway Tools | MCP | Google Search, Maps, Wikipedia, ArXiv, Finance | SigV4 |
-| A2A Tools | A2A | Research Agent, Browser-Use Agent | SigV4 |
-
-Total: **80+ tools across 18 tool groups**
-See [docs/guides/TOOLS.md](docs/guides/TOOLS.md) for full details.
-
----
-
 ## Skill System (Progressive Disclosure)
 
 Tools are organized into **skills** — grouped units with SKILL.md instructions that the agent loads on demand.
@@ -102,6 +88,9 @@ Instead of injecting all tool documentation into every prompt, the agent activat
 
 This keeps prompt size small while giving the agent access to detailed instructions when needed.
 
+Design notes:
+- https://medium.com/towards-artificial-intelligence/agent-skills-part-2-bridging-skills-with-production-tool-ecosystems-422e4a63fcad
+
 ```
 skills/
 ├── visual-design/          # Charts, posters, infographics (Code Interpreter)
@@ -109,19 +98,28 @@ skills/
 ├── browser-automation/     # Nova Act browser tools
 ├── word-documents/         # Word document generation
 ├── excel-spreadsheets/     # Excel spreadsheet generation
-└── powerpoint-presentations/  # PowerPoint generation
+├── powerpoint-presentations/  # PowerPoint generation
+├── gmail/                  # Gmail read/search/delete (3LO OAuth)
+├── google-calendar/        # Calendar events (3LO OAuth)
+├── notion/                 # Notion pages and databases (3LO OAuth)
+├── github/                 # GitHub repos, issues, PRs, code (3LO OAuth)
+└── ...                     # 20+ skills (web search, finance, maps, weather, and more)
 ```
 
 ---
 
-## Dynamic Tool Filtering
+## Multi-Protocol Tool Architecture
 
-<img src="docs/images/tool-filtering-flow.svg"
-     alt="Tool Filtering Flow"
-     width="900">
+| Tool Category | Protocol | Examples | Authentication |
+|--------------|----------|----------|----------------|
+| Local Tools | Direct Python | Web Search, URL Fetcher, Visualization | None |
+| Built-in Tools | AWS SDK / WebSocket | Code Interpreter, Browser (Nova Act) | IAM |
+| Gateway Tools | MCP | Google Search, Maps, Wikipedia, ArXiv, Finance | SigV4 |
+| Private API Tools | MCP (3LO OAuth) | Gmail, Google Calendar, Notion, GitHub | OAuth 2.0 |
+| A2A Tools | A2A | Research Agent, Browser-Use Agent | SigV4 |
 
-Only user-selected tools are included in each model invocation,
-reducing prompt size and execution cost.
+Total: **100+ tools across 20 tool groups**
+See [docs/guides/TOOLS.md](docs/guides/TOOLS.md) for full details.
 
 ---
 
@@ -175,12 +173,8 @@ Design notes:
 
 ## Multi-Agent Architecture
 
-This sample demonstrates a **Supervisor–Worker multi-agent pattern** using the
-**Agent-to-Agent (A2A) protocol**.
-
-<img src="docs/images/multi-agent-architecture.svg"
-     alt="Multi-agent Architecture"
-     width="900">
+Agent-to-Agent communication is handled via the **A2A protocol**, allowing the supervisor agent to delegate tasks to specialized worker agents such as a deep research agent.
+Multiple agents collaborating in sequence — each handling its own role — are coordinated using the **Swarm** pattern.
 
 Design notes:
 - https://medium.com/@revoir07/extend-your-chatbot-with-deep-research-using-a2a-ba4de3ed23e9
