@@ -21,6 +21,7 @@ from agentcore_context_middleware import AgentCoreContextMiddleware
 from gmail_tools import register_gmail_tools
 from calendar_tools import register_calendar_tools
 from notion_tools import register_notion_tools
+from github_tools import register_github_tools
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -45,6 +46,9 @@ register_calendar_tools(mcp)
 
 # Register Notion tools (8 tools)
 register_notion_tools(mcp)
+
+# Register GitHub tools (11 tools)
+register_github_tools(mcp)
 
 
 # ── Entrypoint ─────────────────────────────────────────────────────
@@ -85,10 +89,11 @@ async def main():
         logging.getLogger("mcp").setLevel(logging.WARNING)
         logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
-    logger.warning("MCP Server (Gmail + Calendar + Notion) with 3LO starting...")
+    logger.warning("MCP Server (Gmail + Calendar + Notion + GitHub) with 3LO starting...")
     logger.warning("[Tools] Gmail: list_labels, list_emails, search_emails, read_email, send_email, draft_email, delete_email, bulk_delete_emails, modify_email, get_email_thread")
     logger.warning("[Tools] Calendar: list_calendars, list_events, get_event, create_event, update_event, delete_event, quick_add_event, check_availability")
     logger.warning("[Tools] Notion: notion_search, notion_list_databases, notion_query_database, notion_get_page, notion_create_page, notion_update_page, notion_get_block_children, notion_append_blocks")
+    logger.warning("[Tools] GitHub: github_search_repos, github_get_repo, github_list_issues, github_get_issue, github_list_pulls, github_get_pull, github_get_file, github_search_code, github_create_branch, github_push_files, github_create_pull_request")
 
     # Build Starlette app from FastMCP with health check
     app = mcp.streamable_http_app()

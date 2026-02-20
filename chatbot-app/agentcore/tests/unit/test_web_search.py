@@ -208,6 +208,26 @@ class TestWebSearchErrorHandling:
         assert data["success"] is False
         assert "Network unreachable" in data["error"]
 
+    @pytest.mark.asyncio
+    async def test_handles_timeout(self):
+        """Test that a hanging search is caught and returns a timeout error."""
+        import asyncio as _asyncio
+        import local_tools.web_search as ws_module
+
+        # Simulate a search that never returns
+        async def _hanging_future(*args, **kwargs):
+            await _asyncio.sleep(999)
+
+        with patch.object(ws_module, '_TIMEOUT_SECONDS', 0.05), \
+             patch('asyncio.wait_for', side_effect=_asyncio.TimeoutError):
+            from local_tools.web_search import ddg_web_search
+            result = await ddg_web_search("hanging query")
+            data = json.loads(result)
+
+        assert data["success"] is False
+        assert "timed out" in data["error"].lower()
+        assert data["query"] == "hanging query"
+
 
 # ============================================================
 # Result Format Tests

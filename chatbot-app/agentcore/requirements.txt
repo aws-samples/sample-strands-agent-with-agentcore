@@ -28,6 +28,7 @@ anyio>=3.6.0
 
 # Web Search
 ddgs==9.10.0
+primp>=0.15.0  # Required by ddgs for browser impersonation (safari_18.2 profile)
 
 # OpenTelemetry (for observability)
 aws-opentelemetry-distro>=0.10.1

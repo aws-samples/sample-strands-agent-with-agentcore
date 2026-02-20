@@ -15,7 +15,7 @@ from strands.models import BedrockModel, CacheConfig
 from strands.tools.executors import SequentialToolExecutor
 from agents.base import BaseAgent
 from streaming.event_processor import StreamEventProcessor
-from agent.hooks import ResearchApprovalHook, EmailApprovalHook
+from agent.hooks import ResearchApprovalHook, EmailApprovalHook, GitHubApprovalHook
 from agent.config.prompt_builder import (
     build_text_system_prompt,
     system_prompt_to_string,
@@ -222,6 +222,11 @@ class ChatAgent(BaseAgent):
             hooks.append(email_approval_hook)
             logger.debug("Email approval hook enabled (BeforeToolCallEvent)")
 
+            # Add GitHub approval hook for write operations (branch, push, PR)
+            github_approval_hook = GitHubApprovalHook(app_name="chatbot")
+            hooks.append(github_approval_hook)
+            logger.debug("GitHub approval hook enabled (BeforeToolCallEvent)")
+
             # Create agent with session manager, hooks, and system prompt as list of content blocks
             agent_kwargs = {
                 "model": model,
@@ -255,7 +260,7 @@ class ChatAgent(BaseAgent):
             logger.info(f"[ToolExecutor] Enabled tools: {enabled_tool_names}")
             logger.info(f"[ToolExecutor] Artifact-saving tools intersection: {ARTIFACT_SAVING_TOOLS & enabled_tool_names}")
 
-            if ARTIFACT_SAVING_TOOLS & enabled_tool_names:
+            if ARTIFACT_SAVING_TOOLS & enabled_tool_names or getattr(self, '_force_sequential', False):
                 agent_kwargs["tool_executor"] = SequentialToolExecutor()
                 logger.info(f"[ToolExecutor] Using SequentialToolExecutor")
             else:

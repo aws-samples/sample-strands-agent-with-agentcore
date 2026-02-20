@@ -3,6 +3,7 @@
 import logging
 from typing import Any
 from strands.hooks import HookProvider, HookRegistry, BeforeToolCallEvent
+from agent.hooks.utils import resolve_tool_call
 
 logger = logging.getLogger(__name__)
 
@@ -22,12 +23,10 @@ class EmailApprovalHook(HookProvider):
 
     def request_approval(self, event: BeforeToolCallEvent) -> None:
         """Request user approval before executing bulk email deletion"""
-        tool_name = event.tool_use.get("name", "")
+        tool_name, tool_input = resolve_tool_call(event)
 
         if tool_name != "bulk_delete_emails":
             return
-
-        tool_input = event.tool_use.get("input", {})
         query = tool_input.get("query", "")
         reason = tool_input.get("reason", "No reason provided")
         max_delete = tool_input.get("max_delete", 50)
