@@ -3,6 +3,7 @@ Unit tests for Strands Agent Hooks
 
 Tests:
 - ResearchApprovalHook (Strands Interrupts)
+- GitHubApprovalHook (Strands Interrupts)
 - ConversationCachingHook (prompt caching)
 """
 import pytest
@@ -175,3 +176,157 @@ class TestResearchApprovalHook:
         call_args = mock_event.interrupt.call_args
         reason = call_args[1]["reason"]
         assert reason["task"] == task
+
+
+class TestResolveToolCall:
+    """Tests for the shared resolve_tool_call utility."""
+
+    @pytest.fixture
+    def mock_event(self):
+        event = MagicMock(spec=['tool_use'])
+        return event
+
+    def test_direct_tool_call(self, mock_event):
+        from agent.hooks import resolve_tool_call
+        mock_event.tool_use = {"name": "calculator", "input": {"expression": "1+1"}}
+        tool_name, tool_input = resolve_tool_call(mock_event)
+        assert tool_name == "calculator"
+        assert tool_input == {"expression": "1+1"}
+
+    def test_skill_executor_unwrap(self, mock_event):
+        from agent.hooks import resolve_tool_call
+        mock_event.tool_use = {
+            "name": "skill_executor",
+            "input": {
+                "skill_name": "github",
+                "tool_name": "github_create_branch",
+                "tool_input": {"owner": "org", "repo": "r", "branch": "feat/x"}
+            }
+        }
+        tool_name, tool_input = resolve_tool_call(mock_event)
+        assert tool_name == "github_create_branch"
+        assert tool_input["branch"] == "feat/x"
+
+    def test_skill_executor_missing_tool_input(self, mock_event):
+        from agent.hooks import resolve_tool_call
+        mock_event.tool_use = {
+            "name": "skill_executor",
+            "input": {"skill_name": "github", "tool_name": "github_get_repo"}
+        }
+        tool_name, tool_input = resolve_tool_call(mock_event)
+        assert tool_name == "github_get_repo"
+        assert tool_input == {}
+
+
+class TestGitHubApprovalHook:
+    """Tests for GitHubApprovalHook — assumes resolve_tool_call works (tested above)."""
+
+    @pytest.fixture
+    def mock_event(self):
+        event = MagicMock(spec=['tool_use', 'interrupt', 'cancel_tool'])
+        event.tool_use = {}
+        event.cancel_tool = None
+        return event
+
+    @pytest.fixture
+    def hook(self):
+        from agent.hooks.github_approval import GitHubApprovalHook
+        return GitHubApprovalHook(app_name="chatbot")
+
+    def test_ignores_read_tools(self, hook, mock_event):
+        mock_event.tool_use = {"name": "github_search_repos", "input": {}}
+        hook.request_approval(mock_event)
+        mock_event.interrupt.assert_not_called()
+
+    def test_interrupts_create_branch(self, hook, mock_event):
+        mock_event.tool_use = {
+            "name": "github_create_branch",
+            "input": {"owner": "org", "repo": "myrepo", "branch": "feat/x", "from_branch": "main"}
+        }
+        mock_event.interrupt.return_value = "approved"
+        hook.request_approval(mock_event)
+        mock_event.interrupt.assert_called_once()
+        reason = mock_event.interrupt.call_args[1]["reason"]
+        assert reason["branch"] == "feat/x"
+
+    def test_interrupts_push_files(self, hook, mock_event):
+        import json
+        files = [{"path": "README.md", "content": "hello"}]
+        mock_event.tool_use = {
+            "name": "github_push_files",
+            "input": {"owner": "org", "repo": "r", "branch": "b",
+                      "files_json": json.dumps(files), "message": "update"}
+        }
+        mock_event.interrupt.return_value = "approved"
+        hook.request_approval(mock_event)
+        reason = mock_event.interrupt.call_args[1]["reason"]
+        assert reason["file_count"] == 1
+
+    def test_interrupts_create_pr(self, hook, mock_event):
+        mock_event.tool_use = {
+            "name": "github_create_pull_request",
+            "input": {"owner": "org", "repo": "r", "title": "My PR", "head": "feat/x", "base": "main"}
+        }
+        mock_event.interrupt.return_value = "yes"
+        hook.request_approval(mock_event)
+        mock_event.interrupt.assert_called_once()
+
+    def test_approved_does_not_cancel(self, hook, mock_event):
+        mock_event.tool_use = {
+            "name": "github_create_branch",
+            "input": {"owner": "o", "repo": "r", "branch": "b"}
+        }
+        mock_event.interrupt.return_value = "approved"
+        hook.request_approval(mock_event)
+        assert mock_event.cancel_tool is None
+
+    def test_rejected_cancels_tool(self, hook, mock_event):
+        mock_event.tool_use = {
+            "name": "github_create_branch",
+            "input": {"owner": "o", "repo": "r", "branch": "b"}
+        }
+        mock_event.interrupt.return_value = "no"
+        hook.request_approval(mock_event)
+        assert "declined" in mock_event.cancel_tool
+
+
+class TestEmailApprovalHook:
+    """Tests for EmailApprovalHook — assumes resolve_tool_call works (tested above)."""
+
+    @pytest.fixture
+    def mock_event(self):
+        event = MagicMock(spec=['tool_use', 'interrupt', 'cancel_tool'])
+        event.tool_use = {}
+        event.cancel_tool = None
+        return event
+
+    @pytest.fixture
+    def hook(self):
+        from agent.hooks.email_approval import EmailApprovalHook
+        return EmailApprovalHook(app_name="chatbot")
+
+    def test_ignores_non_delete_tools(self, hook, mock_event):
+        mock_event.tool_use = {"name": "list_emails", "input": {}}
+        hook.request_approval(mock_event)
+        mock_event.interrupt.assert_not_called()
+
+    def test_interrupts_bulk_delete(self, hook, mock_event):
+        mock_event.tool_use = {
+            "name": "bulk_delete_emails",
+            "input": {"query": "is:spam", "reason": "Clean up spam", "max_delete": 50}
+        }
+        mock_event.interrupt.return_value = "approved"
+        hook.request_approval(mock_event)
+        mock_event.interrupt.assert_called_once()
+        reason = mock_event.interrupt.call_args[1]["reason"]
+        assert reason["query"] == "is:spam"
+        assert reason["intent"] == "Clean up spam"
+
+    def test_rejected_cancels_tool(self, hook, mock_event):
+        mock_event.tool_use = {
+            "name": "bulk_delete_emails",
+            "input": {"query": "is:spam", "reason": "cleanup"}
+        }
+        mock_event.interrupt.return_value = "no"
+        hook.request_approval(mock_event)
+        assert mock_event.cancel_tool is not None

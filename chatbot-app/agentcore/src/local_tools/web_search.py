@@ -4,12 +4,21 @@ Uses DuckDuckGo for web search without external dependencies
 """
 
 import asyncio
+import concurrent.futures
+import threading
 import json
 import logging
 from strands import tool
 from skill import skill
 
 logger = logging.getLogger(__name__)
+
+# Use threading.Semaphore (not asyncio) — each skill_executor call runs asyncio.run()
+# in its own thread, so asyncio primitives are not shared across calls.
+_SEARCH_EXECUTOR = concurrent.futures.ThreadPoolExecutor(max_workers=3, thread_name_prefix="ddg_search")
+_SEARCH_LOCK = threading.Semaphore(1)
+
+_TIMEOUT_SECONDS = 15.0
 
 
 @skill("web-search")
@@ -43,12 +52,14 @@ async def ddg_web_search(query: str, max_results: int = 5) -> str:
         # Limit max_results to prevent abuse
         max_results = min(max_results, 10)
 
-        # Run blocking DDGS call in a thread with a 30s timeout
         def _search():
-            with DDGS() as ddgs:
-                return list(ddgs.text(query, max_results=max_results))
+            with _SEARCH_LOCK:
+                with DDGS() as ddgs:
+                    return list(ddgs.text(query, max_results=max_results))
 
-        results = await asyncio.wait_for(asyncio.to_thread(_search), timeout=30.0)
+        loop = asyncio.get_event_loop()
+        future = loop.run_in_executor(_SEARCH_EXECUTOR, _search)
+        results = await asyncio.wait_for(future, timeout=_TIMEOUT_SECONDS)
 
         # Format results
         formatted_results = []
@@ -70,10 +81,10 @@ async def ddg_web_search(query: str, max_results: int = 5) -> str:
         }, indent=2)
 
     except asyncio.TimeoutError:
-        logger.error(f"Web search timed out for query: '{query}'")
+        logger.warning(f"Web search timed out after {_TIMEOUT_SECONDS}s for query: '{query}'")
         return json.dumps({
             "success": False,
-            "error": "Search timed out after 30 seconds",
+            "error": f"Search timed out after {int(_TIMEOUT_SECONDS)} seconds",
             "query": query
         })
 

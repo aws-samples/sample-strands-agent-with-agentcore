@@ -20,10 +20,15 @@ _PROJECT_NAME = os.environ.get("PROJECT_NAME", "strands-agent-chatbot")
 _ENVIRONMENT = os.environ.get("ENVIRONMENT", "dev")
 
 # MCP Runtime configurations: tool_prefix -> SSM parameter for Runtime ARN
+# Gmail, Calendar, Notion, and GitHub all share the same 3LO MCP runtime server.
 MCP_RUNTIME_CONFIGS: Dict[str, Dict[str, str]] = {
     "gmail": {
         "runtime_arn_ssm": f"/{_PROJECT_NAME}/{_ENVIRONMENT}/mcp/mcp-3lo-runtime-arn",
-        "description": "Gmail MCP 3LO Server",
+        "description": "MCP 3LO Server (Gmail/Calendar/Notion/GitHub)",
+    },
+    "github": {
+        "runtime_arn_ssm": f"/{_PROJECT_NAME}/{_ENVIRONMENT}/mcp/mcp-3lo-runtime-arn",
+        "description": "MCP 3LO Server (Gmail/Calendar/Notion/GitHub)",
     },
 }
 
@@ -111,11 +116,15 @@ def create_mcp_runtime_client(
     if not region:
         region = os.environ.get("AWS_REGION", "us-west-2")
 
-    # For now, all mcp_ tools go to the Gmail 3LO runtime.
-    # When more runtimes are added, route by tool ID pattern.
-    config = MCP_RUNTIME_CONFIGS.get("gmail")
+    # Route by tool ID prefix (e.g. "mcp_github_*" → "github" config).
+    # Fall back to "gmail" config since all current tools share one 3LO runtime.
+    tool_prefix = next(
+        (key for key in MCP_RUNTIME_CONFIGS if any(tid.startswith(f"{prefix}_{key}_") for tid in mcp_tool_ids)),
+        "gmail",
+    )
+    config = MCP_RUNTIME_CONFIGS.get(tool_prefix)
     if not config:
-        logger.warning("No MCP runtime config found for gmail")
+        logger.warning(f"No MCP runtime config found for prefix '{tool_prefix}'")
         return None
 
     runtime_arn = get_runtime_arn_from_ssm(config["runtime_arn_ssm"], region)

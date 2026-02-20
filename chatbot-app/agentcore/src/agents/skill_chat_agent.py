@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 # Skills served by MCP Runtime (3LO OAuth). Everything else is Gateway.
-_MCP_RUNTIME_SKILLS = {"gmail", "google-calendar", "notion"}
+_MCP_RUNTIME_SKILLS = {"gmail", "google-calendar", "notion", "github"}
 
 MCP_TOOL_SKILL_MAP: Dict[str, str] = {
     # Gateway: weather
@@ -88,6 +88,18 @@ MCP_TOOL_SKILL_MAP: Dict[str, str] = {
     "notion_update_page": "notion",
     "notion_update_block": "notion",
     "notion_append_blocks": "notion",
+    # MCP Runtime: github
+    "github_search_repos": "github",
+    "github_get_repo": "github",
+    "github_list_issues": "github",
+    "github_get_issue": "github",
+    "github_list_pulls": "github",
+    "github_get_pull": "github",
+    "github_get_file": "github",
+    "github_search_code": "github",
+    "github_create_branch": "github",
+    "github_push_files": "github",
+    "github_create_pull_request": "github",
 }
 
 class SkillChatAgent(ChatAgent):
@@ -254,6 +266,12 @@ class SkillChatAgent(ChatAgent):
 
         # Replace tools: skill infrastructure + non-skill tools
         self.tools = [skill_dispatcher, skill_executor] + non_skill_tools
+
+        # Skills that must not be called in parallel (e.g. DuckDuckGo rate-limits on concurrent requests)
+        _SEQUENTIAL_SKILLS = {'web-search'}
+        if _SEQUENTIAL_SKILLS & set(registry.skill_names):
+            self._force_sequential = True
+            logger.info(f"[SkillChatAgent] SequentialToolExecutor forced — skills require it: {_SEQUENTIAL_SKILLS & set(registry.skill_names)}")
 
         # Delegate to parent — inherits hooks, SequentialToolExecutor,
         # NullConversationManager, and all other Agent configuration.

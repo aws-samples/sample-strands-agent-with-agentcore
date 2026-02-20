@@ -376,6 +376,94 @@ print(callback_url)
 fi
 echo ""
 
+# Check if GitHub OAuth provider already exists
+GITHUB_PROVIDER_EXISTS=$($PYTHON_CMD -c "
+import boto3
+try:
+    client = boto3.client('bedrock-agentcore-control', region_name='${AWS_REGION}')
+    client.get_oauth2_credential_provider(name='github-oauth-provider')
+    print('exists')
+except Exception:
+    print('not_found')
+" 2>/dev/null || echo "not_found")
+
+if [ "$GITHUB_PROVIDER_EXISTS" = "exists" ]; then
+    log_info "GitHub OAuth provider already registered"
+
+    # Get callback URL from existing provider
+    GITHUB_CALLBACK_URL=$($PYTHON_CMD -c "
+import boto3
+client = boto3.client('bedrock-agentcore-control', region_name='${AWS_REGION}')
+response = client.get_oauth2_credential_provider(name='github-oauth-provider')
+print(response.get('callbackUrl', ''))
+" 2>/dev/null || echo "")
+
+    if [ -n "$GITHUB_CALLBACK_URL" ]; then
+        log_info "GitHub callback URL: $GITHUB_CALLBACK_URL"
+    fi
+else
+    # Provider not registered yet - ask for credentials if not provided via env vars
+    if [ -z "$GITHUB_CLIENT_ID" ] || [ -z "$GITHUB_CLIENT_SECRET" ]; then
+        log_warn "GitHub OAuth provider not yet registered"
+        echo ""
+        echo "To register, provide GitHub OAuth credentials."
+        echo "  (Create OAuth App at https://github.com/settings/developers)"
+        echo ""
+        read -p "Enter GitHub OAuth Client ID (or press Enter to skip): " GITHUB_CLIENT_ID < /dev/tty
+        if [ -n "$GITHUB_CLIENT_ID" ]; then
+            read -s -p "Enter GitHub OAuth Client Secret: " GITHUB_CLIENT_SECRET < /dev/tty
+            echo ""
+        fi
+    fi
+
+    if [ -n "$GITHUB_CLIENT_ID" ] && [ -n "$GITHUB_CLIENT_SECRET" ]; then
+        log_step "Registering GitHub OAuth credential provider..."
+
+        GITHUB_CALLBACK_URL=$($PYTHON_CMD -c "
+import boto3
+
+client = boto3.client('bedrock-agentcore-control', region_name='${AWS_REGION}')
+response = client.create_oauth2_credential_provider(
+    name='github-oauth-provider',
+    credentialProviderVendor='CustomOauth2',
+    oauth2ProviderConfigInput={
+        'customOauth2ProviderConfig': {
+            'clientId': '${GITHUB_CLIENT_ID}',
+            'clientSecret': '${GITHUB_CLIENT_SECRET}',
+            'oauthDiscovery': {
+                'authorizationServerMetadata': {
+                    'issuer': 'https://github.com',
+                    'authorizationEndpoint': 'https://github.com/login/oauth/authorize',
+                    'tokenEndpoint': 'https://github.com/login/oauth/access_token',
+                }
+            }
+        }
+    }
+)
+
+callback_url = response.get('callbackUrl', 'N/A')
+print(callback_url)
+" 2>/dev/null || echo "")
+
+        if [ -n "$GITHUB_CALLBACK_URL" ] && [ "$GITHUB_CALLBACK_URL" != "N/A" ]; then
+            log_info "Provider registered with callback URL: $GITHUB_CALLBACK_URL"
+            echo ""
+            echo "IMPORTANT: Add this Callback URL to your GitHub OAuth App's Authorization callback URL:"
+            echo "  $GITHUB_CALLBACK_URL"
+        fi
+
+        if [ $? -eq 0 ]; then
+            log_info "GitHub OAuth provider registered"
+        else
+            log_error "Failed to register GitHub OAuth provider"
+        fi
+    else
+        log_warn "Skipped - GitHub OAuth provider not registered"
+        log_warn "To register later, re-run with GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET"
+    fi
+fi
+echo ""
+
 # ── 4. Retrieve Stack Outputs ─────────────────────────────────
 log_step "Retrieving stack outputs..."
 echo ""

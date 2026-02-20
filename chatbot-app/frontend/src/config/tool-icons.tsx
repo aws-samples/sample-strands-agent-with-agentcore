@@ -23,6 +23,7 @@ import {
   SiGmail,
   SiGooglecalendar,
   SiNotion,
+  SiGithub,
 } from 'react-icons/si';
 import toolsConfig from './tools-config.json';
 
@@ -73,6 +74,7 @@ export const toolIconMap: Record<string, IconType> = {
   mcp_gmail: SiGmail,
   mcp_calendar: SiGooglecalendar,
   mcp_notion: SiNotion,
+  mcp_github: SiGithub,
 
   // Research Agent
   'agentcore_research-agent': TbSearch,
@@ -86,6 +88,7 @@ export const toolImageMap: Record<string, string> = {
   'mcp_gmail': '/tool-icons/gmail.svg',
   'mcp_calendar': '/tool-icons/google-calendar.svg',
   'mcp_notion': '/tool-icons/notion.svg',
+  'mcp_github': '/tool-icons/github.svg',
   'calculator': '/tool-icons/calculator.svg',
   'excel_spreadsheet_tools': '/tool-icons/excel.svg',
   'visual_design': '/tool-icons/diagram.svg',
@@ -182,6 +185,7 @@ const skillToToolId: Record<string, string> = {
   'gmail': 'mcp_gmail',
   'google-calendar': 'mcp_calendar',
   'notion': 'mcp_notion',
+  'github': 'mcp_github',
 };
 
 /**

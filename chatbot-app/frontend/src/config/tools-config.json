@@ -715,6 +715,86 @@
       ]
     },
     {
+      "id": "mcp_github",
+      "name": "GitHub",
+      "description": "Search repositories, browse code, manage issues/PRs, and create branches and pull requests via GitHub OAuth (3LO)",
+      "category": "development",
+      "icon": "",
+      "enabled": false,
+      "isDynamic": true,
+      "runtime_arn_ssm": "/strands-agent-chatbot/dev/mcp/mcp-3lo-runtime-arn",
+      "tags": ["github", "git", "code", "repository", "pull-request", "issues"],
+      "systemPromptGuidance": "**GitHub Tool Usage:**\n- github_search_repos: Search GitHub repositories by keyword\n- github_get_repo: Get repository details (description, stars, language, topics)\n- github_list_issues: List issues (state: open|closed|all, filter by labels)\n- github_get_issue: Get a single issue with all comments\n- github_list_pulls: List pull requests\n- github_get_pull: Get a single PR with diff summary\n- github_get_file: Read file contents from a repo (specify ref/branch if needed)\n- github_search_code: Search code across GitHub (use repo:owner/name to scope)\n- github_create_branch: Create a new branch (write — requires approval)\n- github_push_files: Create or update files on a branch (write — requires approval)\n- github_create_pull_request: Open a pull request (write — requires approval)\n\n**Write workflow:**\n1. github_get_file to read existing files before modifying\n2. github_create_branch to create a feature branch\n3. github_push_files to commit all changes in one call\n4. github_create_pull_request to open a PR",
+      "tools": [
+        {
+          "id": "mcp_github_search_repos",
+          "name": "Search Repos",
+          "description": "Search GitHub repositories by keyword",
+          "displayName": { "running": "Searching repos", "complete": "Searched repos" }
+        },
+        {
+          "id": "mcp_github_get_repo",
+          "name": "Get Repo",
+          "description": "Get repository details (description, stars, language, topics)",
+          "displayName": { "running": "Getting repo", "complete": "Got repo" }
+        },
+        {
+          "id": "mcp_github_list_issues",
+          "name": "List Issues",
+          "description": "List issues in a repository (filter by state and labels)",
+          "displayName": { "running": "Listing issues", "complete": "Listed issues" }
+        },
+        {
+          "id": "mcp_github_get_issue",
+          "name": "Get Issue",
+          "description": "Get a single issue with all comments",
+          "displayName": { "running": "Getting issue", "complete": "Got issue" }
+        },
+        {
+          "id": "mcp_github_list_pulls",
+          "name": "List PRs",
+          "description": "List pull requests in a repository",
+          "displayName": { "running": "Listing PRs", "complete": "Listed PRs" }
+        },
+        {
+          "id": "mcp_github_get_pull",
+          "name": "Get PR",
+          "description": "Get a single pull request with diff summary",
+          "displayName": { "running": "Getting PR", "complete": "Got PR" }
+        },
+        {
+          "id": "mcp_github_get_file",
+          "name": "Get File",
+          "description": "Get file contents from a repository",
+          "displayName": { "running": "Reading file", "complete": "Read file" }
+        },
+        {
+          "id": "mcp_github_search_code",
+          "name": "Search Code",
+          "description": "Search code across GitHub repositories",
+          "displayName": { "running": "Searching code", "complete": "Searched code" }
+        },
+        {
+          "id": "mcp_github_create_branch",
+          "name": "Create Branch",
+          "description": "Create a new branch in a repository (requires approval)",
+          "displayName": { "running": "Creating branch", "complete": "Created branch" }
+        },
+        {
+          "id": "mcp_github_push_files",
+          "name": "Push Files",
+          "description": "Create or update files on a branch (requires approval)",
+          "displayName": { "running": "Pushing files", "complete": "Pushed files" }
+        },
+        {
+          "id": "mcp_github_create_pull_request",
+          "name": "Create PR",
+          "description": "Open a pull request (requires approval)",
+          "displayName": { "running": "Creating PR", "complete": "Created PR" }
+        }
+      ]
+    },
+    {
       "id": "mcp_notion",
       "name": "Notion",
       "description": "Notion workspace management: search, read, create, and update pages and databases via OAuth (3LO)",
