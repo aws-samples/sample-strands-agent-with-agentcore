@@ -26,7 +26,7 @@
   "dependencies": {
     "aws-cdk-lib": "2.238.0",
     "constructs": "^10.0.0",
-    "@aws-sdk/client-bedrock-agentcore": "^3.0.0"
+    "@aws-sdk/client-bedrock-agentcore": "^3.994.0"
   },
   "overrides": {
     "ajv": "^8.18.0",
