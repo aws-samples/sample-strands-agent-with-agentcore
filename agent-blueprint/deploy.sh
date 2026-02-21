@@ -4,6 +4,11 @@ set -e
 # Strands Agent Chatbot - Main Deployment Orchestrator
 # Routes to specific deployment scripts
 
+# AWS Profile support
+# Usage: PROFILE=myprofile ./deploy.sh
+
+export PROJECT_NAME="strands-agent-chatbot"
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -165,7 +170,7 @@ deploy_agentcore_runtime() {
     echo ""
 
     NOVA_SECRET_EXISTS=$(aws secretsmanager describe-secret \
-        --secret-id "strands-agent-chatbot/nova-act-api-key" \
+        --secret-id "${PROJECT_NAME}/nova-act-api-key" \
         --query 'Name' \
         --output text \
         --region "$AWS_REGION" 2>/dev/null || echo "")
@@ -181,12 +186,12 @@ deploy_agentcore_runtime() {
         if [ -n "$NOVA_ACT_KEY" ]; then
             log_step "Setting Nova Act API Key in Secrets Manager..."
             aws secretsmanager create-secret \
-                --name "strands-agent-chatbot/nova-act-api-key" \
+                --name "${PROJECT_NAME}/nova-act-api-key" \
                 --secret-string "$NOVA_ACT_KEY" \
                 --description "Nova Act API Key for browser automation" \
                 --region "$AWS_REGION" > /dev/null 2>&1 || \
             aws secretsmanager put-secret-value \
-                --secret-id "strands-agent-chatbot/nova-act-api-key" \
+                --secret-id "${PROJECT_NAME}/nova-act-api-key" \
                 --secret-string "$NOVA_ACT_KEY" \
                 --region "$AWS_REGION" > /dev/null 2>&1
             log_info "Nova Act API Key configured"
@@ -211,7 +216,7 @@ deploy_agentcore_runtime() {
     npm run build
 
     # Check if ECR repository already exists
-    if aws ecr describe-repositories --repository-names strands-agent-chatbot-agent-core --region $AWS_REGION &> /dev/null; then
+    if aws ecr describe-repositories --repository-names "${PROJECT_NAME}-agent-core" --region $AWS_REGION &> /dev/null; then
         log_info "ECR repository already exists, importing..."
         export USE_EXISTING_ECR=true
     else
@@ -325,7 +330,6 @@ deploy_mcp_servers() {
 
     # Export AWS region for the deployment script
     export AWS_REGION
-    export PROJECT_NAME="strands-agent-chatbot"
     export ENVIRONMENT="dev"
 
     # Run deployment
@@ -337,7 +341,7 @@ deploy_mcp_servers() {
     log_step "Verifying deployment..."
 
     GATEWAY_URL=$(aws ssm get-parameter \
-        --name "/strands-agent-chatbot/dev/mcp/gateway-url" \
+        --name "/${PROJECT_NAME}/dev/mcp/gateway-url" \
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "")
@@ -446,7 +450,6 @@ deploy_research_agent() {
 
     # Export environment variables for the deployment script
     export AWS_REGION
-    export PROJECT_NAME="strands-agent-chatbot"
     export ENVIRONMENT="dev"
 
     # Run deployment
@@ -480,11 +483,10 @@ deploy_browser_use_agent() {
 
     # Export environment variables for the deployment script
     export AWS_REGION
-    export PROJECT_NAME="strands-agent-chatbot"
     export ENVIRONMENT="dev"
 
     # Check if ECR repository already exists
-    if aws ecr describe-repositories --repository-names strands-agent-chatbot-browser-use-agent --region $AWS_REGION &> /dev/null; then
+    if aws ecr describe-repositories --repository-names "${PROJECT_NAME}-browser-use-agent" --region $AWS_REGION &> /dev/null; then
         log_info "ECR repository already exists, importing..."
         export USE_EXISTING_ECR=true
     else
@@ -500,7 +502,7 @@ deploy_browser_use_agent() {
     log_step "Verifying deployment..."
 
     RUNTIME_ARN=$(aws ssm get-parameter \
-        --name "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn" \
+        --name "/${PROJECT_NAME}/dev/a2a/browser-use-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "")
@@ -617,20 +619,20 @@ display_deployment_summary() {
 
     # Get Gateway URL
     GATEWAY_URL=$(aws ssm get-parameter \
-        --name "/strands-agent-chatbot/dev/mcp/gateway-url" \
+        --name "/${PROJECT_NAME}/dev/mcp/gateway-url" \
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "Not available")
 
     # Get A2A Runtime ARNs
     RESEARCH_AGENT_ARN=$(aws ssm get-parameter \
-        --name "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn" \
+        --name "/${PROJECT_NAME}/dev/a2a/research-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "Not deployed")
 
     BROWSER_AGENT_ARN=$(aws ssm get-parameter \
-        --name "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn" \
+        --name "/${PROJECT_NAME}/dev/a2a/browser-use-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "Not deployed")
