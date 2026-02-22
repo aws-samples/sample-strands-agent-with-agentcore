@@ -1,6 +1,6 @@
 ---
 name: excel-spreadsheets
-description: Create, modify, and manage Excel spreadsheets with openpyxl via Bedrock Code Interpreter.
+description: Create, modify, and manage Excel spreadsheets.
 ---
 
 # Excel Spreadsheets

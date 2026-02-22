@@ -45,7 +45,7 @@ from .excel_spreadsheet_tool import (
 from .code_interpreter_tool import execute_code, execute_command, file_operations
 
 from .powerpoint_presentation_tool import (
-    get_slide_code_examples,
+    get_slide_design_reference,
     list_my_powerpoint_presentations,
     get_presentation_layouts,
     analyze_presentation,
@@ -79,7 +79,7 @@ __all__ = [
     'read_excel_spreadsheet',
     'preview_excel_sheets',
     # PowerPoint tools
-    'get_slide_code_examples',
+    'get_slide_design_reference',
     'list_my_powerpoint_presentations',
     'get_presentation_layouts',
     'analyze_presentation',
@@ -111,7 +111,7 @@ BUILTIN_TOOLS = [
     list_my_excel_spreadsheets,
     read_excel_spreadsheet,
     preview_excel_sheets,
-    get_slide_code_examples,
+    get_slide_design_reference,
     list_my_powerpoint_presentations,
     get_presentation_layouts,
     analyze_presentation,

@@ -1,6 +1,6 @@
 ---
 name: word-documents
-description: Create, modify, and manage Word documents with python-docx via Bedrock Code Interpreter.
+description: Create, modify, and manage Word documents.
 ---
 
 # Word Documents

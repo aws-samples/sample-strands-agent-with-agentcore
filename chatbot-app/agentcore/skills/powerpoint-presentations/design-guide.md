@@ -1,92 +1,115 @@
 # PowerPoint Design Guide
 
-Code patterns and detailed guidance for visual slide design. Load this when implementing slide visuals.
+Visual patterns and detailed guidance for slide design. Load this when implementing slide visuals.
 
-## Using Palettes in Code
+## Using Palettes in Code (PptxGenJS)
 
-```python
-# Example: Midnight Executive palette
-PRIMARY = RGBColor(0x1E, 0x27, 0x61)
-ACCENT  = RGBColor(0x40, 0x8E, 0xC6)
-WHITE   = RGBColor(0xFF, 0xFF, 0xFF)
+```javascript
+// Example: Midnight Executive palette
+// Colors are 6-digit hex WITHOUT '#'
+const PRIMARY = "1E2761";
+const ACCENT  = "FFFFFF";
+const ICE     = "CADCFC";
 
-# Background fill
-slide.background.fill.solid()
-slide.background.fill.fore_color.rgb = PRIMARY
+let slide = pres.addSlide();
 
-# Accent shape
-shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(6.5), Inches(13.33), Inches(1))
-shape.fill.solid()
-shape.fill.fore_color.rgb = ACCENT
-shape.line.fill.background()
+// Solid background
+slide.background = { color: PRIMARY };
 
-# Title text
-tf = title.text_frame
-p = tf.paragraphs[0]
-p.font.color.rgb = WHITE
-p.font.size = Pt(44)
-p.font.bold = True
+// Accent bar at bottom
+slide.addShape(pres.shapes.RECTANGLE, {
+  x: 0, y: 7.1, w: 13.3, h: 0.4,
+  fill: { color: ACCENT }, line: { color: ACCENT }
+});
+
+// Title text
+slide.addText("Slide Title", {
+  x: 0.6, y: 0.4, w: 10, h: 1.0,
+  fontSize: 40, bold: true, color: ACCENT,
+  fontFace: "Georgia", margin: 0
+});
 ```
 
 ## Creating Lighter Tints
 
-For data slides, lighten the palette's primary color:
+For data slides that need lighter backgrounds within the same palette:
 
-```python
-# Lighter tint of Midnight Executive primary for data slide background
-LIGHT_BG = RGBColor(0x2A, 0x35, 0x78)  # Slightly lighter than #1E2761
+```javascript
+// Slightly lighter than Midnight Executive primary for data slide background
+const LIGHT_BG = "2A3578";  // Tint of 1E2761
+
+slide.background = { color: LIGHT_BG };
 ```
+
+---
 
 ## Visual Element Patterns
 
 ### Accent bar (bottom)
-```python
-bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(7), Inches(13.33), Inches(0.5))
-bar.fill.solid()
-bar.fill.fore_color.rgb = ACCENT
-bar.line.fill.background()
+
+```javascript
+slide.addShape(pres.shapes.RECTANGLE, {
+  x: 0, y: 7.1, w: 13.3, h: 0.4,
+  fill: { color: ACCENT }, line: { color: ACCENT }
+});
 ```
 
 ### Icon circle
-```python
-circle = slide.shapes.add_shape(MSO_SHAPE.OVAL, Inches(1), Inches(2), Inches(1.2), Inches(1.2))
-circle.fill.solid()
-circle.fill.fore_color.rgb = ACCENT
-circle.line.fill.background()
+
+```javascript
+// ICE (secondary) fill + dark PRIMARY text = legible on any slide background
+slide.addShape(pres.shapes.OVAL, {
+  x: 1.0, y: 2.0, w: 1.2, h: 1.2,
+  fill: { color: ICE }, line: { color: ICE }
+});
+slide.addText("★", {
+  x: 1.0, y: 2.0, w: 1.2, h: 1.2,
+  fontSize: 28, color: PRIMARY, align: "center", valign: "middle"
+});
 ```
 
-### Side stripe
-```python
-stripe = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0), Inches(0), Inches(0.4), Inches(7.5))
-stripe.fill.solid()
-stripe.fill.fore_color.rgb = ACCENT
-stripe.line.fill.background()
+### Side stripe (left edge)
+
+```javascript
+slide.addShape(pres.shapes.RECTANGLE, {
+  x: 0, y: 0, w: 0.4, h: 7.5,
+  fill: { color: ACCENT }, line: { color: ACCENT }
+});
 ```
 
 ### Divider line
-```python
-from pptx.util import Emu
-line = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(1), Inches(3), Inches(11.33), Emu(18000))
-line.fill.solid()
-line.fill.fore_color.rgb = ACCENT
-line.line.fill.background()
+
+```javascript
+slide.addShape(pres.shapes.RECTANGLE, {
+  x: 1, y: 3.0, w: 11.3, h: 0.02,
+  fill: { color: ACCENT }, line: { color: ACCENT }
+});
 ```
 
-## Anti-Patterns — Detailed
+### Card with shadow
 
-### Plain bullets on white background
-White backgrounds look unprofessional and undesigned. Always fill the slide background with a palette color.
+```javascript
+const makeShadow = () => ({ type: "outer", color: "000000", blur: 8, offset: 3, angle: 135, opacity: 0.15 });
+slide.addShape(pres.shapes.RECTANGLE, {
+  x: 1.0, y: 1.5, w: 5.0, h: 2.5,
+  fill: { color: "FFFFFF" },
+  shadow: makeShadow()
+});
+```
 
-### Default PowerPoint blue (#4472C4)
-This signals "auto-generated." Always use your chosen palette instead.
+> Always use a factory function for shadow objects — PptxGenJS mutates them in-place. See [pptxgenjs.md](pptxgenjs.md).
 
-### Accent lines directly under titles
-A colored bar touching the bottom of the title looks dated. Use breathing room (0.5″+) and place accent elements in the margins or as side bars.
+### Stat callout (large number)
 
-### Text-only slides
-Every slide needs at least one non-text visual element — a shape, divider bar, icon circle, or background gradient. Use accent-colored rectangles, circles, or rounded rectangles as visual anchors.
+```javascript
+slide.addText("87%", {
+  x: 1, y: 1.5, w: 4, h: 2,
+  fontSize: 80, bold: true, color: ACCENT,
+  align: "center", valign: "middle"
+});
+slide.addText("Customer Satisfaction", {
+  x: 1, y: 3.5, w: 4, h: 0.5,
+  fontSize: 14, color: ACCENT, align: "center"
+});
+```
 
-### Overcrowded slides
-- Maximum 4 bullet points per slide
-- If more content is needed, split across multiple slides
-- Use grid layouts (2x2 or 3-column) to organize dense information

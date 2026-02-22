@@ -67,7 +67,7 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
         "move_slide",
         "duplicate_slide",
         "update_slide_notes",
-        "get_slide_code_examples",
+        "get_slide_design_reference",
         "preview_presentation_slides",
     ],
     "data_analyst": [
