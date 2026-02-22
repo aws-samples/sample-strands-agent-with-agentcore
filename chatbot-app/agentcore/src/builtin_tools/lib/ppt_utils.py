@@ -8,7 +8,6 @@ Separated from main tool file for better maintainability.
 import os
 import re
 import logging
-import base64
 from typing import Dict, Any, Optional, Tuple
 
 logger = logging.getLogger(__name__)
@@ -157,51 +156,6 @@ def get_file_compatibility_error(filename: str, error_msg: str, operation: str) 
     }
 
 
-def upload_ppt_helpers_to_ci(code_interpreter) -> None:
-    """Upload ppt_helpers.py module to Code Interpreter workspace."""
-    try:
-        helpers_path = os.path.join(os.path.dirname(__file__), 'ppt_helpers.py')
-
-        if not os.path.exists(helpers_path):
-            logger.warning(f"ppt_helpers.py not found at {helpers_path}")
-            return
-
-        with open(helpers_path, 'rb') as f:
-            helpers_bytes = f.read()
-
-        encoded_content = base64.b64encode(helpers_bytes).decode('utf-8')
-
-        upload_code = f'''
-import base64
-
-module_content = base64.b64decode('{encoded_content}')
-
-with open('presentation_editor.py', 'wb') as f:
-    f.write(module_content)
-
-with open('ppt_helpers.py', 'wb') as f:
-    f.write(module_content)
-
-print("ppt_helpers modules loaded")
-'''
-
-        response = code_interpreter.invoke("executeCode", {
-            "code": upload_code,
-            "language": "python",
-            "clearContext": False
-        })
-
-        for event in response.get("stream", []):
-            result = event.get("result", {})
-            if result.get("isError", False):
-                error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
-                logger.error(f"Failed to upload ppt_helpers: {error_msg[:200]}")
-                return
-
-    except Exception as e:
-        logger.error(f"Failed to upload ppt_helpers: {e}")
-
-
 def make_error_response(message: str) -> Dict[str, Any]:
     """Create standard error response."""
     return {
@@ -210,7 +164,3 @@ def make_error_response(message: str) -> Dict[str, Any]:
     }
 
 
-def make_success_response(message: str, **metadata) -> Dict[str, Any]:
-    """Create standard success response."""
-    from .tool_response import build_success_response
-    return build_success_response(message, metadata)

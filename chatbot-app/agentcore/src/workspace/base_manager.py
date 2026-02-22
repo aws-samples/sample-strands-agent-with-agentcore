@@ -157,7 +157,7 @@ class BaseDocumentManager:
             return file_bytes
 
         except self.s3_client.exceptions.NoSuchKey:
-            logger.error(f"File not found in S3: {filename}")
+            logger.debug(f"File not found in S3: {filename}")
             raise FileNotFoundError(f"Document not found: {filename}")
         except Exception as e:
             logger.error(f"Failed to load from S3: {e}")

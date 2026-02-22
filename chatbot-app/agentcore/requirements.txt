@@ -36,6 +36,7 @@ aws-opentelemetry-distro>=0.10.1
 # Document preview (PDF to image conversion)
 pdf2image>=1.16.0
 openpyxl>=3.1.0  # Excel sheet name extraction for preview
+defusedxml>=0.7.1  # Safe XML parsing for PPTX engine
 
 bedrock-agentcore>=1.1.5
 
