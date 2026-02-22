@@ -1,6 +1,6 @@
 "use client"
 
-import React, { startTransition } from "react"
+import React from "react"
 import { useState, useRef, useEffect, useCallback, useMemo } from "react"
 import { useChat } from "@/hooks/useChat"
 import { useArtifacts } from "@/hooks/useArtifacts"
@@ -16,44 +16,22 @@ import { BrowserResultModal } from "@/components/BrowserResultModal"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
 import { SwarmProgress } from "@/components/SwarmProgress"
 import { Canvas } from "@/components/canvas"
-import { VoiceAnimation } from "@/components/VoiceAnimation"
 import { ComposeWizard, ComposeConfig } from "@/components/ComposeWizard"
 import { ChatInputArea } from "@/components/chat/ChatInputArea"
 import { useComposer } from "@/hooks/useComposer"
 import { useResearch } from "@/hooks/useResearch"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Upload, Send, FileText, ImageIcon, Square, Loader2, ArrowDown, Mic, FlaskConical, Sparkles } from "lucide-react"
+import { ArrowDown, Sparkles } from "lucide-react"
 import { AIIcon } from "@/components/ui/AIIcon"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
-import { apiGet } from "@/lib/api-client"
+import { buildArtifactContext } from "@/lib/artifactContext"
 import { useTheme } from "next-themes"
 import { useVoiceIntegration } from "@/hooks/useVoiceIntegration"
 
-
-// Custom debounce hook
-function useDebounce<T extends (...args: any[]) => any>(
-  callback: T,
-  delay: number
-): T {
-  const timeoutRef = useRef<NodeJS.Timeout>()
-
-  return useCallback((...args: Parameters<T>) => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
-    timeoutRef.current = setTimeout(() => {
-      callback(...args)
-    }, delay)
-  }, [callback, delay]) as T
-}
 
 // Custom throttle hook
 function useThrottle<T extends (...args: any[]) => any>(
@@ -119,12 +97,13 @@ export function ChatInterface() {
     handlePptDocumentsCreated,
     handleDiagramCreated,
     handleExtractedDataCreated,
+    handleExcalidrawCreated,
     handleOpenResearchArtifact,
     handleOpenWordArtifact,
     handleOpenExcelArtifact,
     handleOpenPptArtifact,
-    handleOpenDiagramArtifact,
     handleOpenExtractedDataArtifact,
+    handleOpenExcalidrawArtifact,
     setArtifactMethods,
   } = useCanvasHandlers()
 
@@ -198,11 +177,9 @@ export function ChatInterface() {
     newChat,
     toggleTool,
     setExclusiveTools,
-    refreshTools,
     sessionId,
     isLoadingMessages,
     loadSession,
-    onGatewayToolsChange,
     browserSession,
     browserProgress,
     researchProgress,
@@ -228,6 +205,7 @@ export function ChatInterface() {
     onDiagramCreated: handleDiagramCreated,
     onBrowserSessionDetected: handleBrowserSessionDetected,
     onExtractedDataCreated: handleExtractedDataCreated,
+    onExcalidrawCreated: handleExcalidrawCreated,
     onSessionLoaded: () => reloadFromStorageRef.current?.(),
   })
 
@@ -265,7 +243,6 @@ export function ChatInterface() {
   const stableSessionId = useMemo(() => sessionId || undefined, [sessionId])
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [currentModelName, setCurrentModelName] = useState<string>("")
   const [isResearchEnabled, setIsResearchEnabled] = useState<boolean>(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -295,6 +272,7 @@ export function ChatInterface() {
     setSelectedArtifactId,
     addArtifact,
     removeArtifact,
+    updateArtifact,
     refreshArtifacts,
     reloadFromStorage,
     justUpdated: artifactJustUpdated,
@@ -319,9 +297,10 @@ export function ChatInterface() {
       artifacts,
       refreshArtifacts,
       addArtifact,
+      updateArtifact,
       openArtifact,
     })
-  }, [artifacts, refreshArtifacts, addArtifact, openArtifact, setArtifactMethods])
+  }, [artifacts, refreshArtifacts, addArtifact, updateArtifact, openArtifact, setArtifactMethods])
 
   // Composer artifact ID tracking
   const [composeArtifactId, setComposeArtifactId] = useState<string | null>(null)
@@ -344,13 +323,6 @@ export function ChatInterface() {
   useEffect(() => {
     setBrowserArtifactIdRef.current = setBrowserArtifactId
   }, [setBrowserArtifactId])
-
-  // Artifact editing state
-  const [editingArtifact, setEditingArtifact] = useState<{
-    id: string
-    title: string
-    content: string
-  } | null>(null)
 
   // Composer management
   const composer = useComposer({
@@ -428,24 +400,6 @@ export function ChatInterface() {
     respondToInterrupt,
   })
 
-  // Handle edit in chat - explicit mode via button
-
-  // Auto-enable editing mode when canvas is open with a document
-  useEffect(() => {
-    if (isCanvasOpen && selectedArtifactId) {
-      const artifact = artifacts.find(a => a.id === selectedArtifactId)
-      if (artifact && artifact.type === 'document' && typeof artifact.content === 'string') {
-        setEditingArtifact({
-          id: artifact.id,
-          title: artifact.title,
-          content: artifact.content
-        })
-      }
-    } else {
-      setEditingArtifact(null)
-    }
-  }, [isCanvasOpen, selectedArtifactId, artifacts])
-
   // Wrapper functions to ensure mutual exclusivity between left sidebar and canvas
   const toggleCanvas = useCallback(() => {
     if (!isCanvasOpen) {
@@ -457,8 +411,6 @@ export function ChatInterface() {
   }, [isCanvasOpen, toggleCanvasBase, setOpen, setOpenMobile])
 
   const closeCanvas = useCallback(() => {
-    // Clear editing state when closing panel
-    setEditingArtifact(null)
     closeCanvasBase()
   }, [closeCanvasBase])
 
@@ -493,44 +445,35 @@ export function ChatInterface() {
     closeCanvas()
   }, [closeCanvas])
 
+  // Remove a browser artifact from both state and sessionStorage
+  const removeBrowserArtifact = useCallback((artifactId: string) => {
+    removeArtifact(artifactId)
+    setBrowserArtifactId(null)
+    const currentSessionId = sessionStorage.getItem('chat-session-id')
+    if (currentSessionId) {
+      const artifactsKey = `artifacts-${currentSessionId}`
+      const stored = sessionStorage.getItem(artifactsKey)
+      if (stored) {
+        const remaining = JSON.parse(stored).filter((a: any) => a.id !== artifactId)
+        sessionStorage.setItem(artifactsKey, JSON.stringify(remaining))
+      }
+    }
+  }, [removeArtifact])
+
   // Browser Canvas callbacks - handle connection errors and validation failures
   const handleBrowserConnectionError = useCallback(() => {
     console.log('[ChatInterface] Browser connection error, removing artifact')
     if (browserArtifactId) {
-      removeArtifact(browserArtifactId)
-      setBrowserArtifactId(null)
-
-      // Also remove from sessionStorage
-      const currentSessionId = sessionStorage.getItem('chat-session-id')
-      if (currentSessionId) {
-        const artifactsKey = `artifacts-${currentSessionId}`
-        const stored = sessionStorage.getItem(artifactsKey)
-        if (stored) {
-          const artifacts = JSON.parse(stored).filter((a: any) => a.id !== browserArtifactId)
-          sessionStorage.setItem(artifactsKey, JSON.stringify(artifacts))
-        }
-      }
+      removeBrowserArtifact(browserArtifactId)
     }
-  }, [browserArtifactId, removeArtifact])
+  }, [browserArtifactId, removeBrowserArtifact])
 
   const handleBrowserValidationFailed = useCallback(() => {
     console.log('[ChatInterface] Browser session validation failed, removing artifact')
     if (browserArtifactId) {
-      removeArtifact(browserArtifactId)
-      setBrowserArtifactId(null)
-
-      // Also remove from sessionStorage
-      const currentSessionId = sessionStorage.getItem('chat-session-id')
-      if (currentSessionId) {
-        const artifactsKey = `artifacts-${currentSessionId}`
-        const stored = sessionStorage.getItem(artifactsKey)
-        if (stored) {
-          const artifacts = JSON.parse(stored).filter((a: any) => a.id !== browserArtifactId)
-          sessionStorage.setItem(artifactsKey, JSON.stringify(artifacts))
-        }
-      }
+      removeBrowserArtifact(browserArtifactId)
     }
-  }, [browserArtifactId, removeArtifact])
+  }, [browserArtifactId, removeBrowserArtifact])
 
   // Restore and validate browser artifact on page load
   useEffect(() => {
@@ -1040,34 +983,6 @@ export function ChatInterface() {
     URL.revokeObjectURL(url)
   }, [groupedMessages, sessionId])
 
-  // Load current model name
-  const loadCurrentModel = useCallback(async () => {
-    try {
-      const [configData, modelsData] = await Promise.all([
-        apiGet<{ success: boolean; config: any }>('model/config', {
-          headers: sessionId ? { 'X-Session-ID': sessionId } : {},
-        }),
-        apiGet<{ models: { id: string; name: string }[] }>('model/available-models', {
-          headers: sessionId ? { 'X-Session-ID': sessionId } : {},
-        }),
-      ])
-
-      if (configData.success && configData.config && modelsData.models) {
-        const currentModel = modelsData.models.find(
-          (m: { id: string; name: string }) => m.id === configData.config.model_id
-        )
-        setCurrentModelName(currentModel?.name || 'Unknown Model')
-      }
-    } catch (error) {
-      console.error('Failed to load current model:', error)
-      setCurrentModelName('Model')
-    }
-  }, [sessionId])
-
-  useEffect(() => {
-    loadCurrentModel()
-  }, [loadCurrentModel])
-
   const handleNewChat = useCallback(async () => {
     forceDisconnectVoice()
     await newChat()
@@ -1126,33 +1041,11 @@ export function ChatInterface() {
     }
     setOpenMobile(false)
 
-    // Auto-enable artifact editor tool when document artifact is selected
-    let additionalTools: string[] | undefined = undefined
-    let artifactContext: string | undefined = undefined
-
-    if (selectedArtifactId) {
-      const selectedArtifact = artifacts.find(a => a.id === selectedArtifactId)
-      if (selectedArtifact && selectedArtifact.type === 'document') {
-        additionalTools = ['update_artifact']
-
-        // Build system prompt with artifact context
-        const contentPreview = selectedArtifact.content.length > 1000
-          ? selectedArtifact.content.substring(0, 1000) + '...'
-          : selectedArtifact.content
-
-        artifactContext = `# ARTIFACT CONTEXT
-
-The user currently has a document artifact open:
-- **Title**: ${selectedArtifact.title}
-- **Type**: ${selectedArtifact.type}
-- **Current Content Preview**:
-\`\`\`
-${contentPreview}
-\`\`\`
-
-If the user asks to modify this document, use the update_artifact tool to find and replace specific text.`
-      }
-    }
+    // Build artifact context when an artifact is selected in Canvas
+    const selectedArtifact = selectedArtifactId
+      ? artifacts.find(a => a.id === selectedArtifactId)
+      : undefined
+    const { additionalTools, artifactContext } = buildArtifactContext(selectedArtifact)
 
     await sendMessage(text, files, additionalTools, artifactContext, selectedArtifactId)
   }
@@ -1247,6 +1140,38 @@ If the user asks to modify this document, use the update_artifact tool to find a
     return hasActiveSwarmProgress && lastGroup?.type === 'assistant_turn';
   }, [swarmProgress, groupedMessages])
 
+  // Reusable Canvas toggle button (large variant for empty state, small for chat header)
+  const renderCanvasToggle = (large = false) => (
+    <TooltipProvider delayDuration={300}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleCanvas}
+            className={`${large ? 'h-9 w-9' : 'h-8 w-8'} p-0 hover:bg-muted/60 relative ${isCanvasOpen ? 'bg-muted' : ''}`}
+            title="Canvas"
+          >
+            <Sparkles className={large ? 'h-5 w-5' : 'h-4 w-4'} />
+            {artifacts.length > 0 && (
+              <span className="absolute -top-1 -right-1 h-4 w-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
+                {artifacts.length}
+              </span>
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          <p>
+            {artifacts.length > 0
+              ? `View Canvas (${artifacts.length})`
+              : 'No artifacts yet'
+            }
+          </p>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  )
+
   return (
     <>
       {/* Chat Sidebar */}
@@ -1270,38 +1195,10 @@ If the user asks to modify this document, use the update_artifact tool to find a
           </div>
         )}
 
-        {/* Theme toggle & Artifact button - Always visible in top-right */}
-        {/* Artifact button - Always visible in top-right */}
+        {/* Canvas toggle button - shown in top-right when no chat has started */}
         {groupedMessages.length === 0 && mounted && !isMobileView && (
           <div className={`absolute top-4 right-4 z-20`}>
-            <TooltipProvider delayDuration={300}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={toggleCanvas}
-                    className={`h-9 w-9 p-0 hover:bg-muted/60 relative ${isCanvasOpen ? 'bg-muted' : ''}`}
-                    title="Canvas"
-                  >
-                    <Sparkles className="h-5 w-5" />
-                    {artifacts.length > 0 && (
-                      <span className="absolute -top-1 -right-1 h-4 w-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
-                        {artifacts.length}
-                      </span>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>
-                    {artifacts.length > 0
-                      ? `View Canvas (${artifacts.length})`
-                      : 'No artifacts yet'
-                    }
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
+            {renderCanvasToggle(true)}
           </div>
         )}
 
@@ -1314,36 +1211,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
 
             <div className="flex items-center gap-2">
               {/* Canvas Toggle - Hidden on mobile */}
-              {!isMobileView && (
-                <TooltipProvider delayDuration={300}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={toggleCanvas}
-                        className={`h-8 w-8 p-0 hover:bg-muted/60 relative ${isCanvasOpen ? 'bg-muted' : ''}`}
-                        title="Canvas"
-                      >
-                        <Sparkles className="h-4 w-4" />
-                        {artifacts.length > 0 && (
-                          <span className="absolute -top-1 -right-1 h-4 w-4 bg-primary text-primary-foreground text-[10px] font-bold rounded-full flex items-center justify-center">
-                            {artifacts.length}
-                          </span>
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>
-                        {artifacts.length > 0
-                          ? `View Canvas (${artifacts.length})`
-                          : 'No artifacts yet'
-                        }
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
-              )}
+              {!isMobileView && renderCanvasToggle()}
             </div>
           </div>
         )}
@@ -1445,6 +1313,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
                         onOpenExcelArtifact={handleOpenExcelArtifact}
                         onOpenPptArtifact={handleOpenPptArtifact}
                         onOpenExtractedDataArtifact={handleOpenExtractedDataArtifact}
+                        onOpenExcalidrawArtifact={handleOpenExcalidrawArtifact}
                         researchProgress={researchProgress}
                         hideAvatar={isSwarmFinalResponse || hasHistorySwarm}
                       />
@@ -1570,6 +1439,7 @@ If the user asks to modify this document, use the update_artifact tool to find a
         artifacts={artifacts}
         selectedArtifactId={selectedArtifactId}
         onSelectArtifact={openArtifact}
+        onUpdateArtifact={updateArtifact}
         justUpdated={artifactJustUpdated}
         composeState={composeArtifactId && selectedArtifactId === composeArtifactId ? {
           isComposing: composer.isComposing,

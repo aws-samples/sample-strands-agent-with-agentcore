@@ -35,6 +35,7 @@ interface ToolExecutionContainerProps {
   onOpenExcelArtifact?: (filename: string) => void  // Open Excel spreadsheet in Canvas
   onOpenPptArtifact?: (filename: string) => void  // Open PowerPoint presentation in Canvas
   onOpenExtractedDataArtifact?: (artifactId: string) => void  // Open extracted data in Canvas
+  onOpenExcalidrawArtifact?: (artifactId: string) => void  // Open Excalidraw diagram in Canvas
 }
 
 // Collapsible Markdown component for tool results
@@ -92,50 +93,43 @@ const CollapsibleMarkdown = React.memo<{
          prevProps.sessionId === nextProps.sessionId
 })
 
-export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact }) => {
+export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
 
   // Extract output filename from Word tool result
-  // For modify_word_document: extracts the "Saved as" filename (output)
-  // For create_word_document: extracts the created filename
-  const extractWordFilename = (toolResult: string): string | null => {
+  // Prefers metadata.filename if available, falls back to regex extraction
+  const extractWordFilename = (toolResult: string, metadata?: any): string | null => {
+    if (metadata?.filename) return metadata.filename
     if (!toolResult) return null
-    // First try to find "Saved as: filename.docx" pattern (for modify_word_document)
-    const savedAsMatch = toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.docx)/i)
-    if (savedAsMatch) return savedAsMatch[1]
-    // Fallback: find any .docx filename
-    const match = toolResult.match(/([a-zA-Z0-9\-]+\.docx)/i)
-    return match ? match[1] : null
+    const savedAsMatch = toolResult.match(/\*\*Saved as\*\*:\s*([\w\-. ]+\.docx)/i)
+    if (savedAsMatch) return savedAsMatch[1].trim()
+    const match = toolResult.match(/([\w\-. ]+\.docx)/i)
+    return match ? match[1].trim() : null
   }
 
   // Extract output filename from Excel tool result
-  // For modify_excel_spreadsheet: extracts the "Saved as" filename (output)
-  // For create_excel_spreadsheet: extracts the created filename
-  const extractExcelFilename = (toolResult: string): string | null => {
+  // Prefers metadata.filename if available, falls back to regex extraction
+  const extractExcelFilename = (toolResult: string, metadata?: any): string | null => {
+    if (metadata?.filename) return metadata.filename
     if (!toolResult) return null
-    // First try to find "Saved as: filename.xlsx" pattern (for modify_excel_spreadsheet)
-    const savedAsMatch = toolResult.match(/\*\*Saved as\*\*:\s*([a-zA-Z0-9\-]+\.xlsx)/i)
-    if (savedAsMatch) return savedAsMatch[1]
-    // Fallback: find any .xlsx filename
-    const match = toolResult.match(/([a-zA-Z0-9\-]+\.xlsx)/i)
-    return match ? match[1] : null
+    const savedAsMatch = toolResult.match(/\*\*Saved as\*\*:\s*([\w\-. ]+\.xlsx)/i)
+    if (savedAsMatch) return savedAsMatch[1].trim()
+    const match = toolResult.match(/([\w\-. ]+\.xlsx)/i)
+    return match ? match[1].trim() : null
   }
 
   // Extract output filename from PowerPoint tool result
-  // For create_presentation: extracts "Filename: xxx.pptx" pattern
-  // For update tools: extracts "Updated: xxx.pptx" pattern
-  const extractPptFilename = (toolResult: string): string | null => {
+  // Prefers metadata.filename if available, falls back to regex extraction
+  const extractPptFilename = (toolResult: string, metadata?: any): string | null => {
+    if (metadata?.filename) return metadata.filename
     if (!toolResult) return null
-    // Try to find "Updated: filename.pptx" pattern (for update/modify tools)
-    const updatedMatch = toolResult.match(/\*\*Updated\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
-    if (updatedMatch) return updatedMatch[1]
-    // Try to find "Filename: filename.pptx" pattern (for create_presentation)
-    const filenameMatch = toolResult.match(/\*\*Filename\*\*:\s*([a-zA-Z0-9\-]+\.pptx)/i)
-    if (filenameMatch) return filenameMatch[1]
-    // Fallback: find any .pptx filename
-    const match = toolResult.match(/([a-zA-Z0-9\-]+\.pptx)/i)
-    return match ? match[1] : null
+    const updatedMatch = toolResult.match(/\*\*Updated\*\*:\s*([\w\-. ]+\.pptx)/i)
+    if (updatedMatch) return updatedMatch[1].trim()
+    const filenameMatch = toolResult.match(/\*\*Filename\*\*:\s*([\w\-. ]+\.pptx)/i)
+    if (filenameMatch) return filenameMatch[1].trim()
+    const match = toolResult.match(/([\w\-. ]+\.pptx)/i)
+    return match ? match[1].trim() : null
   }
 
   // Extract artifact ID from browser_extract tool result
@@ -144,6 +138,17 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     // Look for "Saved as artifact: artifact-id" pattern
     const match = toolResult.match(/\*\*Saved as artifact\*\*:\s*(extracted-[\w-]+)/)
     return match ? match[1] : null
+  }
+
+  // Check if excalidraw tool result was successful (for Canvas button display)
+  const hasExcalidrawData = (toolResult: string): boolean => {
+    if (!toolResult) return false
+    try {
+      const parsed = JSON.parse(toolResult)
+      return parsed.success === true && !!parsed.excalidraw_data
+    } catch {
+      return false
+    }
   }
 
   const containsMarkdown = (text: string): boolean => {
@@ -546,12 +551,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     toolExecution.isComplete &&
                     !toolExecution.isCancelled &&
                     toolExecution.toolResult &&
-                    extractWordFilename(toolExecution.toolResult) &&
+                    extractWordFilename(toolExecution.toolResult, toolExecution.metadata) &&
                     onOpenWordArtifact && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const filename = extractWordFilename(toolExecution.toolResult || '');
+                        const filename = extractWordFilename(toolExecution.toolResult || '', toolExecution.metadata);
                         if (filename) onOpenWordArtifact(filename);
                       }}
                       className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
@@ -566,12 +571,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     toolExecution.isComplete &&
                     !toolExecution.isCancelled &&
                     toolExecution.toolResult &&
-                    extractExcelFilename(toolExecution.toolResult) &&
+                    extractExcelFilename(toolExecution.toolResult, toolExecution.metadata) &&
                     onOpenExcelArtifact && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const filename = extractExcelFilename(toolExecution.toolResult || '');
+                        const filename = extractExcelFilename(toolExecution.toolResult || '', toolExecution.metadata);
                         if (filename) onOpenExcelArtifact(filename);
                       }}
                       className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
@@ -586,12 +591,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     toolExecution.isComplete &&
                     !toolExecution.isCancelled &&
                     toolExecution.toolResult &&
-                    extractPptFilename(toolExecution.toolResult) &&
+                    extractPptFilename(toolExecution.toolResult, toolExecution.metadata) &&
                     onOpenPptArtifact && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        const filename = extractPptFilename(toolExecution.toolResult || '');
+                        const filename = extractPptFilename(toolExecution.toolResult || '', toolExecution.metadata);
                         if (filename) onOpenPptArtifact(filename);
                       }}
                       className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
@@ -613,6 +618,26 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                         e.stopPropagation();
                         const artifactId = extractArtifactId(toolExecution.toolResult || '');
                         if (artifactId) onOpenExtractedDataArtifact(artifactId);
+                      }}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
+                      title="View in Canvas"
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      <span>Canvas</span>
+                    </button>
+                  )}
+                  {/* View in Canvas button for create_excalidraw_diagram (direct or via skill_executor) */}
+                  {(toolExecution.toolName === 'create_excalidraw_diagram' ||
+                    (toolExecution.toolName === 'skill_executor' && toolExecution.toolInput?.tool_name === 'create_excalidraw_diagram')) &&
+                    toolExecution.isComplete &&
+                    !toolExecution.isCancelled &&
+                    toolExecution.toolResult &&
+                    hasExcalidrawData(toolExecution.toolResult) &&
+                    onOpenExcalidrawArtifact && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenExcalidrawArtifact(`excalidraw-${toolExecution.id}`);
                       }}
                       className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
                       title="View in Canvas"

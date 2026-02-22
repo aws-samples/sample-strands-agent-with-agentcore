@@ -21,6 +21,7 @@ interface UseChatProps {
   onDiagramCreated?: (s3Key: string, filename: string) => void  // Callback when diagram is generated
   onBrowserSessionDetected?: (browserSessionId: string, browserId: string) => void  // Callback when browser session is first detected
   onExtractedDataCreated?: (data: ExtractedDataInfo) => void  // Callback when browser_extract creates artifact
+  onExcalidrawCreated?: (data: { elements: any[]; appState: any; title: string }, toolUseId: string) => void  // Callback when excalidraw diagram is created
   onSessionLoaded?: () => void  // Callback when session load completes (artifacts ready in sessionStorage)
 }
 
@@ -223,7 +224,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     onPptDocumentsCreated: props?.onPptDocumentsCreated,
     onDiagramCreated: props?.onDiagramCreated,
     onBrowserSessionDetected: props?.onBrowserSessionDetected,
-    onExtractedDataCreated: props?.onExtractedDataCreated
+    onExtractedDataCreated: props?.onExtractedDataCreated,
+    onExcalidrawCreated: props?.onExcalidrawCreated
   })
 
   // ==================== CHAT API HOOK ====================

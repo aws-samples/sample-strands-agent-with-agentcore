@@ -5,6 +5,18 @@ description: Create interactive chart visualizations (bar, line, pie) from data.
 
 # Visualization
 
+## When to Use This Skill
+
+Use `create_visualization` when the user wants to visualize **numerical data** — comparisons, trends, distributions, or proportions.
+
+| Use this skill for... | Use excalidraw skill for... |
+|-----------------------|-----------------------------|
+| Sales figures by quarter | System architecture diagram |
+| Survey response percentages | Flowchart or decision tree |
+| Stock price over time | Sequence / interaction diagram |
+| Market share breakdown | Mind map or concept map |
+| Any x/y or segment/value data | Shapes, boxes, arrows, labels |
+
 ## Available Tool
 - **create_visualization**: Create a chart specification for frontend rendering.
 

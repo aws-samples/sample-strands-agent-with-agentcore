@@ -42,6 +42,7 @@ interface UseStreamEventsProps {
   onDiagramCreated?: (s3Key: string, filename: string) => void  // Callback when diagram is generated
   onBrowserSessionDetected?: (browserSessionId: string, browserId: string) => void  // Callback when browser session is first detected
   onExtractedDataCreated?: (data: ExtractedDataInfo) => void  // Callback when browser_extract creates artifact
+  onExcalidrawCreated?: (data: { elements: any[]; appState: any; title: string }, toolUseId: string) => void  // Callback when excalidraw diagram is created
 }
 
 export const useStreamEvents = ({
@@ -62,7 +63,8 @@ export const useStreamEvents = ({
   onPptDocumentsCreated,
   onDiagramCreated,
   onBrowserSessionDetected,
-  onExtractedDataCreated
+  onExtractedDataCreated,
+  onExcalidrawCreated
 }: UseStreamEventsProps) => {
   // Refs to track streaming state synchronously (avoid React batching issues)
   const streamingStartedRef = useRef(false)
@@ -729,6 +731,30 @@ export const useStreamEvents = ({
             }
           } catch (error) {
             // Failed to fetch workspace files - non-critical, will use backend-provided documents
+          }
+        }
+
+        // Trigger Excalidraw diagram artifact creation (JSON content direct from tool result)
+        if (onExcalidrawCreated) {
+          for (const toolExec of currentToolExecutionsRef.current) {
+            if (!toolExec.isComplete || toolExec.isCancelled || !toolExec.toolResult) continue
+            // Check direct tool name OR skill_executor wrapping
+            const isExcalidrawTool = toolExec.toolName === 'create_excalidraw_diagram' ||
+              (toolExec.toolName === 'skill_executor' && toolExec.toolInput?.tool_name === 'create_excalidraw_diagram')
+            if (isExcalidrawTool) {
+              try {
+                let result = JSON.parse(toolExec.toolResult)
+                // skill_executor wraps result in an extra layer
+                if (toolExec.toolName === 'skill_executor' && result.result) {
+                  result = typeof result.result === 'string' ? JSON.parse(result.result) : result.result
+                }
+                if (result.success && result.excalidraw_data) {
+                  onExcalidrawCreated(result.excalidraw_data, toolExec.id)
+                }
+              } catch {
+                // Invalid JSON, skip
+              }
+            }
           }
         }
 

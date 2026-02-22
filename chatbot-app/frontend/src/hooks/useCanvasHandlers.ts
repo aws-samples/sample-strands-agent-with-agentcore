@@ -23,7 +23,15 @@ interface ArtifactMethods {
   artifacts: Artifact[]
   refreshArtifacts: () => void
   addArtifact: (artifact: Artifact) => void
+  updateArtifact: (artifactId: string, updates: Partial<Artifact>) => void
   openArtifact: (id: string) => void
+}
+
+// Excalidraw diagram data from create_excalidraw_diagram
+export interface ExcalidrawDiagramData {
+  elements: any[]
+  appState: any
+  title: string
 }
 
 // Extracted data info from browser_extract
@@ -43,6 +51,7 @@ interface UseCanvasHandlersReturn {
   handlePptDocumentsCreated: (documents: WorkspaceDocument[]) => void
   handleDiagramCreated: (s3Key: string, filename: string) => void
   handleExtractedDataCreated: (data: ExtractedDataInfo) => void
+  handleExcalidrawCreated: (data: ExcalidrawDiagramData, toolUseId: string) => void
 
   // Handlers for opening artifacts from chat
   handleOpenResearchArtifact: (executionId: string) => void
@@ -51,6 +60,7 @@ interface UseCanvasHandlersReturn {
   handleOpenPptArtifact: (filename: string) => void
   handleOpenDiagramArtifact: (filename: string) => void
   handleOpenExtractedDataArtifact: (artifactId: string) => void
+  handleOpenExcalidrawArtifact: (artifactId: string) => void
 
   // Connect artifact methods after useArtifacts is initialized
   setArtifactMethods: (methods: ArtifactMethods) => void
@@ -61,6 +71,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
   const artifactsRef = useRef<Artifact[]>([])
   const refreshArtifactsRef = useRef<(() => void) | null>(null)
   const addArtifactRef = useRef<((artifact: any) => void) | null>(null)
+  const updateArtifactRef = useRef<((artifactId: string, updates: Partial<Artifact>) => void) | null>(null)
   const openArtifactRef = useRef<((id: string) => void) | null>(null)
 
   // Function to connect artifact methods after useArtifacts is initialized
@@ -68,6 +79,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     artifactsRef.current = methods.artifacts
     refreshArtifactsRef.current = methods.refreshArtifacts
     addArtifactRef.current = methods.addArtifact
+    updateArtifactRef.current = methods.updateArtifact
     openArtifactRef.current = methods.openArtifact
   }, [])
 
@@ -228,36 +240,52 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     }
   }, [])
 
-  // Handle "View in Canvas" from Word tool - find artifact by filename
+  // Handle "View in Canvas" from Word tool - find artifact by filename (case-insensitive, with retry)
   const handleOpenWordArtifact = useCallback((filename: string) => {
-    // Find artifact with matching filename in title (type is 'word_document')
-    const artifact = artifactsRef.current.find(a =>
-      a.type === 'word_document' && a.title === filename
+    const find = () => artifactsRef.current.find(a =>
+      a.type === 'word_document' && a.title.toLowerCase() === filename.toLowerCase()
     )
+    const artifact = find()
     if (artifact && openArtifactRef.current) {
       openArtifactRef.current(artifact.id)
+    } else {
+      // Retry once after a short delay to handle async artifact creation
+      setTimeout(() => {
+        const retried = find()
+        if (retried && openArtifactRef.current) openArtifactRef.current(retried.id)
+      }, 500)
     }
   }, [])
 
-  // Handle "View in Canvas" from Excel tool - find artifact by filename
+  // Handle "View in Canvas" from Excel tool - find artifact by filename (case-insensitive, with retry)
   const handleOpenExcelArtifact = useCallback((filename: string) => {
-    // Find artifact with matching filename in title (type is 'excel_spreadsheet')
-    const artifact = artifactsRef.current.find(a =>
-      a.type === 'excel_spreadsheet' && a.title === filename
+    const find = () => artifactsRef.current.find(a =>
+      a.type === 'excel_spreadsheet' && a.title.toLowerCase() === filename.toLowerCase()
     )
+    const artifact = find()
     if (artifact && openArtifactRef.current) {
       openArtifactRef.current(artifact.id)
+    } else {
+      setTimeout(() => {
+        const retried = find()
+        if (retried && openArtifactRef.current) openArtifactRef.current(retried.id)
+      }, 500)
     }
   }, [])
 
-  // Handle "View in Canvas" from PowerPoint tool - find artifact by filename
+  // Handle "View in Canvas" from PowerPoint tool - find artifact by filename (case-insensitive, with retry)
   const handleOpenPptArtifact = useCallback((filename: string) => {
-    // Find artifact with matching filename in title (type is 'powerpoint_presentation')
-    const artifact = artifactsRef.current.find(a =>
-      a.type === 'powerpoint_presentation' && a.title === filename
+    const find = () => artifactsRef.current.find(a =>
+      a.type === 'powerpoint_presentation' && a.title.toLowerCase() === filename.toLowerCase()
     )
+    const artifact = find()
     if (artifact && openArtifactRef.current) {
       openArtifactRef.current(artifact.id)
+    } else {
+      setTimeout(() => {
+        const retried = find()
+        if (retried && openArtifactRef.current) openArtifactRef.current(retried.id)
+      }, 500)
     }
   }, [])
 
@@ -278,6 +306,46 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     }
   }, [])
 
+  // Callback for Excalidraw diagram creation - updates existing artifact or creates new
+  const handleExcalidrawCreated = useCallback((data: ExcalidrawDiagramData, toolUseId: string) => {
+    if (!openArtifactRef.current) return
+
+    // If an excalidraw artifact already exists, update it in place (single canvas model)
+    const existing = artifactsRef.current.find(a => a.type === 'excalidraw')
+    if (existing && updateArtifactRef.current) {
+      updateArtifactRef.current(existing.id, {
+        content: data,
+        title: data.title || existing.title,
+        timestamp: new Date().toISOString(),
+      })
+      setTimeout(() => {
+        openArtifactRef.current!(existing.id)
+      }, 100)
+      return
+    }
+
+    // No existing excalidraw artifact — create new
+    if (!addArtifactRef.current) return
+    const artifactId = `excalidraw-${toolUseId}`
+    addArtifactRef.current({
+      id: artifactId,
+      type: 'excalidraw' as ArtifactType,
+      title: data.title || 'Diagram',
+      content: data,
+      timestamp: new Date().toISOString(),
+    })
+    setTimeout(() => {
+      openArtifactRef.current!(artifactId)
+    }, 100)
+  }, [])
+
+  // Handle "View in Canvas" from excalidraw tool - open artifact by ID
+  const handleOpenExcalidrawArtifact = useCallback((artifactId: string) => {
+    if (openArtifactRef.current) {
+      openArtifactRef.current(artifactId)
+    }
+  }, [])
+
   return {
     // Callbacks for useChat
     handleArtifactUpdated,
@@ -286,6 +354,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     handlePptDocumentsCreated,
     handleDiagramCreated,
     handleExtractedDataCreated,
+    handleExcalidrawCreated,
 
     // Handlers for opening artifacts
     handleOpenResearchArtifact,
@@ -294,6 +363,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     handleOpenPptArtifact,
     handleOpenDiagramArtifact,
     handleOpenExtractedDataArtifact,
+    handleOpenExcalidrawArtifact,
 
     // Connect artifact methods
     setArtifactMethods,

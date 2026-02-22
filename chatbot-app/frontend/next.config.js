@@ -6,6 +6,9 @@ const withBundleAnalyzer = require('@next/bundle-analyzer')({
 const nextConfig = {
   output: 'standalone',
 
+  // Excalidraw uses browser APIs and must be transpiled for Next.js
+  transpilePackages: ['@excalidraw/excalidraw'],
+
   // Remove console logs in production (keep error and warn)
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {

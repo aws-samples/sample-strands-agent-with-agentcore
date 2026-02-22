@@ -118,11 +118,34 @@ export function useArtifacts(
               // Research artifacts are created manually in ChatInterface when complete
               // No automatic extraction needed here
 
-              // TODO: Add other artifact types
-              // - Browser automation results
-              // - Generated documents (Word/Excel/PowerPoint)
-              // - Generated charts/images
-              // - Code execution results
+              // Reconstruct Excalidraw artifacts from tool results on session load
+              const isExcalidrawTool = execution.toolName === 'create_excalidraw_diagram' ||
+                (execution.toolName === 'skill_executor' && execution.toolInput?.tool_name === 'create_excalidraw_diagram')
+
+              if (isExcalidrawTool && execution.isComplete && execution.toolResult) {
+                try {
+                  let result = JSON.parse(execution.toolResult)
+                  if (execution.toolName === 'skill_executor' && result.result) {
+                    result = typeof result.result === 'string' ? JSON.parse(result.result) : result.result
+                  }
+                  if (result.success && result.excalidraw_data) {
+                    const artifactId = `excalidraw-${execution.id}`
+                    const rawTs = message.timestamp
+                    const safeTimestamp = rawTs && !isNaN(new Date(rawTs).getTime())
+                      ? new Date(rawTs).toISOString()
+                      : new Date().toISOString()
+                    messageArtifacts.push({
+                      id: artifactId,
+                      type: 'excalidraw',
+                      title: result.excalidraw_data.title || 'Diagram',
+                      content: result.excalidraw_data,
+                      timestamp: safeTimestamp,
+                    })
+                  }
+                } catch {
+                  // Invalid JSON, skip
+                }
+              }
             })
           }
         })

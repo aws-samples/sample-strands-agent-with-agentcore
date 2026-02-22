@@ -16,6 +16,18 @@
       "tags": ["math", "finance", "business", "report", "analysis"]
     },
     {
+      "id": "create_excalidraw_diagram",
+      "name": "Excalidraw Diagram",
+      "description": "Create hand-drawn style diagrams, flowcharts, and architecture diagrams",
+      "category": "utilities",
+      "icon": "",
+      "enabled": true,
+      "isDynamic": false,
+      "displayName": { "running": "Creating diagram", "complete": "Created diagram" },
+      "systemPromptGuidance": "**Element Format:**\n- Required: type, x, y, id\n- Shapes (rectangle/ellipse/diamond): add width, height\n- Arrows/lines: add width, height, points [[0,0],[dx,dy]]\n- Text: add text, fontSize\n- Use label field on shapes for centered text\n- Connect shapes with arrow elements using points routing",
+      "tags": ["diagram", "flowchart", "architecture", "design", "visualization"]
+    },
+    {
       "id": "create_visualization",
       "name": "Visualization Creator",
       "description": "Create interactive charts and visualizations from data",

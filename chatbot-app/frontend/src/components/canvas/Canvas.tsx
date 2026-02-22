@@ -10,6 +10,7 @@ import { ComposeArtifact } from './ComposeArtifact'
 import { ResearchArtifact } from './ResearchArtifact'
 import { BrowserLiveView } from './BrowserLiveView'
 import { OfficeViewer, isOfficeFileUrl, getFilenameFromS3Url } from './OfficeViewer'
+import { ExcalidrawRenderer } from './ExcalidrawRenderer'
 import { marked } from 'marked'
 import { citationPrintCSS } from '@/components/ui/CitationLink'
 import { Markdown } from '@/components/ui/Markdown'
@@ -28,6 +29,7 @@ interface CanvasProps {
   artifacts: Artifact[]
   selectedArtifactId: string | null
   onSelectArtifact: (id: string) => void
+  onUpdateArtifact?: (artifactId: string, updates: Partial<Artifact>) => void
   composeState?: any // Live composer state
   researchState?: any // Live research state
   browserState?: BrowserState // Live browser state
@@ -46,6 +48,8 @@ const getArtifactIcon = (type: string) => {
       return <FileText className="h-4 w-4" />
     case 'image':
       return <ImageIcon className="h-4 w-4" />
+    case 'excalidraw':
+      return <ImageIcon className="h-4 w-4" />
     case 'code':
       return <Code className="h-4 w-4" />
     case 'compose':
@@ -60,7 +64,9 @@ const getArtifactIcon = (type: string) => {
 }
 
 const formatTimestamp = (timestamp: string) => {
+  if (!timestamp) return ''
   const date = new Date(timestamp)
+  if (isNaN(date.getTime())) return ''
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMins = Math.floor(diffMs / 60000)
@@ -83,6 +89,7 @@ const getArtifactTypeLabel = (type: string) => {
     case 'powerpoint_presentation': return 'PowerPoint'
     case 'browser': return 'Browser'
     case 'extracted_data': return 'Extracted Data'
+    case 'excalidraw': return 'Diagram'
     case 'compose': return 'Compose'
     default: return 'Artifact'
   }
@@ -106,6 +113,7 @@ export function Canvas({
   artifacts,
   selectedArtifactId,
   onSelectArtifact,
+  onUpdateArtifact,
   composeState,
   researchState,
   browserState,
@@ -365,7 +373,20 @@ export function Canvas({
               </div>
 
               {/* Preview Content */}
-              {(selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation' || (selectedArtifact.type === 'document' && typeof selectedArtifact.content === 'string' && isOfficeFileUrl(selectedArtifact.content))) ? (
+              {selectedArtifact.type === 'excalidraw' ? (
+                // Excalidraw diagram viewer - full height, interactive
+                <div className={`flex-1 min-h-0 flex flex-col transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
+                  <div className="flex-shrink-0 px-3 py-1.5 text-xs text-muted-foreground bg-muted/40 border-b border-border/40 flex items-center gap-1.5">
+                    <span>Manual edits are not saved.</span>
+                    <span className="text-muted-foreground/60">Ask the agent to modify, or export (⋮) to save locally.</span>
+                  </div>
+                  <div className="flex-1 min-h-0">
+                    <ExcalidrawRenderer
+                      data={selectedArtifact.content}
+                    />
+                  </div>
+                </div>
+              ) : (selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation' || (selectedArtifact.type === 'document' && typeof selectedArtifact.content === 'string' && isOfficeFileUrl(selectedArtifact.content))) ? (
                 // Office document viewer (Word/Excel/PowerPoint) - full height, no ScrollArea
                 <div className={`flex-1 min-h-0 transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
                   <OfficeViewer

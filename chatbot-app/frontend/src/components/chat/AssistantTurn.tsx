@@ -61,6 +61,7 @@ interface AssistantTurnProps {
   onOpenExcelArtifact?: (filename: string) => void
   onOpenPptArtifact?: (filename: string) => void
   onOpenExtractedDataArtifact?: (artifactId: string) => void
+  onOpenExcalidrawArtifact?: (artifactId: string) => void
   researchProgress?: {
     stepNumber: number
     content: string
@@ -68,7 +69,7 @@ interface AssistantTurnProps {
   hideAvatar?: boolean
 }
 
-export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onBrowserClick, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, researchProgress, hideAvatar = false }) => {
+export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onBrowserClick, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact, researchProgress, hideAvatar = false }) => {
   // Get initial feedback state from first message
   const initialFeedback = messages[0]?.feedback || null
 
@@ -468,6 +469,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
                       onOpenExcelArtifact={onOpenExcelArtifact}
                       onOpenPptArtifact={onOpenPptArtifact}
                       onOpenExtractedDataArtifact={onOpenExtractedDataArtifact}
+                      onOpenExcalidrawArtifact={onOpenExcalidrawArtifact}
                     />
                   )}
                 </div>
@@ -709,7 +711,8 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
     prevProps.onOpenWordArtifact === nextProps.onOpenWordArtifact &&
     prevProps.onOpenExcelArtifact === nextProps.onOpenExcelArtifact &&
     prevProps.onOpenPptArtifact === nextProps.onOpenPptArtifact &&
-    prevProps.onOpenExtractedDataArtifact === nextProps.onOpenExtractedDataArtifact
+    prevProps.onOpenExtractedDataArtifact === nextProps.onOpenExtractedDataArtifact &&
+    prevProps.onOpenExcalidrawArtifact === nextProps.onOpenExcalidrawArtifact
 
   // Compare researchProgress for real-time status updates
   const researchProgressEqual = prevProps.researchProgress?.stepNumber === nextProps.researchProgress?.stepNumber &&

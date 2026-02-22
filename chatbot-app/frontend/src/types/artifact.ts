@@ -14,6 +14,7 @@ export type ArtifactType =
   | 'image'              // Images and charts
   | 'code'               // Code snippets
   | 'compose'            // Interactive composer workflow
+  | 'excalidraw'         // Excalidraw hand-drawn diagrams
 
 export interface Artifact {
   id: string
