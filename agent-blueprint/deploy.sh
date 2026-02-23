@@ -104,7 +104,7 @@ display_menu() {
     echo "  2) Frontend + BFF         (Next.js + CloudFront + ALB)"
     echo "  3) Runtime + Frontend     (1 + 2 combined)"
     echo "  4) AgentCore Gateway MCP  (Gateway + Lambda functions)"
-    echo "  5) AgentCore Runtime A2A  (Research Agent, Browser Use Agent)"
+    echo "  5) AgentCore Runtime A2A  (Research Agent, Code Agent)"
     echo "  6) AgentCore Runtime MCP  (Private 3LO Auth)"
     echo "  7) Full Stack             (All components: Runtime + Frontend + Gateway + A2A + 3LO)"
     echo ""
@@ -370,9 +370,9 @@ deploy_agentcore_runtime_a2a() {
         echo "  1) research-agent      (Web research and markdown report generation via A2A)"
     fi
 
-    if [ -d "agentcore-runtime-a2a-stack/browser-use-agent" ]; then
-        AVAILABLE_SERVERS+=("browser-use-agent")
-        echo "  2) browser-use-agent   (Autonomous browser automation via A2A)"
+    if [ -d "agentcore-runtime-a2a-stack/code-agent" ]; then
+        AVAILABLE_SERVERS+=("code-agent")
+        echo "  2) code-agent          (Autonomous coding agent via A2A)"
     fi
 
     echo ""
@@ -393,10 +393,10 @@ deploy_agentcore_runtime_a2a() {
             fi
             ;;
         2)
-            if [[ " ${AVAILABLE_SERVERS[@]} " =~ " browser-use-agent " ]]; then
-                deploy_browser_use_agent
+            if [[ " ${AVAILABLE_SERVERS[@]} " =~ " code-agent " ]]; then
+                deploy_code_agent
             else
-                log_error "browser-use-agent not found"
+                log_error "code-agent not found"
                 exit 1
             fi
             ;;
@@ -408,8 +408,8 @@ deploy_agentcore_runtime_a2a() {
                     "research-agent")
                         deploy_research_agent
                         ;;
-                    "browser-use-agent")
-                        deploy_browser_use_agent
+                    "code-agent")
+                        deploy_code_agent
                         ;;
                 esac
                 echo ""
@@ -457,12 +457,12 @@ deploy_research_agent() {
     log_info "Research Agent A2A agent deployment complete!"
 }
 
-# Deploy Browser Use Agent
-deploy_browser_use_agent() {
-    log_step "Deploying Browser Use Agent A2A Agent..."
+# Deploy Code Agent
+deploy_code_agent() {
+    log_step "Deploying Code Agent A2A Agent..."
     echo ""
 
-    cd agentcore-runtime-a2a-stack/browser-use-agent/cdk
+    cd agentcore-runtime-a2a-stack/code-agent/cdk
 
     # Install dependencies if needed
     if [ ! -d "node_modules" ]; then
@@ -484,7 +484,7 @@ deploy_browser_use_agent() {
     export ENVIRONMENT="dev"
 
     # Check if ECR repository already exists
-    if aws ecr describe-repositories --repository-names strands-agent-chatbot-browser-use-agent --region $AWS_REGION &> /dev/null; then
+    if aws ecr describe-repositories --repository-names strands-agent-chatbot-code-agent --region $AWS_REGION &> /dev/null; then
         log_info "ECR repository already exists, importing..."
         export USE_EXISTING_ECR=true
     else
@@ -494,19 +494,19 @@ deploy_browser_use_agent() {
 
     # Deploy infrastructure
     log_step "Deploying CDK infrastructure..."
-    npx cdk deploy BrowserUseAgentRuntimeStack --require-approval never
+    npx cdk deploy CodeAgentRuntimeStack --require-approval never
 
     # Verify deployment
     log_step "Verifying deployment..."
 
     RUNTIME_ARN=$(aws ssm get-parameter \
-        --name "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn" \
+        --name "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "")
 
     if [ -n "$RUNTIME_ARN" ]; then
-        log_info "Browser Use Agent deployed successfully!"
+        log_info "Code Agent deployed successfully!"
         echo ""
         echo "Runtime ARN: $RUNTIME_ARN"
         echo ""
@@ -516,7 +516,7 @@ deploy_browser_use_agent() {
 
     cd ../../..
 
-    log_info "Browser Use Agent A2A agent deployment complete!"
+    log_info "Code Agent A2A agent deployment complete!"
 }
 
 # Deploy MCP 3LO Server (Gmail OAuth)
@@ -556,8 +556,8 @@ deploy_all_a2a_agents() {
         AVAILABLE_SERVERS+=("research-agent")
     fi
 
-    if [ -d "agentcore-runtime-a2a-stack/browser-use-agent" ]; then
-        AVAILABLE_SERVERS+=("browser-use-agent")
+    if [ -d "agentcore-runtime-a2a-stack/code-agent" ]; then
+        AVAILABLE_SERVERS+=("code-agent")
     fi
 
     if [ ${#AVAILABLE_SERVERS[@]} -eq 0 ]; then
@@ -574,8 +574,8 @@ deploy_all_a2a_agents() {
             "research-agent")
                 deploy_research_agent
                 ;;
-            "browser-use-agent")
-                deploy_browser_use_agent
+            "code-agent")
+                deploy_code_agent
                 ;;
         esac
         echo ""
@@ -629,8 +629,8 @@ display_deployment_summary() {
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "Not deployed")
 
-    BROWSER_AGENT_ARN=$(aws ssm get-parameter \
-        --name "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn" \
+    CODE_AGENT_ARN=$(aws ssm get-parameter \
+        --name "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn" \
         --query 'Parameter.Value' \
         --output text \
         --region $AWS_REGION 2>/dev/null || echo "Not deployed")
@@ -688,7 +688,7 @@ display_deployment_summary() {
     echo "Gateway URL:         $GATEWAY_URL"
     echo ""
 
-    if [ "$RESEARCH_AGENT_ARN" != "Not deployed" ] || [ "$BROWSER_AGENT_ARN" != "Not deployed" ]; then
+    if [ "$RESEARCH_AGENT_ARN" != "Not deployed" ] || [ "$CODE_AGENT_ARN" != "Not deployed" ]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "🚀 A2A AGENTS"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -696,8 +696,8 @@ display_deployment_summary() {
         if [ "$RESEARCH_AGENT_ARN" != "Not deployed" ]; then
             echo "Research Agent:      $RESEARCH_AGENT_ARN"
         fi
-        if [ "$BROWSER_AGENT_ARN" != "Not deployed" ]; then
-            echo "Browser Use Agent:   $BROWSER_AGENT_ARN"
+        if [ "$CODE_AGENT_ARN" != "Not deployed" ]; then
+            echo "Code Agent:          $CODE_AGENT_ARN"
         fi
         echo ""
     fi
@@ -768,7 +768,7 @@ main() {
         5)
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo "  Option 5: AgentCore Runtime A2A"
-            echo "  (Research Agent, Browser Use Agent)"
+            echo "  (Research Agent, Code Agent)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             deploy_agentcore_runtime_a2a

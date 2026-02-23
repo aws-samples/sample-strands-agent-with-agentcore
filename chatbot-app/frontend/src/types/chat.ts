@@ -14,6 +14,10 @@ export interface ToolExecution {
   isCancelled?: boolean
   isExpanded: boolean
   streamingResponse?: string
+  // Code agent streaming state
+  codeSteps?: string[]
+  codeTodos?: Array<{ id: string; content: string; status: string; priority?: string }>
+  codeResultMeta?: { files_changed: string[]; todos: any[]; steps: number }
 }
 
 export interface Message {

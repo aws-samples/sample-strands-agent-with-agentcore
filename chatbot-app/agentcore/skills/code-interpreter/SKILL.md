@@ -12,6 +12,8 @@ A general-purpose code execution environment powered by AWS Bedrock AgentCore Co
 - **execute_code(code, language, output_filename)**: Execute Python, JavaScript, or TypeScript code.
 - **execute_command(command)**: Execute shell commands.
 - **file_operations(operation, paths, content)**: Read, write, list, or remove files in the sandbox.
+- **ci_push_to_workspace(paths)**: Save sandbox files to the shared workspace (S3). Omit `paths` to save all files in the sandbox root.
+- **ci_pull_from_workspace(workspace_paths)**: Load files from the shared workspace into the sandbox before execution.
 
 ## Tool Parameters
 
@@ -123,6 +125,54 @@ For production tasks (creating documents, charts, presentations), prefer special
 | **Install/test packages** | **code-interpreter** | Check compatibility, test APIs |
 | Debug code logic | code-interpreter | Isolate and test specific functions |
 | Verify calculations | code-interpreter | Quick math or data checks |
+
+## Code Interpreter vs Code Agent
+
+| | Code Interpreter | Code Agent |
+|---|---|---|
+| **Nature** | Sandboxed execution environment | Autonomous agent (Claude Code) |
+| **Best for** | Quick scripts, data analysis, prototyping | Multi-file projects, refactoring, test suites |
+| **File persistence** | Only when `output_filename` is set | All files auto-synced to S3 |
+| **Session state** | Variables persist within session | Files + conversation persist across sessions |
+| **Autonomy** | You write the code | Agent plans, writes, runs, and iterates |
+| **Use when** | You need to run a specific piece of code | You need an engineer to solve a problem end-to-end |
+
+## Workspace Integration
+
+All files go to the `code-interpreter/` namespace — a flat, session-isolated space separate from office documents.
+
+**Sandbox → Workspace (save outputs):**
+
+```json
+// Save a specific file after execution
+{ "tool": "ci_push_to_workspace", "paths": ["chart.png", "results.json"] }
+
+// Save everything in the sandbox root
+{ "tool": "ci_push_to_workspace" }
+
+// Alternative: save a single file inline during execute_code
+{ "tool": "execute_code", "output_filename": "chart.png", "code": "..." }
+```
+
+**Workspace → Sandbox (load inputs):**
+
+```json
+// Load data files before execution
+{
+  "tool": "ci_pull_from_workspace",
+  "workspace_paths": ["code-interpreter/data.csv", "documents/excel/sales.xlsx"]
+}
+```
+
+**Read saved files via workspace skill:**
+```
+workspace_read("code-interpreter/chart.png")
+workspace_read("code-interpreter/results.json")
+workspace_list("code-interpreter/")
+```
+
+> Text files (`.py`, `.csv`, `.json`, `.txt`, etc.) are transferred as-is.
+> Binary files (`.png`, `.pdf`, `.xlsx`, etc.) are handled via base64 encoding automatically.
 
 ## Environment
 

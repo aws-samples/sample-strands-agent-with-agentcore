@@ -1019,6 +1019,82 @@ export const useStreamEvents = ({
   }, [setSessionState])
 
   // Swarm Mode event handlers
+  const isCodeAgentExec = (t: ToolExecution) =>
+    t.toolName === 'code_agent' ||
+    t.toolName === 'agentcore_code-agent' ||
+    (t.toolName === 'skill_executor' && t.toolInput?.tool_name === 'code_agent')
+
+  const handleCodeStepEvent = useCallback((event: StreamEvent) => {
+    if (event.type !== 'code_step') return
+    const activeExec = currentToolExecutionsRef.current.find(
+      t => isCodeAgentExec(t) && !t.isComplete
+    )
+    if (!activeExec) return
+
+    const updatedExecutions = currentToolExecutionsRef.current.map(t =>
+      t.id === activeExec.id
+        ? { ...t, codeSteps: [...(t.codeSteps || []), event.content as string] }
+        : t
+    )
+    currentToolExecutionsRef.current = updatedExecutions
+    setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
+    setMessages(prev => prev.map(msg =>
+      msg.isToolMessage && msg.toolExecutions
+        ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
+            t.id === activeExec.id
+              ? { ...t, codeSteps: [...(t.codeSteps || []), event.content as string] }
+              : t
+          )}
+        : msg
+    ))
+  }, [currentToolExecutionsRef, setSessionState, setMessages])
+
+  const handleCodeTodoUpdateEvent = useCallback((event: StreamEvent) => {
+    if (event.type !== 'code_todo_update') return
+    const activeExec = currentToolExecutionsRef.current.find(
+      t => isCodeAgentExec(t) && !t.isComplete
+    )
+    if (!activeExec) return
+
+    const todos = event.todos || []
+    const updatedExecutions = currentToolExecutionsRef.current.map(t =>
+      t.id === activeExec.id ? { ...t, codeTodos: todos } : t
+    )
+    currentToolExecutionsRef.current = updatedExecutions
+    setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
+    setMessages(prev => prev.map(msg =>
+      msg.isToolMessage && msg.toolExecutions
+        ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
+            t.id === activeExec.id ? { ...t, codeTodos: todos } : t
+          )}
+        : msg
+    ))
+  }, [currentToolExecutionsRef, setSessionState, setMessages])
+
+  const handleCodeResultMetaEvent = useCallback((event: StreamEvent) => {
+    if (event.type !== 'code_result_meta') return
+    const codeExec = currentToolExecutionsRef.current.find(t => isCodeAgentExec(t))
+    if (!codeExec) return
+
+    const meta = {
+      files_changed: event.files_changed || [],
+      todos: event.todos || [],
+      steps: event.steps || 0,
+    }
+    const updatedExecutions = currentToolExecutionsRef.current.map(t =>
+      t.id === codeExec.id ? { ...t, codeResultMeta: meta } : t
+    )
+    currentToolExecutionsRef.current = updatedExecutions
+    setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
+    setMessages(prev => prev.map(msg =>
+      msg.isToolMessage && msg.toolExecutions
+        ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
+            t.id === codeExec.id ? { ...t, codeResultMeta: meta } : t
+          )}
+        : msg
+    ))
+  }, [currentToolExecutionsRef, setSessionState, setMessages])
+
   const handleSwarmNodeStartEvent = useCallback((event: StreamEvent) => {
     if (event.type === 'swarm_node_start') {
       const { node_id, node_description } = event
@@ -1349,6 +1425,15 @@ export const useStreamEvents = ({
         case 'tool_use':
           handleToolUseEvent(event)
           break
+        case 'code_step':
+          handleCodeStepEvent(event)
+          break
+        case 'code_todo_update':
+          handleCodeTodoUpdateEvent(event)
+          break
+        case 'code_result_meta':
+          handleCodeResultMetaEvent(event)
+          break
         case 'progress':
           // Handle progress events from streaming tools (no-op for now)
           break
@@ -1458,6 +1543,9 @@ export const useStreamEvents = ({
     handleBrowserProgressEvent,
     handleResearchProgressEvent,
     handleOAuthElicitationEvent,
+    handleCodeStepEvent,
+    handleCodeTodoUpdateEvent,
+    handleCodeResultMetaEvent,
     handleSwarmNodeStartEvent,
     handleSwarmNodeStopEvent,
     handleSwarmHandoffEvent,

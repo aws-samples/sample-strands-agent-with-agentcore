@@ -629,6 +629,31 @@ class StreamEventProcessor:
                             # Send as research_progress event to display in Research Agent card
                             yield self.formatter.create_research_progress_event(step_content, step_number)
 
+                    # Check if this is a code step event (real-time tool-use progress from code agent)
+                    elif isinstance(stream_data, dict) and stream_data.get("type") == "code_step":
+                        step_content = stream_data.get("content", "")
+                        step_number = stream_data.get("stepNumber", 0)
+
+                        if step_content:
+                            logger.debug(f"[Code Step] Step {step_number}: {step_content[:50]}...")
+                            yield self.formatter.create_code_step_event(step_content, step_number)
+
+                    # Check if this is a code todo update event
+                    elif isinstance(stream_data, dict) and stream_data.get("type") == "code_todo_update":
+                        todos = stream_data.get("todos", [])
+                        logger.debug(f"[Code Todos] {len(todos)} todos")
+                        yield self.formatter.create_code_todo_update_event(todos)
+
+                    # Check if this is code result metadata (sent after code agent completes)
+                    elif isinstance(stream_data, dict) and stream_data.get("type") == "code_result_meta":
+                        logger.debug(f"[Code Result Meta] files={len(stream_data.get('files_changed', []))}")
+                        yield self.formatter.create_code_result_meta_event(
+                            files_changed=stream_data.get("files_changed", []),
+                            todos=stream_data.get("todos", []),
+                            steps=stream_data.get("steps", 0),
+                            status=stream_data.get("status", "completed"),
+                        )
+
                     else:
                         # Other tool stream events (e.g., progress)
                         logger.debug(f"[Tool Stream] Received: {stream_data}")

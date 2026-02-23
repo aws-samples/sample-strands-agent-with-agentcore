@@ -42,6 +42,32 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
+async def _consume_async_generator(agen):
+    """Consume an async generator and return the final result text.
+
+    A2A tools yield event dicts while running, then a final
+    {"status": "success"/"error", "content": [{"text": "..."}]} event.
+    We discard intermediate progress events and return the final text.
+    """
+    final_text = None
+    final_status = "success"
+
+    async for event in agen:
+        if not isinstance(event, dict):
+            continue
+        status = event.get("status")
+        if status in ("success", "error"):
+            content = event.get("content", [])
+            if content and isinstance(content[0], dict):
+                final_text = content[0].get("text", "")
+            final_status = status
+
+    if final_status == "error":
+        return json.dumps({"status": "error", "error": final_text or "A2A tool failed"})
+
+    return final_text or json.dumps({"status": "success", "result": ""})
+
+
 @tool
 def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> str:
     """Activate a skill, read a reference document, or read a tool's source code.
@@ -161,9 +187,9 @@ def skill_executor(
     tool_context: ToolContext,
     skill_name: str,
     tool_name: str = None,
-    tool_input: dict = None,
+    tool_input = None,
     script_name: str = None,
-    script_input: dict = None,
+    script_input = None,
 ) -> str:
     """Execute a tool or script from an activated skill.
 
@@ -196,6 +222,25 @@ def skill_executor(
             "error": "SkillRegistry not initialized.",
             "status": "error",
         })
+
+    # Normalize tool_input / script_input: LLM sometimes passes a JSON string instead of a dict
+    def _coerce_to_dict(value):
+        if value is None or isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            # Strip trailing XML artifacts the LLM may append (e.g. "\n</invoke>")
+            cleaned = value.strip()
+            if '</invoke>' in cleaned:
+                cleaned = cleaned[:cleaned.rfind('</invoke>')].rstrip()
+            try:
+                parsed = json.loads(cleaned)
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                return {}
+        return {}
+
+    tool_input = _coerce_to_dict(tool_input)
+    script_input = _coerce_to_dict(script_input)
 
     # Validation: must specify either tool_name or script_name, not both
     if tool_name and script_name:
@@ -303,6 +348,10 @@ def _execute_tool(
             # Handle coroutines (async local tools)
             if asyncio.iscoroutine(result):
                 result = _run_async(result)
+
+            # Handle async generators (A2A tools that stream events)
+            elif hasattr(result, '__aiter__'):
+                result = _run_async(_consume_async_generator(result))
 
         logger.info(f"Executed {skill_name}/{tool_name} successfully")
         return result

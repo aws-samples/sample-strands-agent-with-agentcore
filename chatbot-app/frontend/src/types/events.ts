@@ -127,6 +127,25 @@ export interface BrowserProgressEvent {
   stepNumber: number;
 }
 
+export interface CodeStepEvent {
+  type: 'code_step';
+  stepNumber: number;
+  content: string;
+}
+
+export interface CodeTodoUpdateEvent {
+  type: 'code_todo_update';
+  todos: Array<{ id: string; content: string; status: string; priority?: string }>;
+}
+
+export interface CodeResultMetaEvent {
+  type: 'code_result_meta';
+  files_changed: string[];
+  todos: any[];
+  steps: number;
+  status: string;
+}
+
 export interface ResearchProgressEvent {
   type: 'research_progress';
   content: string;
@@ -241,6 +260,9 @@ export type StreamEvent =
   | MetadataEvent
   | BrowserProgressEvent
   | ResearchProgressEvent
+  | CodeStepEvent
+  | CodeTodoUpdateEvent
+  | CodeResultMetaEvent
   | OAuthElicitationEvent
   | SwarmNodeStartEvent
   | SwarmNodeStopEvent
@@ -353,6 +375,8 @@ export const STREAM_EVENT_TYPES = [
   'interrupt', 'progress', 'metadata',
   // Progress events
   'browser_progress', 'research_progress',
+  // Code agent events
+  'code_step', 'code_todo_update', 'code_result_meta',
   // Elicitation events
   'oauth_elicitation',
   // Swarm events

@@ -846,6 +846,7 @@ async function sendResponse(event, status, data, reason) {
       tier: ssm.ParameterTier.STANDARD,
     })
 
+
     // Secrets Manager permissions for Nova Act API key (browser automation)
     executionRole.addToPolicy(
       new iam.PolicyStatement({

@@ -289,6 +289,18 @@
           "name": "File Operations",
           "description": "Read, write, list, or remove files in the sandbox",
           "displayName": { "running": "Managing files", "complete": "Managed files" }
+        },
+        {
+          "id": "ci_push_to_workspace",
+          "name": "Push to Workspace",
+          "description": "Save sandbox files to the shared workspace (S3)",
+          "displayName": { "running": "Saving to workspace", "complete": "Saved to workspace" }
+        },
+        {
+          "id": "ci_pull_from_workspace",
+          "name": "Pull from Workspace",
+          "description": "Load workspace files into the sandbox",
+          "displayName": { "running": "Loading from workspace", "complete": "Loaded from workspace" }
         }
       ]
     }
@@ -573,6 +585,37 @@
           "displayName": { "running": "Extracting content", "complete": "Extracted content" }
         }
       ]
+    },
+    {
+      "id": "workspace_tools",
+      "name": "Workspace",
+      "description": "Read and write files across the shared session workspace (code-agent outputs, office docs, images)",
+      "category": "utilities",
+      "icon": "/tool-icons/s3.svg",
+      "enabled": true,
+      "isDynamic": true,
+      "systemPromptGuidance": "**Path conventions (userId/sessionId injected automatically):**\n- `code-agent/<file>` — files from the code agent\n- `documents/powerpoint/<file>` — PowerPoint\n- `documents/word/<file>` — Word\n- `documents/excel/<file>` — Excel\n- `documents/image/<file>` — images\n\n**Binary vs text:** images/PDFs/Office files are returned base64-encoded (`encoding: \"base64\"`); use the same encoding when writing them back.",
+      "tags": ["files", "storage", "code-agent", "documents"],
+      "tools": [
+        {
+          "id": "workspace_list",
+          "name": "List Files",
+          "description": "List all files in the session workspace, optionally filtered by path prefix",
+          "displayName": { "running": "Listing workspace files", "complete": "Listed workspace files" }
+        },
+        {
+          "id": "workspace_read",
+          "name": "Read File",
+          "description": "Read a file from the session workspace (text or base64 for binary)",
+          "displayName": { "running": "Reading file", "complete": "Read file" }
+        },
+        {
+          "id": "workspace_write",
+          "name": "Write File",
+          "description": "Write a file to the session workspace",
+          "displayName": { "running": "Writing file", "complete": "Written file" }
+        }
+      ]
     }
   ],
   "agentcore_runtime_a2a": [
@@ -587,6 +630,18 @@
       "displayName": { "running": "Researching", "complete": "Researched" },
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
       "systemPromptGuidance": "**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
+    },
+    {
+      "id": "agentcore_code-agent",
+      "name": "Code Agent",
+      "description": "Autonomous coding agent — implements features, fixes bugs, refactors code, and runs tests in an isolated workspace",
+      "category": "development",
+      "icon": "",
+      "enabled": false,
+      "isDynamic": false,
+      "displayName": { "running": "Coding autonomously", "complete": "Coding complete" },
+      "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn",
+      "systemPromptGuidance": "**Code Agent Usage:**\n- Delegate tasks that require reading, writing, or running code in an isolated workspace\n- Uploaded files (zip, images, source files) are automatically available — do not encode them in the task\n- The agent maintains session state: files and context persist across turns\n- **After completion:** summarize which files changed and key outcomes (2-3 sentences)\n- Do NOT repeat the full code output — the user can see progress steps in real time\n- If tests failed, include the failure message so the user can decide next steps"
     }
   ],
   "agentcore_runtime_mcp": [

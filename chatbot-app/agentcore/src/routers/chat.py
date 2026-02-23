@@ -9,6 +9,7 @@ Simplified using agent factory pattern - all agent-specific logic moved to agent
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator, Optional
+import asyncio
 import logging
 import json
 import os
@@ -20,6 +21,50 @@ from agents.factory import create_agent
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["chat"])
+
+
+async def keepalive_stream(
+    stream: AsyncGenerator,
+    session_id: str,
+    interval: float = 30.0
+) -> AsyncGenerator[str, None]:
+    """
+    Wraps a stream to inject SSE keepalive comments during silent periods.
+    Prevents proxy timeout (e.g., idle timeout) during long tool calls like code_agent.
+    """
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def producer():
+        try:
+            async for chunk in stream:
+                await queue.put(('data', chunk))
+        except Exception as e:
+            await queue.put(('error', e))
+        finally:
+            await queue.put(('end', None))
+
+    task = asyncio.create_task(producer())
+    try:
+        while True:
+            try:
+                kind, value = await asyncio.wait_for(queue.get(), timeout=interval)
+            except asyncio.TimeoutError:
+                logger.debug(f"[Keepalive] Sending keepalive for session {session_id}")
+                yield ": keepalive\n\n"
+                continue
+
+            if kind == 'end':
+                break
+            elif kind == 'error':
+                raise value
+            else:
+                yield value
+    finally:
+        task.cancel()
+        try:
+            await task
+        except (asyncio.CancelledError, Exception):
+            pass
 
 
 async def disconnect_aware_stream(
@@ -167,9 +212,12 @@ async def invocations(request: InvocationRequest, http_request: Request):
             input_data.session_id
         )
 
+        # Wrap with keepalive to prevent proxy timeout during long silent tool calls
+        final_stream = keepalive_stream(wrapped_stream, input_data.session_id)
+
         # Return streaming response with appropriate headers
         return StreamingResponse(
-            wrapped_stream,
+            final_stream,
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",

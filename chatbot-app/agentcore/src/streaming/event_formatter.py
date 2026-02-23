@@ -422,6 +422,34 @@ class StreamEventFormatter:
         })
 
     @staticmethod
+    def create_code_step_event(content: str, step_number: int) -> str:
+        """Create code step event for real-time tool-use progress from code agent"""
+        return StreamEventFormatter.format_sse_event({
+            "type": "code_step",
+            "content": content,
+            "stepNumber": step_number
+        })
+
+    @staticmethod
+    def create_code_todo_update_event(todos: list) -> str:
+        """Create code todo update event from code agent's TodoWrite state"""
+        return StreamEventFormatter.format_sse_event({
+            "type": "code_todo_update",
+            "todos": todos
+        })
+
+    @staticmethod
+    def create_code_result_meta_event(files_changed: list, todos: list, steps: int, status: str) -> str:
+        """Create code result metadata event sent after code agent completes"""
+        return StreamEventFormatter.format_sse_event({
+            "type": "code_result_meta",
+            "files_changed": files_changed,
+            "todos": todos,
+            "steps": steps,
+            "status": status
+        })
+
+    @staticmethod
     def create_oauth_elicitation_event(elicit_data: dict) -> str:
         """Create OAuth elicitation event for MCP elicit_url() protocol.
 

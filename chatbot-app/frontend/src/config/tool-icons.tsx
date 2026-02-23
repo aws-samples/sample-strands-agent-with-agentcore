@@ -116,6 +116,8 @@ export const toolImageMap: Record<string, string> = {
   'gateway_financial_news': '/tool-icons/financial.svg',
   'gateway_financial-news': '/tool-icons/financial.svg',
   'code_interpreter_tools': '/tool-icons/code-interpreter.svg',
+  'agentcore_code-agent': '/tool-icons/code-agent.svg',
+  'code_agent': '/tool-icons/code-agent.svg',
 };
 
 /**

@@ -7,6 +7,7 @@ import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth'
 import { apiGet, apiPost } from '@/lib/api-client'
 import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
 import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData, triggerWarmup, generateSessionId } from '@/config/session'
+import { isA2ATool } from './usePolling'
 
 /**
  * Process swarm message content blocks in order to preserve text/tool interleaving.
@@ -185,7 +186,7 @@ interface UseChatAPIReturn {
   sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[], requestType?: string) => Promise<void>
   cleanup: () => void
   isLoadingTools: boolean
-  loadSession: (sessionId: string) => Promise<SessionPreferences | null>
+  loadSession: (sessionId: string) => Promise<{ preferences: SessionPreferences | null; messages: Message[] }>
 }
 
 export const useChatAPI = ({
@@ -817,7 +818,7 @@ export const useChatAPI = ({
     }
   }
 
-  const loadSession = useCallback(async (newSessionId: string): Promise<SessionPreferences | null> => {
+  const loadSession = useCallback(async (newSessionId: string): Promise<{ preferences: SessionPreferences | null; messages: Message[] }> => {
     try {
       logger.info(`Loading session: ${newSessionId}`)
 
@@ -1054,42 +1055,51 @@ export const useChatAPI = ({
           return true
         })
 
-      // Update messages (session ID already set at function start for instant UI)
-      // During polling (same session), skip setMessages if content hasn't changed
-      // to prevent unnecessary re-renders and flickering
+      // Non-A2A incomplete tools can't recover on reload — mark them cancelled to avoid permanent spinner.
+      const finalMessages = loadedMessages.map(msg => {
+        if (!msg.toolExecutions) return msg
+        const updated = msg.toolExecutions.map(te =>
+          !te.isComplete && !te.isCancelled && !isA2ATool(te.toolName)
+            ? { ...te, isCancelled: true }
+            : te
+        )
+        return { ...msg, toolExecutions: updated }
+      })
+
+      // Skip setMessages during polling if content hasn't changed (prevents re-render flicker)
       if (isSameSession) {
         setMessages(prevMessages => {
-          if (prevMessages.length !== loadedMessages.length) {
-            return loadedMessages
+          if (prevMessages.length !== finalMessages.length) {
+            return finalMessages
           }
           // Check tool execution completion status changes in recent messages
           for (let i = Math.max(0, prevMessages.length - 5); i < prevMessages.length; i++) {
             const prevTools = prevMessages[i].toolExecutions
-            const nextTools = loadedMessages[i]?.toolExecutions
-            if ((!prevTools) !== (!nextTools)) return loadedMessages
+            const nextTools = finalMessages[i]?.toolExecutions
+            if ((!prevTools) !== (!nextTools)) return finalMessages
             if (prevTools && nextTools) {
-              if (prevTools.length !== nextTools.length) return loadedMessages
+              if (prevTools.length !== nextTools.length) return finalMessages
               for (let j = 0; j < prevTools.length; j++) {
-                if (prevTools[j].isComplete !== nextTools[j].isComplete) return loadedMessages
-                if (prevTools[j].isCancelled !== nextTools[j].isCancelled) return loadedMessages
+                if (prevTools[j].isComplete !== nextTools[j].isComplete) return finalMessages
+                if (prevTools[j].isCancelled !== nextTools[j].isCancelled) return finalMessages
               }
             }
           }
           // Check last message text change
           const prevLast = prevMessages[prevMessages.length - 1]
-          const nextLast = loadedMessages[loadedMessages.length - 1]
-          if (prevLast?.text !== nextLast?.text) return loadedMessages
+          const nextLast = finalMessages[finalMessages.length - 1]
+          if (prevLast?.text !== nextLast?.text) return finalMessages
           // No meaningful change - return same reference to prevent re-render
           return prevMessages
         })
       } else {
-        setMessages(loadedMessages)
+        setMessages(finalMessages)
       }
 
-      logger.info(`Session loaded: ${newSessionId} with ${loadedMessages.length} messages`)
+      logger.info(`Session loaded: ${newSessionId} with ${finalMessages.length} messages`)
 
-      // Return session preferences for restoration by caller
-      return sessionPreferences
+      // Return session preferences and messages for caller use
+      return { preferences: sessionPreferences, messages: finalMessages }
     } catch (error) {
       logger.error('Failed to load session:', error)
       throw error

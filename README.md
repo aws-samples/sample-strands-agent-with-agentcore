@@ -59,7 +59,7 @@ This sample combines **Strands Agent orchestration** with **Amazon Bedrock Agent
 | **AgentCore Observability** | Trace collection and agent execution monitoring |
 | **Amazon Nova Act** | Visual reasoning model for browser automation |
 
-<img src="docs/images/architecture-overview.svg"
+<img src="docs/images/architecture-overview.png"
      alt="Architecture Overview"
      width="1200">
 
@@ -70,7 +70,7 @@ This sample combines **Strands Agent orchestration** with **Amazon Bedrock Agent
 - Strands-based agent orchestration
 - Amazon Bedrock AgentCore Runtime, Gateway, and Memory
 - MCP Gateway tools (Google, Wikipedia, ArXiv, Yahoo Finance, Tavily, Open-Meteo)
-- Agent-to-Agent (A2A) collaboration
+- Agent-to-Agent (A2A) collaboration — including remote **Claude Agent SDK (Claude Code)** for agentic coding tasks
 - Built-in Code Interpreter for charts and documents
 - Multimodal input and output (vision, charts, documents, screenshots)
 - Real-time voice interaction with Amazon Nova Sonic 2
@@ -175,6 +175,9 @@ Design notes:
 
 Agent-to-Agent communication is handled via the **A2A protocol**, allowing the supervisor agent to delegate tasks to specialized worker agents such as a deep research agent.
 Multiple agents collaborating in sequence — each handling its own role — are coordinated using the **Swarm** pattern.
+
+This architecture also includes a **Claude Agent SDK (Claude Code)** instance deployed as a remote A2A agent on **AgentCore Runtime**.
+The supervisor delegates agentic coding tasks — multi-file implementation, refactoring, test suites — to this agent over A2A, with an S3-backed workspace that persists files across sessions.
 
 Design notes:
 - https://medium.com/@revoir07/extend-your-chatbot-with-deep-research-using-a2a-ba4de3ed23e9

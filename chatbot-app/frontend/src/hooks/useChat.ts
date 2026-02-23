@@ -356,7 +356,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     })
 
     try {
-      const preferences = await apiLoadSession(newSessionId)
+      const { preferences, messages: loadedMessages } = await apiLoadSession(newSessionId)
 
     // Verify session hasn't changed during async load
     if (currentSessionIdRef.current !== newSessionId) {
@@ -364,11 +364,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       return
     }
 
-    // Check for ongoing A2A tools and start polling if needed
-    // Use setTimeout to ensure messages state is updated, read from ref to avoid triggering re-render
-    setTimeout(() => {
-      checkAndStartPollingForA2ATools(messagesRef.current, newSessionId)
-    }, 100)
+    // Use loadedMessages directly to avoid stale messagesRef.current (React render not guaranteed yet)
+    checkAndStartPollingForA2ATools(loadedMessages, newSessionId)
 
     // Merge saved preferences with defaults
     const effectivePreferences: SessionPreferences = {

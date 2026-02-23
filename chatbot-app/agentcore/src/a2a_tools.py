@@ -77,6 +77,24 @@ Examples:
 """,
         "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn",
     },
+    "agentcore_code-agent": {
+        "name": "Code Agent",
+        "description": """Autonomous coding agent that implements features, fixes bugs, refactors code, and runs tests.
+
+Args:
+    task: Clear description of the coding task. Be specific about files, requirements, and expected outcome.
+
+Returns:
+    Summary of completed work including files changed and actions taken.
+
+Examples:
+    "Add input validation to src/auth.py and write unit tests for it"
+    "Fix the failing tests in tests/test_api.py - error: AssertionError on line 42"
+    "Refactor the database module to use async/await throughout"
+    "Implement a REST endpoint for user profile updates in src/api/users.py"
+""",
+        "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn",
+    },
 }
 
 # Global cache
@@ -85,6 +103,40 @@ _cache = {
     'agent_cards': {},
     'http_client': None
 }
+
+
+def _list_session_s3_files(user_id: Optional[str], session_id: Optional[str]) -> list:
+    """
+    List files uploaded by the user in the current session from the S3 workspace bucket.
+
+    Returns a list of {"s3_uri": "s3://bucket/key", "filename": "name"} dicts
+    suitable for passing as metadata["s3_files"] to the code-agent.
+    """
+    if not user_id or not session_id:
+        return []
+
+    try:
+        from workspace.config import get_workspace_bucket
+        bucket = get_workspace_bucket()
+        prefix = f"documents/{user_id}/{session_id}/"
+
+        s3 = boto3.client('s3', region_name=os.environ.get('AWS_REGION', 'us-west-2'))
+        paginator = s3.get_paginator('list_objects_v2')
+        files = []
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            for obj in page.get('Contents', []):
+                key = obj['Key']
+                filename = key.split('/')[-1]
+                if filename:
+                    files.append({"s3_uri": f"s3://{bucket}/{key}", "filename": filename})
+
+        if files:
+            logger.info(f"[code-agent] Found {len(files)} S3 file(s) for session {session_id}")
+        return files
+
+    except Exception as e:
+        logger.warning(f"[code-agent] Failed to list S3 files: {e}")
+        return []
 
 DEFAULT_TIMEOUT = 1200  # 20 minutes for research tasks
 AGENT_TIMEOUT = 1200    # 1200s (20 minutes) per agent call for complex research
@@ -165,14 +217,16 @@ async def send_a2a_message(
         }
     """
     try:
-        # Check for local testing mode
-        local_runtime_url = os.environ.get('LOCAL_RESEARCH_AGENT_URL')
+        # Check for local testing mode (per-agent env var)
+        # e.g. LOCAL_RESEARCH_AGENT_URL, LOCAL_CODE_AGENT_URL, LOCAL_BROWSER_USE_AGENT_URL
+        env_key = "LOCAL_" + agent_id.replace("agentcore_", "").replace("-", "_").upper() + "_URL"
+        local_runtime_url = os.environ.get(env_key) or os.environ.get('LOCAL_RESEARCH_AGENT_URL')
         agent_arn = None
 
         if local_runtime_url:
             # Local testing: use localhost URL
             runtime_url = local_runtime_url
-            logger.debug(f"Local test mode: {runtime_url}")
+            logger.debug(f"Local test mode ({agent_id}): {runtime_url}")
         else:
             # Production: use AgentCore Runtime
             agent_arn = get_cached_agent_arn(agent_id, region)
@@ -256,11 +310,14 @@ async def send_a2a_message(
 
 
         response_text = ""
+        code_result_meta = None    # Structured result metadata from code agent
         browser_session_arn = None  # For browser-use agent live view
         browser_id_from_stream = None  # Browser ID from artifact
         browser_session_event_sent = False  # Track if we've sent the event
-        sent_browser_steps = set()  # Track sent browser steps to avoid duplicates
-        sent_screenshots = set()  # Track sent screenshots to avoid duplicates
+        sent_browser_steps = set()  # Track sent browser/research steps to avoid duplicates
+        sent_screenshots = set()   # Track sent screenshots to avoid duplicates
+        sent_code_steps = set()    # Track sent code_step_N artifacts
+        sent_code_todos = set()    # Track sent code_todos_N artifacts
         async with asyncio.timeout(AGENT_TIMEOUT):
             async for event in client.send_message(msg):
                 logger.debug(f"Received A2A event type: {type(event).__name__}")
@@ -405,20 +462,18 @@ async def send_a2a_message(
 
                                             break
 
-                        # Check for browser_step_N or research_step_N artifacts (real-time step streaming)
-                        # This runs EVERY iteration, not just when extracting browser_session_arn
+                        # Check for real-time step/todo artifacts and stream them immediately.
+                        # This runs EVERY iteration, not just when extracting browser_session_arn.
                         for artifact in task.artifacts:
                             artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
 
-                            # Handle both browser_step_N and research_step_N artifacts
+                            # browser_step_N / research_step_N
                             if artifact_name.startswith('browser_step_') or artifact_name.startswith('research_step_'):
                                 try:
                                     step_number = int(artifact_name.split('_')[-1])
                                     step_type = "browser_step" if artifact_name.startswith('browser_step_') else "research_step"
 
-                                    # Only send new steps (avoid duplicates)
                                     if step_number not in sent_browser_steps:
-                                        # Extract step text
                                         step_text = ""
                                         if hasattr(artifact, 'parts') and artifact.parts:
                                             for part in artifact.parts:
@@ -430,7 +485,6 @@ async def send_a2a_message(
                                                     break
 
                                         if step_text:
-                                            # Yield step event for real-time streaming
                                             yield {
                                                 "type": step_type,
                                                 "stepNumber": step_number,
@@ -439,7 +493,59 @@ async def send_a2a_message(
                                             sent_browser_steps.add(step_number)
                                             logger.debug(f"Yielded {artifact_name}")
                                 except (ValueError, IndexError):
-                                    # Invalid step number format, skip
+                                    pass
+
+                            # code_step_N — tool-use progress from code agent
+                            elif artifact_name.startswith('code_step_'):
+                                try:
+                                    step_number = int(artifact_name.split('_')[-1])
+                                    if step_number not in sent_code_steps:
+                                        step_text = ""
+                                        if hasattr(artifact, 'parts') and artifact.parts:
+                                            for part in artifact.parts:
+                                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                                    step_text = part.root.text
+                                                elif hasattr(part, 'text'):
+                                                    step_text = part.text
+                                                if step_text:
+                                                    break
+                                        if step_text:
+                                            yield {
+                                                "type": "code_step",
+                                                "stepNumber": step_number,
+                                                "content": step_text
+                                            }
+                                            sent_code_steps.add(step_number)
+                                            logger.debug(f"Yielded {artifact_name}")
+                                except (ValueError, IndexError):
+                                    pass
+
+                            # code_todos_N — TodoWrite state from code agent
+                            elif artifact_name.startswith('code_todos_'):
+                                try:
+                                    todo_number = int(artifact_name.split('_')[-1])
+                                    if todo_number not in sent_code_todos:
+                                        todos_json = ""
+                                        if hasattr(artifact, 'parts') and artifact.parts:
+                                            for part in artifact.parts:
+                                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                                                    todos_json = part.root.text
+                                                elif hasattr(part, 'text'):
+                                                    todos_json = part.text
+                                                if todos_json:
+                                                    break
+                                        if todos_json:
+                                            try:
+                                                import json as _json
+                                                yield {
+                                                    "type": "code_todo_update",
+                                                    "todos": _json.loads(todos_json)
+                                                }
+                                                sent_code_todos.add(todo_number)
+                                                logger.debug(f"Yielded {artifact_name}")
+                                            except Exception:
+                                                pass
+                                except (ValueError, IndexError):
                                     pass
 
                     # Check if task failed
@@ -511,11 +617,30 @@ async def send_a2a_message(
                                                 # Skip browser_id (already handled in metadata)
                                                 pass
                                             elif artifact_name.startswith('browser_step_'):
-                                                # Skip browser_step_N (UI-only, not for LLM context)
                                                 logger.info(f"Skipping {artifact_name} (UI-only artifact)")
                                             elif artifact_name.startswith('research_step_'):
-                                                # Skip research_step_N (UI-only progress, not for LLM context)
                                                 logger.info(f"Skipping {artifact_name} (UI-only artifact)")
+                                            elif artifact_name.startswith('code_step_'):
+                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
+                                            elif artifact_name.startswith('code_todos_'):
+                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
+                                            elif artifact_name == 'code_result':
+                                                # Parse JSON payload: use summary for LLM, stash meta for frontend event
+                                                try:
+                                                    import json as _json
+                                                    result_data = _json.loads(artifact_text)
+                                                    summary = result_data.get("summary", "")
+                                                    if summary:
+                                                        response_text += summary
+                                                    code_result_meta = {
+                                                        "files_changed": result_data.get("files_changed", []),
+                                                        "todos": result_data.get("todos", []),
+                                                        "steps": result_data.get("steps", 0),
+                                                        "status": result_data.get("status", "completed"),
+                                                    }
+                                                except Exception:
+                                                    # Fallback: treat as plain text
+                                                    response_text += artifact_text
                                             else:
                                                 # Include other artifacts (agent_response, browser_result, etc.) in LLM context
                                                 response_text += artifact_text
@@ -526,6 +651,13 @@ async def send_a2a_message(
                     # Break on final event
                     if update_event and hasattr(update_event, 'final') and update_event.final:
                         break
+
+        # Yield structured code-agent metadata before the final result (frontend use)
+        if code_result_meta is not None:
+            yield {
+                "type": "code_result_meta",
+                **code_result_meta,
+            }
 
         # Yield final result
         logger.debug(f"Final A2A response: {len(response_text)} chars")
@@ -625,7 +757,42 @@ def create_a2a_tool(agent_id: str):
     correct_name = agent_id.replace("agentcore_", "").replace("-", "_")
 
     # Create different tool implementations based on agent type
-    if "browser" in agent_id:
+    if "code" in agent_id:
+        # Code Agent - task parameter, streams code_step events
+        async def tool_impl(task: str, reset_session: bool = False, compact_session: bool = False, tool_context: ToolContext = None) -> AsyncGenerator[Dict[str, Any], None]:
+            """
+            task: The coding task to delegate.
+            reset_session: Set True to clear conversation history and start fresh
+                           (equivalent to /clear in Claude Code). Workspace files
+                           are preserved — only the conversation context is wiped.
+            compact_session: Set True to summarise conversation history before
+                             running the task (equivalent to /compact in Claude Code).
+                             Useful when prior context is long but still relevant.
+            """
+            session_id, user_id, model_id = extract_context(tool_context)
+
+            # Discover uploaded files from S3 workspace and forward to code-agent
+            s3_files = _list_session_s3_files(user_id, session_id)
+
+            metadata = {
+                "session_id": session_id,
+                "user_id": user_id,
+                "source": "main_agent",
+                "model_id": model_id,
+                "s3_files": s3_files,
+                "reset_session": reset_session,
+                "compact_session": compact_session,
+            }
+
+            async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata):
+                yield event
+
+        tool_impl.__name__ = correct_name
+        tool_impl.__doc__ = agent_description
+        agent_tool = tool(context=True)(tool_impl)
+        agent_tool._skill_name = "code-agent"
+
+    elif "browser" in agent_id:
         # Browser Use Agent - task parameter only
         # Uses async generator to stream browser_session_arn immediately for Live View
         async def tool_impl(task: str, tool_context: ToolContext = None) -> AsyncGenerator[Dict[str, Any], None]:

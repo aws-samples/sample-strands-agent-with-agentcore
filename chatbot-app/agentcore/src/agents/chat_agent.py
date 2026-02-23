@@ -508,8 +508,15 @@ class ChatAgent(BaseAgent):
                 logger.error(f"Failed to auto-store {document_type} file {filename}: {e}")
 
     def _auto_store_files(self, uploaded_files: List[Dict[str, Any]]):
-        """Automatically store all uploaded files to S3 workspace (unified orchestrator)"""
-        # Debug: log what files we're processing
+        """Automatically store all uploaded files to S3 workspace.
+
+        Architecture: S3 as Single Source of Truth
+        - All uploaded files → S3 workspace (persistent storage)
+        - Code Interpreter sync is optional (only when CODE_INTERPRETER_ID is configured)
+        """
+        if not uploaded_files:
+            return
+
         logger.debug(f"Auto-store called with {len(uploaded_files)} file(s):")
         for f in uploaded_files:
             logger.debug(f"   - {f['filename']} ({f['content_type']})")
@@ -521,55 +528,70 @@ class ChatAgent(BaseAgent):
                 PowerPointManager,
                 ImageManager
             )
-            from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 
-            # Get Code Interpreter ID
-            code_interpreter_id = self._get_code_interpreter_id()
-            if not code_interpreter_id:
-                logger.warning("Cannot auto-store files: CODE_INTERPRETER_ID not configured")
-                return
-
-            # Configuration for file types
             file_type_configs = [
-                {
-                    'extensions': ['.docx'],
-                    'manager_class': WordManager,
-                    'document_type': 'Word document'
-                },
-                {
-                    'extensions': ['.xlsx'],
-                    'manager_class': ExcelManager,
-                    'document_type': 'Excel spreadsheet'
-                },
-                {
-                    'extensions': ['.pptx'],
-                    'manager_class': PowerPointManager,
-                    'document_type': 'PowerPoint presentation'
-                },
-                {
-                    'extensions': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'],
-                    'manager_class': ImageManager,
-                    'document_type': 'image'
-                }
+                {'extensions': ['.docx'],  'manager_class': WordManager,        'document_type': 'word'},
+                {'extensions': ['.xlsx'],  'manager_class': ExcelManager,       'document_type': 'excel'},
+                {'extensions': ['.pptx'],  'manager_class': PowerPointManager,  'document_type': 'powerpoint'},
+                {'extensions': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'],
+                 'manager_class': ImageManager, 'document_type': 'image'},
             ]
 
-            # Start Code Interpreter (single session for all file types)
-            region = os.getenv('AWS_REGION', 'us-west-2')
-            code_interpreter = CodeInterpreter(region)
-            code_interpreter.start(identifier=code_interpreter_id)
+            # Step 1: Always save to S3 (no Code Interpreter required)
+            known_extensions = {ext for c in file_type_configs for ext in c['extensions']}
+            for config in file_type_configs:
+                filtered = [
+                    f for f in uploaded_files
+                    if any(f['filename'].lower().endswith(ext) for ext in config['extensions'])
+                ]
+                if not filtered:
+                    continue
+                manager = config['manager_class'](self.user_id, self.session_id)
+                for file_info in filtered:
+                    try:
+                        manager.save_to_s3(
+                            file_info['filename'],
+                            file_info['bytes'],
+                            metadata={'auto_stored': 'true'}
+                        )
+                        logger.debug(f"Saved to S3: {file_info['filename']}")
+                    except Exception as e:
+                        logger.error(f"Failed to save {file_info['filename']} to S3: {e}")
 
-            try:
-                # Process each file type
-                for config in file_type_configs:
-                    self._store_files_by_type(
-                        uploaded_files,
-                        code_interpreter,
-                        config['extensions'],
-                        config['manager_class'],
-                        config['document_type']
-                    )
-            finally:
-                code_interpreter.stop()
+            # Fallback: save unrecognised file types (zip, code files, etc.) under documents/.../raw/
+            from workspace.base_manager import BaseDocumentManager
+            for file_info in uploaded_files:
+                fname = file_info['filename'].lower()
+                if not any(fname.endswith(ext) for ext in known_extensions):
+                    try:
+                        mgr = BaseDocumentManager(self.user_id, self.session_id, document_type='raw')
+                        mgr.save_to_s3(
+                            file_info['filename'],
+                            file_info['bytes'],
+                            metadata={'auto_stored': 'true'}
+                        )
+                        logger.debug(f"Saved to S3 (raw): {file_info['filename']}")
+                    except Exception as e:
+                        logger.error(f"Failed to save {file_info['filename']} to S3: {e}")
+
+            # Step 2: Optionally sync to Code Interpreter if configured
+            code_interpreter_id = self._get_code_interpreter_id()
+            if code_interpreter_id:
+                from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+                region = os.getenv('AWS_REGION', 'us-west-2')
+                code_interpreter = CodeInterpreter(region)
+                code_interpreter.start(identifier=code_interpreter_id)
+                try:
+                    for config in file_type_configs:
+                        self._store_files_by_type(
+                            uploaded_files,
+                            code_interpreter,
+                            config['extensions'],
+                            config['manager_class'],
+                            config['document_type']
+                        )
+                finally:
+                    code_interpreter.stop()
 
         except Exception as e:
             logger.error(f"Failed to auto-store files: {e}")

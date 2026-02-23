@@ -102,6 +102,18 @@ MCP_TOOL_SKILL_MAP: Dict[str, str] = {
     "github_create_pull_request": "github",
 }
 
+# ---------------------------------------------------------------------------
+# A2A agent → skill mapping
+#
+# A2A agents that are exposed as skills. These are auto-injected into
+# enabled_tools so SkillChatAgent can load them even when the Tools panel
+# is not used. The _skill_name set on each tool binds it to its SKILL.md.
+# ---------------------------------------------------------------------------
+A2A_SKILL_TOOLS: Dict[str, str] = {
+    "agentcore_code-agent": "code-agent",
+}
+
+
 class SkillChatAgent(ChatAgent):
     """ChatAgent with progressive skill disclosure.
 
@@ -150,6 +162,14 @@ class SkillChatAgent(ChatAgent):
                 prefixed = f"gateway_{tool_name}"
             if prefixed not in self.enabled_tools:
                 self.enabled_tools.append(prefixed)
+
+        # Inject A2A skill agent IDs so filter_tools creates their tool objects.
+        # A2A tools are dynamically created (not in TOOL_REGISTRY), so they
+        # must be in enabled_tools for create_a2a_tool() to run.
+        for agent_id in A2A_SKILL_TOOLS:
+            if agent_id not in self.enabled_tools:
+                self.enabled_tools.append(agent_id)
+                logger.debug(f"[SkillChatAgent] Auto-injected A2A skill tool: {agent_id}")
 
         # Parent's _load_tools → filter_tools handles client creation,
         # gateway_client, elicitation_bridge, etc.

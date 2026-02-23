@@ -107,35 +107,26 @@ def _extract_text(result: Dict[str, Any]) -> str:
 
 
 def _save_to_workspace(tool_context: ToolContext, filename: str, file_bytes: bytes) -> Optional[dict]:
-    """Save a generated file to the workspace (S3)."""
+    """Save a generated file to the code-interpreter workspace (S3)."""
     try:
+        import boto3
+        from workspace.config import get_workspace_bucket
+
         invocation_state = tool_context.invocation_state
         user_id = invocation_state.get('user_id', 'default_user')
         session_id = invocation_state.get('session_id', 'default_session')
 
-        lower = filename.lower()
-        if lower.endswith(('.png', '.jpg', '.jpeg', '.gif', '.svg', '.webp')):
-            from workspace import ImageManager
-            manager = ImageManager(user_id, session_id)
-        elif lower.endswith(('.xlsx', '.xls', '.csv')):
-            from workspace import ExcelManager
-            manager = ExcelManager(user_id, session_id)
-        elif lower.endswith(('.docx', '.doc')):
-            from workspace import WordManager
-            manager = WordManager(user_id, session_id)
-        elif lower.endswith(('.pptx', '.ppt')):
-            from workspace import PowerPointManager
-            manager = PowerPointManager(user_id, session_id)
-        else:
-            from workspace import ImageManager
-            manager = ImageManager(user_id, session_id)
+        bucket = get_workspace_bucket()
+        s3_key = f"code-interpreter-workspace/{user_id}/{session_id}/{filename}"
 
-        s3_info = manager.save_to_s3(
-            filename, file_bytes,
-            metadata={'source': 'code_interpreter_tool'},
+        boto3.client('s3').put_object(
+            Bucket=bucket,
+            Key=s3_key,
+            Body=file_bytes,
+            Metadata={'source': 'code_interpreter_tool'},
         )
-        logger.info(f"Saved to workspace: {s3_info['s3_key']}")
-        return s3_info
+        logger.info(f"Saved to workspace: s3://{bucket}/{s3_key}")
+        return {'s3_key': s3_key, 'bucket': bucket}
     except Exception as e:
         logger.warning(f"Could not save to workspace: {e}")
         return None
@@ -387,5 +378,212 @@ def file_operations(
         return json.dumps({"error": str(e), "status": "error"})
 
 
+# -----------------------------------------------------------------------
+# Helpers for workspace ↔ sandbox sync
+# -----------------------------------------------------------------------
+
+_TEXT_EXTENSIONS = {
+    '.txt', '.py', '.js', '.ts', '.json', '.csv', '.md',
+    '.html', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg',
+    '.sh', '.r', '.sql', '.log',
+}
+
+
+def _is_text_file(filename: str) -> bool:
+    return os.path.splitext(filename)[1].lower() in _TEXT_EXTENSIONS
+
+
+def _ws_path_to_s3_key(user_id: str, session_id: str, ws_path: str) -> str:
+    """Map logical workspace path to S3 key (mirrors workspace.py logic)."""
+    ws_path = ws_path.lstrip('/')
+    if ws_path.startswith('code-interpreter'):
+        suffix = ws_path[len('code-interpreter'):].lstrip('/')
+        return f"code-interpreter-workspace/{user_id}/{session_id}/{suffix}"
+    if ws_path.startswith('code-agent'):
+        suffix = ws_path[len('code-agent'):].lstrip('/')
+        return f"code-agent-workspace/{user_id}/{session_id}/{suffix}"
+    if ws_path.startswith('documents'):
+        suffix = ws_path[len('documents'):].lstrip('/')
+        return f"documents/{user_id}/{session_id}/{suffix}"
+    return f"documents/{user_id}/{session_id}/{ws_path}"
+
+
+def _extract_file_list(result: dict) -> list:
+    """Parse a listFiles result into a list of file path strings."""
+    text = _extract_text(result).strip()
+    if not text:
+        return []
+    try:
+        data = json.loads(text)
+        if isinstance(data, list):
+            return [str(f) for f in data]
+        if isinstance(data, dict) and 'files' in data:
+            return [str(f) for f in data['files']]
+    except Exception:
+        pass
+    # Fallback: newline-separated filenames
+    return [ln.strip() for ln in text.splitlines() if ln.strip() and ln.strip() not in ('.', '..')]
+
+
+# -----------------------------------------------------------------------
+# Tool 4: ci_push_to_workspace
+# -----------------------------------------------------------------------
+
+@tool(context=True)
+def ci_push_to_workspace(
+    paths: list = None,
+    tool_context: ToolContext = None,
+) -> str:
+    """Save files from the CI sandbox to the shared workspace (S3).
+
+    Use this after code execution to persist output files so other skills
+    (or a future session) can access them via workspace_read / workspace_list.
+
+    Args:
+        paths: Sandbox file paths to save (e.g. ["chart.png", "results.json"]).
+               If omitted, all files in the sandbox root are saved.
+
+    Returns:
+        JSON with the list of saved files and their workspace paths.
+    """
+    from strands_tools.code_interpreter.models import ReadFilesAction, ListFilesAction
+
+    interpreter, session_name = _get_interpreter(tool_context)
+    if interpreter is None:
+        return json.dumps({"error": "Code Interpreter not available.", "status": "error"})
+
+    try:
+        # Discover files if no paths given
+        if not paths:
+            list_action = ListFilesAction(type="listFiles", session_name=session_name, path=".")
+            list_result = interpreter.list_files(list_action)
+            paths = _extract_file_list(list_result)
+            if not paths:
+                return json.dumps({"files_saved": [], "count": 0, "status": "ok"})
+
+        saved = []
+        for path in paths:
+            try:
+                read_action = ReadFilesAction(
+                    type="readFiles", session_name=session_name, paths=[path]
+                )
+                read_result = interpreter.read_files(read_action)
+
+                filename = os.path.basename(path)
+                for item in read_result.get("content", []):
+                    if not isinstance(item, dict):
+                        continue
+                    # Binary content
+                    blob = item.get("data") or item.get("resource", {}).get("blob")
+                    if blob:
+                        _save_to_workspace(tool_context, filename, blob)
+                        saved.append(f"code-interpreter/{filename}")
+                        break
+                    # Text content
+                    text = item.get("text", "")
+                    if text:
+                        _save_to_workspace(tool_context, filename, text.encode("utf-8"))
+                        saved.append(f"code-interpreter/{filename}")
+                        break
+            except Exception as e:
+                logger.warning(f"ci_push: could not save '{path}': {e}")
+
+        return json.dumps({"files_saved": saved, "count": len(saved), "status": "ok"})
+
+    except Exception as e:
+        logger.error(f"ci_push_to_workspace error: {e}")
+        return json.dumps({"error": str(e), "status": "error"})
+
+
+# -----------------------------------------------------------------------
+# Tool 5: ci_pull_from_workspace
+# -----------------------------------------------------------------------
+
+@tool(context=True)
+def ci_pull_from_workspace(
+    workspace_paths: list,
+    tool_context: ToolContext = None,
+) -> str:
+    """Load files from the shared workspace (S3) into the CI sandbox.
+
+    Use this to make data files, scripts, or documents available inside
+    the sandbox before running code that needs them.
+
+    Args:
+        workspace_paths: Logical workspace paths to upload into the sandbox.
+                         e.g. ["code-interpreter/data.csv",
+                               "documents/excel/sales.xlsx"]
+
+    Returns:
+        JSON with the list of files uploaded to the sandbox.
+    """
+    import base64
+    import boto3
+    from workspace.config import get_workspace_bucket
+    from strands_tools.code_interpreter.models import (
+        WriteFilesAction, FileContent, ExecuteCodeAction, LanguageType,
+    )
+
+    interpreter, session_name = _get_interpreter(tool_context)
+    if interpreter is None:
+        return json.dumps({"error": "Code Interpreter not available.", "status": "error"})
+
+    try:
+        invocation_state = tool_context.invocation_state
+        user_id = invocation_state.get("user_id", "default_user")
+        session_id = invocation_state.get("session_id", "default_session")
+
+        bucket = get_workspace_bucket()
+        s3 = boto3.client("s3")
+
+        text_entries = []   # FileContent list for batch write
+        uploaded = []
+
+        for ws_path in workspace_paths:
+            s3_key = _ws_path_to_s3_key(user_id, session_id, ws_path)
+            filename = os.path.basename(ws_path)
+            try:
+                data = s3.get_object(Bucket=bucket, Key=s3_key)["Body"].read()
+            except Exception as e:
+                logger.warning(f"ci_pull: could not read '{ws_path}' from S3: {e}")
+                continue
+
+            if _is_text_file(filename):
+                text_entries.append(FileContent(path=filename, text=data.decode("utf-8", errors="replace")))
+                uploaded.append(filename)
+            else:
+                # Binary: write via a base64-decode Python script
+                b64 = base64.b64encode(data).decode("utf-8")
+                decode_script = (
+                    f"import base64\n"
+                    f"with open('{filename}', 'wb') as _f:\n"
+                    f"    _f.write(base64.b64decode('{b64}'))\n"
+                    f"print('Written: {filename}')\n"
+                )
+                action = ExecuteCodeAction(
+                    type="executeCode",
+                    session_name=session_name,
+                    code=decode_script,
+                    language=LanguageType.PYTHON,
+                    clear_context=False,
+                )
+                interpreter.execute_code(action)
+                uploaded.append(filename)
+
+        # Batch-write all text files
+        if text_entries:
+            action = WriteFilesAction(type="writeFiles", session_name=session_name, content=text_entries)
+            interpreter.write_files(action)
+
+        return json.dumps({"files_uploaded": uploaded, "count": len(uploaded), "status": "ok"})
+
+    except Exception as e:
+        logger.error(f"ci_pull_from_workspace error: {e}")
+        return json.dumps({"error": str(e), "status": "error"})
+
+
 # --- Skill registration ---
-register_skill("code-interpreter", tools=[execute_code, execute_command, file_operations])
+register_skill("code-interpreter", tools=[
+    execute_code, execute_command, file_operations,
+    ci_push_to_workspace, ci_pull_from_workspace,
+])

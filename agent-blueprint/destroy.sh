@@ -105,7 +105,7 @@ display_menu() {
     echo "  1) AgentCore Runtime      (Agent container on Bedrock AgentCore)"
     echo "  2) Frontend + BFF         (Next.js + CloudFront + ALB)"
     echo "  3) MCP Servers            (Serverless Lambda + Fargate)"
-    echo "  4) AgentCore Runtime A2A  (Research Agent, etc.)"
+    echo "  4) AgentCore Runtime A2A  (Research Agent, Code Agent)"
     echo "  5) Full Stack             (AgentCore + Frontend + MCPs + A2A)"
     echo ""
     echo "  0) Exit"
@@ -269,11 +269,18 @@ destroy_agentcore_a2a() {
 
     cd agentcore-runtime-a2a-stack
 
+    # Agents excluded from deployment/destruction
+    EXCLUDED_AGENTS=("browser-use-agent")
+
     # List available A2A agents
     A2A_AGENTS=()
     for agent_dir in */; do
         if [ -d "$agent_dir/cdk" ]; then
             agent_name=$(basename "$agent_dir")
+            # Skip excluded agents
+            if [[ " ${EXCLUDED_AGENTS[@]} " =~ " ${agent_name} " ]]; then
+                continue
+            fi
             A2A_AGENTS+=("$agent_name")
         fi
     done
