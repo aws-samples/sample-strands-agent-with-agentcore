@@ -47,6 +47,7 @@ interface ChatInputAreaProps {
   onOpenComposeWizard: (rect: DOMRect) => void
   onExportConversation: () => void
   onNewChat: () => Promise<void>
+  onCompact: () => void
 }
 
 function useDebounce<T extends (...args: any[]) => any>(callback: T, delay: number): T {
@@ -84,6 +85,7 @@ export function ChatInputArea({
   onOpenComposeWizard,
   onExportConversation,
   onNewChat,
+  onCompact,
 }: ChatInputAreaProps) {
   const [inputMessage, setInputMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -155,8 +157,11 @@ export function ChatInputArea({
       case '/clear':
         onNewChat()
         break
+      case '/compact':
+        onCompact()
+        break
     }
-  }, [onOpenComposeWizard, onExportConversation, onNewChat, setInputMessage])
+  }, [onOpenComposeWizard, onExportConversation, onNewChat, onCompact, setInputMessage])
 
   const handleToolSuggestionSelect = useCallback((tool: Tool) => {
     const trimmed = inputMessage.trim()
@@ -483,10 +488,10 @@ export function ChatInputArea({
                     variant="ghost"
                     size="sm"
                     className="h-9 w-9 p-0 rounded-xl hover:bg-muted-foreground/10 transition-all duration-200"
-                    title={agentStatus === 'stopping' ? "Stopping..." : "Stop generation"}
-                    disabled={agentStatus === 'researching' || agentStatus === 'browser_automation' || agentStatus === 'stopping'}
+                    title={agentStatus === 'stopping' ? "Stopping..." : agentStatus === 'compacting' ? "Compacting..." : "Stop generation"}
+                    disabled={agentStatus === 'researching' || agentStatus === 'stopping' || agentStatus === 'compacting'}
                   >
-                    {agentStatus === 'stopping' ? (
+                    {agentStatus === 'stopping' || agentStatus === 'compacting' ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Square className="w-4 h-4" />

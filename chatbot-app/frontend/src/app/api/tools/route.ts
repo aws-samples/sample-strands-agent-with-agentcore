@@ -201,9 +201,8 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Browser automation tools (separate category)
+    // Browser automation tools (Nova Act)
     const browserAutomation = (toolsConfig.browser_automation || []).map((group: any) => {
-      // Check if any tool in the group is enabled (only if group has tools)
       const anyToolEnabled = group.tools && Array.isArray(group.tools)
         ? group.tools.some((tool: any) => enabledToolIds.includes(tool.id))
         : enabledToolIds.includes(group.id)
@@ -229,7 +228,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Gateway tools (grouped like Browser Automation)
+    // Gateway tools
     const gatewayTargets = toolsConfig.gateway_targets || []
     const gatewayTools = gatewayTargets.map((target: any) => {
       // Check if any tool in the group is enabled (only if target has tools)
@@ -360,7 +359,7 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Browser automation tools (fallback - grouped)
+    // Browser automation tools (Nova Act - fallback)
     const browserAutomation = (toolsConfigFallback.browser_automation || []).map((group: any) => ({
       id: group.id,
       name: group.name,

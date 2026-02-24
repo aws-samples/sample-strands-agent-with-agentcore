@@ -6,7 +6,6 @@ import {
   TbSearch,
   TbWorldWww,
   TbBrowser,
-  TbRobot,
   TbCloudRain,
   TbFileText,
   TbTable,
@@ -60,8 +59,6 @@ export const toolIconMap: Record<string, IconType> = {
 
   // Web & Automation
   browser_automation: TbBrowser,
-  agentcore_browser_use_agent: TbRobot,
-  'agentcore_browser-use-agent': TbRobot,
 
   // Location & Live Data
   gateway_google_maps: SiGooglemaps,
@@ -118,6 +115,7 @@ export const toolImageMap: Record<string, string> = {
   'code_interpreter_tools': '/tool-icons/code-interpreter.svg',
   'agentcore_code-agent': '/tool-icons/code-agent.svg',
   'code_agent': '/tool-icons/code-agent.svg',
+  'workspace_tools': '/tool-icons/s3-workspace.svg',
 };
 
 /**

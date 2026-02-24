@@ -350,48 +350,6 @@ export const useChatAPI = ({
    */
   const toggleTool = useCallback(async (toolId: string) => {
     try {
-      // Mutually exclusive browser tools (parent IDs)
-      const browserAutomationId = 'browser_automation'
-      const browserUseAgentId = 'agentcore_browser-use-agent'
-
-      // Find which parent group this tool belongs to (if it's a nested tool)
-      let parentGroupId: string | null = null
-      let isEnabling = false
-
-      // Check if toolId is a top-level tool
-      const topLevelTool = availableTools.find(t => t.id === toolId)
-      if (topLevelTool) {
-        // Direct tool (non-nested)
-        isEnabling = !topLevelTool.enabled
-        parentGroupId = toolId
-      } else {
-        // Check if it's a nested tool in any group
-        for (const tool of availableTools) {
-          if ((tool as any).isDynamic && (tool as any).tools) {
-            const nestedTool = (tool as any).tools.find((t: any) => t.id === toolId)
-            if (nestedTool) {
-              isEnabling = !nestedTool.enabled
-              parentGroupId = tool.id
-              break
-            }
-          }
-        }
-      }
-
-      // Determine if we should disable the other browser tool
-      let shouldDisableOther = false
-      let otherToolId: string | null = null
-
-      if (isEnabling && parentGroupId) {
-        if (parentGroupId === browserAutomationId) {
-          shouldDisableOther = true
-          otherToolId = browserUseAgentId
-        } else if (parentGroupId === browserUseAgentId) {
-          shouldDisableOther = true
-          otherToolId = browserAutomationId
-        }
-      }
-
       // Update frontend state
       setAvailableTools(prev => prev.map(tool => {
         // Check if this is a grouped tool with nested tools FIRST
@@ -401,43 +359,18 @@ export const useChatAPI = ({
           const nestedIndex = nestedTools.findIndex((t: any) => t.id === toolId)
 
           if (nestedIndex !== -1) {
-            // Toggle the nested tool
             const updatedNestedTools = [...nestedTools]
             updatedNestedTools[nestedIndex] = {
               ...updatedNestedTools[nestedIndex],
               enabled: !updatedNestedTools[nestedIndex].enabled
             }
-
-            return {
-              ...tool,
-              tools: updatedNestedTools
-            }
-          }
-
-          // Disable all nested tools in the other browser group (mutually exclusive)
-          if (shouldDisableOther && tool.id === otherToolId) {
-            logger.info(`Auto-disabling all tools in ${otherToolId} group (mutually exclusive with ${parentGroupId})`)
-            const disabledNestedTools = nestedTools.map((t: any) => ({
-              ...t,
-              enabled: false
-            }))
-            return {
-              ...tool,
-              enabled: false,
-              tools: disabledNestedTools
-            }
+            return { ...tool, tools: updatedNestedTools }
           }
         }
 
         // Direct tool toggle (for non-grouped tools)
         if (tool.id === toolId) {
           return { ...tool, enabled: !tool.enabled }
-        }
-
-        // Disable the other browser tool if needed (mutually exclusive)
-        if (shouldDisableOther && tool.id === otherToolId && tool.enabled) {
-          logger.info(`Auto-disabling ${otherToolId} (mutually exclusive with ${parentGroupId})`)
-          return { ...tool, enabled: false }
         }
 
         return tool
@@ -471,6 +404,63 @@ export const useChatAPI = ({
       return false
     }
   }, [setMessages, setSessionId])
+
+  // Step 1: Create new session and link metadata (fast)
+  const compactSession = useCallback(async (): Promise<{ newSessionId: string; oldSessionId: string } | null> => {
+    try {
+      const currentSessionId = sessionIdRef.current
+      if (!currentSessionId) return null
+
+      const authHeaders = await getAuthHeaders()
+
+      const response = await fetch(getApiUrl('session/compact'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ sessionId: currentSessionId }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.message || `Compact failed: ${response.status}`)
+      }
+
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message || 'Compact failed')
+
+      return { newSessionId: data.newSessionId, oldSessionId: currentSessionId }
+    } catch (error) {
+      logger.error('Error compacting session:', error)
+      return null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Step 2: Generate summary from old session (slow, runs after UI switch)
+  const summarizeForCompact = useCallback(async (oldSessionId: string): Promise<string | null> => {
+    try {
+      const authHeaders = await getAuthHeaders()
+
+      const response = await fetch(getApiUrl('session/compact/summarize'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ oldSessionId, modelId: currentModelId }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.message || `Summarize failed: ${response.status}`)
+      }
+
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message || 'Summarize failed')
+
+      return data.summary
+    } catch (error) {
+      logger.error('Error generating compact summary:', error)
+      return null
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentModelId])
 
   const sendMessage = useCallback(async (
     messageToSend: string,
@@ -530,7 +520,6 @@ export const useChatAPI = ({
         : [...enabledToolIds, ...gatewayToolIds]
 
       // Tool Gating: If research_agent is enabled, disable all other tools
-      // Note: browser_use_agent can run alongside other tools
       const hasResearchAgent = allEnabledToolIds.includes('agentcore_research-agent')
 
       if (hasResearchAgent) {
@@ -915,6 +904,7 @@ export const useChatAPI = ({
       const currentStoredSessionId = sessionStorage.getItem('chat-session-id')
       const isSameSession = currentStoredSessionId === newSessionId
       setSessionId(newSessionId)
+      sessionIdRef.current = newSessionId   // sync immediately so sendMessage uses new session
       sessionStorage.setItem('chat-session-id', newSessionId)
       if (!isSameSession) {
         setMessages([])
@@ -1242,6 +1232,8 @@ export const useChatAPI = ({
     loadTools,
     toggleTool,
     newChat,
+    compactSession,
+    summarizeForCompact,
     sendMessage,
     cleanup,
     sendStopSignal,

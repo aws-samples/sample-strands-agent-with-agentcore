@@ -1,7 +1,7 @@
 /**
  * usePolling - Centralized polling management for A2A agent tool executions
  *
- * This hook manages polling for long-running A2A agents (research_agent, browser_use_agent)
+ * This hook manages polling for long-running A2A agents (research_agent)
  * that save progress to the backend and need periodic data synchronization.
  *
  * Regular tools do NOT need polling - their state is managed by SSE stream events.
@@ -12,7 +12,7 @@ import { Message } from '@/types/chat'
 
 // A2A tools that require polling for progress updates
 // These tools run in separate processes and save progress to backend
-export const A2A_TOOLS_REQUIRING_POLLING = ['research_agent', 'browser_use_agent'] as const
+export const A2A_TOOLS_REQUIRING_POLLING = ['research_agent'] as const
 
 interface UsePollingProps {
   sessionId: string | null
@@ -93,7 +93,7 @@ export const usePolling = ({
 
   /**
    * Check if there are ongoing A2A tools and start/stop polling accordingly.
-   * Only polls for research_agent and browser_use_agent.
+   * Only polls for research_agent.
    */
   const checkAndStartPollingForA2ATools = useCallback((messages: Message[], targetSessionId: string) => {
     const hasOngoingA2ATools = messages.some(msg =>
@@ -151,8 +151,7 @@ export const hasOngoingA2ATools = (messages: Message[]): boolean => {
 /**
  * Helper function to get agent status based on tool name
  */
-export const getAgentStatusForTool = (toolName: string): 'responding' | 'researching' | 'browser_automation' => {
+export const getAgentStatusForTool = (toolName: string): 'responding' | 'researching' => {
   if (toolName === 'research_agent') return 'researching'
-  if (toolName === 'browser_use_agent') return 'browser_automation'
   return 'responding'
 }

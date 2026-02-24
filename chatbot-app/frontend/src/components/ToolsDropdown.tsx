@@ -208,15 +208,14 @@ export function ToolsDropdown({
 
   const allTools = useMemo(() => {
     return availableTools.filter(tool =>
-      tool.id !== 'agentcore_research-agent' &&
-      tool.id !== 'agentcore_browser-use-agent'
+      tool.id !== 'agentcore_research-agent'
     );
   }, [availableTools]);
 
   const enabledTools = useMemo(() => {
     const enabled: Tool[] = [];
     availableTools.forEach(tool => {
-      if (tool.id === 'agentcore_research-agent' || tool.id === 'agentcore_browser-use-agent') return;
+      if (tool.id === 'agentcore_research-agent') return;
       const isDynamic = (tool as any).isDynamic === true;
       const nestedTools = (tool as any).tools || [];
       if (isDynamic && nestedTools.length > 0) {

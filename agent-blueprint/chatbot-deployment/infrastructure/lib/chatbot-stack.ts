@@ -560,6 +560,23 @@ async function sendResponse(event, status, data, reason) {
       })
     );
 
+    // Bedrock model invocation for BFF-level features (e.g., session compact summarization)
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'bedrock:InvokeModel',
+          'bedrock:InvokeModelWithResponseStream',
+          'bedrock:Converse',
+          'bedrock:ConverseStream',
+        ],
+        resources: [
+          `arn:aws:bedrock:*::foundation-model/*`,
+          `arn:aws:bedrock:${this.region}:${this.account}:*`,
+        ]
+      })
+    );
+
     // Add AgentCore Identity permissions for 3LO OAuth flow completion
     // Required when user completes OAuth consent and we need to store the token
     frontendTaskDefinition.addToTaskRolePolicy(

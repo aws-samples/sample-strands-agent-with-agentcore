@@ -328,7 +328,7 @@ export type AgentStatus =
   | 'thinking'
   | 'responding'
   | 'researching'
-  | 'browser_automation'
+  | 'compacting'
   | 'stopping'
   | 'swarm'
   // Voice mode states

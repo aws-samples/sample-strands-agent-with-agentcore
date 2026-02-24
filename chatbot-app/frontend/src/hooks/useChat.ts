@@ -43,6 +43,8 @@ interface UseChatReturn {
   sendMessage: (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => Promise<void>
   stopGeneration: () => void
   newChat: () => Promise<void>
+  compactSession: () => Promise<{ newSessionId: string; oldSessionId: string } | null>
+  summarizeForCompact: (oldSessionId: string) => Promise<string | null>
   toggleTool: (toolId: string) => Promise<void>
   setExclusiveTools: (toolIds: string[]) => void
   refreshTools: () => Promise<void>
@@ -233,6 +235,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     loadTools,
     toggleTool: apiToggleTool,
     newChat: apiNewChat,
+    compactSession: apiCompactSession,
+    summarizeForCompact: apiSummarizeForCompact,
     sendMessage: apiSendMessage,
     cleanup,
     sendStopSignal,
@@ -266,8 +270,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [startPolling, stopPolling])
 
   // ==================== A2A AGENT UI STATE MANAGEMENT ====================
-  // Update UI status based on ongoing A2A agents (research/browser)
-  // This is the ONLY place that sets researching/browser_automation status from messages
+  // Update UI status based on ongoing A2A agents (research)
+  // This is the ONLY place that sets researching status from messages
   // PERFORMANCE: Only check last 5 messages for ongoing tools (recent activity)
   useEffect(() => {
     if (!sessionId || currentSessionIdRef.current !== sessionId) return
@@ -275,7 +279,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // PERFORMANCE: Only check recent messages (last 5) for ongoing A2A agents
     // Ongoing agents are always in the most recent messages
     let hasOngoingResearch = false
-    let hasOngoingBrowser = false
 
     const startIdx = Math.max(0, messages.length - 5)
     for (let i = messages.length - 1; i >= startIdx; i--) {
@@ -285,10 +288,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       for (const te of toolExecutions) {
         if (te.isComplete || te.isCancelled) continue
         if (te.toolName === 'research_agent') hasOngoingResearch = true
-        else if (te.toolName === 'browser_use_agent') hasOngoingBrowser = true
       }
-      // Early exit if both found
-      if (hasOngoingResearch && hasOngoingBrowser) break
+      if (hasOngoingResearch) break
     }
 
     if (hasOngoingResearch) {
@@ -299,22 +300,14 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         }
         return prev
       })
-    } else if (hasOngoingBrowser) {
-      setUIState(prev => {
-        if (prev.agentStatus !== 'browser_automation') {
-          console.log('[useChat] Setting status to browser_automation')
-          return { ...prev, isTyping: true, agentStatus: 'browser_automation' }
-        }
-        return prev
-      })
     } else {
       // No ongoing A2A tools - transition to idle if currently stuck in A2A status.
       // This handles the case where SSE stream dropped (disconnect, session switch)
       // but the A2A agent completed in the background. Without this, agentStatus
-      // would stay 'researching'/'browser_automation' forever since only stream
+      // would stay 'researching' forever since only stream
       // event handlers (complete/error) used to set idle.
       setUIState(prev => {
-        if (prev.agentStatus === 'researching' || prev.agentStatus === 'browser_automation') {
+        if (prev.agentStatus === 'researching') {
           console.log('[useChat] A2A tools completed, transitioning to idle')
           return { ...prev, isTyping: false, agentStatus: 'idle' }
         }
@@ -336,11 +329,11 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Set loading state for UI feedback
     setIsLoadingMessages(true)
 
-    // Reset UI and session state
+    // Reset UI and session state — preserve 'compacting' if session switch is part of compact flow
     setUIState(prev => ({
       ...prev,
-      isTyping: false,
-      agentStatus: 'idle',
+      isTyping: prev.agentStatus === 'compacting',
+      agentStatus: prev.agentStatus === 'compacting' ? 'compacting' : 'idle',
       showProgressPanel: false
     }))
 
@@ -664,6 +657,21 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   }, [apiNewChat, sessionId, stopPolling, setAvailableTools])
 
+  // Step 1: Create new session (fast) — sets compacting status
+  const compactSession = useCallback(async (): Promise<{ newSessionId: string; oldSessionId: string } | null> => {
+    setUIState(prev => ({ ...prev, agentStatus: 'compacting', isTyping: true }))
+    const result = await apiCompactSession()
+    if (!result) {
+      setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
+    }
+    return result
+  }, [apiCompactSession, setUIState])
+
+  // Step 2: Generate summary from old session (slow) — called after UI has switched
+  const summarizeForCompact = useCallback(async (oldSessionId: string): Promise<string | null> => {
+    return apiSummarizeForCompact(oldSessionId)
+  }, [apiSummarizeForCompact])
+
   const respondToInterrupt = useCallback(async (interruptId: string, response: string) => {
     if (!sessionState.interrupt) return
 
@@ -672,20 +680,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     const isResearchInterrupt = sessionState.interrupt.interrupts.some(
       int => int.reason?.tool_name === 'research_agent'
     )
-    const isBrowserUseInterrupt = sessionState.interrupt.interrupts.some(
-      int => int.reason?.tool_name === 'browser_use_agent'
-    )
 
-    let agentStatus: 'thinking' | 'researching' | 'browser_automation' = 'thinking'
-    if (isResearchInterrupt) agentStatus = 'researching'
-    else if (isBrowserUseInterrupt) agentStatus = 'browser_automation'
-
+    const agentStatus: 'thinking' | 'researching' = isResearchInterrupt ? 'researching' : 'thinking'
     setUIState(prev => ({ ...prev, isTyping: true, agentStatus }))
 
     const overrideTools = isResearchInterrupt
       ? ['agentcore_research-agent']
-      : isBrowserUseInterrupt
-      ? ['agentcore_browser-use-agent']
       : undefined
 
     try {
@@ -1096,6 +1096,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     sendMessage,
     stopGeneration,
     newChat,
+    compactSession,
+    summarizeForCompact,
     toggleTool,
     setExclusiveTools,
     refreshTools,

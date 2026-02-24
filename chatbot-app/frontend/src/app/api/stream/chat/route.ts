@@ -426,38 +426,7 @@ export async function POST(request: NextRequest) {
             enabledTools: enabledToolsList,
           })
 
-          // Start browser session polling if browser-use-agent is enabled
-          const hasBrowserUseAgent = enabledToolsList.some(tool =>
-            tool.includes('browser-use-agent') || tool.includes('browser_use_agent')
-          )
-
           console.log(`[BFF] Enabled tools: ${JSON.stringify(enabledToolsList)}`)
-          console.log(`[BFF] Has browser-use-agent: ${hasBrowserUseAgent}, IS_LOCAL: ${IS_LOCAL}`)
-
-          if (hasBrowserUseAgent && !IS_LOCAL) {
-            browserSessionPollingStarted = true
-            console.log('[BFF] Browser-use-agent enabled, starting DynamoDB polling for browser session')
-
-            // Start polling in background (don't await)
-            const { pollForBrowserSession, createBrowserSessionEvent } = await import('@/lib/browser-session-poller')
-            pollForBrowserSession(
-              userId,
-              sessionId,
-              (result) => {
-                // Send metadata event to frontend when browser session is found
-                try {
-                  const event = createBrowserSessionEvent(result.browserSessionId, result.browserId)
-                  controller.enqueue(encoder.encode(event))
-                  console.log('[BFF] Sent browser session metadata event to frontend')
-                } catch (err) {
-                  console.warn('[BFF] Failed to send browser session event:', err)
-                }
-              },
-              pollingAbortController.signal
-            ).catch(err => {
-              console.warn('[BFF] Browser session polling error:', err)
-            })
-          }
 
           // Merge system prompts: user-provided (artifact context) + model config
           let finalSystemPrompt = modelConfig.system_prompt

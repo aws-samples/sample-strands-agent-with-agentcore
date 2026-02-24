@@ -354,26 +354,6 @@
           "displayName": { "running": "Saving screenshot", "complete": "Saved screenshot" }
         }
       ]
-    },
-    {
-      "id": "agentcore_browser-use-agent",
-      "name": "Browser-Use Agent",
-      "description": "Autonomous browser automation powered by browser-use AI with live view support",
-      "category": "browser_automation_agents",
-      "icon": "",
-      "enabled": true,
-      "isDynamic": true,
-      "displayName": { "running": "Browsing autonomously", "complete": "Browsed autonomously" },
-      "tags": ["shopping", "automation", "scraping", "research"],
-      "tools": [
-        {
-          "id": "agentcore_browser-use-agent",
-          "name": "Browser Automation Skill",
-          "description": "Execute multi-step browser tasks: navigate websites, interact with elements, fill forms, extract information using AI-driven adaptive navigation",
-          "displayName": { "running": "Browsing autonomously", "complete": "Browsed autonomously" },
-          "enabled": true
-        }
-      ]
     }
   ],
   "gateway_targets": [

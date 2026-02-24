@@ -414,20 +414,10 @@ def ensure_project_claude_md(workspace: Path) -> None:
         return
 
     content = """\
-# Code Agent Workspace
+# Workspace
 
-Files here persist across sessions.
-
-## Progress tracking
-For multi-step tasks, maintain `progress.md` to track completed and remaining steps.
-This file survives context resets — update it as you go.
-
-## Conventions
 Read the existing codebase before introducing patterns. Follow what's already there.
-
-## Notes
-- Uploaded files are pre-downloaded into this workspace before each task.
-- Prior conversation history is available — reference it naturally, don't re-read it.
+For multi-step tasks, maintain `progress.md` to track completed and remaining steps.
 """
     claude_md.write_text(content)
 

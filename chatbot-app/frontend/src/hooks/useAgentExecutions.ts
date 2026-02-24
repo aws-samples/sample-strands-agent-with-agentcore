@@ -1,16 +1,9 @@
-import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
 export interface ResearchExecutionData {
   query: string
   result: string
   status: 'idle' | 'searching' | 'analyzing' | 'generating' | 'complete' | 'error' | 'declined'
-  agentName: string
-}
-
-export interface BrowserExecutionData {
-  query: string
-  result: string
-  status: 'idle' | 'running' | 'complete' | 'error'
   agentName: string
 }
 
@@ -31,13 +24,9 @@ interface MessageGroup {
 
 export function useAgentExecutions(groupedMessages: MessageGroup[]) {
   const [researchData, setResearchData] = useState<Map<string, ResearchExecutionData>>(new Map())
-  const [browserData, setBrowserData] = useState<Map<string, BrowserExecutionData>>(new Map())
-  const [isBrowserModalOpen, setIsBrowserModalOpen] = useState(false)
-  const [activeBrowserId, setActiveBrowserId] = useState<string | null>(null)
 
-  const { computedResearchData, computedBrowserData } = useMemo(() => {
+  const computedResearchData = useMemo(() => {
     const newResearchData = new Map<string, ResearchExecutionData>()
-    const newBrowserData = new Map<string, BrowserExecutionData>()
 
     for (const group of groupedMessages) {
       if (group.type === 'assistant_turn') {
@@ -74,38 +63,13 @@ export function useAgentExecutions(groupedMessages: MessageGroup[]) {
                   agentName: 'Research Agent'
                 })
               }
-            } else if (execution.toolName === 'browser_use_agent') {
-              const executionId = execution.id
-              const query = execution.toolInput?.task || "Browser Task"
-
-              if (!execution.isComplete) {
-                newBrowserData.set(executionId, {
-                  query,
-                  result: execution.streamingResponse || '',
-                  status: 'running',
-                  agentName: 'Browser Use Agent'
-                })
-              } else if (execution.toolResult) {
-                const resultText = execution.toolResult.toLowerCase()
-                const isError = execution.isCancelled ||
-                  resultText.includes('error:') ||
-                  resultText.includes('failed:') ||
-                  resultText.includes('browser automation failed')
-
-                newBrowserData.set(executionId, {
-                  query,
-                  result: execution.toolResult,
-                  status: isError ? 'error' : 'complete',
-                  agentName: 'Browser Use Agent'
-                })
-              }
             }
           }
         }
       }
     }
 
-    return { computedResearchData: newResearchData, computedBrowserData: newBrowserData }
+    return newResearchData
   }, [groupedMessages])
 
   useEffect(() => {
@@ -121,35 +85,5 @@ export function useAgentExecutions(groupedMessages: MessageGroup[]) {
     })
   }, [computedResearchData])
 
-  useEffect(() => {
-    setBrowserData(prev => {
-      if (computedBrowserData.size !== prev.size ||
-          Array.from(computedBrowserData.entries()).some(([id, data]) => {
-            const existing = prev.get(id)
-            return !existing || existing.result !== data.result || existing.status !== data.status
-          })) {
-        return computedBrowserData
-      }
-      return prev
-    })
-  }, [computedBrowserData])
-
-  const handleBrowserClick = useCallback((executionId: string) => {
-    setActiveBrowserId(executionId)
-    setIsBrowserModalOpen(true)
-  }, [])
-
-  const closeBrowserModal = useCallback(() => {
-    setIsBrowserModalOpen(false)
-    setActiveBrowserId(null)
-  }, [])
-
-  return {
-    researchData,
-    browserData,
-    isBrowserModalOpen,
-    activeBrowserId,
-    handleBrowserClick,
-    closeBrowserModal,
-  }
+  return { researchData }
 }

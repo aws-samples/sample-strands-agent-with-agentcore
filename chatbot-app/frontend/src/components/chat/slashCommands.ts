@@ -1,4 +1,4 @@
-import { FileText, Download, Trash2, Sparkles, LucideIcon } from "lucide-react"
+import { FileText, Download, Trash2, Sparkles, Minimize2, LucideIcon } from "lucide-react"
 import { Tool } from "@/types/chat"
 
 export interface SlashCommand {
@@ -34,6 +34,12 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'Start a new conversation',
     icon: Trash2,
     keywords: ['new', 'reset', 'fresh']
+  },
+  {
+    name: '/compact',
+    description: 'Summarize this session and continue in a new one',
+    icon: Minimize2,
+    keywords: ['summarize', 'compress', 'continue', 'context']
   },
 ]
 
@@ -91,7 +97,7 @@ export function matchTools(query: string, availableTools: Tool[]): Tool[] {
   return availableTools
     .filter(tool => {
       // Skip A2A agents
-      if (tool.id === 'agentcore_research-agent' || tool.id === 'agentcore_browser-use-agent') {
+      if (tool.id === 'agentcore_research-agent') {
         return false
       }
 

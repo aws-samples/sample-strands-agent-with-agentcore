@@ -202,8 +202,7 @@ export const useStreamEvents = ({
         setUIState(prevUI => {
           // Don't change status if stopping or in A2A agent mode
           if (prevUI.agentStatus === 'stopping' ||
-              prevUI.agentStatus === 'researching' ||
-              prevUI.agentStatus === 'browser_automation') {
+              prevUI.agentStatus === 'researching') {
             return prevUI
           }
           if (prevUI.agentStatus === 'thinking') {
@@ -407,11 +406,11 @@ export const useStreamEvents = ({
         }
       }
 
-      // If A2A tool completed, transition from researching/browser_automation to thinking
+      // If A2A tool completed, transition from researching to thinking
       // This allows subsequent response events to properly transition to 'responding'
       if (toolName && isA2ATool(toolName)) {
         setUIState(prev => {
-          if (prev.agentStatus === 'researching' || prev.agentStatus === 'browser_automation') {
+          if (prev.agentStatus === 'researching') {
             return { ...prev, agentStatus: 'thinking' }
           }
           return prev
@@ -941,7 +940,7 @@ export const useStreamEvents = ({
       // to avoid flickering from rapid researching → idle → researching transitions.
       // The Canvas will handle user interaction (plan approval) while chat stays in current state.
       const isA2AInterrupt = data.interrupts?.some(
-        (int: any) => int.reason?.tool_name === 'research_agent' || int.reason?.tool_name === 'browser_use_agent'
+        (int: any) => int.reason?.tool_name === 'research_agent'
       )
 
       setUIState(prev => ({

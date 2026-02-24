@@ -12,7 +12,6 @@ import { AssistantTurn } from "@/components/chat/AssistantTurn"
 import { Greeting } from "@/components/Greeting"
 import { ChatSidebar } from "@/components/ChatSidebar"
 import { ToolsDropdown } from "@/components/ToolsDropdown"
-import { BrowserResultModal } from "@/components/BrowserResultModal"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
 import { SwarmProgress } from "@/components/SwarmProgress"
 import { Canvas } from "@/components/canvas"
@@ -28,6 +27,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { ArrowDown, Sparkles } from "lucide-react"
 import { AIIcon } from "@/components/ui/AIIcon"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { buildArtifactContext } from "@/lib/artifactContext"
 import { useTheme } from "next-themes"
 import { useVoiceIntegration } from "@/hooks/useVoiceIntegration"
@@ -175,6 +175,8 @@ export function ChatInterface() {
     sendMessage,
     stopGeneration,
     newChat,
+    compactSession,
+    summarizeForCompact,
     toggleTool,
     setExclusiveTools,
     sessionId,
@@ -246,15 +248,8 @@ export function ChatInterface() {
   const [isResearchEnabled, setIsResearchEnabled] = useState<boolean>(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  // Agent executions (research/browser)
-  const {
-    researchData,
-    browserData,
-    isBrowserModalOpen,
-    activeBrowserId,
-    handleBrowserClick,
-    closeBrowserModal,
-  } = useAgentExecutions(groupedMessages)
+  // Agent executions (research)
+  const { researchData } = useAgentExecutions(groupedMessages)
 
   // Compose wizard state
   const [isComposeWizardOpen, setIsComposeWizardOpen] = useState(false)
@@ -988,6 +983,33 @@ export function ChatInterface() {
     await newChat()
   }, [newChat, forceDisconnectVoice])
 
+  // Compact session: confirmation dialog state
+  const [isCompactDialogOpen, setIsCompactDialogOpen] = useState(false)
+
+  const handleCompactRequest = useCallback(() => {
+    setIsCompactDialogOpen(true)
+  }, [])
+
+  const handleCompactConfirm = useCallback(async () => {
+    setIsCompactDialogOpen(false)
+
+    // Step 1: Create new session immediately (fast)
+    const result = await compactSession()
+    if (!result) return
+
+    // Step 2: Switch UI to new session right away
+    await loadSession(result.newSessionId)
+
+    // Step 3: Generate summary from old session (slow - happens after UI switch)
+    const summary = await summarizeForCompact(result.oldSessionId)
+    if (!summary) return
+
+    // Step 4: Inject summary as first message in the new session
+    await sendMessage(
+      `Here is a summary of the previous session to continue our work:\n\n${summary}`
+    )
+  }, [compactSession, summarizeForCompact, loadSession, sendMessage])
+
   // Wrapper for loadSession that disconnects voice first
   const handleLoadSession = useCallback(async (newSessionId: string) => {
     // Force disconnect voice chat before switching sessions
@@ -1307,7 +1329,6 @@ export function ChatInterface() {
                         currentReasoning={currentReasoning}
                         availableTools={availableTools}
                         sessionId={stableSessionId}
-                        onBrowserClick={handleBrowserClick}
                         onOpenResearchArtifact={handleOpenResearchArtifact}
                         onOpenWordArtifact={handleOpenWordArtifact}
                         onOpenExcelArtifact={handleOpenExcelArtifact}
@@ -1397,26 +1418,34 @@ export function ChatInterface() {
           onOpenComposeWizard={handleOpenComposeWizard}
           onExportConversation={exportConversation}
           onNewChat={handleNewChat}
+          onCompact={handleCompactRequest}
         />
       </SidebarInset>
 
-      {/* Browser Result Modal */}
-      {activeBrowserId && browserData.get(activeBrowserId) && (
-        <BrowserResultModal
-          isOpen={isBrowserModalOpen}
-          onClose={closeBrowserModal}
-          query={browserData.get(activeBrowserId)!.query}
-          isLoading={browserData.get(activeBrowserId)!.status === 'running'}
-          result={browserData.get(activeBrowserId)!.result}
-          status={browserData.get(activeBrowserId)!.status}
-          browserProgress={browserProgress}
-        />
-      )}
+      {/* Compact Session Confirmation Dialog */}
+      <Dialog open={isCompactDialogOpen} onOpenChange={setIsCompactDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Compact this session?</DialogTitle>
+            <DialogDescription>
+              The current conversation will be summarized and a new session will open with that summary as context. The original session remains accessible in the sidebar.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="flex gap-2 sm:justify-end">
+            <Button variant="outline" onClick={() => setIsCompactDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleCompactConfirm}>
+              Compact &amp; Continue
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Interrupt Approval Modal - for destructive/write operations (research handled via Canvas) */}
       {currentInterrupt && currentInterrupt.interrupts.length > 0 &&
        !currentInterrupt.interrupts[0].name.includes("research-approval") &&
-       !currentInterrupt.interrupts[0].name.includes("browser-use-approval") && (
+       (
         <InterruptApprovalModal
           isOpen={true}
           onApprove={handleApproveInterrupt}

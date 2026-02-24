@@ -55,7 +55,6 @@ interface AssistantTurnProps {
     tool_type?: string
   }>
   sessionId?: string
-  onBrowserClick?: (executionId: string) => void
   onOpenResearchArtifact?: (executionId: string) => void
   onOpenWordArtifact?: (filename: string) => void
   onOpenExcelArtifact?: (filename: string) => void
@@ -69,7 +68,7 @@ interface AssistantTurnProps {
   hideAvatar?: boolean
 }
 
-export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onBrowserClick, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact, researchProgress, hideAvatar = false }) => {
+export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact, researchProgress, hideAvatar = false }) => {
   // Get initial feedback state from first message
   const initialFeedback = messages[0]?.feedback || null
 
@@ -380,88 +379,11 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
               const message = item.content as Message
               const toolExecutions = message.toolExecutions || []
 
-              // Separate browser_use_agent (still uses special container for live view)
-              const browserExecution = toolExecutions.find(te => te.toolName === 'browser_use_agent')
-              const otherExecutions = toolExecutions.filter(te => te.toolName !== 'browser_use_agent')
-
               return (
                 <div key={item.key} className="animate-fade-in space-y-4">
-                  {/* Browser Use Agent Container - still uses special container for live view */}
-                  {browserExecution && (
-                    <ResearchContainer
-                      query={browserExecution.toolInput?.task || 'Browser Task'}
-                      agentName='Browser Use Agent'
-                      status={
-                        browserExecution.isComplete
-                          ? (() => {
-                              // Check for exact declined message from ResearchApprovalHook
-                              if (browserExecution.isCancelled) return 'declined'
-                              const resultText = (browserExecution.toolResult || '').toLowerCase()
-                              if (resultText === 'user declined to proceed with research' ||
-                                  resultText === 'user declined to proceed with browser automation') {
-                                return 'declined'
-                              }
-                              // Then check for errors
-                              if (resultText.includes('error:') || resultText.includes('failed:') || resultText.includes('browser automation failed')) {
-                                return 'error'
-                              }
-                              return 'complete'
-                            })()
-                          : browserExecution.streamingResponse
-                          ? 'generating'
-                          : 'searching'
-                      }
-                      isLoading={!browserExecution.isComplete}
-                      hasResult={(() => {
-                        // No result if task was declined
-                        if (browserExecution.isCancelled) return false
-                        if (browserExecution.toolResult) {
-                          const resultText = browserExecution.toolResult.toLowerCase()
-                          if (resultText === 'user declined to proceed with research' ||
-                              resultText === 'user declined to proceed with browser automation') {
-                            return false
-                          }
-                        }
-
-                        // Running: enable real-time viewing
-                        if (!browserExecution.isComplete) {
-                          return true
-                        }
-
-                        // Completed: has result if no errors
-                        if (browserExecution.isComplete && browserExecution.toolResult) {
-                          const resultText = browserExecution.toolResult.toLowerCase()
-                          return !(resultText.includes('browser automation failed'))
-                        }
-
-                        return false
-                      })()}
-                      onClick={() => {
-                        if (!onBrowserClick) return
-
-                        // Block if declined
-                        if (browserExecution.isCancelled) return
-                        if (browserExecution.toolResult) {
-                          const resultText = browserExecution.toolResult.toLowerCase()
-                          if (resultText === 'user declined to proceed with research' ||
-                              resultText === 'user declined to proceed with browser automation') return
-                        }
-
-                        // Block if failed
-                        if (browserExecution.isComplete && browserExecution.toolResult) {
-                          const resultText = browserExecution.toolResult.toLowerCase()
-                          if (resultText.includes('browser automation failed')) return
-                        }
-
-                        onBrowserClick(browserExecution.id)
-                      }}
-                    />
-                  )}
-
-                  {/* Tool Executions */}
-                  {otherExecutions.length > 0 && (
+                  {toolExecutions.length > 0 && (
                     <ToolExecutionContainer
-                      toolExecutions={otherExecutions}
+                      toolExecutions={toolExecutions}
                       availableTools={availableTools}
                       sessionId={sessionId}
                       onOpenResearchArtifact={onOpenResearchArtifact}
@@ -706,8 +628,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
     })
 
   const reasoningEqual = prevProps.currentReasoning?.text === nextProps.currentReasoning?.text
-  const callbackEqual = prevProps.onBrowserClick === nextProps.onBrowserClick &&
-    prevProps.onOpenResearchArtifact === nextProps.onOpenResearchArtifact &&
+  const callbackEqual = prevProps.onOpenResearchArtifact === nextProps.onOpenResearchArtifact &&
     prevProps.onOpenWordArtifact === nextProps.onOpenWordArtifact &&
     prevProps.onOpenExcelArtifact === nextProps.onOpenExcelArtifact &&
     prevProps.onOpenPptArtifact === nextProps.onOpenPptArtifact &&
