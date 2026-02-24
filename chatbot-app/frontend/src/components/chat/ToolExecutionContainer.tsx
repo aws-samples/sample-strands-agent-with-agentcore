@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { fetchAuthSession } from 'aws-amplify/auth'
-import { Download, ChevronDown, ChevronUp, Sparkles } from 'lucide-react'
+import { Download, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
 import { getToolImageSrc, getToolIcon, resolveEffectiveToolId } from '@/config/tool-icons'
@@ -103,6 +103,8 @@ const CollapsibleMarkdown = React.memo<{
 export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
+  const [downloadingCodeAgent, setDownloadingCodeAgent] = useState(false)
+  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set())
 
   // Extract output filename from Word tool result
   // Prefers metadata.filename if available, falls back to regex extraction
@@ -278,6 +280,8 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
   }, [chartDataCache]);
 
   const handleCodeAgentDownload = async () => {
+    if (downloadingCodeAgent) return
+    setDownloadingCodeAgent(true)
     try {
       const authHeaders: Record<string, string> = {}
       try {
@@ -347,10 +351,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     } catch (error) {
       console.error('[CodeAgent] Download failed:', error)
       alert(error instanceof Error ? error.message : 'Download failed')
+    } finally {
+      setDownloadingCodeAgent(false)
     }
   }
 
   const handleFilesDownload = async (toolUseId: string, toolName?: string, toolResult?: string) => {
+    if (downloadingFiles.has(toolUseId)) return
+    setDownloadingFiles(prev => new Set(prev).add(toolUseId))
     try {
       if (toolName === 'run_python_code' || toolName === 'finalize_document' && sessionId) {
         try {
@@ -529,6 +537,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       console.error('Failed to create ZIP:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
       alert(`Download failed: ${errorMessage}`);
+    } finally {
+      setDownloadingFiles(prev => {
+        const next = new Set(prev)
+        next.delete(toolUseId)
+        return next
+      })
     }
   };
 
@@ -612,10 +626,14 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                         e.stopPropagation();
                         handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult);
                       }}
-                      className="ml-auto p-1 hover:bg-muted rounded transition-colors opacity-0 group-hover:opacity-100"
-                      title="Download files"
+                      disabled={downloadingFiles.has(toolExecution.id)}
+                      className="ml-auto p-1 hover:bg-muted rounded transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={downloadingFiles.has(toolExecution.id) ? "Downloading..." : "Download files"}
                     >
-                      <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                      {downloadingFiles.has(toolExecution.id)
+                        ? <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
+                        : <Download className="h-3.5 w-3.5 text-muted-foreground" />
+                      }
                     </button>
                   )}
                   {/* Download workspace ZIP for code agent */}
@@ -627,11 +645,15 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                         e.stopPropagation();
                         handleCodeAgentDownload();
                       }}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
-                      title="Download workspace as ZIP"
+                      disabled={downloadingCodeAgent}
+                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={downloadingCodeAgent ? "Preparing ZIP..." : "Download workspace as ZIP"}
                     >
-                      <Download className="h-3.5 w-3.5" />
-                      <span>Download</span>
+                      {downloadingCodeAgent
+                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        : <Download className="h-3.5 w-3.5" />
+                      }
+                      <span>{downloadingCodeAgent ? 'Preparing...' : 'Download'}</span>
                     </button>
                   )}
                   {/* View in Canvas button for research_agent */}

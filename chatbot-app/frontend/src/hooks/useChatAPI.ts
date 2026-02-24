@@ -609,8 +609,75 @@ export const useChatAPI = ({
         })
       }
 
+      // Retry on transient errors (502, 503, 504) with exponential backoff
+      const RETRYABLE_STATUSES = [502, 503, 504]
+      const MAX_RETRIES = 2
+
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        if (RETRYABLE_STATUSES.includes(response.status) && !abortControllerRef.current.signal.aborted) {
+          let lastStatus = response.status
+          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000) // 1s, 2s, 4s
+            logger.info(`[useChatAPI] Retrying after ${response.status} (attempt ${attempt}/${MAX_RETRIES}, wait ${delay}ms)`)
+            await new Promise(resolve => setTimeout(resolve, delay))
+
+            if (abortControllerRef.current.signal.aborted) break
+
+            try {
+              if (files && files.length > 0) {
+                const retryFormData = new FormData()
+                retryFormData.append('message', messageToSend)
+                retryFormData.append('enabled_tools', JSON.stringify(allEnabledToolIds))
+                retryFormData.append('model_id', currentModelId)
+                retryFormData.append('temperature', String(currentTemperature))
+                if (requestType) retryFormData.append('request_type', requestType)
+                if (systemPrompt) retryFormData.append('system_prompt', systemPrompt)
+                files.forEach((file) => retryFormData.append('files', file))
+                const retryHeaders: Record<string, string> = { ...authHeaders }
+                if (currentSessionId) retryHeaders['X-Session-ID'] = currentSessionId
+                response = await fetch(getApiUrl('stream/chat'), {
+                  method: 'POST',
+                  headers: retryHeaders,
+                  body: retryFormData,
+                  signal: abortControllerRef.current.signal
+                })
+              } else {
+                response = await fetch(getApiUrl('stream/chat'), {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    ...authHeaders,
+                    ...(currentSessionId && { 'X-Session-ID': currentSessionId })
+                  },
+                  body: JSON.stringify({
+                    message: messageToSend,
+                    model_id: currentModelId,
+                    temperature: currentTemperature,
+                    enabled_tools: allEnabledToolIds,
+                    ...(requestType && { request_type: requestType }),
+                    ...(systemPrompt && { system_prompt: systemPrompt }),
+                    ...(selectedArtifactId && { selected_artifact_id: selectedArtifactId })
+                  }),
+                  signal: abortControllerRef.current.signal
+                })
+              }
+
+              if (response.ok) break
+              lastStatus = response.status
+              if (!RETRYABLE_STATUSES.includes(response.status)) break
+            } catch (retryErr) {
+              if (retryErr instanceof Error && retryErr.name === 'AbortError') throw retryErr
+              logger.warn(`[useChatAPI] Retry ${attempt} failed:`, retryErr)
+              if (attempt === MAX_RETRIES) throw retryErr
+            }
+          }
+
+          if (!response.ok) {
+            throw new Error(`Server temporarily unavailable (${lastStatus}). Please try again.`)
+          }
+        } else {
+          throw new Error(`HTTP error! status: ${response.status}`)
+        }
       }
 
       // Extract session ID from response headers
@@ -638,11 +705,22 @@ export const useChatAPI = ({
       const streamSessionId = sessionIdRef.current
 
       let buffer = ''
+      let receivedAnyData = false
 
       while (true) {
-        const { done, value } = await reader.read()
+        let readResult: ReadableStreamReadResult<Uint8Array>
+        try {
+          readResult = await reader.read()
+        } catch (readError) {
+          // Stream read failed - typically a network disconnection mid-stream
+          if (readError instanceof Error && readError.name === 'AbortError') throw readError
+          logger.warn('[useChatAPI] Stream read error (connection may have dropped):', readError)
+          throw new TypeError('Failed to fetch')
+        }
+        const { done, value } = readResult
 
         if (done) break
+        receivedAnyData = true
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
@@ -723,15 +801,26 @@ export const useChatAPI = ({
       
       logger.error('Error sending message:', error)
       setUIState(prev => ({ ...prev, isConnected: false, isTyping: false }))
-      
-      const errorMessage = `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`
+
+      // Provide user-friendly error messages for common network issues
+      let errorMessage: string
+      const rawMessage = error instanceof Error ? error.message : 'Unknown error'
+
+      if (error instanceof TypeError && rawMessage === 'Failed to fetch') {
+        errorMessage = 'Network connection lost. Please check your connection and try again.'
+      } else if (rawMessage.includes('Server temporarily unavailable')) {
+        errorMessage = rawMessage
+      } else {
+        errorMessage = `Connection error: ${rawMessage}`
+      }
+
       setMessages(prev => [...prev, {
         id: String(Date.now()),
         text: errorMessage,
         sender: 'bot',
         timestamp: new Date().toLocaleTimeString()
       }])
-      
+
       onError?.(errorMessage)
     }
   }, [handleStreamEvent, handleLegacyEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature])

@@ -641,7 +641,7 @@
       "isDynamic": false,
       "displayName": { "running": "Coding autonomously", "complete": "Coding complete" },
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn",
-      "systemPromptGuidance": "**Code Agent Usage:**\n- Delegate tasks that require reading, writing, or running code in an isolated workspace\n- Uploaded files (zip, images, source files) are automatically available — do not encode them in the task\n- The agent maintains session state: files and context persist across turns\n- **After completion:** summarize which files changed and key outcomes (2-3 sentences)\n- Do NOT repeat the full code output — the user can see progress steps in real time\n- If tests failed, include the failure message so the user can decide next steps"
+      "systemPromptGuidance": "**Code Agent:**\n- Delegate tasks that require reading, writing, or running code in an isolated workspace\n- Uploaded files are automatically available — do not encode them in the task\n- Session state (files + context) persists across turns\n- Use compact_session=True for long sessions; reset_session=True only when switching to an unrelated project\n- After completion: summarize which files changed and key outcomes (2-3 sentences)"
     }
   ],
   "agentcore_runtime_mcp": [

@@ -1,6 +1,6 @@
 ---
 name: github
-description: Search repositories, browse code, manage issues/PRs, and create branches and pull requests via GitHub OAuth (3LO).
+description: Manage GitHub issues, PRs, branches, and repositories via OAuth (3LO). For reading issues or PR details, not for deep code analysis — delegate that to code-agent.
 ---
 
 # GitHub
@@ -24,7 +24,8 @@ description: Search repositories, browse code, manage issues/PRs, and create bra
 
 ## Usage Guidelines
 
+- **Never perform write operations autonomously.** Only call `github_create_branch`, `github_push_files`, or `github_create_pull_request` when the user has explicitly requested or approved the action. If the user's intent is ambiguous, ask for confirmation before proceeding.
 - Always read existing files with `github_get_file` before modifying them.
-- Write operations require user confirmation — explain what will change before calling.
+- Before calling any write tool, explain exactly what will change (branch name, target files, PR details) and wait for user agreement.
 - For multi-file changes: create a branch → push all files in one `github_push_files` call → open PR.
 - Use `github_search_code` with `repo:owner/name` qualifier to scope searches to a specific repository.

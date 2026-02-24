@@ -1413,9 +1413,10 @@ export function ChatInterface() {
         />
       )}
 
-      {/* Interrupt Approval Modal - for email deletion (research handled via Canvas) */}
+      {/* Interrupt Approval Modal - for destructive/write operations (research handled via Canvas) */}
       {currentInterrupt && currentInterrupt.interrupts.length > 0 &&
-       currentInterrupt.interrupts[0].name === "chatbot-email-delete-approval" && (
+       !currentInterrupt.interrupts[0].name.includes("research-approval") &&
+       !currentInterrupt.interrupts[0].name.includes("browser-use-approval") && (
         <InterruptApprovalModal
           isOpen={true}
           onApprove={handleApproveInterrupt}

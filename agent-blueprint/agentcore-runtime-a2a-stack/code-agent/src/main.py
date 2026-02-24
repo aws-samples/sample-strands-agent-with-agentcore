@@ -337,18 +337,77 @@ def _clear_session_history(user_id: str, session_id: str) -> None:
     except Exception as e:
         logger.warning(f"[S3 reset] Could not delete sdk_session_id: {e}")
 
-    # Clear local ~/.claude/ so stale .jsonl files don't interfere
-    import shutil  # noqa: PLC0415
+    # Clear session .jsonl files from ~/.claude/ but preserve CLAUDE.md (coding principles)
     if CLAUDE_HOME.exists():
-        shutil.rmtree(CLAUDE_HOME, ignore_errors=True)
-        logger.info(f"[S3 reset] Cleared local ~/.claude/")
+        for item in CLAUDE_HOME.iterdir():
+            if item.name == "CLAUDE.md":
+                continue
+            if item.is_dir():
+                import shutil  # noqa: PLC0415
+                shutil.rmtree(item, ignore_errors=True)
+            else:
+                item.unlink(missing_ok=True)
+        logger.info(f"[S3 reset] Cleared local ~/.claude/ (preserved CLAUDE.md)")
 
 
-def ensure_claude_md(workspace: Path) -> None:
+def ensure_user_claude_md() -> None:
+    """Create ~/.claude/CLAUDE.md with coding principles (user-level).
+
+    This is loaded via setting_sources=["user"] and always applies regardless of
+    whether the workspace has its own project-level CLAUDE.md.
+    """
+    user_claude_dir = CLAUDE_HOME
+    user_claude_dir.mkdir(parents=True, exist_ok=True)
+    user_claude_md = user_claude_dir / "CLAUDE.md"
+
+    content = """\
+# Coding Principles
+
+## Comments
+- Comments explain "why", never "what" — if the code needs a comment to explain what it does, rewrite the code to be clearer instead.
+- Never reference the conversation or request in code ("as requested", "user wanted", "added per requirement").
+- Don't add comments that merely restate the code.
+- Don't leave TODO/FIXME for things you just implemented or decided against.
+- Docstrings only on public APIs with non-obvious contracts. Skip for internal helpers where the signature is self-explanatory.
+
+## Problem Solving
+- Investigate root causes before writing fixes. Don't use try/except, fallbacks, or defensive checks to suppress errors you haven't diagnosed.
+- Fallbacks are acceptable only for genuinely unpredictable external factors (network outages, third-party API downtime). Internal logic errors, configuration mistakes, and type mismatches should be fixed at the source.
+- If a test fails, read the error and fix the actual bug. Don't modify the test to make it pass, and don't wrap failing code in try/except.
+- Understand WHY something failed and WHY the fix is correct.
+- Evaluate whether your approach is architecturally sound, not just functional. "It works" is not sufficient — ask whether it's the right way to solve the problem in this codebase.
+- Before changing code, understand the existing implementation thoroughly. Read the relevant code paths and understand why they were built that way. Don't propose changes based on assumptions about code you haven't read.
+
+## Design Decisions
+- Consider the system-wide impact of local changes. A fix that solves one problem but breaks architectural consistency or undermines a design pattern is not a good fix.
+- Before adding code, functionality, or abstractions, question whether they're actually needed. "Might be useful" is not a reason to add something.
+- When there are multiple viable approaches with meaningful tradeoffs, surface them as a question rather than silently picking one. Implementation-level choices (naming, internal structure) are yours; design-level choices that affect architecture or behavior should be raised.
+
+## Code Quality
+- Don't add type annotations, docstrings, or error handling to code you didn't change.
+- Prefer simple, direct solutions over abstractions for one-time operations.
+- When refactoring, delete dead code completely — no commented-out blocks or backward-compat shims.
+
+## Verification
+- Before marking a task complete, run the code or tests to confirm it actually works.
+- If no test exists, write one or run the code with representative input.
+- "Compiles" is not done. "Runs correctly" is done.
+
+## When unsure
+- If the task has a requirements-level ambiguity you can't resolve from the codebase (e.g., "should this be public or internal?"), surface it as a question rather than making a silent assumption.
+- Implementation-level decisions (module structure, variable naming, error handling strategy) are yours to make based on the existing codebase.
+"""
+    if user_claude_md.exists():
+        return  # Preserve any updates the code agent made during previous sessions
+    user_claude_md.write_text(content)
+    logger.info("[Config] User-level CLAUDE.md written to ~/.claude/CLAUDE.md")
+
+
+def ensure_project_claude_md(workspace: Path) -> None:
     """Create CLAUDE.md in the workspace if it does not already exist.
 
-    Claude Code CLI auto-loads this file as project memory when setting_sources
-    includes 'project'. It persists across sessions via S3 sync.
+    This is project-level context loaded via setting_sources=["project"].
+    If the user's uploaded project already contains a CLAUDE.md, it is preserved.
     """
     claude_md = workspace / "CLAUDE.md"
     if claude_md.exists():
@@ -359,11 +418,6 @@ def ensure_claude_md(workspace: Path) -> None:
 
 Files here persist across sessions.
 
-## Verification
-Before marking a task complete, run the code or tests to confirm it actually works.
-If no test exists, write one or run the code with representative input.
-"Compiles" is not done. "Runs correctly" is done.
-
 ## Progress tracking
 For multi-step tasks, maintain `progress.md` to track completed and remaining steps.
 This file survives context resets — update it as you go.
@@ -372,8 +426,8 @@ This file survives context resets — update it as you go.
 Read the existing codebase before introducing patterns. Follow what's already there.
 
 ## Notes
-- Uploaded files are pre-downloaded into this workspace before each task
-- Prior conversation history is available — reference it naturally, don't re-read it
+- Uploaded files are pre-downloaded into this workspace before each task.
+- Prior conversation history is available — reference it naturally, don't re-read it.
 """
     claude_md.write_text(content)
 
@@ -457,8 +511,9 @@ class ClaudeCodeExecutor(AgentExecutor):
             else:
                 logger.info(f"[ClaudeCodeExecutor] Resuming SDK session (in-memory): {sdk_session_id}")
 
-        # --- Ensure CLAUDE.md exists in workspace (project memory for Claude Code CLI) ---
-        ensure_claude_md(workspace)
+        # --- Ensure CLAUDE.md at both levels ---
+        ensure_user_claude_md()          # ~/.claude/CLAUDE.md  (coding principles, always applied)
+        ensure_project_claude_md(workspace)  # workspace/CLAUDE.md (project context, skipped if user project has one)
 
         # --- Download user-uploaded S3 files into workspace ---
         s3_files = metadata.get("s3_files", [])
@@ -485,7 +540,7 @@ class ClaudeCodeExecutor(AgentExecutor):
                     permission_mode="bypassPermissions",
                     cwd=str(workspace),
                     system_prompt={"type": "preset", "preset": "claude_code"},
-                    setting_sources=["project"],
+                    setting_sources=["user", "project"],
                     max_turns=1,
                 )
                 async for msg in query(prompt="/compact", options=compact_options):
@@ -507,7 +562,7 @@ class ClaudeCodeExecutor(AgentExecutor):
                 permission_mode="bypassPermissions",  # No interactive prompts in server mode
                 cwd=str(workspace),
                 system_prompt={"type": "preset", "preset": "claude_code"},
-                setting_sources=["project"],  # Auto-loads CLAUDE.md from workspace
+                setting_sources=["user", "project"],  # Auto-loads CLAUDE.md from workspace
             )
 
             async for message in query(prompt=task_text, options=options):
