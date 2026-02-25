@@ -677,7 +677,8 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     </button>
                   )}
                   {/* View in Canvas button for Word document tools */}
-                  {WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) &&
+                  {(WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) ||
+                    (toolExecution.toolName === 'skill_executor' && WORD_DOCUMENT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
                     toolExecution.isComplete &&
                     !toolExecution.isCancelled &&
                     toolExecution.toolResult &&
@@ -697,7 +698,8 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     </button>
                   )}
                   {/* View in Canvas button for Excel spreadsheet tools */}
-                  {EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) &&
+                  {(EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) ||
+                    (toolExecution.toolName === 'skill_executor' && EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
                     toolExecution.isComplete &&
                     !toolExecution.isCancelled &&
                     toolExecution.toolResult &&
@@ -717,7 +719,8 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                     </button>
                   )}
                   {/* View in Canvas button for PowerPoint presentation tools */}
-                  {POWERPOINT_TOOLS.includes(toolExecution.toolName) &&
+                  {(POWERPOINT_TOOLS.includes(toolExecution.toolName) ||
+                    (toolExecution.toolName === 'skill_executor' && POWERPOINT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
                     toolExecution.isComplete &&
                     !toolExecution.isCancelled &&
                     toolExecution.toolResult &&

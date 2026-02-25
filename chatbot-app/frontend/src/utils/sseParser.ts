@@ -4,7 +4,7 @@
  */
 
 import type { StreamEvent } from '@/types/events'
-import { STREAM_EVENT_TYPES } from '@/types/events'
+import { EventType } from '@ag-ui/core'
 
 /**
  * Parse a single SSE line into event type and data
@@ -123,73 +123,71 @@ export function validateStreamEvent(event: StreamEvent): { valid: boolean; error
   const errors: string[] = []
 
   switch (event.type) {
-    case 'reasoning':
-      if (typeof event.text !== 'string') {
-        errors.push('reasoning event missing "text" field')
+    case EventType.RUN_STARTED:
+    case EventType.RUN_FINISHED:
+      if (typeof event.threadId !== 'string') {
+        errors.push(`${event.type} event missing "threadId" field`)
+      }
+      if (typeof event.runId !== 'string') {
+        errors.push(`${event.type} event missing "runId" field`)
       }
       break
 
-    case 'response':
-      if (typeof event.text !== 'string') {
-        errors.push('response event missing "text" field')
-      }
-      break
-
-    case 'tool_use':
-      if (typeof event.toolUseId !== 'string') {
-        errors.push('tool_use event missing "toolUseId" field')
-      }
-      if (typeof event.name !== 'string') {
-        errors.push('tool_use event missing "name" field')
-      }
-      break
-
-    case 'tool_result':
-      if (typeof event.toolUseId !== 'string') {
-        errors.push('tool_result event missing "toolUseId" field')
-      }
-      break
-
-    case 'complete':
-      // Complete event has optional fields
-      break
-
-    case 'error':
+    case EventType.RUN_ERROR:
       if (typeof event.message !== 'string') {
-        errors.push('error event missing "message" field')
+        errors.push('RUN_ERROR event missing "message" field')
       }
       break
 
-    case 'interrupt':
-      if (!Array.isArray(event.interrupts)) {
-        errors.push('interrupt event missing "interrupts" array')
+    case EventType.TEXT_MESSAGE_START:
+    case EventType.TEXT_MESSAGE_END:
+      if (typeof event.messageId !== 'string') {
+        errors.push(`${event.type} event missing "messageId" field`)
       }
       break
 
-    case 'browser_progress':
-      if (typeof event.stepNumber !== 'number') {
-        errors.push('browser_progress event missing "stepNumber" field')
+    case EventType.TEXT_MESSAGE_CONTENT:
+      if (typeof event.messageId !== 'string') {
+        errors.push('TEXT_MESSAGE_CONTENT event missing "messageId" field')
       }
-      if (typeof event.content !== 'string') {
-        errors.push('browser_progress event missing "content" field')
-      }
-      break
-
-    case 'research_progress':
-      if (typeof event.stepNumber !== 'number') {
-        errors.push('research_progress event missing "stepNumber" field')
-      }
-      if (typeof event.content !== 'string') {
-        errors.push('research_progress event missing "content" field')
+      if (typeof event.delta !== 'string') {
+        errors.push('TEXT_MESSAGE_CONTENT event missing "delta" field')
       }
       break
 
-    default:
-      // Validate against known event types (from STREAM_EVENT_TYPES)
-      // Unknown types are allowed but logged for debugging
-      if (!STREAM_EVENT_TYPES.includes(event.type as any)) {
-        // Don't error, just note it for debugging
-        // errors.push(`Unknown event type: ${event.type}`)
+    case EventType.TOOL_CALL_START:
+      if (typeof event.toolCallId !== 'string') {
+        errors.push('TOOL_CALL_START event missing "toolCallId" field')
+      }
+      if (typeof event.toolCallName !== 'string') {
+        errors.push('TOOL_CALL_START event missing "toolCallName" field')
+      }
+      break
+
+    case EventType.TOOL_CALL_ARGS:
+      if (typeof event.toolCallId !== 'string') {
+        errors.push('TOOL_CALL_ARGS event missing "toolCallId" field')
+      }
+      if (typeof event.delta !== 'string') {
+        errors.push('TOOL_CALL_ARGS event missing "delta" field')
+      }
+      break
+
+    case EventType.TOOL_CALL_END:
+      if (typeof event.toolCallId !== 'string') {
+        errors.push('TOOL_CALL_END event missing "toolCallId" field')
+      }
+      break
+
+    case EventType.TOOL_CALL_RESULT:
+      if (typeof event.toolCallId !== 'string') {
+        errors.push('TOOL_CALL_RESULT event missing "toolCallId" field')
+      }
+      break
+
+    case EventType.CUSTOM:
+      if (typeof event.name !== 'string') {
+        errors.push('CUSTOM event missing "name" field')
       }
       break
   }
@@ -198,12 +196,14 @@ export function validateStreamEvent(event: StreamEvent): { valid: boolean; error
 }
 
 /**
- * Create a mock StreamEvent for testing purposes
+ * Create a mock StreamEvent for testing purposes.
+ * Accepts both AG-UI EventType enum values and legacy string type names
+ * (e.g. 'reasoning', 'response') used in existing tests.
  */
-export function createMockEvent<T extends StreamEvent['type']>(
-  type: T,
-  overrides: Partial<Extract<StreamEvent, { type: T }>> = {}
-): Extract<StreamEvent, { type: T }> {
+export function createMockEvent(
+  type: string,
+  overrides: Record<string, any> = {}
+): any {
   const defaults: Record<string, any> = {
     reasoning: { type: 'reasoning', text: '', step: 'thinking' },
     response: { type: 'response', text: '', step: 'answering' },
@@ -220,7 +220,7 @@ export function createMockEvent<T extends StreamEvent['type']>(
     research_progress: { type: 'research_progress', content: '', stepNumber: 0 }
   }
 
-  return { ...defaults[type], ...overrides } as Extract<StreamEvent, { type: T }>
+  return { ...(defaults[type] ?? { type }), ...overrides }
 }
 
 /**
