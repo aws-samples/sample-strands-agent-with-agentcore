@@ -404,6 +404,100 @@ async function invokeAwsAgentCore(
 }
 
 /**
+ * Invoke AgentCore with AG-UI RunAgentInput format (snake_case body sent directly)
+ * Used when the frontend sends a RunAgentInput so the backend uses AGUIStreamEventProcessor.
+ */
+export async function invokeAgentCoreRuntimeAgui(
+  aguiBody: Record<string, any>,
+  abortSignal?: AbortSignal,
+): Promise<ReadableStream> {
+  try {
+    if (IS_LOCAL) {
+      console.log('[AgentCore] 🚀 Invoking LOCAL AgentCore via AG-UI HTTP POST')
+      const response = await fetch(`${AGENTCORE_URL}/invocations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'text/event-stream',
+        },
+        body: JSON.stringify(aguiBody),
+        signal: abortSignal,
+      })
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`AgentCore returned ${response.status}: ${errorText}`)
+      }
+      if (!response.body) throw new Error('No response stream received from AgentCore')
+      return response.body
+    } else {
+      await initializeAwsClients()
+      const runtimeArn = await getAgentCoreRuntimeArn()
+      const threadId = aguiBody.thread_id
+      const userId = aguiBody.state?.user_id || 'agui'
+
+      console.log('[AgentCore] 🚀 Invoking AWS Bedrock AgentCore Runtime (AG-UI)')
+      const command = new InvokeAgentRuntimeCommand({
+        agentRuntimeArn: runtimeArn,
+        qualifier: 'DEFAULT',
+        contentType: 'application/json',
+        accept: 'text/event-stream',
+        payload: Buffer.from(JSON.stringify(aguiBody)),
+        runtimeUserId: userId,
+        runtimeSessionId: threadId,
+      })
+
+      const response = await agentCoreClient.send(command)
+      if (!response.response) throw new Error('No response stream received from AgentCore Runtime')
+
+      const sdkStream = response.response
+      let aborted = false
+      if (abortSignal) {
+        abortSignal.addEventListener('abort', () => { aborted = true })
+      }
+
+      if (typeof (sdkStream as any).pipe === 'function') {
+        const nodeStream = sdkStream as any
+        return new ReadableStream({
+          start(controller) {
+            if (abortSignal) {
+              abortSignal.addEventListener('abort', () => {
+                nodeStream.destroy()
+                try { controller.close() } catch (_) {}
+              })
+            }
+            nodeStream.on('data', (chunk: Uint8Array) => controller.enqueue(chunk))
+            nodeStream.on('end', () => controller.close())
+            nodeStream.on('error', (error: Error) => controller.error(error))
+          },
+          cancel() { nodeStream.destroy() }
+        })
+      }
+
+      return new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const chunk of sdkStream as any) {
+              if (aborted) break
+              if (chunk) controller.enqueue(chunk)
+            }
+            controller.close()
+          } catch (error) {
+            if (aborted) { try { controller.close() } catch (_) {} }
+            else controller.error(error)
+          }
+        },
+        cancel() { aborted = true }
+      })
+    }
+  } catch (error) {
+    console.error('[AgentCore] ❌ Failed to invoke Runtime (AG-UI):', error)
+    throw new Error(
+      `Failed to invoke AgentCore Runtime: ${error instanceof Error ? error.message : 'Unknown error'}`
+    )
+  }
+}
+
+/**
  * Invoke AgentCore and stream the response
  * Automatically uses local or AWS based on configuration
  */

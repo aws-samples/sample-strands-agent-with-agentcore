@@ -162,11 +162,7 @@ class BaseAgent(ABC):
         """Cleanup gateway client connection"""
         if self.gateway_client:
             try:
-                import asyncio
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(self.gateway_client.close())
-                else:
-                    loop.run_until_complete(self.gateway_client.close())
+                # MCPClient uses stop() not close()
+                self.gateway_client.stop(None, None, None)
             except Exception as e:
                 logger.warning(f"Failed to close gateway client: {e}")
