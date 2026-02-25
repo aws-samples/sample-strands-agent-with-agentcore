@@ -24,7 +24,7 @@ import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sideba
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Skeleton } from "@/components/ui/skeleton"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ArrowDown, Sparkles } from "lucide-react"
+import { ArrowDown, Sparkles, Loader2 } from "lucide-react"
 import { AIIcon } from "@/components/ui/AIIcon"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
@@ -176,11 +176,11 @@ export function ChatInterface() {
     stopGeneration,
     newChat,
     compactSession,
-    summarizeForCompact,
     toggleTool,
     setExclusiveTools,
     sessionId,
     isLoadingMessages,
+    isCompacting,
     loadSession,
     browserSession,
     browserProgress,
@@ -992,23 +992,8 @@ export function ChatInterface() {
 
   const handleCompactConfirm = useCallback(async () => {
     setIsCompactDialogOpen(false)
-
-    // Step 1: Create new session immediately (fast)
-    const result = await compactSession()
-    if (!result) return
-
-    // Step 2: Switch UI to new session right away
-    await loadSession(result.newSessionId)
-
-    // Step 3: Generate summary from old session (slow - happens after UI switch)
-    const summary = await summarizeForCompact(result.oldSessionId)
-    if (!summary) return
-
-    // Step 4: Inject summary as first message in the new session
-    await sendMessage(
-      `Here is a summary of the previous session to continue our work:\n\n${summary}`
-    )
-  }, [compactSession, summarizeForCompact, loadSession, sendMessage])
+    await compactSession()
+  }, [compactSession])
 
   // Wrapper for loadSession that disconnects voice first
   const handleLoadSession = useCallback(async (newSessionId: string) => {
@@ -1245,8 +1230,16 @@ export function ChatInterface() {
           className={`${groupedMessages.length > 0 || isLoadingMessages ? 'flex-1' : ''} relative min-h-0`}
           viewportClassName={`flex flex-col min-w-0 gap-6 ${groupedMessages.length > 0 || isLoadingMessages ? 'pt-4' : ''}`}
         >
+          {/* Compacting overlay — covers entire chat panel during compact */}
+          {isCompacting && (
+            <div className="mx-auto w-full max-w-4xl px-4 flex flex-col items-center justify-center py-24 gap-4">
+              <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Compacting conversation...</p>
+            </div>
+          )}
+
           {/* Loading skeleton when switching sessions */}
-          {isLoadingMessages && (
+          {!isCompacting && isLoadingMessages && (
             <div className="mx-auto w-full max-w-4xl px-4">
               {/* User message skeleton */}
               <div className="flex justify-end mb-8">
@@ -1280,7 +1273,7 @@ export function ChatInterface() {
               </div>
             </div>
           )}
-          {!isLoadingMessages && groupedMessages.map((group, index) => {
+          {!isLoadingMessages && !isCompacting && groupedMessages.map((group, index) => {
             const isLastGroup = index === groupedMessages.length - 1;
             const hasSwarmProgress = swarmProgress && (swarmProgress.isActive || swarmProgress.status === 'completed' || swarmProgress.status === 'failed');
             const isSwarmFinalResponse = hasSwarmProgress && isLastGroup && group.type === 'assistant_turn';
@@ -1391,7 +1384,7 @@ export function ChatInterface() {
         <ChatInputArea
           selectedFiles={selectedFiles}
           setSelectedFiles={setSelectedFiles}
-          agentStatus={agentStatus}
+          agentStatus={isCompacting ? 'compacting' : agentStatus}
           isVoiceActive={isVoiceActive}
           isVoiceSupported={isVoiceSupported}
           swarmEnabled={swarmEnabled}

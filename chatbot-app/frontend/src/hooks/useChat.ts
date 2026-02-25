@@ -43,13 +43,13 @@ interface UseChatReturn {
   sendMessage: (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => Promise<void>
   stopGeneration: () => void
   newChat: () => Promise<void>
-  compactSession: () => Promise<{ newSessionId: string; oldSessionId: string } | null>
-  summarizeForCompact: (oldSessionId: string) => Promise<string | null>
+  compactSession: () => Promise<void>
   toggleTool: (toolId: string) => Promise<void>
   setExclusiveTools: (toolIds: string[]) => void
   refreshTools: () => Promise<void>
   sessionId: string | null
   isLoadingMessages: boolean
+  isCompacting: boolean
   loadSession: (sessionId: string) => Promise<void>
   onGatewayToolsChange: (enabledToolIds: string[]) => void
   browserSession: { sessionId: string | null; browserId: string | null } | null
@@ -101,6 +101,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [swarmEnabled, setSwarmEnabled] = useState(false)
   const [skillsEnabled, setSkillsEnabled] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  // Track which session is being compacted; isCompacting is true only when viewing that session
+  const [compactingSessionId, setCompactingSessionId] = useState<string | null>(null)
 
   // Per-session model state (not written to global profile on session switch)
   const [currentModelId, setCurrentModelId] = useState(DEFAULT_PREFERENCES.lastModel!)
@@ -237,6 +239,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     newChat: apiNewChat,
     compactSession: apiCompactSession,
     summarizeForCompact: apiSummarizeForCompact,
+    listSessionEvents: apiListSessionEvents,
     sendMessage: apiSendMessage,
     cleanup,
     sendStopSignal,
@@ -329,11 +332,14 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Set loading state for UI feedback
     setIsLoadingMessages(true)
 
-    // Reset UI and session state — preserve 'compacting' if session switch is part of compact flow
+    // Reset UI and session state — preserve 'compacting' if compact is in progress for this session
+    // Check localStorage directly since agentStatus may have been reset when switching sessions
+    const hasPendingCompact = !!localStorage.getItem(`compact_pending_${newSessionId}`)
+    if (hasPendingCompact) setCompactingSessionId(newSessionId)
     setUIState(prev => ({
       ...prev,
-      isTyping: prev.agentStatus === 'compacting',
-      agentStatus: prev.agentStatus === 'compacting' ? 'compacting' : 'idle',
+      isTyping: hasPendingCompact,
+      agentStatus: hasPendingCompact ? 'compacting' : 'idle',
       showProgressPanel: false
     }))
 
@@ -657,21 +663,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   }, [apiNewChat, sessionId, stopPolling, setAvailableTools])
 
-  // Step 1: Create new session (fast) — sets compacting status
-  const compactSession = useCallback(async (): Promise<{ newSessionId: string; oldSessionId: string } | null> => {
-    setUIState(prev => ({ ...prev, agentStatus: 'compacting', isTyping: true }))
-    const result = await apiCompactSession()
-    if (!result) {
-      setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
-    }
-    return result
-  }, [apiCompactSession, setUIState])
-
-  // Step 2: Generate summary from old session (slow) — called after UI has switched
-  const summarizeForCompact = useCallback(async (oldSessionId: string): Promise<string | null> => {
-    return apiSummarizeForCompact(oldSessionId)
-  }, [apiSummarizeForCompact])
-
   const respondToInterrupt = useCallback(async (interruptId: string, response: string) => {
     if (!sessionState.interrupt) return
 
@@ -760,6 +751,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
           interrupt: null,
           pendingOAuth: null
         }))
+        setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
       },
       undefined, // overrideEnabledTools
       skillsEnabled ? "skill" : swarmEnabled ? "swarm" : undefined, // Pass request type to backend
@@ -767,7 +759,108 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       systemPrompt, // Pass system prompt (e.g., artifact context)
       selectedArtifactId // Pass selected artifact ID for tool context
     )
-  }, [apiSendMessage, swarmEnabled, skillsEnabled])
+  }, [apiSendMessage, swarmEnabled, skillsEnabled, setUIState])
+
+  // localStorage key for compact recovery across browser refresh
+  const getCompactPendingKey = (sid: string) => `compact_pending_${sid}`
+
+  // Resume a pending compact (called on mount if localStorage has a pending compact)
+  const resumeCompact = useCallback(async (sid: string, oldEventIds: string[]) => {
+    console.log(`[compact] Resuming pending compact for session ${sid} (${oldEventIds.length} events to delete)`)
+    setCompactingSessionId(sid)
+    setUIState(prev => ({ ...prev, agentStatus: 'compacting', isTyping: true }))
+    try {
+      await apiCompactSession(oldEventIds)
+      console.log('[compact] Resume: events deleted')
+      localStorage.removeItem(getCompactPendingKey(sid))
+      // Reload session from AgentCore Memory — now contains only the summary event
+      await loadSessionWithPreferences(sid)
+      console.log('[compact] Resume: session reloaded')
+    } catch (error) {
+      console.warn('[compact] Resume: error during compact resume:', error)
+    } finally {
+      setCompactingSessionId(null)
+      setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [apiCompactSession, setUIState, loadSessionWithPreferences])
+
+  // Compact session in-place:
+  //   summarize → snapshot oldEventIds → sendMessage(summary) →
+  //   persist checkpoint → delete oldEventIds → reload session
+  const compactSession = useCallback(async (): Promise<void> => {
+    const currentSessionId = sessionId
+    if (!currentSessionId) {
+      console.warn('[compact] No session ID, aborting')
+      return
+    }
+
+    console.log(`[compact] Starting compact for session ${currentSessionId}`)
+    setCompactingSessionId(currentSessionId)
+    setUIState(prev => ({ ...prev, agentStatus: 'compacting', isTyping: true }))
+    try {
+      // Step 1: Generate summary from current messages
+      console.log('[compact] Step 1: Generating summary...')
+      const summary = await apiSummarizeForCompact(messages)
+      if (!summary) {
+        console.error('[compact] Summary generation failed or returned empty')
+        setCompactingSessionId(null)
+        setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
+        return
+      }
+      console.log(`[compact] Step 1 done: summary generated (${summary.length} chars)`)
+
+      // Step 2: Snapshot current eventIds BEFORE sending summary
+      console.log('[compact] Step 2: Snapshotting current eventIds...')
+      const oldEventIds = await apiListSessionEvents()
+      console.log(`[compact] Step 2 done: ${oldEventIds.length} old eventIds captured`)
+
+      // Step 3: Send summary — creates new event in AgentCore Memory BEFORE deleting old ones
+      // isCompacting stays true throughout; agentStatus may flip to 'thinking' during sendMessage
+      console.log('[compact] Step 3: Sending summary message...')
+      await sendMessage(`Here is a summary of the previous session to continue our work:\n\n${summary}`)
+      console.log('[compact] Step 3 done: summary sent')
+
+      // sendMessage resets agentStatus to 'idle' — re-lock UI for the deletion phase
+      setUIState(prev => ({ ...prev, agentStatus: 'compacting', isTyping: true }))
+
+      // Step 4: Persist checkpoint AFTER summary is safely in AgentCore Memory
+      // If refresh happens here, resumeCompact can delete old events knowing summary exists
+      localStorage.setItem(getCompactPendingKey(currentSessionId), JSON.stringify({ oldEventIds }))
+
+      // Step 5: Delete old events (summary event is now safely persisted)
+      console.log(`[compact] Step 5: Deleting ${oldEventIds.length} old events...`)
+      await apiCompactSession(oldEventIds)
+      console.log('[compact] Step 5 done: old events deleted')
+
+      // Step 6: Clear checkpoint and reload session from AgentCore Memory (only summary remains)
+      localStorage.removeItem(getCompactPendingKey(currentSessionId))
+      await loadSessionWithPreferences(currentSessionId)
+      setCompactingSessionId(null)
+      setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
+      console.log('[compact] Step 6 done: session reloaded, compact complete')
+    } catch (error) {
+      console.error('[compact] Error during compact:', error)
+      setCompactingSessionId(null)
+      setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
+    }
+  }, [sessionId, messages, apiSummarizeForCompact, apiListSessionEvents, apiCompactSession, setUIState, sendMessage, loadSessionWithPreferences])
+
+  // On session load, check if there is a pending compact to resume (survives browser refresh)
+  useEffect(() => {
+    if (!sessionId) return
+    const pending = localStorage.getItem(getCompactPendingKey(sessionId))
+    if (!pending) return
+    try {
+      const { oldEventIds } = JSON.parse(pending)
+      if (Array.isArray(oldEventIds)) {
+        resumeCompact(sessionId, oldEventIds)
+      }
+    } catch {
+      localStorage.removeItem(getCompactPendingKey(sessionId))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId])
 
   const stopGeneration = useCallback(() => {
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
@@ -1097,12 +1190,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     stopGeneration,
     newChat,
     compactSession,
-    summarizeForCompact,
     toggleTool,
     setExclusiveTools,
     refreshTools,
     sessionId,
     isLoadingMessages,
+    isCompacting: compactingSessionId !== null && compactingSessionId === sessionId,
     loadSession: loadSessionWithPreferences,
     onGatewayToolsChange: handleGatewayToolsChange,
     browserSession: sessionState.browserSession,

@@ -405,45 +405,15 @@ export const useChatAPI = ({
     }
   }, [setMessages, setSessionId])
 
-  // Step 1: Create new session and link metadata (fast)
-  const compactSession = useCallback(async (): Promise<{ newSessionId: string; oldSessionId: string } | null> => {
-    try {
-      const currentSessionId = sessionIdRef.current
-      if (!currentSessionId) return null
-
-      const authHeaders = await getAuthHeaders()
-
-      const response = await fetch(getApiUrl('session/compact'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ sessionId: currentSessionId }),
-      })
-
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err.message || `Compact failed: ${response.status}`)
-      }
-
-      const data = await response.json()
-      if (!data.success) throw new Error(data.message || 'Compact failed')
-
-      return { newSessionId: data.newSessionId, oldSessionId: currentSessionId }
-    } catch (error) {
-      logger.error('Error compacting session:', error)
-      return null
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
-  // Step 2: Generate summary from old session (slow, runs after UI switch)
-  const summarizeForCompact = useCallback(async (oldSessionId: string): Promise<string | null> => {
+  // Generate summary from the provided messages (before clearing session events)
+  const summarizeForCompact = useCallback(async (messages: any[]): Promise<string | null> => {
     try {
       const authHeaders = await getAuthHeaders()
 
       const response = await fetch(getApiUrl('session/compact/summarize'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ oldSessionId, modelId: currentModelId }),
+        body: JSON.stringify({ messages, modelId: currentModelId }),
       })
 
       if (!response.ok) {
@@ -461,6 +431,59 @@ export const useChatAPI = ({
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentModelId])
+
+  // List all current eventIds for the session (snapshot before sending summary)
+  const listSessionEvents = useCallback(async (): Promise<string[]> => {
+    try {
+      const currentSessionId = sessionIdRef.current
+      if (!currentSessionId) return []
+
+      const authHeaders = await getAuthHeaders()
+      const response = await fetch(getApiUrl(`session/compact?sessionId=${encodeURIComponent(currentSessionId)}`), {
+        method: 'GET',
+        headers: authHeaders,
+      })
+
+      if (!response.ok) return []
+
+      const data = await response.json()
+      return data.eventIds ?? []
+    } catch (error) {
+      logger.error('Error listing session events:', error)
+      return []
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Delete specified eventIds from the session (pass oldEventIds captured before summary was sent)
+  const compactSession = useCallback(async (eventIds?: string[]): Promise<boolean> => {
+    try {
+      const currentSessionId = sessionIdRef.current
+      if (!currentSessionId) return false
+
+      const authHeaders = await getAuthHeaders()
+
+      const response = await fetch(getApiUrl('session/compact'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ sessionId: currentSessionId, eventIds }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.message || `Compact failed: ${response.status}`)
+      }
+
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message || 'Compact failed')
+
+      return true
+    } catch (error) {
+      logger.error('Error compacting session:', error)
+      return false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const sendMessage = useCallback(async (
     messageToSend: string,
@@ -1234,6 +1257,7 @@ export const useChatAPI = ({
     newChat,
     compactSession,
     summarizeForCompact,
+    listSessionEvents,
     sendMessage,
     cleanup,
     sendStopSignal,

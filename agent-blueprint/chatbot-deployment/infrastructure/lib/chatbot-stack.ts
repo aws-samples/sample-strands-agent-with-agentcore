@@ -669,7 +669,8 @@ async function sendResponse(event, status, data, reason) {
         effect: iam.Effect.ALLOW,
         actions: [
           'bedrock-agentcore:ListEvents',
-          'bedrock-agentcore:GetEvent'
+          'bedrock-agentcore:GetEvent',
+          'bedrock-agentcore:DeleteEvent'
         ],
         resources: [
           `arn:aws:bedrock-agentcore:${this.region}:${this.account}:memory/*`

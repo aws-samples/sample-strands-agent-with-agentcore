@@ -400,6 +400,49 @@ export function getSessionMessages(sessionId: string): any[] {
 }
 
 /**
+ * Clear all conversation messages for a session (for in-place compact).
+ * Deletes all message_*.json files from both text and voice agent directories.
+ */
+export function clearSessionMessages(userId: string, sessionId: string): void {
+  // Validate inputs to prevent path traversal
+  if (!validateUserId(userId) || !validateSessionId(sessionId)) {
+    console.error(`[LocalSessionStore] Invalid userId or sessionId format`)
+    throw new Error('Invalid userId or sessionId format')
+  }
+  const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '')
+
+  const agentcoreSessionsDir = path.resolve(process.cwd(), '..', 'agentcore', 'sessions')
+  const sessionDir = path.resolve(agentcoreSessionsDir, `session_${sanitizedSessionId}`)
+
+  if (!sessionDir.startsWith(agentcoreSessionsDir + path.sep)) {
+    console.error(`[LocalSessionStore] Path traversal attempt detected`)
+    throw new Error('Invalid session path')
+  }
+
+  if (!fs.existsSync(sessionDir)) {
+    console.log(`[LocalSessionStore] Session directory not found, nothing to clear: ${sessionDir}`)
+    return
+  }
+
+  let cleared = 0
+  for (const agentId of ['default', 'voice']) {
+    const messagesDir = path.resolve(sessionDir, 'agents', `agent_${agentId}`, 'messages')
+    if (!messagesDir.startsWith(agentcoreSessionsDir + path.sep)) continue
+    if (!fs.existsSync(messagesDir)) continue
+
+    const files = fs.readdirSync(messagesDir).filter(f => /^message_\d+\.json$/.test(f))
+    for (const file of files) {
+      const filePath = path.resolve(messagesDir, file)
+      if (!filePath.startsWith(agentcoreSessionsDir + path.sep)) continue
+      fs.unlinkSync(filePath)
+      cleared++
+    }
+  }
+
+  console.log(`[LocalSessionStore] Cleared ${cleared} message files for session ${sessionId}`)
+}
+
+/**
  * Get artifacts for a session from agent state
  */
 export function getSessionArtifacts(sessionId: string): any[] {

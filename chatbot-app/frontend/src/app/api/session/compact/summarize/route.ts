@@ -1,105 +1,33 @@
 /**
- * Session Compact - Step 2: Generate summary from old session
+ * Session Compact - Generate summary from conversation messages
  *
- * Called after the UI has already switched to the new session.
- * Loads the old session's conversation history and generates a summary via Bedrock Converse.
+ * Receives the current messages directly from the frontend (no need to
+ * re-load from AgentCore Memory, which avoids actorId / payload format issues).
+ * Generates a summary via Bedrock Converse.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { extractUserFromRequest } from '@/lib/auth-utils'
 import {
   BedrockRuntimeClient,
   ConverseCommand,
 } from '@aws-sdk/client-bedrock-runtime'
 
-const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
 const AWS_REGION = process.env.AWS_REGION || process.env.NEXT_PUBLIC_AWS_REGION || 'us-west-2'
-const PROJECT_NAME = process.env.PROJECT_NAME || 'strands-agent-chatbot'
-const ENVIRONMENT = process.env.ENVIRONMENT || 'dev'
 
 export const runtime = 'nodejs'
 
-async function getMemoryId(): Promise<string | null> {
-  const envMemoryId = process.env.MEMORY_ID || process.env.NEXT_PUBLIC_MEMORY_ID
-  if (envMemoryId) return envMemoryId
-
-  try {
-    const { SSMClient, GetParameterCommand } = await import('@aws-sdk/client-ssm')
-    const ssmClient = new SSMClient({ region: AWS_REGION })
-    const paramPath = `/${PROJECT_NAME}/${ENVIRONMENT}/agentcore/memory-id`
-    const response = await ssmClient.send(new GetParameterCommand({ Name: paramPath }))
-    return response.Parameter?.Value ?? null
-  } catch {
-    return null
-  }
-}
-
-async function loadMessages(userId: string, sessionId: string): Promise<any[]> {
-  if (userId === 'anonymous' || IS_LOCAL) {
-    const { getSessionMessages } = await import('@/lib/local-session-store')
-    return getSessionMessages(sessionId)
-  }
-
-  const memoryId = await getMemoryId()
-  if (!memoryId) {
-    const { getSessionMessages } = await import('@/lib/local-session-store')
-    return getSessionMessages(sessionId)
-  }
-
-  const { BedrockAgentCoreClient, ListEventsCommand } = await import('@aws-sdk/client-bedrock-agentcore')
-  const client = new BedrockAgentCoreClient({ region: AWS_REGION })
-
-  let allEvents: any[] = []
-  let nextToken: string | undefined
-  do {
-    const response = await client.send(new ListEventsCommand({
-      memoryId,
-      sessionId,
-      actorId: userId,
-      includePayloads: true,
-      maxResults: 100,
-      nextToken,
-    }))
-    allEvents.push(...(response.events || []))
-    nextToken = response.nextToken
-  } while (nextToken)
-
-  const reversedEvents = [...allEvents].reverse()
-  const messages: any[] = []
-
-  for (const event of reversedEvents) {
-    const payload = event.payload?.[0]
-    if (!payload) continue
-
-    if (payload.conversational) {
-      const content = payload.conversational.content?.text || ''
-      if (!content) continue
-      try {
-        const parsed = JSON.parse(content)
-        if (parsed.agent_id && parsed.state) continue
-        if (parsed.message) messages.push(parsed.message)
-      } catch { /* skip */ }
-    } else if (payload.blob && typeof payload.blob === 'string') {
-      try {
-        const blobParsed = JSON.parse(payload.blob)
-        if (typeof blobParsed === 'object' && blobParsed.agent_id && blobParsed.state) continue
-        if (Array.isArray(blobParsed) && blobParsed.length >= 1) {
-          const blobMsg = JSON.parse(blobParsed[0])
-          if (blobMsg?.message) messages.push(blobMsg.message)
-        }
-      } catch { /* skip */ }
-    }
-  }
-
-  return messages
-}
-
+/**
+ * Build a plain-text transcript from UI messages.
+ * Handles both API format (role/content) and UI format (sender/text).
+ */
 function buildTranscript(messages: any[]): string {
   const lines: string[] = []
   for (const msg of messages) {
-    const role = msg.role === 'user' ? 'User' : 'Assistant'
+    const role = (msg.role === 'user' || msg.sender === 'user') ? 'User' : 'Assistant'
     const content = Array.isArray(msg.content)
       ? msg.content.filter((c: any) => c.text).map((c: any) => c.text).join('\n')
-      : typeof msg.content === 'string' ? msg.content : ''
+      : typeof msg.content === 'string' ? msg.content
+      : typeof msg.text === 'string' ? msg.text
+      : ''
     if (content.trim()) {
       lines.push(`${role}: ${content.trim()}`)
     }
@@ -109,18 +37,12 @@ function buildTranscript(messages: any[]): string {
 
 const MAX_TRANSCRIPT_CHARS = 200_000
 
-/**
- * Truncate transcript to fit within the model's context window.
- * Drops oldest messages first, preserving the most recent context.
- * Returns the trimmed transcript and whether truncation occurred.
- */
 function truncateTranscript(messages: any[], maxChars: number): { transcript: string; truncated: boolean } {
   const full = buildTranscript(messages)
   if (full.length <= maxChars) {
     return { transcript: full, truncated: false }
   }
 
-  // Drop messages from the front until it fits
   for (let i = 1; i < messages.length; i++) {
     const trimmed = buildTranscript(messages.slice(i))
     if (trimmed.length <= maxChars) {
@@ -128,7 +50,6 @@ function truncateTranscript(messages: any[], maxChars: number): { transcript: st
     }
   }
 
-  // Worst case: even the last message is too long — hard-truncate chars from the front
   return { transcript: full.slice(full.length - maxChars), truncated: true }
 }
 
@@ -160,7 +81,6 @@ async function callConverse(client: BedrockRuntimeClient, modelId: string, promp
   return response.output?.message?.content?.[0]?.text ?? 'Unable to generate summary.'
 }
 
-// Errors that indicate the input is too long
 function isContextWindowError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error)
   return (
@@ -175,33 +95,35 @@ function isContextWindowError(error: unknown): boolean {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = extractUserFromRequest(request)
-    const userId = user.userId
+    const { messages, modelId } = await request.json()
 
-    const { oldSessionId, modelId } = await request.json()
-    if (!oldSessionId || !modelId) {
+    if (!messages || !Array.isArray(messages) || !modelId) {
       return NextResponse.json(
-        { success: false, error: 'oldSessionId and modelId are required' },
+        { success: false, error: 'messages (array) and modelId are required' },
         { status: 400 }
       )
     }
 
-    console.log(`[compact/summarize] Generating summary for session ${oldSessionId}`)
+    // Filter to only user/assistant text messages (skip tool messages)
+    const textMessages = messages.filter((msg: any) => {
+      const sender = msg.sender || msg.role
+      return (sender === 'user' || sender === 'assistant' || sender === 'bot') &&
+        !msg.isToolMessage &&
+        (msg.text || msg.content)
+    })
 
-    const messages = await loadMessages(userId, oldSessionId)
-    console.log(`[compact/summarize] Loaded ${messages.length} messages`)
-
-    if (messages.length === 0) {
+    if (textMessages.length === 0) {
       return NextResponse.json(
         { success: false, error: 'No messages to summarize' },
         { status: 400 }
       )
     }
 
-    // Pre-emptively truncate to avoid context window errors
-    const { transcript, truncated } = truncateTranscript(messages, MAX_TRANSCRIPT_CHARS)
+    console.log(`[compact/summarize] Summarizing ${textMessages.length} messages`)
+
+    const { transcript, truncated } = truncateTranscript(textMessages, MAX_TRANSCRIPT_CHARS)
     if (truncated) {
-      console.warn(`[compact/summarize] Transcript truncated to ${transcript.length} chars (oldest messages dropped)`)
+      console.warn(`[compact/summarize] Transcript truncated to ${transcript.length} chars`)
     }
 
     const client = new BedrockRuntimeClient({ region: AWS_REGION })
@@ -213,14 +135,9 @@ export async function POST(request: NextRequest) {
     } catch (firstError) {
       if (!isContextWindowError(firstError)) throw firstError
 
-      // Retry with half the transcript (most recent half)
       console.warn(`[compact/summarize] Context window error, retrying with reduced transcript`)
-      const { transcript: shorter, truncated: moreTruncated } = truncateTranscript(
-        messages,
-        100_000
-      )
-      const shorterPrompt = buildPrompt(shorter, moreTruncated)
-      summary = await callConverse(client, modelId, shorterPrompt)
+      const { transcript: shorter, truncated: moreTruncated } = truncateTranscript(textMessages, 100_000)
+      summary = await callConverse(client, modelId, buildPrompt(shorter, moreTruncated))
     }
 
     console.log(`[compact/summarize] Summary generated (${summary.length} chars)`)
