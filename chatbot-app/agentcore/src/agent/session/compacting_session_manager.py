@@ -605,6 +605,108 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
                     return True
         return False
 
+    def _repair_tool_mismatch(self, messages: List[Dict]) -> List[Dict]:
+        """
+        Repair toolUse/toolResult mismatches caused by interrupted tasks.
+
+        When a user stops a task mid-execution, session history can contain:
+        - Orphaned toolUse blocks (no matching toolResult) → inject synthetic error toolResult
+        - Excess toolResult blocks (more than preceding toolUse) → remove the extras
+
+        Both cases cause Bedrock ValidationException on the next request.
+        """
+        import copy
+        repaired = copy.deepcopy(messages)
+        i = 0
+        total_repairs = 0
+
+        while i < len(repaired):
+            msg = repaired[i]
+            if msg.get('role') != 'assistant':
+                i += 1
+                continue
+
+            content = msg.get('content', [])
+            if not isinstance(content, list):
+                i += 1
+                continue
+
+            tool_use_ids = [
+                block['toolUse']['toolUseId']
+                for block in content
+                if isinstance(block, dict) and 'toolUse' in block
+            ]
+
+            if not tool_use_ids:
+                i += 1
+                continue
+
+            next_idx = i + 1
+
+            # No following user message at all — append a synthetic one
+            if next_idx >= len(repaired) or repaired[next_idx].get('role') != 'user':
+                synthetic = [
+                    {
+                        "toolResult": {
+                            "toolUseId": tid,
+                            "content": [{"text": "[Tool result lost — task was interrupted by user.]"}],
+                            "status": "error",
+                        }
+                    }
+                    for tid in tool_use_ids
+                ]
+                repaired.insert(next_idx, {"role": "user", "content": synthetic})
+                total_repairs += len(tool_use_ids)
+                logger.warning(
+                    f"[ToolRepair] Inserted synthetic user message with {len(tool_use_ids)} toolResult(s)"
+                )
+                i += 2
+                continue
+
+            next_msg = repaired[next_idx]
+            next_content = next_msg.get('content', [])
+            if not isinstance(next_content, list):
+                next_content = []
+                next_msg['content'] = next_content
+
+            existing_result_ids = {
+                block['toolResult']['toolUseId']
+                for block in next_content
+                if isinstance(block, dict) and 'toolResult' in block
+            }
+
+            # Add synthetic results for toolUse IDs with no matching toolResult
+            missing_ids = [tid for tid in tool_use_ids if tid not in existing_result_ids]
+            for tid in missing_ids:
+                next_content.insert(0, {
+                    "toolResult": {
+                        "toolUseId": tid,
+                        "content": [{"text": "[Tool result lost — task was interrupted by user.]"}],
+                        "status": "error",
+                    }
+                })
+            if missing_ids:
+                total_repairs += len(missing_ids)
+                logger.warning(f"[ToolRepair] Added {len(missing_ids)} missing toolResult(s) to next user message")
+
+            # Remove toolResult blocks that have no matching toolUse (excess)
+            extra_ids = existing_result_ids - set(tool_use_ids)
+            if extra_ids:
+                next_msg['content'] = [
+                    block for block in next_content
+                    if not (isinstance(block, dict) and 'toolResult' in block
+                            and block['toolResult']['toolUseId'] in extra_ids)
+                ]
+                total_repairs += len(extra_ids)
+                logger.warning(f"[ToolRepair] Removed {len(extra_ids)} excess toolResult(s) from user message")
+
+            i += 2
+
+        if total_repairs > 0:
+            logger.warning(f"[ToolRepair] Repaired {total_repairs} toolUse/toolResult mismatch(es) in history")
+
+        return repaired
+
     def initialize(self, agent: "Agent", **kwargs: Any) -> None:
         """
         Initialize agent with simplified two-feature compaction.
@@ -699,6 +801,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
                 self._valid_cutoff_message_ids = []
                 self._all_messages_for_summary = []
                 messages_to_process = [sm.to_message() for sm in all_session_messages]
+                messages_to_process = self._repair_tool_mismatch(messages_to_process)
                 original_message_count = len(messages_to_process)
                 agent.messages = prepend_messages + messages_to_process
 
@@ -728,6 +831,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
                 session_messages = all_session_messages[effective_offset:] if effective_offset > 0 else all_session_messages
                 messages_to_process = [sm.to_message() for sm in session_messages]
+                messages_to_process = self._repair_tool_mismatch(messages_to_process)
                 original_message_count = len(messages_to_process)
 
                 if checkpoint > 0 and effective_offset >= checkpoint:
@@ -882,24 +986,43 @@ Please continue the conversation with this context in mind.
         # This is a basic fallback - LTM summaries are preferred
         try:
             key_points = []
+            tools_used = set()
             for msg in messages:
                 role = msg.get('role', '')
                 content = msg.get('content', [])
 
-                if role == 'user' and isinstance(content, list):
+                if not isinstance(content, list):
+                    continue
+
+                if role == 'user':
                     for block in content:
                         if isinstance(block, dict) and 'text' in block:
                             text = block['text']
-                            # Extract first line as topic indicator
-                            first_line = text.split('\n')[0][:100]
+                            first_line = text.split('\n')[0][:150]
                             if first_line and not first_line.startswith('<'):
-                                key_points.append(f"- User asked about: {first_line}")
+                                key_points.append(f"- User: {first_line}")
                                 break
+                elif role == 'assistant':
+                    for block in content:
+                        if isinstance(block, dict):
+                            if 'toolUse' in block:
+                                tool_name = block['toolUse'].get('name', '')
+                                if tool_name:
+                                    tools_used.add(tool_name)
+                            elif 'text' in block:
+                                text = block['text']
+                                first_line = text.split('\n')[0][:150]
+                                if first_line and not first_line.startswith('<'):
+                                    key_points.append(f"- Assistant: {first_line}")
+                                    break
 
             if key_points:
-                # Limit to last 10 key points
-                new_summary = "Previous conversation topics:\n" + "\n".join(key_points[-10:])
-                logger.debug(f" Generated fallback summary with {len(key_points)} key points")
+                parts = ["Previous conversation:"]
+                parts.append("\n".join(key_points[-15:]))
+                if tools_used:
+                    parts.append(f"\nTools used: {', '.join(sorted(tools_used))}")
+                new_summary = "\n".join(parts)
+                logger.debug(f" Generated fallback summary with {len(key_points)} key points, {len(tools_used)} tools")
                 return new_summary
 
         except Exception as e:

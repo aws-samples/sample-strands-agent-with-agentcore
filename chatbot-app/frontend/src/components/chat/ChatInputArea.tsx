@@ -48,6 +48,8 @@ interface ChatInputAreaProps {
   onExportConversation: () => void
   onNewChat: () => Promise<void>
   onCompact: () => void
+  prefillMessage?: string
+  onPrefillConsumed?: () => void
 }
 
 function useDebounce<T extends (...args: any[]) => any>(callback: T, delay: number): T {
@@ -86,6 +88,8 @@ export function ChatInputArea({
   onExportConversation,
   onNewChat,
   onCompact,
+  prefillMessage,
+  onPrefillConsumed,
 }: ChatInputAreaProps) {
   const [inputMessage, setInputMessage] = useState('')
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -356,6 +360,14 @@ export function ChatInputArea({
   useEffect(() => {
     adjustTextareaHeight()
   }, [inputMessage, adjustTextareaHeight])
+
+  useEffect(() => {
+    if (prefillMessage) {
+      setInputMessage(prefillMessage)
+      textareaRef.current?.focus()
+      onPrefillConsumed?.()
+    }
+  }, [prefillMessage, onPrefillConsumed])
 
   return (
     <>

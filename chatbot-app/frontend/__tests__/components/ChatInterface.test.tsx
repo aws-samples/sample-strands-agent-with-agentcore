@@ -122,7 +122,10 @@ vi.mock('@/components/chat/AssistantTurn', () => ({
 }))
 
 vi.mock('@/components/Greeting', () => ({
-  Greeting: () => <div data-testid="greeting">Welcome!</div>
+  Greeting: () => <div data-testid="greeting">Welcome!</div>,
+  PromptSuggestions: ({ onSelectPrompt }: { onSelectPrompt?: (p: string) => void }) => (
+    <div data-testid="prompt-suggestions">Prompts</div>
+  )
 }))
 
 vi.mock('@/components/ChatSidebar', () => ({
@@ -314,9 +317,9 @@ describe('ChatInterface', () => {
       expect(screen.queryByTestId('interrupt-modal')).not.toBeInTheDocument()
     })
 
-    it('should not show interrupt modal for non-email interrupt names', () => {
+    it('should not show interrupt modal for research-approval interrupts', () => {
       mockUseChat.currentInterrupt = {
-        interrupts: [{ id: 'int1', name: 'other-approval', reason: {} }]
+        interrupts: [{ id: 'int1', name: 'chatbot-research-approval', reason: {} }]
       }
 
       render(<ChatInterface />)

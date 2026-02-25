@@ -51,20 +51,22 @@ const formatName = (name: string): string =>
 
 // Tool name to user-friendly display name
 export const getToolDisplayName = (toolId: string, isComplete: boolean, toolInput?: any): string => {
-  // skill_dispatcher: "Activating web-search" / "Activated web-search"
-  if (toolId === 'skill_dispatcher' && toolInput?.skill_name) {
-    const skill = formatName(toolInput.skill_name)
-    return isComplete ? `Activated ${skill}` : `Activating ${skill}`
+  // skill_dispatcher: "Finding the right tool..." / "Found the right tool"
+  if (toolId === 'skill_dispatcher') {
+    return isComplete ? 'Found the right tool' : 'Finding the right tool...'
   }
 
   // skill_executor: resolve the inner tool's displayName
-  if (toolId === 'skill_executor' && toolInput?.tool_name) {
-    const innerMapping = displayNameMap[toolInput.tool_name]
-    if (innerMapping) {
-      return isComplete ? innerMapping.complete : innerMapping.running
+  if (toolId === 'skill_executor') {
+    if (toolInput?.tool_name) {
+      const innerMapping = displayNameMap[toolInput.tool_name]
+      if (innerMapping) {
+        return isComplete ? innerMapping.complete : innerMapping.running
+      }
+      const formatted = formatName(toolInput.tool_name)
+      return isComplete ? `Used ${formatted}` : `Using ${formatted}`
     }
-    const formatted = formatName(toolInput.tool_name)
-    return isComplete ? `Used ${formatted}` : `Using ${formatted}`
+    return isComplete ? 'Finished' : 'Preparing...'
   }
 
   const mapping = displayNameMap[toolId]

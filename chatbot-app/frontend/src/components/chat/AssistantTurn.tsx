@@ -378,17 +378,26 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
 
         {/* Turn Content - add left margin when avatar is hidden to align with SwarmProgress content */}
         <div className={`flex-1 space-y-4 pt-1 min-w-0 ${hideAvatar ? 'ml-[52px]' : ''}`}>
-          {/* Render messages in chronological order */}
-          {groupedContent.map((item) => {
+          {/* Render messages in chronological order — merge consecutive tool items */}
+          {groupedContent.map((item, index) => {
             if (item.type === 'tool') {
-              const message = item.content as Message
-              const toolExecutions = message.toolExecutions || []
+              // Skip if this tool item was already merged into a previous consecutive tool group
+              if (index > 0 && groupedContent[index - 1]?.type === 'tool') return null
+
+              // Collect all consecutive tool items starting from this one
+              const mergedToolExecutions: import('@/types/chat').ToolExecution[] = []
+              let j = index
+              while (j < groupedContent.length && groupedContent[j].type === 'tool') {
+                const msg = groupedContent[j].content as Message
+                mergedToolExecutions.push(...(msg.toolExecutions || []))
+                j++
+              }
 
               return (
                 <div key={item.key} className="animate-fade-in space-y-4">
-                  {toolExecutions.length > 0 && (
+                  {mergedToolExecutions.length > 0 && (
                     <ToolExecutionContainer
-                      toolExecutions={toolExecutions}
+                      toolExecutions={mergedToolExecutions}
                       availableTools={availableTools}
                       sessionId={sessionId}
                       onOpenResearchArtifact={onOpenResearchArtifact}

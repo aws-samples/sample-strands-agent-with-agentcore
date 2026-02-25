@@ -1594,3 +1594,143 @@ class TestEndToEndScenarios:
         assert manager.compaction_state.checkpoint == 50
         assert manager.compaction_state.summary == "Previous summary"
         assert manager.compaction_state.lastInputTokens == 800
+
+
+class TestRepairToolMismatch:
+    """Test _repair_tool_mismatch: handles orphaned toolUse/toolResult on user interruption"""
+
+    @pytest.fixture
+    def manager(self):
+        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
+            from agent.session.compacting_session_manager import CompactingSessionManager
+            from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+
+            config = MagicMock(spec=AgentCoreMemoryConfig)
+            config.memory_id = 'test-memory'
+
+            return CompactingSessionManager(
+                agentcore_memory_config=config,
+                region_name='us-west-2',
+            )
+
+    def test_no_change_when_pairs_match(self, manager):
+        """Normal paired toolUse/toolResult should pass through unchanged"""
+        messages = [
+            {"role": "user", "content": [{"text": "do something"}]},
+            {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": "id-1", "name": "search", "input": {}}}],
+            },
+            {
+                "role": "user",
+                "content": [{"toolResult": {"toolUseId": "id-1", "content": [{"text": "result"}], "status": "success"}}],
+            },
+        ]
+        result = manager._repair_tool_mismatch(messages)
+        assert len(result) == 3
+        assert result[2]["content"][0]["toolResult"]["toolUseId"] == "id-1"
+
+    def test_injects_synthetic_result_when_no_following_message(self, manager):
+        """toolUse with no following user message → synthetic user message appended"""
+        messages = [
+            {"role": "user", "content": [{"text": "go"}]},
+            {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": "id-orphan", "name": "browser", "input": {}}}],
+            },
+            # no user follow-up — simulates interrupted task
+        ]
+        result = manager._repair_tool_mismatch(messages)
+        assert len(result) == 3
+        last = result[2]
+        assert last["role"] == "user"
+        assert last["content"][0]["toolResult"]["toolUseId"] == "id-orphan"
+        assert last["content"][0]["toolResult"]["status"] == "error"
+
+    def test_injects_synthetic_result_into_existing_user_message(self, manager):
+        """toolUse whose toolResult is missing → injected into the following user message"""
+        messages = [
+            {
+                "role": "assistant",
+                "content": [
+                    {"toolUse": {"toolUseId": "id-1", "name": "tool_a", "input": {}}},
+                    {"toolUse": {"toolUseId": "id-2", "name": "tool_b", "input": {}}},
+                ],
+            },
+            {
+                "role": "user",
+                # only id-1 result present; id-2 is missing (interrupted)
+                "content": [{"toolResult": {"toolUseId": "id-1", "content": [{"text": "ok"}], "status": "success"}}],
+            },
+        ]
+        result = manager._repair_tool_mismatch(messages)
+        assert len(result) == 2
+        result_ids = {b["toolResult"]["toolUseId"] for b in result[1]["content"] if "toolResult" in b}
+        assert "id-1" in result_ids
+        assert "id-2" in result_ids
+        # synthetic one is error
+        synthetic = next(b for b in result[1]["content"] if b["toolResult"]["toolUseId"] == "id-2")
+        assert synthetic["toolResult"]["status"] == "error"
+
+    def test_removes_excess_tool_results(self, manager):
+        """toolResult with no matching toolUse → removed (the 'exceeds' ValidationException case)"""
+        messages = [
+            {
+                "role": "assistant",
+                # only one toolUse
+                "content": [{"toolUse": {"toolUseId": "id-1", "name": "tool_a", "input": {}}}],
+            },
+            {
+                "role": "user",
+                # two results — id-2 is excess (no matching toolUse)
+                "content": [
+                    {"toolResult": {"toolUseId": "id-1", "content": [{"text": "ok"}], "status": "success"}},
+                    {"toolResult": {"toolUseId": "id-2", "content": [{"text": "stale"}], "status": "success"}},
+                ],
+            },
+        ]
+        result = manager._repair_tool_mismatch(messages)
+        assert len(result) == 2
+        result_ids = {b["toolResult"]["toolUseId"] for b in result[1]["content"] if "toolResult" in b}
+        assert result_ids == {"id-1"}
+
+    def test_inserts_synthetic_message_before_next_assistant(self, manager):
+        """toolUse followed immediately by another assistant message → synthetic user inserted"""
+        messages = [
+            {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": "id-1", "name": "tool_a", "input": {}}}],
+            },
+            # no user message — next message is also assistant (unusual but should be handled)
+            {"role": "assistant", "content": [{"text": "continuing"}]},
+        ]
+        result = manager._repair_tool_mismatch(messages)
+        assert len(result) == 3
+        assert result[1]["role"] == "user"
+        assert result[1]["content"][0]["toolResult"]["toolUseId"] == "id-1"
+
+    def test_no_repair_needed_for_plain_messages(self, manager):
+        """Conversations with no tools should be returned identical"""
+        messages = [
+            {"role": "user", "content": [{"text": "hello"}]},
+            {"role": "assistant", "content": [{"text": "hi"}]},
+            {"role": "user", "content": [{"text": "bye"}]},
+        ]
+        result = manager._repair_tool_mismatch(messages)
+        assert result == messages
+
+    def test_empty_messages(self, manager):
+        """Empty list should return empty list"""
+        assert manager._repair_tool_mismatch([]) == []
+
+    def test_does_not_mutate_original(self, manager):
+        """Original message list should not be modified"""
+        messages = [
+            {
+                "role": "assistant",
+                "content": [{"toolUse": {"toolUseId": "id-1", "name": "t", "input": {}}}],
+            },
+        ]
+        original_len = len(messages)
+        manager._repair_tool_mismatch(messages)
+        assert len(messages) == original_len

@@ -180,11 +180,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     return expandedTools.has(toolId)
   }
 
-  if (!toolExecutions || toolExecutions.length === 0) {
-    return null
-  }
-
-  // Memoize parsed chart data
+  // Memoize parsed chart data (hooks must be called unconditionally)
   const toolExecutionsDeps = useMemo(() => {
     return toolExecutions.map(t => ({
       id: t.id,
@@ -272,11 +268,16 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     );
   }, [chartDataCache]);
 
+  // Early return after all hooks
+  if (!toolExecutions || toolExecutions.length === 0) {
+    return null
+  }
+
   const handleFilesDownload = async (toolUseId: string, toolName?: string, toolResult?: string) => {
     if (downloadingFiles.has(toolUseId)) return
     setDownloadingFiles(prev => new Set(prev).add(toolUseId))
     try {
-      if (toolName === 'run_python_code' || toolName === 'finalize_document' && sessionId) {
+      if ((toolName === 'run_python_code' || toolName === 'finalize_document') && sessionId) {
         try {
           const filesListResponse = await fetch(getApiUrl(`files/list?toolUseId=${toolUseId}&sessionId=${sessionId}`));
 
@@ -462,341 +463,287 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     }
   };
 
+  // Helper: render Canvas / download action buttons for a single tool execution
+  const renderActionButtons = (toolExecution: ToolExecution) => (
+    <>
+      {(toolExecution.toolName === 'bedrock_code_interpreter' ||
+        toolExecution.toolName === 'run_python_code' ||
+        toolExecution.toolName === 'finalize_document') &&
+        toolExecution.isComplete && (
+        <button
+          onClick={(e) => { e.stopPropagation(); handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult); }}
+          disabled={downloadingFiles.has(toolExecution.id)}
+          className="ml-auto p-1 hover:bg-muted rounded transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+          title="Download files"
+        >
+          {downloadingFiles.has(toolExecution.id)
+            ? <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
+            : <Download className="h-3.5 w-3.5 text-muted-foreground" />}
+        </button>
+      )}
+      {isCodeAgentExecution(toolExecution) && toolExecution.isComplete && !toolExecution.isCancelled && (
+        <CodeAgentDownloadButton sessionId={sessionId} />
+      )}
+      {toolExecution.toolName === 'research_agent' && toolExecution.isComplete && !toolExecution.isCancelled &&
+        toolExecution.toolResult &&
+        !['user declined to proceed with research', 'user declined to proceed with browser automation']
+          .includes((toolExecution.toolResult || '').toLowerCase()) && onOpenResearchArtifact && (
+        <button onClick={(e) => { e.stopPropagation(); onOpenResearchArtifact(toolExecution.id); }}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
+          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+        </button>
+      )}
+      {(WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) ||
+        (toolExecution.toolName === 'skill_executor' && WORD_DOCUMENT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
+        toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
+        extractWordFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenWordArtifact && (
+        <button onClick={(e) => { e.stopPropagation(); const f = extractWordFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenWordArtifact(f); }}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
+          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+        </button>
+      )}
+      {(EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) ||
+        (toolExecution.toolName === 'skill_executor' && EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
+        toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
+        extractExcelFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenExcelArtifact && (
+        <button onClick={(e) => { e.stopPropagation(); const f = extractExcelFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenExcelArtifact(f); }}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
+          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+        </button>
+      )}
+      {(POWERPOINT_TOOLS.includes(toolExecution.toolName) ||
+        (toolExecution.toolName === 'skill_executor' && POWERPOINT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
+        toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
+        extractPptFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenPptArtifact && (
+        <button onClick={(e) => { e.stopPropagation(); const f = extractPptFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenPptArtifact(f); }}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
+          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+        </button>
+      )}
+      {toolExecution.toolName === 'browser_extract' && toolExecution.isComplete && !toolExecution.isCancelled &&
+        toolExecution.toolResult && extractArtifactId(toolExecution.toolResult) && onOpenExtractedDataArtifact && (
+        <button onClick={(e) => { e.stopPropagation(); const a = extractArtifactId(toolExecution.toolResult || ''); if (a) onOpenExtractedDataArtifact(a); }}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
+          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+        </button>
+      )}
+      {(toolExecution.toolName === 'create_excalidraw_diagram' ||
+        (toolExecution.toolName === 'skill_executor' && toolExecution.toolInput?.tool_name === 'create_excalidraw_diagram')) &&
+        toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
+        hasExcalidrawData(toolExecution.toolResult) && onOpenExcalidrawArtifact && (
+        <button onClick={(e) => { e.stopPropagation(); onOpenExcalidrawArtifact(`excalidraw-${toolExecution.id}`); }}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
+          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+        </button>
+      )}
+    </>
+  )
+
+  // Helper: render expanded detail for a single tool execution
+  const renderExpandedDetail = (toolExecution: ToolExecution) => (
+    <div className="ml-4 mt-1 mb-2 border-l-2 border-muted pl-3 space-y-2 animate-fade-in">
+      {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 && (
+        <div className="text-label">
+          <JsonDisplay data={toolExecution.toolInput} maxLines={4} label="Input" />
+        </div>
+      )}
+      {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
+        <div className="text-label text-muted-foreground italic">{toolExecution.reasoningText}</div>
+      )}
+      {isCodeAgentExecution(toolExecution) && <CodeAgentDetails toolExecution={toolExecution} />}
+      {toolExecution.toolResult && (() => {
+        if (isCodeAgentExecution(toolExecution)) return <CodeAgentResult toolResult={toolExecution.toolResult} />
+        return (
+          <div className="text-label">
+            {containsMarkdown(toolExecution.toolResult) ? (
+              <CollapsibleMarkdown sessionId={sessionId} maxLines={8}>{toolExecution.toolResult}</CollapsibleMarkdown>
+            ) : (
+              <JsonDisplay data={toolExecution.toolResult} maxLines={6} label="Result" />
+            )}
+          </div>
+        )
+      })()}
+      {toolExecution.images && toolExecution.images.length > 0 && (
+        <div className="mt-2">
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {toolExecution.images
+              .filter((image) => {
+                const isUrlImage = 'type' in image && image.type === 'url'
+                return isUrlImage ? (image.thumbnail || image.url) : ('data' in image && image.data)
+              })
+              .slice(0, 5)
+              .map((image: ImageData, idx: number) => {
+                const isUrlImage = 'type' in image && image.type === 'url'
+                let imageSrc = ''
+                if (isUrlImage) { imageSrc = image.url || image.thumbnail || '' }
+                else if ('data' in image && 'format' in image) {
+                  const d = typeof image.data === 'string' ? image.data : btoa(String.fromCharCode(...new Uint8Array(image.data as ArrayBuffer)))
+                  imageSrc = `data:image/${image.format};base64,${d}`
+                }
+                const imageTitle = (isUrlImage && 'title' in image && typeof image.title === 'string') ? image.title : `Tool generated image ${idx + 1}`
+                const imageFormat = isUrlImage ? 'WEB' : ('format' in image && typeof image.format === 'string') ? image.format.toUpperCase() : 'IMG'
+                return (
+                  <div key={idx} className="relative flex-shrink-0 h-[140px]">
+                    <div className="relative h-full rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-lg transition-all cursor-pointer bg-gray-50 dark:bg-gray-900"
+                      onClick={() => isUrlImage && 'url' in image && image.url ? window.open(image.url, '_blank', 'noopener,noreferrer') : setSelectedImage({ src: imageSrc, alt: imageTitle })}>
+                      <LazyImage src={imageSrc} alt={imageTitle} className="h-full w-auto object-cover" />
+                      <div className="absolute top-2 right-2">
+                        <div className="text-[10px] font-medium bg-black/70 text-white backdrop-blur-sm px-1.5 py-0.5 rounded">{String(imageFormat)}</div>
+                      </div>
+                      {isUrlImage && 'title' in image && image.title && (
+                        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
+                          <p className="text-[11px] font-medium text-white line-clamp-2 leading-tight max-w-[200px]">{image.title}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
+  // Status indicator: green check or blue dots
+  const StatusIndicator = ({ id, isComplete }: { id: string; isComplete: boolean }) => isComplete ? (
+    <svg className="h-3.5 w-3.5 shrink-0" viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="7" fill={`url(#checkGrad-${id})`} />
+      <path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <defs>
+        <linearGradient id={`checkGrad-${id}`} x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse">
+          <stop offset="0%" stopColor="#10b981" /><stop offset="100%" stopColor="#059669" />
+        </linearGradient>
+      </defs>
+    </svg>
+  ) : (
+    <span className="flex gap-0.5 shrink-0">
+      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" />
+      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+    </span>
+  )
+
+  // ── Group tool executions by visual identity (same icon = same group) ──
+  type ToolGroup = {
+    key: string
+    executions: ToolExecution[]
+    effectiveToolId: string
+    imageSrc: string | null
+    IconComp: ReturnType<typeof getToolIcon> | null
+    displayName: { running: string; complete: string }
+  }
+  type RenderItem =
+    | { kind: 'group'; group: ToolGroup }
+    | { kind: 'viz'; execution: ToolExecution }
+
+  const renderItems: RenderItem[] = []
+  const groupMap = new Map<string, ToolGroup>()
+
+  for (const exec of toolExecutions) {
+    // Skip skill_dispatcher — the executor calls show the actual work
+    if (exec.toolName === 'skill_dispatcher') continue
+
+    // Visualization/map results render inline (not grouped)
+    if (exec.toolResult && exec.isComplete && chartDataCache.has(exec.id)) {
+      renderItems.push({ kind: 'viz', execution: exec })
+      continue
+    }
+
+    // Special standalone tools (code agent, research agent) — never grouped
+    const isSpecial = isCodeAgentExecution(exec) || exec.toolName === 'research_agent'
+
+    const effectiveId = resolveEffectiveToolId(exec.toolName, exec.toolInput)
+    const imageSrc = getToolImageSrc(effectiveId)
+    const groupKey = isSpecial ? `standalone-${exec.id}` : (imageSrc || effectiveId)
+
+    if (!isSpecial && groupMap.has(groupKey)) {
+      groupMap.get(groupKey)!.executions.push(exec)
+    } else {
+      const group: ToolGroup = {
+        key: groupKey,
+        executions: [exec],
+        effectiveToolId: effectiveId,
+        imageSrc,
+        IconComp: !imageSrc ? getToolIcon(effectiveId) : null,
+        displayName: {
+          running: getToolDisplayName(exec.toolName, false, exec.toolInput),
+          complete: getToolDisplayName(exec.toolName, true, exec.toolInput),
+        },
+      }
+      renderItems.push({ kind: 'group', group })
+      if (!isSpecial) groupMap.set(groupKey, group)
+    }
+  }
+
   return (
     <>
       <div className="space-y-0.5">
-        {toolExecutions.map((toolExecution) => {
-          const isExpanded = isToolExpanded(toolExecution.id)
-          const effectiveToolId = resolveEffectiveToolId(toolExecution.toolName, toolExecution.toolInput)
-          const displayName = getToolDisplayName(toolExecution.toolName, toolExecution.isComplete, toolExecution.toolInput)
-          const toolImageSrc = getToolImageSrc(effectiveToolId)
-          const ToolIconComponent = !toolImageSrc ? getToolIcon(effectiveToolId) : null
-
-          // Render visualization/map tools directly (including skill_executor results with chart/map data)
-          if ((toolExecution.toolName === 'create_visualization' || toolExecution.toolName === 'show_on_map' || toolExecution.toolName === 'skill_executor') &&
-              toolExecution.toolResult &&
-              toolExecution.isComplete) {
-            const chartResult = renderVisualizationResult(toolExecution.id);
-            if (chartResult) {
-              return (
-                <div key={toolExecution.id} className="my-4">
-                  {chartResult}
-                </div>
-              );
-            }
+        {renderItems.map((item) => {
+          // ── Visualization / map result ──
+          if (item.kind === 'viz') {
+            return <div key={item.execution.id} className="my-4">{renderVisualizationResult(item.execution.id)}</div>
           }
 
+          // ── Tool group ──
+          const { group } = item
+          const { executions, imageSrc, IconComp, displayName, key } = group
+          const completedCount = executions.filter(e => e.isComplete).length
+          const allDone = completedCount === executions.length
+          const count = executions.length
+          const isExpanded = isToolExpanded(key)
+
+          // Find the last completed execution for action buttons (Canvas, Download)
+          const lastCompleteExec = [...executions].reverse().find(e => e.isComplete)
+
           return (
-            <React.Fragment key={toolExecution.id}>
+            <React.Fragment key={key}>
               <div>
-                {/* Minimal header row */}
+                {/* Collapsed row */}
                 <div
-                  onClick={() => toggleToolExpansion(toolExecution.id)}
+                  onClick={() => toggleToolExpansion(key)}
                   className="flex items-center gap-2 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors w-full text-left group cursor-pointer"
                 >
-                  {toolImageSrc ? (
-                    <img src={toolImageSrc} alt="" className="h-4 w-4 object-contain" />
-                  ) : ToolIconComponent ? (
-                    <ToolIconComponent className="h-4 w-4 text-muted-foreground" />
+                  {/* Tool icon */}
+                  {imageSrc ? (
+                    <img src={imageSrc} alt="" className="h-4 w-4 object-contain shrink-0" />
+                  ) : IconComp ? (
+                    <IconComp className="h-4 w-4 text-muted-foreground shrink-0" />
                   ) : null}
+
+                  {/* Display name — user-friendly running/complete form */}
                   <span className="text-label text-foreground">
-                    {displayName}
+                    {allDone ? displayName.complete : displayName.running}
                   </span>
-                  {toolExecution.isComplete ? (
-                    <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="8" cy="8" r="7" fill={`url(#checkGrad-${toolExecution.id})`} className="drop-shadow-sm" />
-                      <path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      <defs>
-                        <linearGradient id={`checkGrad-${toolExecution.id}`} x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse">
-                          <stop offset="0%" stopColor="#10b981" />
-                          <stop offset="100%" stopColor="#059669" />
-                        </linearGradient>
-                      </defs>
-                    </svg>
-                  ) : (
-                    <span className="flex gap-0.5 ml-0.5">
-                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" />
-                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
-                      <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+
+                  {/* Count badge — only when count > 1 */}
+                  {count > 1 && (
+                    <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full tabular-nums">
+                      {allDone ? `×${count}` : `${completedCount}/${count}`}
                     </span>
                   )}
-                  {/* Download button for code tools */}
-                  {(toolExecution.toolName === 'bedrock_code_interpreter' ||
-                    toolExecution.toolName === 'run_python_code' ||
-                    toolExecution.toolName === 'finalize_document') &&
-                    toolExecution.isComplete && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult);
-                      }}
-                      disabled={downloadingFiles.has(toolExecution.id)}
-                      className="ml-auto p-1 hover:bg-muted rounded transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={downloadingFiles.has(toolExecution.id) ? "Downloading..." : "Download files"}
-                    >
-                      {downloadingFiles.has(toolExecution.id)
-                        ? <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
-                        : <Download className="h-3.5 w-3.5 text-muted-foreground" />
-                      }
-                    </button>
-                  )}
-                  {/* Download workspace ZIP for code agent */}
-                  {isCodeAgentExecution(toolExecution) &&
-                    toolExecution.isComplete &&
-                    !toolExecution.isCancelled && (
-                    <CodeAgentDownloadButton sessionId={sessionId} />
-                  )}
-                  {/* View in Canvas button for research_agent */}
-                  {toolExecution.toolName === 'research_agent' &&
-                    toolExecution.isComplete &&
-                    !toolExecution.isCancelled &&
-                    toolExecution.toolResult &&
-                    !['user declined to proceed with research', 'user declined to proceed with browser automation']
-                      .includes((toolExecution.toolResult || '').toLowerCase()) &&
-                    onOpenResearchArtifact && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenResearchArtifact(toolExecution.id);
-                      }}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
-                      title="View in Canvas"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Canvas</span>
-                    </button>
-                  )}
-                  {/* View in Canvas button for Word document tools */}
-                  {(WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) ||
-                    (toolExecution.toolName === 'skill_executor' && WORD_DOCUMENT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
-                    toolExecution.isComplete &&
-                    !toolExecution.isCancelled &&
-                    toolExecution.toolResult &&
-                    extractWordFilename(toolExecution.toolResult, toolExecution.metadata) &&
-                    onOpenWordArtifact && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const filename = extractWordFilename(toolExecution.toolResult || '', toolExecution.metadata);
-                        if (filename) onOpenWordArtifact(filename);
-                      }}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
-                      title="View in Canvas"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Canvas</span>
-                    </button>
-                  )}
-                  {/* View in Canvas button for Excel spreadsheet tools */}
-                  {(EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) ||
-                    (toolExecution.toolName === 'skill_executor' && EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
-                    toolExecution.isComplete &&
-                    !toolExecution.isCancelled &&
-                    toolExecution.toolResult &&
-                    extractExcelFilename(toolExecution.toolResult, toolExecution.metadata) &&
-                    onOpenExcelArtifact && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const filename = extractExcelFilename(toolExecution.toolResult || '', toolExecution.metadata);
-                        if (filename) onOpenExcelArtifact(filename);
-                      }}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
-                      title="View in Canvas"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Canvas</span>
-                    </button>
-                  )}
-                  {/* View in Canvas button for PowerPoint presentation tools */}
-                  {(POWERPOINT_TOOLS.includes(toolExecution.toolName) ||
-                    (toolExecution.toolName === 'skill_executor' && POWERPOINT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
-                    toolExecution.isComplete &&
-                    !toolExecution.isCancelled &&
-                    toolExecution.toolResult &&
-                    extractPptFilename(toolExecution.toolResult, toolExecution.metadata) &&
-                    onOpenPptArtifact && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const filename = extractPptFilename(toolExecution.toolResult || '', toolExecution.metadata);
-                        if (filename) onOpenPptArtifact(filename);
-                      }}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
-                      title="View in Canvas"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Canvas</span>
-                    </button>
-                  )}
-                  {/* View in Canvas button for browser_extract */}
-                  {toolExecution.toolName === 'browser_extract' &&
-                    toolExecution.isComplete &&
-                    !toolExecution.isCancelled &&
-                    toolExecution.toolResult &&
-                    extractArtifactId(toolExecution.toolResult) &&
-                    onOpenExtractedDataArtifact && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const artifactId = extractArtifactId(toolExecution.toolResult || '');
-                        if (artifactId) onOpenExtractedDataArtifact(artifactId);
-                      }}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
-                      title="View in Canvas"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Canvas</span>
-                    </button>
-                  )}
-                  {/* View in Canvas button for create_excalidraw_diagram (direct or via skill_executor) */}
-                  {(toolExecution.toolName === 'create_excalidraw_diagram' ||
-                    (toolExecution.toolName === 'skill_executor' && toolExecution.toolInput?.tool_name === 'create_excalidraw_diagram')) &&
-                    toolExecution.isComplete &&
-                    !toolExecution.isCancelled &&
-                    toolExecution.toolResult &&
-                    hasExcalidrawData(toolExecution.toolResult) &&
-                    onOpenExcalidrawArtifact && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenExcalidrawArtifact(`excalidraw-${toolExecution.id}`);
-                      }}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors"
-                      title="View in Canvas"
-                    >
-                      <Sparkles className="h-3.5 w-3.5" />
-                      <span>Canvas</span>
-                    </button>
-                  )}
+
+                  {/* Status indicator */}
+                  <StatusIndicator id={key} isComplete={allDone} />
+
+                  {/* Action buttons from last completed execution */}
+                  {lastCompleteExec && renderActionButtons(lastCompleteExec)}
                 </div>
 
-                {/* Expanded detail section */}
+                {/* Expanded: individual call details */}
                 {isExpanded && (
-                  <div className="ml-4 mt-1 mb-2 border-l-2 border-muted pl-3 space-y-2 animate-fade-in">
-                    {/* Input parameters */}
-                    {toolExecution.toolInput && Object.keys(toolExecution.toolInput).length > 0 && (
-                      <div className="text-label">
-                        <JsonDisplay
-                          data={toolExecution.toolInput}
-                          maxLines={4}
-                          label="Input"
-                        />
+                  <div className="ml-4 mt-1 mb-2 border-l-2 border-muted pl-3 space-y-3 animate-fade-in">
+                    {executions.map((exec, i) => (
+                      <div key={exec.id}>
+                        {count > 1 && (
+                          <div className="text-label text-muted-foreground mb-1 font-medium flex items-center gap-1.5">
+                            <span className="text-[10px] bg-muted rounded px-1 py-0.5 tabular-nums">{i + 1}</span>
+                            {getToolDisplayName(exec.toolName, exec.isComplete, exec.toolInput)}
+                          </div>
+                        )}
+                        {renderExpandedDetail(exec)}
                       </div>
-                    )}
-
-                    {/* Reasoning (if present) */}
-                    {toolExecution.reasoningText && toolExecution.reasoningText.trim() && (
-                      <div className="text-label text-muted-foreground italic">
-                        {toolExecution.reasoningText}
-                      </div>
-                    )}
-
-                    {/* Code agent: todos + files changed */}
-                    {isCodeAgentExecution(toolExecution) && (
-                      <CodeAgentDetails toolExecution={toolExecution} />
-                    )}
-
-                    {/* Tool result */}
-                    {toolExecution.toolResult && (() => {
-                      if (isCodeAgentExecution(toolExecution)) {
-                        return <CodeAgentResult toolResult={toolExecution.toolResult} />
-                      }
-                      return (
-                        <div className="text-label">
-                          {containsMarkdown(toolExecution.toolResult) ? (
-                            <CollapsibleMarkdown sessionId={sessionId} maxLines={8}>
-                              {toolExecution.toolResult}
-                            </CollapsibleMarkdown>
-                          ) : (
-                            <JsonDisplay
-                              data={toolExecution.toolResult}
-                              maxLines={6}
-                              label="Result"
-                            />
-                          )}
-                        </div>
-                      )
-                    })()}
-
-                    {/* Tool Images - Inside expanded section */}
-                    {toolExecution.images && toolExecution.images.length > 0 && (
-                      <div className="mt-2">
-                        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-                          {toolExecution.images
-                            .filter((image) => {
-                              const isUrlImage = 'type' in image && image.type === 'url';
-                              const hasValidSource = isUrlImage
-                                ? (image.thumbnail || image.url)
-                                : ('data' in image && image.data);
-                              return !!hasValidSource;
-                            })
-                            .slice(0, 5)
-                            .map((image: ImageData, idx: number) => {
-                              const isUrlImage = 'type' in image && image.type === 'url';
-
-                              let imageSrc: string = '';
-                              if (isUrlImage) {
-                                imageSrc = image.url || image.thumbnail || '';
-                              } else if ('data' in image && 'format' in image) {
-                                const imageData = typeof image.data === 'string'
-                                  ? image.data
-                                  : btoa(String.fromCharCode(...new Uint8Array(image.data as ArrayBuffer)));
-                                imageSrc = `data:image/${image.format};base64,${imageData}`;
-                              }
-
-                              let imageTitle: string = `Tool generated image ${idx + 1}`;
-                              if (isUrlImage && 'title' in image && typeof image.title === 'string') {
-                                imageTitle = image.title;
-                              }
-
-                              let imageFormat: string = 'IMG';
-                              if (isUrlImage) {
-                                imageFormat = 'WEB';
-                              } else if ('format' in image && typeof image.format === 'string') {
-                                imageFormat = image.format.toUpperCase();
-                              }
-
-                              const handleClick = () => {
-                                if (isUrlImage && 'url' in image && image.url) {
-                                  window.open(image.url, '_blank', 'noopener,noreferrer');
-                                } else {
-                                  setSelectedImage({ src: imageSrc, alt: imageTitle });
-                                }
-                              };
-
-                              return (
-                                <div key={idx} className="relative flex-shrink-0 h-[140px]">
-                                  <div
-                                    className="relative h-full rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-lg transition-all duration-200 cursor-pointer bg-gray-50 dark:bg-gray-900"
-                                    onClick={handleClick}
-                                  >
-                                    <LazyImage
-                                      src={imageSrc}
-                                      alt={imageTitle}
-                                      className="h-full w-auto object-cover"
-                                    />
-
-                                    <div className="absolute top-2 right-2">
-                                      <div className="text-[10px] font-medium bg-black/70 text-white backdrop-blur-sm px-1.5 py-0.5 rounded">
-                                        {String(imageFormat)}
-                                      </div>
-                                    </div>
-
-                                    {isUrlImage && 'title' in image && image.title && (
-                                      <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
-                                        <p className="text-[11px] font-medium text-white line-clamp-2 leading-tight max-w-[200px]">
-                                          {image.title}
-                                        </p>
-                                      </div>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                        </div>
-                      </div>
-                    )}
+                    ))}
                   </div>
                 )}
               </div>
