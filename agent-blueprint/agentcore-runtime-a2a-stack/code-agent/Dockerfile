@@ -6,7 +6,6 @@ FROM public.ecr.aws/docker/library/python:3.13-slim
 WORKDIR /app
 
 # Install system dependencies + Node.js
-# Node.js is required to run the claude CLI bundled inside claude-agent-sdk
 # git is required for Claude Agent SDK's Bash tool (git operations)
 RUN apt-get update && apt-get install -y \
     gcc \

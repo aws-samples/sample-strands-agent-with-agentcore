@@ -883,6 +883,7 @@ export const useStreamEvents = ({
       browserSession: prev.browserSession,
       browserProgress: undefined,
       researchProgress: undefined,
+      codeProgress: undefined,
       interrupt: null,
       swarmProgress: prev.swarmProgress,  // Preserve swarm progress for expanded view
       pendingOAuth: prev.pendingOAuth  // Preserve pending OAuth until completion callback
@@ -947,6 +948,7 @@ export const useStreamEvents = ({
       browserSession: prev.browserSession,  // Preserve browser session on error
       browserProgress: undefined,  // Clear browser progress on error
       researchProgress: undefined,  // Clear research progress on error
+      codeProgress: undefined,
       interrupt: null,
       swarmProgress: undefined,  // Clear swarm progress on error
       pendingOAuth: prev.pendingOAuth  // Preserve pending OAuth on error
@@ -1086,28 +1088,16 @@ export const useStreamEvents = ({
 
   const handleCodeStepEvent = useCallback((event: CustomEvent) => {
     const ev = (event as any).value
-    const activeExec = currentToolExecutionsRef.current.find(
-      t => isCodeAgentExec(t) && !t.isComplete
-    )
-    if (!activeExec) return
-
-    const updatedExecutions = currentToolExecutionsRef.current.map(t =>
-      t.id === activeExec.id
-        ? { ...t, codeSteps: [...(t.codeSteps || []), ev.content as string] }
-        : t
-    )
-    currentToolExecutionsRef.current = updatedExecutions
-    setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
-    setMessages(prev => prev.map(msg =>
-      msg.isToolMessage && msg.toolExecutions
-        ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
-            t.id === activeExec.id
-              ? { ...t, codeSteps: [...(t.codeSteps || []), ev.content as string] }
-              : t
-          )}
-        : msg
-    ))
-  }, [currentToolExecutionsRef, setSessionState, setMessages])
+    // Accumulate code steps for terminal-style display — bypasses messages/memo chain
+    // for immediate real-time rendering (same pattern as researchProgress).
+    setSessionState(prev => ({
+      ...prev,
+      codeProgress: [
+        ...(prev.codeProgress || []),
+        { stepNumber: ev.stepNumber || 0, content: ev.content || '' },
+      ]
+    }))
+  }, [setSessionState])
 
   const handleCodeTodoUpdateEvent = useCallback((event: CustomEvent) => {
     const ev = (event as any).value
@@ -1145,7 +1135,7 @@ export const useStreamEvents = ({
       t.id === codeExec.id ? { ...t, codeResultMeta: meta } : t
     )
     currentToolExecutionsRef.current = updatedExecutions
-    setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
+    setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions, codeProgress: undefined }))
     setMessages(prev => prev.map(msg =>
       msg.isToolMessage && msg.toolExecutions
         ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
@@ -1615,6 +1605,7 @@ export const useStreamEvents = ({
     streamingStartedRef.current = false
     streamingIdRef.current = null
     completeProcessedRef.current = false
+    tokenUsageRef.current = null
     metadataTracking.reset()
 
     // Reset swarm mode state if active
@@ -1623,18 +1614,30 @@ export const useStreamEvents = ({
       swarmModeRef.current = { isActive: false, nodeHistory: [], agentSteps: [] }
     }
 
-    // Mark current streaming message as stopped (not streaming)
-    setMessages(prev => prev.map(msg =>
-      msg.isStreaming ? { ...msg, isStreaming: false } : msg
-    ))
+    // Mark streaming message as stopped and cancel any in-progress tool executions
+    setMessages(prev => prev.map(msg => {
+      if (msg.isStreaming) return { ...msg, isStreaming: false }
+      if (msg.isToolMessage && msg.toolExecutions) {
+        const updated = msg.toolExecutions.map(te =>
+          !te.isComplete && !te.isCancelled && !isA2ATool(te.toolName)
+            ? { ...te, isCancelled: true }
+            : te
+        )
+        return { ...msg, toolExecutions: updated }
+      }
+      return msg
+    }))
 
     setSessionState(prev => ({
       ...prev,
       reasoning: null,
       streaming: null,
-      swarmProgress: undefined // Clear swarm progress on reset
+      swarmProgress: undefined
     }))
-  }, [setMessages, setSessionState, metadataTracking, textBuffer])
+
+    // Reset UI — covers the case where stream was aborted without receiving RunFinishedEvent
+    setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
+  }, [setMessages, setSessionState, setUIState, metadataTracking, textBuffer])
 
   return { handleStreamEvent, resetStreamingState }
 }

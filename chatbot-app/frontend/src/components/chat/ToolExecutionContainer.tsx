@@ -1,5 +1,4 @@
 import React, { useState, useCallback, useMemo } from 'react'
-import { fetchAuthSession } from 'aws-amplify/auth'
 import { Download, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
@@ -12,14 +11,9 @@ import { JsonDisplay } from '@/components/ui/JsonDisplay'
 import { Markdown } from '@/components/ui/Markdown'
 import { LazyImage } from '@/components/ui/LazyImage'
 import { getApiUrl } from '@/config/environment'
+import { isCodeAgentExecution, CodeAgentDetails, CodeAgentResult, CodeAgentDownloadButton } from './CodeAgentUI'
 
 import type { ImageData } from '@/utils/imageExtractor'
-
-// Code agent tool name check (handles direct call, skill_executor wrapping, and agentcore prefix)
-const isCodeAgentExecution = (toolExec: ToolExecution): boolean =>
-  toolExec.toolName === 'code_agent' ||
-  toolExec.toolName === 'agentcore_code-agent' ||
-  (toolExec.toolName === 'skill_executor' && toolExec.toolInput?.tool_name === 'code_agent')
 
 // Word document tool names
 const WORD_DOCUMENT_TOOLS = ['create_word_document', 'modify_word_document']
@@ -103,7 +97,6 @@ const CollapsibleMarkdown = React.memo<{
 export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
-  const [downloadingCodeAgent, setDownloadingCodeAgent] = useState(false)
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set())
 
   // Extract output filename from Word tool result
@@ -278,83 +271,6 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       </div>
     );
   }, [chartDataCache]);
-
-  const handleCodeAgentDownload = async () => {
-    if (downloadingCodeAgent) return
-    setDownloadingCodeAgent(true)
-    try {
-      const authHeaders: Record<string, string> = {}
-      try {
-        const session = await fetchAuthSession()
-        const token = session.tokens?.idToken?.toString()
-        if (token) {
-          authHeaders['Authorization'] = `Bearer ${token}`
-          console.log('[CodeAgentDownload] auth token acquired')
-        } else {
-          console.warn('[CodeAgentDownload] fetchAuthSession succeeded but no idToken')
-        }
-      } catch (authErr) {
-        console.error('[CodeAgentDownload] fetchAuthSession failed:', authErr)
-      }
-
-      const response = await fetch(
-        `/api/code-agent/workspace-download?sessionId=${encodeURIComponent(sessionId || '')}`,
-        { headers: authHeaders }
-      )
-
-      if (!response.ok) {
-        throw new Error(`Failed to list workspace files: ${response.status}`)
-      }
-
-      const { files } = await response.json() as {
-        files: { relativePath: string; presignedUrl: string; size: number }[]
-      }
-
-      if (!files || files.length === 0) {
-        alert('No workspace files found. The code agent may not have created any files yet.')
-        return
-      }
-
-      const JSZip = (await import('jszip')).default
-      const zip = new JSZip()
-
-      let filesAdded = 0
-      for (const file of files) {
-        try {
-          const fileResponse = await fetch(file.presignedUrl)
-          if (fileResponse.ok) {
-            const blob = await fileResponse.blob()
-            zip.file(file.relativePath, blob)
-            filesAdded++
-          } else {
-            console.warn(`Skipped ${file.relativePath}: ${fileResponse.status}`)
-          }
-        } catch (e) {
-          console.warn(`Failed to download ${file.relativePath}:`, e)
-        }
-      }
-
-      if (filesAdded === 0) {
-        throw new Error('No files could be downloaded')
-      }
-
-      const zipBlob = await zip.generateAsync({ type: 'blob' })
-      const objectUrl = URL.createObjectURL(zipBlob)
-      const link = document.createElement('a')
-      link.href = objectUrl
-      link.download = `code-agent-workspace-${sessionId?.slice(0, 8) ?? 'files'}.zip`
-      link.style.display = 'none'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(objectUrl)
-    } catch (error) {
-      console.error('[CodeAgent] Download failed:', error)
-      alert(error instanceof Error ? error.message : 'Download failed')
-    } finally {
-      setDownloadingCodeAgent(false)
-    }
-  }
 
   const handleFilesDownload = async (toolUseId: string, toolName?: string, toolResult?: string) => {
     if (downloadingFiles.has(toolUseId)) return
@@ -586,24 +502,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                   <span className="text-label text-foreground">
                     {displayName}
                   </span>
-                  {/* Code agent: show latest step as inline status */}
-                  {isCodeAgentExecution(toolExecution) &&
-                    !toolExecution.isComplete &&
-                    toolExecution.codeSteps &&
-                    toolExecution.codeSteps.length > 0 && (
-                    <span className="text-label text-muted-foreground truncate max-w-[240px]">
-                      {'— '}
-                      {toolExecution.codeSteps[toolExecution.codeSteps.length - 1].length > 45
-                        ? toolExecution.codeSteps[toolExecution.codeSteps.length - 1].slice(0, 45) + '…'
-                        : toolExecution.codeSteps[toolExecution.codeSteps.length - 1]}
-                    </span>
-                  )}
                   {toolExecution.isComplete ? (
                     <svg className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                      <circle cx="8" cy="8" r="7" fill="url(#checkGradient)" className="drop-shadow-sm" />
+                      <circle cx="8" cy="8" r="7" fill={`url(#checkGrad-${toolExecution.id})`} className="drop-shadow-sm" />
                       <path d="M5 8l2 2 4-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                       <defs>
-                        <linearGradient id="checkGradient" x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse">
+                        <linearGradient id={`checkGrad-${toolExecution.id}`} x1="0" y1="0" x2="16" y2="16" gradientUnits="userSpaceOnUse">
                           <stop offset="0%" stopColor="#10b981" />
                           <stop offset="100%" stopColor="#059669" />
                         </linearGradient>
@@ -640,21 +544,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                   {isCodeAgentExecution(toolExecution) &&
                     toolExecution.isComplete &&
                     !toolExecution.isCancelled && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCodeAgentDownload();
-                      }}
-                      disabled={downloadingCodeAgent}
-                      className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      title={downloadingCodeAgent ? "Preparing ZIP..." : "Download workspace as ZIP"}
-                    >
-                      {downloadingCodeAgent
-                        ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        : <Download className="h-3.5 w-3.5" />
-                      }
-                      <span>{downloadingCodeAgent ? 'Preparing...' : 'Download'}</span>
-                    </button>
+                    <CodeAgentDownloadButton sessionId={sessionId} />
                   )}
                   {/* View in Canvas button for research_agent */}
                   {toolExecution.toolName === 'research_agent' &&
@@ -802,79 +692,15 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                       </div>
                     )}
 
-                    {/* Code agent: step log (while running) */}
-                    {isCodeAgentExecution(toolExecution) &&
-                      !toolExecution.isComplete &&
-                      toolExecution.codeSteps &&
-                      toolExecution.codeSteps.length > 0 && (
-                      <div className="space-y-0.5">
-                        {toolExecution.codeSteps.slice(-6).map((step, i) => (
-                          <div key={i} className="text-caption text-muted-foreground font-mono">
-                            {step}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Code agent: todo checklist */}
-                    {isCodeAgentExecution(toolExecution) &&
-                      toolExecution.codeTodos &&
-                      toolExecution.codeTodos.length > 0 && (
-                      <div className="space-y-0.5 mt-1">
-                        {toolExecution.codeTodos.map((todo) => (
-                          <div key={todo.id} className="flex items-start gap-1.5 text-caption">
-                            {todo.status === 'completed' ? (
-                              <svg className="h-3 w-3 mt-0.5 text-green-500 flex-shrink-0" viewBox="0 0 12 12" fill="currentColor">
-                                <path fillRule="evenodd" d="M10.22 2.22a.75.75 0 0 1 0 1.06L4.97 8.53 1.78 5.34a.75.75 0 0 1 1.06-1.06l2.13 2.13 4.19-4.19a.75.75 0 0 1 1.06 0Z" clipRule="evenodd" />
-                              </svg>
-                            ) : todo.status === 'in_progress' ? (
-                              <span className="flex gap-0.5 mt-0.5 flex-shrink-0">
-                                <span className="w-1 h-1 bg-blue-500 rounded-full animate-pulse" />
-                              </span>
-                            ) : (
-                              <svg className="h-3 w-3 mt-0.5 text-muted-foreground flex-shrink-0" viewBox="0 0 12 12" fill="none">
-                                <rect x="1" y="1" width="10" height="10" rx="1.5" stroke="currentColor" strokeWidth="1.2" />
-                              </svg>
-                            )}
-                            <span className={todo.status === 'completed' ? 'line-through text-muted-foreground' : ''}>
-                              {todo.content}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Code agent: files changed (after complete) */}
-                    {isCodeAgentExecution(toolExecution) &&
-                      toolExecution.isComplete &&
-                      toolExecution.codeResultMeta?.files_changed &&
-                      toolExecution.codeResultMeta.files_changed.length > 0 && (
-                      <div className="space-y-0.5">
-                        <div className="text-caption text-muted-foreground mb-0.5">
-                          {toolExecution.codeResultMeta.files_changed.length} file{toolExecution.codeResultMeta.files_changed.length !== 1 ? 's' : ''} changed
-                          {toolExecution.codeResultMeta.steps > 0 && ` · ${toolExecution.codeResultMeta.steps} steps`}
-                        </div>
-                        {toolExecution.codeResultMeta.files_changed.map((f) => (
-                          <div key={f} className="text-caption font-mono text-muted-foreground">
-                            {f}
-                          </div>
-                        ))}
-                      </div>
+                    {/* Code agent: todos + files changed */}
+                    {isCodeAgentExecution(toolExecution) && (
+                      <CodeAgentDetails toolExecution={toolExecution} />
                     )}
 
                     {/* Tool result */}
                     {toolExecution.toolResult && (() => {
-                      // For code_agent, render the full JSON result
                       if (isCodeAgentExecution(toolExecution)) {
-                        return (
-                          <div className="text-label">
-                            <JsonDisplay
-                              data={toolExecution.toolResult}
-                              maxLines={6}
-                              label="Result"
-                            />
-                          </div>
-                        )
+                        return <CodeAgentResult toolResult={toolExecution.toolResult} />
                       }
                       return (
                         <div className="text-label">

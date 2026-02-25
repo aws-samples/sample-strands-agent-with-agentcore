@@ -9,6 +9,7 @@ import { ReasoningState } from '@/types/events'
 import { Markdown } from '@/components/ui/Markdown'
 import { StreamingText } from './StreamingText'
 import { ToolExecutionContainer } from './ToolExecutionContainer'
+import { CodeAgentTerminal, isCodeAgentExecution } from './CodeAgentUI'
 import { ResearchContainer } from '@/components/ResearchContainer'
 import { LazyImage } from '@/components/ui/LazyImage'
 import { fetchAuthSession } from 'aws-amplify/auth'
@@ -65,10 +66,14 @@ interface AssistantTurnProps {
     stepNumber: number
     content: string
   }
+  codeProgress?: Array<{
+    stepNumber: number
+    content: string
+  }>
   hideAvatar?: boolean
 }
 
-export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact, researchProgress, hideAvatar = false }) => {
+export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact, researchProgress, codeProgress, hideAvatar = false }) => {
   // Get initial feedback state from first message
   const initialFeedback = messages[0]?.feedback || null
 
@@ -474,6 +479,13 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
             )
           })}
 
+          {/* Code agent real-time progress — only in the turn with an active code agent */}
+          {codeProgress && codeProgress.length > 0 && messages.some(m =>
+            m.toolExecutions?.some(t => isCodeAgentExecution(t) && !t.isComplete)
+          ) && (
+            <CodeAgentTerminal steps={codeProgress} />
+          )}
+
           {/* Generated Documents - Rendered at turn bottom */}
           {turnDocuments.length > 0 && (
             <div className="mt-4 p-3 bg-muted/50 rounded-lg border border-border/60">
@@ -639,6 +651,9 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
   const researchProgressEqual = prevProps.researchProgress?.stepNumber === nextProps.researchProgress?.stepNumber &&
     prevProps.researchProgress?.content === nextProps.researchProgress?.content
 
+  // Compare codeProgress for real-time code agent status
+  const codeProgressEqual = (prevProps.codeProgress?.length ?? 0) === (nextProps.codeProgress?.length ?? 0)
+
   const hideAvatarEqual = prevProps.hideAvatar === nextProps.hideAvatar
-  return messagesEqual && reasoningEqual && prevProps.sessionId === nextProps.sessionId && callbackEqual && researchProgressEqual && hideAvatarEqual
+  return messagesEqual && reasoningEqual && prevProps.sessionId === nextProps.sessionId && callbackEqual && researchProgressEqual && codeProgressEqual && hideAvatarEqual
 })

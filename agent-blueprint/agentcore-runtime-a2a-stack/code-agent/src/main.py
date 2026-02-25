@@ -5,7 +5,6 @@ Receives coding tasks via A2A protocol and executes them autonomously
 using built-in tools: Read, Write, Edit, Bash, Glob, Grep.
 
 Authentication: CLAUDE_CODE_USE_BEDROCK=1 + IAM execution role (no API key needed)
-Requires: Node.js + @anthropic-ai/claude-code installed in container (claude-agent-sdk spawns the claude CLI)
 
 For local testing:
     CLAUDE_CODE_USE_BEDROCK=1 ANTHROPIC_MODEL=us.anthropic.claude-sonnet-4-6 \
@@ -18,7 +17,7 @@ import os
 import uuid
 import zipfile
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Dict
 
 from fastapi import FastAPI
 from a2a.server.agent_execution import AgentExecutor, RequestContext
@@ -29,7 +28,19 @@ from a2a.server.apps import A2AStarletteApplication
 from a2a.types import AgentCard, AgentCapabilities, AgentSkill, Part, TextPart
 
 import uvicorn
-from claude_agent_sdk import query, ClaudeAgentOptions
+from claude_agent_sdk import (
+    query,
+    ClaudeAgentOptions,
+    AssistantMessage,
+    SystemMessage,
+    ResultMessage,
+    TextBlock,
+    ToolUseBlock,
+    CLINotFoundError,
+    CLIConnectionError,
+    ProcessError,
+    CLIJSONDecodeError,
+)
 
 # Claude Agent SDK cannot run inside an existing Claude Code session.
 # Unset CLAUDECODE so nested invocation is allowed in all environments.
@@ -97,6 +108,8 @@ TOOL_STATUS_MAP = {
     "Bash":      "Running command",
     "Glob":      "Searching files",
     "Grep":      "Searching content",
+    "TodoRead":  "Reading todos",
+    "TodoWrite": "Writing todos",
     "WebSearch": "Searching web",
     "WebFetch":  "Fetching URL",
 }
@@ -337,89 +350,16 @@ def _clear_session_history(user_id: str, session_id: str) -> None:
     except Exception as e:
         logger.warning(f"[S3 reset] Could not delete sdk_session_id: {e}")
 
-    # Clear session .jsonl files from ~/.claude/ but preserve CLAUDE.md (coding principles)
+    # Clear session .jsonl files from ~/.claude/
     if CLAUDE_HOME.exists():
         for item in CLAUDE_HOME.iterdir():
-            if item.name == "CLAUDE.md":
-                continue
             if item.is_dir():
                 import shutil  # noqa: PLC0415
                 shutil.rmtree(item, ignore_errors=True)
             else:
                 item.unlink(missing_ok=True)
-        logger.info(f"[S3 reset] Cleared local ~/.claude/ (preserved CLAUDE.md)")
+        logger.info(f"[S3 reset] Cleared local ~/.claude/")
 
-
-def ensure_user_claude_md() -> None:
-    """Create ~/.claude/CLAUDE.md with coding principles (user-level).
-
-    This is loaded via setting_sources=["user"] and always applies regardless of
-    whether the workspace has its own project-level CLAUDE.md.
-    """
-    user_claude_dir = CLAUDE_HOME
-    user_claude_dir.mkdir(parents=True, exist_ok=True)
-    user_claude_md = user_claude_dir / "CLAUDE.md"
-
-    content = """\
-# Coding Principles
-
-## Comments
-- Comments explain "why", never "what" — if the code needs a comment to explain what it does, rewrite the code to be clearer instead.
-- Never reference the conversation or request in code ("as requested", "user wanted", "added per requirement").
-- Don't add comments that merely restate the code.
-- Don't leave TODO/FIXME for things you just implemented or decided against.
-- Docstrings only on public APIs with non-obvious contracts. Skip for internal helpers where the signature is self-explanatory.
-
-## Problem Solving
-- Investigate root causes before writing fixes. Don't use try/except, fallbacks, or defensive checks to suppress errors you haven't diagnosed.
-- Fallbacks are acceptable only for genuinely unpredictable external factors (network outages, third-party API downtime). Internal logic errors, configuration mistakes, and type mismatches should be fixed at the source.
-- If a test fails, read the error and fix the actual bug. Don't modify the test to make it pass, and don't wrap failing code in try/except.
-- Understand WHY something failed and WHY the fix is correct.
-- Evaluate whether your approach is architecturally sound, not just functional. "It works" is not sufficient — ask whether it's the right way to solve the problem in this codebase.
-- Before changing code, understand the existing implementation thoroughly. Read the relevant code paths and understand why they were built that way. Don't propose changes based on assumptions about code you haven't read.
-
-## Design Decisions
-- Consider the system-wide impact of local changes. A fix that solves one problem but breaks architectural consistency or undermines a design pattern is not a good fix.
-- Before adding code, functionality, or abstractions, question whether they're actually needed. "Might be useful" is not a reason to add something.
-- When there are multiple viable approaches with meaningful tradeoffs, surface them as a question rather than silently picking one. Implementation-level choices (naming, internal structure) are yours; design-level choices that affect architecture or behavior should be raised.
-
-## Code Quality
-- Don't add type annotations, docstrings, or error handling to code you didn't change.
-- Prefer simple, direct solutions over abstractions for one-time operations.
-- When refactoring, delete dead code completely — no commented-out blocks or backward-compat shims.
-
-## Verification
-- Before marking a task complete, run the code or tests to confirm it actually works.
-- If no test exists, write one or run the code with representative input.
-- "Compiles" is not done. "Runs correctly" is done.
-
-## When unsure
-- If the task has a requirements-level ambiguity you can't resolve from the codebase (e.g., "should this be public or internal?"), surface it as a question rather than making a silent assumption.
-- Implementation-level decisions (module structure, variable naming, error handling strategy) are yours to make based on the existing codebase.
-"""
-    if user_claude_md.exists():
-        return  # Preserve any updates the code agent made during previous sessions
-    user_claude_md.write_text(content)
-    logger.info("[Config] User-level CLAUDE.md written to ~/.claude/CLAUDE.md")
-
-
-def ensure_project_claude_md(workspace: Path) -> None:
-    """Create CLAUDE.md in the workspace if it does not already exist.
-
-    This is project-level context loaded via setting_sources=["project"].
-    If the user's uploaded project already contains a CLAUDE.md, it is preserved.
-    """
-    claude_md = workspace / "CLAUDE.md"
-    if claude_md.exists():
-        return
-
-    content = """\
-# Workspace
-
-Read the existing codebase before introducing patterns. Follow what's already there.
-For multi-step tasks, maintain `progress.md` to track completed and remaining steps.
-"""
-    claude_md.write_text(content)
 
 
 def build_task_with_files(task_text: str, file_descriptions: List[str]) -> str:
@@ -501,10 +441,6 @@ class ClaudeCodeExecutor(AgentExecutor):
             else:
                 logger.info(f"[ClaudeCodeExecutor] Resuming SDK session (in-memory): {sdk_session_id}")
 
-        # --- Ensure CLAUDE.md at both levels ---
-        ensure_user_claude_md()          # ~/.claude/CLAUDE.md  (coding principles, always applied)
-        ensure_project_claude_md(workspace)  # workspace/CLAUDE.md (project context, skipped if user project has one)
-
         # --- Download user-uploaded S3 files into workspace ---
         s3_files = metadata.get("s3_files", [])
         file_descriptions = download_s3_files(s3_files, workspace)
@@ -535,8 +471,13 @@ class ClaudeCodeExecutor(AgentExecutor):
                 )
                 async for msg in query(prompt="/compact", options=compact_options):
                     # Keep sdk_session_id up-to-date after compaction
-                    if hasattr(msg, "subtype") and msg.subtype == "init":
-                        new_sid = getattr(msg, "session_id", None)
+                    if isinstance(msg, SystemMessage) and msg.subtype == "init":
+                        new_sid = msg.data.get("session_id")
+                        if new_sid:
+                            sdk_session_id = new_sid
+                            _sdk_sessions[sdk_key] = new_sid
+                    elif isinstance(msg, ResultMessage):
+                        new_sid = msg.session_id
                         if new_sid:
                             sdk_session_id = new_sid
                             _sdk_sessions[sdk_key] = new_sid
@@ -552,60 +493,94 @@ class ClaudeCodeExecutor(AgentExecutor):
                 permission_mode="bypassPermissions",  # No interactive prompts in server mode
                 cwd=str(workspace),
                 system_prompt={"type": "preset", "preset": "claude_code"},
-                setting_sources=["user", "project"],  # Auto-loads CLAUDE.md from workspace
+                setting_sources=["user", "project"],
+                max_turns=100,
             )
 
             async for message in query(prompt=task_text, options=options):
 
                 # Capture SDK session_id from init event (for future resume)
-                if hasattr(message, "subtype") and message.subtype == "init":
-                    new_sid = getattr(message, "session_id", None)
+                if isinstance(message, SystemMessage) and message.subtype == "init":
+                    new_sid = message.data.get("session_id")
                     if new_sid and new_sid != sdk_session_id:
                         _sdk_sessions[sdk_key] = new_sid
                         logger.info(f"[ClaudeCodeExecutor] SDK session stored: {new_sid}")
 
-                # Stream tool use as intermediate progress artifact
-                elif hasattr(message, "type") and message.type == "assistant":
-                    msg_content = getattr(message, "message", {})
-                    if isinstance(msg_content, dict):
-                        for block in msg_content.get("content", []):
-                            if isinstance(block, dict) and block.get("type") == "tool_use":
-                                tool_name = block.get("name", "")
+                # Stream tool use and planning text as intermediate progress artifacts
+                elif isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            text = block.text.strip()
+                            if text:
+                                step_counter += 1
+                                await updater.add_artifact(
+                                    [Part(root=TextPart(text=text))],
+                                    name=f"code_step_{step_counter}"
+                                )
+                        elif isinstance(block, ToolUseBlock):
+                            tool_name = block.name
 
-                                if tool_name == "TodoWrite":
-                                    # Emit current todo state as a streaming artifact.
-                                    # Each call replaces the full list — receiver takes the latest.
-                                    todo_counter += 1
-                                    todos = block.get("input", {}).get("todos", [])
-                                    last_todos = todos
-                                    await updater.add_artifact(
-                                        [Part(root=TextPart(text=json.dumps(todos)))],
-                                        name=f"code_todos_{todo_counter}"
-                                    )
-                                    done = sum(1 for t in todos if t.get("status") == "completed")
-                                    logger.info(f"[ClaudeCodeExecutor] Todos: {done}/{len(todos)} completed")
-                                else:
-                                    # Track files modified by Write / Edit
-                                    if tool_name in ("Write", "Edit"):
-                                        fp = block.get("input", {}).get("file_path", "")
-                                        if fp:
-                                            files_changed.add(fp)
+                            if tool_name == "TodoWrite":
+                                # Emit current todo state as a streaming artifact.
+                                # Each call replaces the full list — receiver takes the latest.
+                                todo_counter += 1
+                                todos = block.input.get("todos", [])
+                                last_todos = todos
+                                await updater.add_artifact(
+                                    [Part(root=TextPart(text=json.dumps(todos)))],
+                                    name=f"code_todos_{todo_counter}"
+                                )
+                                done = sum(1 for t in todos if t.get("status") == "completed")
+                                logger.info(f"[ClaudeCodeExecutor] Todos: {done}/{len(todos)} completed")
+                            else:
+                                # Track files modified by Write / Edit
+                                if tool_name in ("Write", "Edit"):
+                                    fp = block.input.get("file_path", "")
+                                    if fp:
+                                        files_changed.add(fp)
 
-                                    step_counter += 1
-                                    step_text = _format_tool_step(step_counter, block)
-                                    await updater.add_artifact(
-                                        [Part(root=TextPart(text=step_text))],
-                                        name=f"code_step_{step_counter}"
-                                    )
-                                    logger.info(f"[ClaudeCodeExecutor] {step_text}")
+                                step_counter += 1
+                                step_text = _format_tool_step(step_counter, block)
+                                await updater.add_artifact(
+                                    [Part(root=TextPart(text=step_text))],
+                                    name=f"code_step_{step_counter}"
+                                )
+                                logger.info(f"[ClaudeCodeExecutor] {step_text}")
 
-                # Capture final result
-                elif hasattr(message, "result"):
+                # Capture final result; also persist the session_id for resume
+                elif isinstance(message, ResultMessage):
                     final_result = message.result
+                    if message.session_id and message.session_id != _sdk_sessions.get(sdk_key):
+                        _sdk_sessions[sdk_key] = message.session_id
+                        logger.info(f"[ClaudeCodeExecutor] SDK session stored: {message.session_id}")
                     logger.info(f"[ClaudeCodeExecutor] Done: {str(final_result)}")
 
+        except CLINotFoundError as e:
+            logger.exception("[ClaudeCodeExecutor] Claude CLI not found — check container setup")
+            await updater.add_artifact(
+                [Part(root=TextPart(text=f"Error: Claude CLI not found. Check container setup. ({e})"))],
+                name="error"
+            )
+            await updater.failed()
+            return
+        except (CLIConnectionError, CLIJSONDecodeError) as e:
+            logger.exception("[ClaudeCodeExecutor] CLI communication error")
+            await updater.add_artifact(
+                [Part(root=TextPart(text=f"Error: CLI communication failed. ({e})"))],
+                name="error"
+            )
+            await updater.failed()
+            return
+        except ProcessError as e:
+            logger.exception("[ClaudeCodeExecutor] CLI process error (exit code: %s)", e.exit_code)
+            await updater.add_artifact(
+                [Part(root=TextPart(text=f"Error: {str(e)}"))],
+                name="error"
+            )
+            await updater.failed()
+            return
         except Exception as e:
-            logger.exception("[ClaudeCodeExecutor] Execution error")
+            logger.exception("[ClaudeCodeExecutor] Unexpected execution error")
             await updater.add_artifact(
                 [Part(root=TextPart(text=f"Error: {str(e)}"))],
                 name="error"
@@ -664,10 +639,10 @@ def _extract_metadata(context: RequestContext) -> dict:
     return metadata
 
 
-def _format_tool_step(step: int, block: dict) -> str:
+def _format_tool_step(step: int, block: ToolUseBlock) -> str:
     """Format a tool_use block into a human-readable progress string."""
-    tool_name = block.get("name", "")
-    tool_input = block.get("input", {})
+    tool_name = block.name
+    tool_input = block.input
     status = TOOL_STATUS_MAP.get(tool_name, f"Running {tool_name}")
 
     context_info = ""
@@ -678,7 +653,7 @@ def _format_tool_step(step: int, block: dict) -> str:
                 context_info = f": {val}"
                 break
 
-    return f"⚙️ {status}{context_info}"
+    return f"{status}{context_info}"
 
 
 # ============================================================

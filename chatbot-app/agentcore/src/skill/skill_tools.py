@@ -42,12 +42,17 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-async def _consume_async_generator(agen):
+_SKILL_STREAM_TYPES = ("code_step", "code_todo_update", "code_result_meta")
+
+
+async def _consume_async_generator(agen, session_id=None):
     """Consume an async generator and return the final result text.
 
     A2A tools yield event dicts while running, then a final
     {"status": "success"/"error", "content": [{"text": "..."}]} event.
-    We discard intermediate progress events and return the final text.
+    Intermediate progress events (code_step, code_todo_update, code_result_meta)
+    are forwarded to the side-channel queue so process_stream can drain and
+    yield them to the frontend in real time.
     """
     final_text = None
     final_status = "success"
@@ -55,6 +60,12 @@ async def _consume_async_generator(agen):
     async for event in agen:
         if not isinstance(event, dict):
             continue
+        # Forward intermediate skill events to the side-channel queue (thread-safe)
+        if event.get("type") in _SKILL_STREAM_TYPES and session_id:
+            from streaming import skill_event_bus
+            q = skill_event_bus.get_queue(session_id)
+            if q is not None:
+                q.put_nowait(event)
         status = event.get("status")
         if status in ("success", "error"):
             content = event.get("content", [])
@@ -351,7 +362,8 @@ def _execute_tool(
 
             # Handle async generators (A2A tools that stream events)
             elif hasattr(result, '__aiter__'):
-                result = _run_async(_consume_async_generator(result))
+                session_id = tool_context.invocation_state.get("session_id")
+                result = _run_async(_consume_async_generator(result, session_id=session_id))
 
         logger.info(f"Executed {skill_name}/{tool_name} successfully")
         return result

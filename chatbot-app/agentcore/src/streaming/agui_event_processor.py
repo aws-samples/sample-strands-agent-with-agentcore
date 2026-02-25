@@ -293,6 +293,11 @@ class AGUIStreamEventProcessor:
             yield self.formatter.format_event("error", error_message="Agent not available - please configure AWS credentials for Bedrock")
             return
 
+        # Register side-channel queue for skill executor events
+        if session_id:
+            from streaming import skill_event_bus
+            skill_event_bus.get_or_create_queue(session_id)
+
         stream_iterator = None
         next_event_task = None  # Task for async generator polling (used with elicitation bridge)
         stream_completed_normally = False  # Track if stream completed without interruption
@@ -336,9 +341,11 @@ class AGUIStreamEventProcessor:
                     if next_event_task is None:
                         next_event_task = asyncio.ensure_future(stream_aiter.__anext__())
 
-                    done, _ = await asyncio.wait({next_event_task}, timeout=0.5)
+                    done, _ = await asyncio.wait({next_event_task}, timeout=0.1)
                     if not done:
-                        # Timeout — task still running, loop back to check bridge
+                        # Timeout — drain skill queue and loop back to check bridge
+                        async for sse in self._drain_skill_queue(session_id):
+                            yield sse
                         continue
 
                     try:
@@ -348,11 +355,27 @@ class AGUIStreamEventProcessor:
                     finally:
                         next_event_task = None
                 else:
-                    # Direct await — preserves OTel context across loop iterations
+                    # Polling mode: allows draining skill event queue in real time
+                    # while skill_executor is blocking (code_agent running).
+                    # Each Task is fully consumed (result/exception extracted) before
+                    # a new one is created, so OTel spans are not split across Tasks.
+                    if next_event_task is None:
+                        next_event_task = asyncio.ensure_future(stream_aiter.__anext__())
+                    done, _ = await asyncio.wait({next_event_task}, timeout=0.1)
+                    if not done:
+                        # Timeout — drain skill queue and loop back
+                        async for sse in self._drain_skill_queue(session_id):
+                            yield sse
+                        continue
                     try:
-                        event = await stream_aiter.__anext__()
+                        event = next_event_task.result()
                     except StopAsyncIteration:
                         break
+                    finally:
+                        next_event_task = None
+                # Drain any skill executor side-channel events (code_step, etc.)
+                async for sse in self._drain_skill_queue(session_id):
+                    yield sse
                 # Check stop signal periodically (throttled to reduce DB calls)
                 if self._check_stop_signal():
                     logger.debug(f"[StopSignal] Stopping stream for session {session_id}")
@@ -761,8 +784,42 @@ class AGUIStreamEventProcessor:
                 except Exception:
                     pass
 
+            # Remove side-channel queue
+            if session_id:
+                from streaming import skill_event_bus
+                skill_event_bus.remove_queue(session_id)
+
             if hasattr(self, '_active_streams'):
                 self._active_streams.discard(stream_id)
+
+    async def _drain_skill_queue(self, session_id):
+        """Drain intermediate skill events from the side-channel queue and yield SSE."""
+        if not session_id:
+            return
+        from streaming import skill_event_bus
+        q = skill_event_bus.get_queue(session_id)
+        if q is None:
+            return
+        while not q.empty():
+            try:
+                item = q.get_nowait()
+            except Exception:
+                break
+            event_type = item.get("type")
+            if event_type == "code_step":
+                yield self.formatter.format_event(
+                    "code_step", content=item.get("content", ""), stepNumber=item.get("stepNumber", 0)
+                )
+            elif event_type == "code_todo_update":
+                yield self.formatter.format_event("code_todo_update", todos=item.get("todos", []))
+            elif event_type == "code_result_meta":
+                yield self.formatter.format_event(
+                    "code_result_meta",
+                    files_changed=item.get("files_changed", []),
+                    todos=item.get("todos", []),
+                    steps=item.get("steps", 0),
+                    status=item.get("status", "completed"),
+                )
 
     async def _process_message_event(self, event: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """Process message events that may contain tool results"""

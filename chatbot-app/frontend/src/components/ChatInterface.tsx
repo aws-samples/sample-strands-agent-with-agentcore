@@ -185,6 +185,7 @@ export function ChatInterface() {
     browserSession,
     browserProgress,
     researchProgress,
+    codeProgress,
     respondToInterrupt,
     currentInterrupt,
     swarmEnabled,
@@ -1329,6 +1330,7 @@ export function ChatInterface() {
                         onOpenExtractedDataArtifact={handleOpenExtractedDataArtifact}
                         onOpenExcalidrawArtifact={handleOpenExcalidrawArtifact}
                         researchProgress={researchProgress}
+                        codeProgress={codeProgress}
                         hideAvatar={isSwarmFinalResponse || hasHistorySwarm}
                       />
                     </>

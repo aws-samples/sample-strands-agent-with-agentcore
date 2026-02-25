@@ -55,6 +55,7 @@ interface UseChatReturn {
   browserSession: { sessionId: string | null; browserId: string | null } | null
   browserProgress?: Array<{ stepNumber: number; content: string }>
   researchProgress?: { stepNumber: number; content: string }
+  codeProgress?: Array<{ stepNumber: number; content: string }>
   respondToInterrupt: (interruptId: string, response: string) => Promise<void>
   currentInterrupt: InterruptState | null
   // Per-session model state
@@ -864,11 +865,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
   const stopGeneration = useCallback(() => {
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
-    // Send stop signal to backend (sets flag in DB/memory)
-    // Do NOT abort fetch - let backend handle graceful shutdown
-    // so that saved response matches what user sees
     sendStopSignal()
-  }, [sendStopSignal])
+    // In the AG-UI path the subscription is aborted client-side so RunFinishedEvent
+    // never arrives. Immediately reset streaming state so the spinner and in-progress
+    // tool executions don't hang.
+    resetStreamingState()
+  }, [sendStopSignal, resetStreamingState])
 
   // ==================== DERIVED STATE ====================
   const groupedMessages = useMemo(() => {
@@ -1201,6 +1203,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     browserSession: sessionState.browserSession,
     browserProgress: sessionState.browserProgress,
     researchProgress: sessionState.researchProgress,
+    codeProgress: sessionState.codeProgress,
     respondToInterrupt,
     currentInterrupt: sessionState.interrupt,
     // Per-session model state

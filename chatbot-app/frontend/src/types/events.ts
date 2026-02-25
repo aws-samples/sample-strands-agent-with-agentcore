@@ -206,6 +206,10 @@ export interface ChatSessionState {
     stepNumber: number;
     content: string;
   };
+  codeProgress?: Array<{
+    stepNumber: number;
+    content: string;
+  }>;
   interrupt: InterruptState | null;
   swarmProgress?: SwarmProgress;
   pendingOAuth?: PendingOAuthState | null;
