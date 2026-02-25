@@ -239,7 +239,7 @@ class TestExecuteScriptFunction:
 
     @patch('strands_tools.shell.shell')
     def test_execute_script_with_json_input(self, mock_shell, tool_context, registry):
-        """_execute_script should pass JSON input via stdin."""
+        """_execute_script should pass JSON input as CLI arguments."""
         skill_tools._registry = registry
 
         mock_shell.return_value = {
@@ -256,10 +256,11 @@ class TestExecuteScriptFunction:
             script_input=test_input,
         )
 
-        # Verify temp file was created and used
+        # Verify CLI arguments were passed
         call_args = mock_shell.call_args
         command = call_args[1]["command"]
-        assert "<" in command  # stdin redirection
+        assert "--key" in command  # CLI argument style
+        assert "--number" in command
 
     @patch('strands_tools.shell.shell')
     def test_execute_script_timeout_parameter(self, mock_shell, tool_context, registry):

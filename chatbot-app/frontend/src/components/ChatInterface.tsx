@@ -9,7 +9,7 @@ import { useAgentExecutions } from "@/hooks/useAgentExecutions"
 import { ArtifactType } from "@/types/artifact"
 import { ChatMessage } from "@/components/chat/ChatMessage"
 import { AssistantTurn } from "@/components/chat/AssistantTurn"
-import { Greeting } from "@/components/Greeting"
+import { Greeting, PromptSuggestions } from "@/components/Greeting"
 import { ChatSidebar } from "@/components/ChatSidebar"
 import { ToolsDropdown } from "@/components/ToolsDropdown"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
@@ -255,6 +255,9 @@ export function ChatInterface() {
   // Compose wizard state
   const [isComposeWizardOpen, setIsComposeWizardOpen] = useState(false)
   const [inputRect, setInputRect] = useState<DOMRect | null>(null)
+
+  // Greeting prompt prefill
+  const [prefillMessage, setPrefillMessage] = useState<string | undefined>(undefined)
 
   // Artifact management
   const {
@@ -872,8 +875,10 @@ export function ChatInterface() {
         }
       }
 
-      // Disable all enabled tools
-      const enabledTools = availableTools.filter(tool => tool.enabled)
+      // Disable all enabled tools (except research agent which was already handled above)
+      const enabledTools = availableTools.filter(tool =>
+        tool.enabled && tool.id !== 'agentcore_research-agent'
+      )
       for (const tool of enabledTools) {
         const isDynamic = (tool as any).isDynamic === true
         const nestedTools = (tool as any).tools || []
@@ -1414,7 +1419,16 @@ export function ChatInterface() {
           onExportConversation={exportConversation}
           onNewChat={handleNewChat}
           onCompact={handleCompactRequest}
+          prefillMessage={prefillMessage}
+          onPrefillConsumed={() => setPrefillMessage(undefined)}
         />
+
+        {/* Prompt Suggestions - Show only on empty chat */}
+        {groupedMessages.length === 0 && !isLoadingMessages && (
+          <div className="mx-auto px-4 w-full md:max-w-4xl pb-4">
+            <PromptSuggestions onSelectPrompt={(prompt) => handleSendMessage(prompt, [])} />
+          </div>
+        )}
       </SidebarInset>
 
       {/* Compact Session Confirmation Dialog */}

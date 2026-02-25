@@ -1,6 +1,6 @@
 ---
 name: browser-automation
-description: Web browser automation powered by Nova Act AI — navigate, interact, extract data, and manage tabs.
+description: Web browser automation for tasks requiring UI interaction, login-protected pages, or human-like browsing when APIs are insufficient.
 ---
 
 # Browser Automation
@@ -12,6 +12,16 @@ description: Web browser automation powered by Nova Act AI — navigate, interac
 - **browser_get_page_info()**: Get page structure and all open tabs (fast, no AI)
 - **browser_manage_tabs(action, tab_index)**: Switch, close, or create browser tabs
 - **browser_save_screenshot(filename)**: Save current page screenshot to workspace
+
+## When to Use
+Use browser automation when the task genuinely requires it:
+- **UI interactions**: Filling forms, clicking buttons, navigating multi-step workflows
+- **Login-required pages**: Accessing content behind authentication that APIs cannot reach
+- **Dynamic/JS-heavy pages**: Content rendered client-side that plain HTTP requests can't capture
+- **Human-like browsing needed**: Sites that block bots or require realistic interaction patterns
+- **Scraping structured data**: When no API exists and the data must be extracted from rendered pages
+
+Prefer **web search or url_fetcher** for general information lookup, news, or publicly accessible pages — browser automation is slower and heavier. Reserve it for tasks where simpler tools are insufficient.
 
 ## Tool Selection
 - `browser_navigate` + `browser_act`: UI interactions (click, type, scroll, form fill)

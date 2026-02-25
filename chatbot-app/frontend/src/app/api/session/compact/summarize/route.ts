@@ -55,28 +55,58 @@ function truncateTranscript(messages: any[], maxChars: number): { transcript: st
 
 function buildPrompt(transcript: string, truncated: boolean): string {
   const truncationNote = truncated
-    ? 'Note: The conversation was very long. The summary below covers the most recent portion.\n\n'
+    ? 'Note: The conversation was very long. Only the most recent portion is included below.\n\n'
     : ''
-  return `You are a helpful assistant. Below is a conversation transcript.
-Write a concise but complete summary that captures:
-- The main topics discussed
-- Key decisions, findings, or outputs
-- Any important context needed to continue the work
+  return `Your task is to create a detailed, structured summary of the conversation below. This summary will replace the original messages to keep context manageable, so it must capture all essential information needed to continue the work seamlessly.
 
-The summary will be used as the opening message in a new chat session so the assistant can continue seamlessly.
-Keep it under 1000 words. Use clear, structured prose.
+Before writing your final summary, briefly organize your thoughts inside <analysis> tags:
+1. Walk through the conversation chronologically and identify each user request, your response, and the outcome.
+2. Note any files, tools, artifacts, or technical details mentioned.
+3. Identify what was completed vs. what is still pending.
+
+Then write your summary using the sections below. Omit any section that has no relevant content.
+
+<sections>
+1. **Primary Request and Intent**
+   What the user explicitly asked for, including follow-up refinements.
+
+2. **Key Decisions and Outcomes**
+   Important decisions made, approaches chosen, and results delivered.
+
+3. **Tools and Artifacts**
+   Tools invoked (web search, code interpreter, documents, etc.), files created or modified, and key outputs.
+   Include file names, artifact titles, or resource identifiers where applicable.
+
+4. **Technical Details**
+   Specific technical concepts, configurations, code patterns, or data referenced in the conversation.
+   Include enough detail (e.g., parameter values, code snippets, API names) so context is not lost.
+
+5. **Problems Solved**
+   Bugs fixed, errors resolved, or troubleshooting steps taken.
+
+6. **Pending Tasks**
+   Any unfinished work the user explicitly asked for, or next steps that were agreed upon but not yet completed.
+
+7. **Current Work**
+   What was being worked on immediately before this summary, including the most recent user message and assistant action. Be precise — this is the continuation point.
+</sections>
+
+Guidelines:
+- Be thorough on technical details but concise in prose. Aim for 500–1500 words depending on conversation length.
+- Preserve specific names, values, and identifiers — do not generalize them away.
+- If the conversation is non-technical (casual Q&A, general knowledge), keep the summary brief and skip technical sections.
 
 ${truncationNote}Conversation:
 ${transcript}
 
-Summary:`
+Now produce the summary following the instructions above.`
 }
 
 async function callConverse(client: BedrockRuntimeClient, modelId: string, prompt: string): Promise<string> {
   const response = await client.send(new ConverseCommand({
     modelId,
     messages: [{ role: 'user', content: [{ text: prompt }] }],
-    inferenceConfig: { maxTokens: 1500 },
+    inferenceConfig: { maxTokens: 4096 },
   }))
   return response.output?.message?.content?.[0]?.text ?? 'Unable to generate summary.'
 }

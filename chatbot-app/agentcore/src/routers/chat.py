@@ -7,6 +7,7 @@ Simplified using agent factory pattern - all agent-specific logic moved to agent
 """
 
 from fastapi import APIRouter, HTTPException, Request
+from pydantic import ValidationError
 from fastapi.responses import StreamingResponse
 from typing import AsyncGenerator, List, Optional
 import asyncio
@@ -133,7 +134,10 @@ async def invocations(http_request: Request):
     if _is_agui_request(body):
         return await _handle_agui_invocation(body, http_request)
 
-    request = InvocationRequest(**body)
+    try:
+        request = InvocationRequest(**body)
+    except ValidationError as e:
+        raise HTTPException(status_code=422, detail=e.errors())
     input_data = request.input
 
     # Handle warmup requests (Lambda container warmup)
