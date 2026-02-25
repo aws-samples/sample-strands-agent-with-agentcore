@@ -54,6 +54,9 @@ deprecated
 playwright>=1.54.0,<=1.56.0
 install_playwright>=0.1.0,<1.0.0
 
+# AG-UI Protocol (agent-to-UI streaming standard)
+ag-ui-protocol>=0.1.13
+
 # Testing
 pytest>=7.0.0
 pytest-asyncio>=0.21.0

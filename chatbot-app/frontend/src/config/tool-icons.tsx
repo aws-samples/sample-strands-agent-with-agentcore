@@ -116,6 +116,8 @@ export const toolImageMap: Record<string, string> = {
   'agentcore_code-agent': '/tool-icons/code-agent.svg',
   'code_agent': '/tool-icons/code-agent.svg',
   'workspace_tools': '/tool-icons/s3-workspace.svg',
+  'create_excalidraw_diagram': '/tool-icons/excalidraw.svg',
+  'excalidraw': '/tool-icons/excalidraw.svg',
 };
 
 /**
@@ -186,6 +188,7 @@ const skillToToolId: Record<string, string> = {
   'google-calendar': 'mcp_calendar',
   'notion': 'mcp_notion',
   'github': 'mcp_github',
+  'excalidraw': 'create_excalidraw_diagram',
 };
 
 /**

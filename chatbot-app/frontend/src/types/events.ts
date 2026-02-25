@@ -1,42 +1,18 @@
-// SDK-standard event types for improved type safety
 import type { ToolExecution } from '@/types/chat';
-
-export interface ReasoningEvent {
-  type: 'reasoning';
-  text: string;
-  step: 'thinking';
-}
-
-export interface ResponseEvent {
-  type: 'response';
-  text: string;
-  step: 'answering';
-  node_id?: string;  // Swarm mode: which agent is responding
-}
-
-// Text event (used by Swarm mode streaming)
-export interface TextEvent {
-  type: 'text';
-  content: string;
-  node_id?: string;  // Swarm mode: which agent is sending text
-}
-
-// Stream lifecycle events
-export interface StartEvent {
-  type: 'start';
-}
-
-export interface EndEvent {
-  type: 'end';
-}
-
-export interface ToolUseEvent {
-  type: 'tool_use';
-  toolUseId: string;
-  name: string;
-  input: Record<string, any>;
-  node_id?: string;  // Swarm mode: which agent is using the tool
-}
+import {
+  type RunStartedEvent,
+  type RunFinishedEvent,
+  type RunErrorEvent,
+  type TextMessageStartEvent,
+  type TextMessageContentEvent,
+  type TextMessageEndEvent,
+  type ToolCallStartEvent,
+  type ToolCallArgsEvent,
+  type ToolCallEndEvent,
+  type ToolCallResultEvent,
+  type CustomEvent,
+  EventType,
+} from '@ag-ui/core';
 
 export interface WorkspaceFile {
   filename: string;
@@ -46,156 +22,98 @@ export interface WorkspaceFile {
   tool_type: string;
 }
 
-export interface ToolResultEvent {
-  type: 'tool_result';
-  toolUseId: string;
-  result: string;
-  status?: string;
-  images?: Array<{
-    format: string;
-    data: string;
-  }>;
-  metadata?: Record<string, any>;
-  node_id?: string;  // Swarm mode: which agent produced the result
-}
-
-export interface InitEvent {
-  type: 'init';
-  message: string;
-}
-
-export interface ThinkingEvent {
-  type: 'thinking';
-  message: string;
-}
-
-export interface CompleteEvent {
-  type: 'complete';
-  message: string;
-  images?: Array<{
-    format: string;
-    data: string;
-  }>;
-  documents?: Array<{
-    filename: string;
-    tool_type: string;
-  }>;
-  usage?: TokenUsage;
-}
-
-export interface ErrorEvent {
-  type: 'error';
-  message: string;
-}
-
-export interface WarningEvent {
-  type: 'warning';
-  message: string;
-}
-
-export interface InterruptEvent {
-  type: 'interrupt';
-  interrupts: Array<{
-    id: string;
-    name: string;
-    reason?: {
-      tool_name?: string;
-      plan?: string;
-      plan_preview?: string;
+// Discriminated union for all custom AG-UI event payloads, using `name` as discriminator.
+export type CustomEventPayload =
+  | { name: 'reasoning'; text: string; step: 'thinking' }
+  | {
+      name: 'interrupt';
+      interrupts: Array<{
+        id: string;
+        name: string;
+        reason?: { tool_name?: string; plan?: string; plan_preview?: string };
+      }>;
+    }
+  | { name: 'warning'; message: string }
+  | { name: 'browser_progress'; content: string; stepNumber: number }
+  | { name: 'research_progress'; content: string; stepNumber: number }
+  | { name: 'code_step'; stepNumber: number; content: string }
+  | {
+      name: 'code_todo_update';
+      todos: Array<{ id: string; content: string; status: string; priority?: string }>;
+    }
+  | {
+      name: 'code_result_meta';
+      files_changed: string[];
+      todos: any[];
+      steps: number;
+      status: string;
+    }
+  | { name: 'oauth_elicitation'; authUrl: string; message: string; elicitationId: string }
+  | { name: 'swarm_node_start'; node_id: string; node_description: string }
+  | { name: 'swarm_node_stop'; node_id: string; status: string }
+  | {
+      name: 'swarm_handoff';
+      from_node: string;
+      to_node: string;
+      message?: string;
+      context?: Record<string, any>;
+    }
+  | {
+      name: 'swarm_complete';
+      total_nodes: number;
+      node_history: string[];
+      status: string;
+      final_response?: string;
+      final_node_id?: string;
+      shared_context?: Record<string, any>;
+    }
+  | {
+      name: 'metadata';
+      metadata?: { browserSessionId?: string; browserId?: string; [key: string]: any };
     };
-  }>;
-}
 
-export interface ProgressEvent {
-  type: 'progress';
-  message?: string;
-  data?: Record<string, any>;
-}
+// All AG-UI event type enum values used by this application.
+// Used by useChatAPI whitelist and sseParser validation.
+export const AGUI_EVENT_TYPES = [
+  EventType.RUN_STARTED,
+  EventType.RUN_FINISHED,
+  EventType.RUN_ERROR,
+  EventType.TEXT_MESSAGE_START,
+  EventType.TEXT_MESSAGE_CONTENT,
+  EventType.TEXT_MESSAGE_END,
+  EventType.TOOL_CALL_START,
+  EventType.TOOL_CALL_ARGS,
+  EventType.TOOL_CALL_END,
+  EventType.TOOL_CALL_RESULT,
+  EventType.CUSTOM,
+] as const;
 
-export interface MetadataEvent {
-  type: 'metadata';
-  metadata?: {
-    browserSessionId?: string;
-    browserId?: string;
-    [key: string]: any;
-  };
-}
+export type AGUIEventType = (typeof AGUI_EVENT_TYPES)[number];
 
-export interface BrowserProgressEvent {
-  type: 'browser_progress';
-  content: string;
-  stepNumber: number;
-}
+// Union of all AG-UI event types used by this application.
+export type AGUIStreamEvent =
+  | RunStartedEvent
+  | RunFinishedEvent
+  | RunErrorEvent
+  | TextMessageStartEvent
+  | TextMessageContentEvent
+  | TextMessageEndEvent
+  | ToolCallStartEvent
+  | ToolCallArgsEvent
+  | ToolCallEndEvent
+  | ToolCallResultEvent
+  | CustomEvent;
 
-export interface CodeStepEvent {
-  type: 'code_step';
-  stepNumber: number;
-  content: string;
-}
+/** @deprecated Use AGUIStreamEvent instead */
+export type StreamEvent = AGUIStreamEvent;
 
-export interface CodeTodoUpdateEvent {
-  type: 'code_todo_update';
-  todos: Array<{ id: string; content: string; status: string; priority?: string }>;
-}
+/** @deprecated Use AGUIEventType instead */
+export type StreamEventType = AGUIEventType;
 
-export interface CodeResultMetaEvent {
-  type: 'code_result_meta';
-  files_changed: string[];
-  todos: any[];
-  steps: number;
-  status: string;
-}
+// Swarm mode types
 
-export interface ResearchProgressEvent {
-  type: 'research_progress';
-  content: string;
-  stepNumber: number;
-}
-
-// MCP Elicitation Events (OAuth consent via elicit_url protocol)
-export interface OAuthElicitationEvent {
-  type: 'oauth_elicitation';
-  authUrl: string;
-  message: string;
-  elicitationId: string;
-}
-
-// Swarm Mode Events (Multi-Agent Orchestration)
 export type SwarmState = 'idle' | 'running' | 'completed' | 'failed';
 
-export interface SwarmNodeStartEvent {
-  type: 'swarm_node_start';
-  node_id: string;
-  node_description: string;
-}
-
-export interface SwarmNodeStopEvent {
-  type: 'swarm_node_stop';
-  node_id: string;
-  status: string;  // "completed" | "failed" | "interrupted"
-}
-
-export interface SwarmHandoffEvent {
-  type: 'swarm_handoff';
-  from_node: string;
-  to_node: string;
-  message?: string;
-  context?: Record<string, any>;  // shared_context data from the handing-off agent
-}
-
-export interface SwarmCompleteEvent {
-  type: 'swarm_complete';
-  total_nodes: number;
-  node_history: string[];
-  status: string;
-  // Fallback response when last agent is not responder
-  final_response?: string;
-  final_node_id?: string;
-  // Shared context from all agents (for history display)
-  shared_context?: Record<string, any>;
-}
-
-// Swarm agent execution step (for expanded view)
 export interface SwarmAgentStep {
   nodeId: string;
   displayName: string;
@@ -205,28 +123,25 @@ export interface SwarmAgentStep {
   toolCalls?: Array<{
     toolName: string;
     status: 'running' | 'completed' | 'failed';
-    toolUseId?: string;  // For matching with tool results
+    toolUseId?: string;
   }>;
   status: 'running' | 'completed' | 'failed';
-  responseText?: string;   // Final response text
-  reasoningText?: string;  // Intermediate reasoning/thinking
-  handoffMessage?: string; // Message passed to next agent via handoff
-  handoffContext?: Record<string, any>; // Actual data passed via handoff context
+  responseText?: string;
+  reasoningText?: string;
+  handoffMessage?: string;
+  handoffContext?: Record<string, any>;
 }
 
-// Swarm progress state for UI
 export interface SwarmProgress {
   isActive: boolean;
   currentNode: string;
   currentNodeDescription: string;
   nodeHistory: string[];
   status: SwarmState;
-  // For collapsible expanded view
-  currentAction?: string;  // Current tool or handoff being executed
-  agentSteps?: SwarmAgentStep[];  // Detailed steps for expanded view
+  currentAction?: string;
+  agentSteps?: SwarmAgentStep[];
 }
 
-// Agent name to display name mapping
 export const SWARM_AGENT_DISPLAY_NAMES: Record<string, string> = {
   coordinator: 'Coordinator',
   web_researcher: 'Web Researcher',
@@ -242,34 +157,8 @@ export const SWARM_AGENT_DISPLAY_NAMES: Record<string, string> = {
   responder: 'Responder',
 };
 
-export type StreamEvent =
-  | ReasoningEvent
-  | ResponseEvent
-  | TextEvent
-  | StartEvent
-  | EndEvent
-  | ToolUseEvent
-  | ToolResultEvent
-  | InitEvent
-  | ThinkingEvent
-  | CompleteEvent
-  | ErrorEvent
-  | WarningEvent
-  | InterruptEvent
-  | ProgressEvent
-  | MetadataEvent
-  | BrowserProgressEvent
-  | ResearchProgressEvent
-  | CodeStepEvent
-  | CodeTodoUpdateEvent
-  | CodeResultMetaEvent
-  | OAuthElicitationEvent
-  | SwarmNodeStartEvent
-  | SwarmNodeStopEvent
-  | SwarmHandoffEvent
-  | SwarmCompleteEvent;
-
 // Chat state interfaces
+
 export interface ReasoningState {
   text: string;
   isActive: boolean;
@@ -292,7 +181,6 @@ export interface InterruptState {
   }>;
 }
 
-// OAuth authorization pending state
 export interface PendingOAuthState {
   toolUseId?: string;
   toolName?: string;
@@ -331,16 +219,16 @@ export type AgentStatus =
   | 'compacting'
   | 'stopping'
   | 'swarm'
-  // Voice mode states
   | 'voice_connecting'
+  | 'voice_connected'
   | 'voice_listening'
   | 'voice_processing'
   | 'voice_speaking';
 
 export interface LatencyMetrics {
   requestStartTime: number | null;
-  timeToFirstToken: number | null;  // ms from request to first response
-  endToEndLatency: number | null;   // ms from request to completion
+  timeToFirstToken: number | null;
+  endToEndLatency: number | null;
 }
 
 export interface TokenUsage {
@@ -361,26 +249,3 @@ export interface ChatUIState {
 
 // Re-export for convenience
 export type { ToolExecution } from '@/types/chat';
-
-// All valid event types (single source of truth)
-// Used by useChatAPI whitelist and sseParser validation
-export const STREAM_EVENT_TYPES = [
-  // Core events
-  'reasoning', 'response', 'text', 'start', 'end',
-  // Tool events
-  'tool_use', 'tool_result', 'tool_progress',
-  // Lifecycle events
-  'init', 'thinking', 'complete', 'error', 'warning',
-  // Special events
-  'interrupt', 'progress', 'metadata',
-  // Progress events
-  'browser_progress', 'research_progress',
-  // Code agent events
-  'code_step', 'code_todo_update', 'code_result_meta',
-  // Elicitation events
-  'oauth_elicitation',
-  // Swarm events
-  'swarm_node_start', 'swarm_node_stop', 'swarm_handoff', 'swarm_complete',
-] as const;
-
-export type StreamEventType = typeof STREAM_EVENT_TYPES[number];

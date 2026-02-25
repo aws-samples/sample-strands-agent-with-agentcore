@@ -8,6 +8,7 @@ import {
   serializeToSSE
 } from '@/utils/sseParser'
 import type { StreamEvent } from '@/types/events'
+import { EventType } from '@ag-ui/core'
 
 describe('sseParser', () => {
   describe('parseSSELine', () => {
@@ -189,125 +190,71 @@ describe('sseParser', () => {
   })
 
   describe('validateStreamEvent', () => {
-    it('should validate reasoning event', () => {
-      const valid = { type: 'reasoning', text: 'Thinking...', step: 'thinking' } as StreamEvent
-      const invalid = { type: 'reasoning' } as unknown as StreamEvent
+    it('should validate RUN_STARTED event', () => {
+      const valid = { type: EventType.RUN_STARTED, threadId: 'thread-1', runId: 'run-1' } as unknown as StreamEvent
+      const missingThreadId = { type: EventType.RUN_STARTED, runId: 'run-1' } as unknown as StreamEvent
+
+      expect(validateStreamEvent(valid).valid).toBe(true)
+      expect(validateStreamEvent(missingThreadId).valid).toBe(false)
+      expect(validateStreamEvent(missingThreadId).errors[0]).toContain('threadId')
+    })
+
+    it('should validate RUN_ERROR event', () => {
+      const valid = { type: EventType.RUN_ERROR, message: 'Something went wrong' } as unknown as StreamEvent
+      const invalid = { type: EventType.RUN_ERROR } as unknown as StreamEvent
 
       expect(validateStreamEvent(valid).valid).toBe(true)
       expect(validateStreamEvent(invalid).valid).toBe(false)
-      expect(validateStreamEvent(invalid).errors).toContain('reasoning event missing "text" field')
     })
 
-    it('should validate response event', () => {
-      const valid = { type: 'response', text: 'Hello', step: 'answering' } as StreamEvent
-      const invalid = { type: 'response', text: 123 } as unknown as StreamEvent
+    it('should validate TEXT_MESSAGE_CONTENT event', () => {
+      const valid = { type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'msg-1', delta: 'Hello' } as unknown as StreamEvent
+      const missingDelta = { type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'msg-1' } as unknown as StreamEvent
 
       expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(invalid).valid).toBe(false)
+      expect(validateStreamEvent(missingDelta).valid).toBe(false)
+      expect(validateStreamEvent(missingDelta).errors[0]).toContain('delta')
     })
 
-    it('should validate tool_use event', () => {
-      const valid = {
-        type: 'tool_use',
-        toolUseId: 'tool-123',
-        name: 'calculator',
-        input: {}
-      } as StreamEvent
-
-      const missingToolUseId = {
-        type: 'tool_use',
-        name: 'calculator',
-        input: {}
-      } as unknown as StreamEvent
-
-      const missingName = {
-        type: 'tool_use',
-        toolUseId: 'tool-123',
-        input: {}
-      } as unknown as StreamEvent
+    it('should validate TOOL_CALL_START event', () => {
+      const valid = { type: EventType.TOOL_CALL_START, toolCallId: 'tc-1', toolCallName: 'calculator' } as unknown as StreamEvent
+      const missingName = { type: EventType.TOOL_CALL_START, toolCallId: 'tc-1' } as unknown as StreamEvent
 
       expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(missingToolUseId).valid).toBe(false)
       expect(validateStreamEvent(missingName).valid).toBe(false)
+      expect(validateStreamEvent(missingName).errors[0]).toContain('toolCallName')
     })
 
-    it('should validate tool_result event', () => {
-      const valid = {
-        type: 'tool_result',
-        toolUseId: 'tool-123',
-        result: 'success'
-      } as StreamEvent
-
-      const invalid = {
-        type: 'tool_result',
-        result: 'success'
-      } as unknown as StreamEvent
+    it('should validate TOOL_CALL_RESULT event', () => {
+      const valid = { type: EventType.TOOL_CALL_RESULT, toolCallId: 'tc-1', messageId: 'msg-1', content: 'result' } as unknown as StreamEvent
+      const invalid = { type: EventType.TOOL_CALL_RESULT, messageId: 'msg-1', content: 'result' } as unknown as StreamEvent
 
       expect(validateStreamEvent(valid).valid).toBe(true)
       expect(validateStreamEvent(invalid).valid).toBe(false)
     })
 
-    it('should validate error event', () => {
-      const valid = { type: 'error', message: 'Something went wrong' } as StreamEvent
-      const invalid = { type: 'error' } as unknown as StreamEvent
+    it('should validate CUSTOM event', () => {
+      const valid = { type: EventType.CUSTOM, name: 'reasoning', value: {} } as unknown as StreamEvent
+      const missingName = { type: EventType.CUSTOM, value: {} } as unknown as StreamEvent
 
       expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(invalid).valid).toBe(false)
-    })
-
-    it('should validate interrupt event', () => {
-      const valid = {
-        type: 'interrupt',
-        interrupts: [{ id: 'int-1', name: 'approval' }]
-      } as StreamEvent
-
-      const invalid = {
-        type: 'interrupt',
-        interrupts: 'not an array'
-      } as unknown as StreamEvent
-
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(invalid).valid).toBe(false)
-    })
-
-    it('should validate browser_progress event', () => {
-      const valid = {
-        type: 'browser_progress',
-        stepNumber: 1,
-        content: 'Clicking button'
-      } as StreamEvent
-
-      const missingStepNumber = {
-        type: 'browser_progress',
-        content: 'Clicking button'
-      } as unknown as StreamEvent
-
-      const missingContent = {
-        type: 'browser_progress',
-        stepNumber: 1
-      } as unknown as StreamEvent
-
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(missingStepNumber).valid).toBe(false)
-      expect(validateStreamEvent(missingContent).valid).toBe(false)
-    })
-
-    it('should accept optional-field events', () => {
-      expect(validateStreamEvent({ type: 'init', message: '' } as StreamEvent).valid).toBe(true)
-      expect(validateStreamEvent({ type: 'thinking', message: '' } as StreamEvent).valid).toBe(true)
-      expect(validateStreamEvent({ type: 'complete', message: '' } as StreamEvent).valid).toBe(true)
-      expect(validateStreamEvent({ type: 'progress' } as StreamEvent).valid).toBe(true)
-      expect(validateStreamEvent({ type: 'metadata' } as StreamEvent).valid).toBe(true)
+      expect(validateStreamEvent(missingName).valid).toBe(false)
+      expect(validateStreamEvent(missingName).errors[0]).toContain('name')
     })
 
     it('should allow unknown event types for forward compatibility', () => {
-      // Unknown event types are intentionally allowed to support
-      // forward compatibility when new event types are added
       const unknown = { type: 'unknown_type' } as unknown as StreamEvent
 
       const result = validateStreamEvent(unknown)
       expect(result.valid).toBe(true)
       expect(result.errors).toHaveLength(0)
+    })
+
+    it('should allow legacy custom event types (passed via CUSTOM channel)', () => {
+      // Legacy types like 'reasoning', 'interrupt' etc. fall through to default (valid)
+      expect(validateStreamEvent({ type: 'reasoning' } as unknown as StreamEvent).valid).toBe(true)
+      expect(validateStreamEvent({ type: 'init' } as unknown as StreamEvent).valid).toBe(true)
+      expect(validateStreamEvent({ type: 'complete' } as unknown as StreamEvent).valid).toBe(true)
     })
   })
 
@@ -372,14 +319,14 @@ describe('sseParser', () => {
 
   describe('serializeToSSE', () => {
     it('should serialize event without event name', () => {
-      const event = { type: 'response', text: 'Hello' } as StreamEvent
+      const event = { type: 'response', text: 'Hello' } as unknown as StreamEvent
       const result = serializeToSSE(event)
 
       expect(result).toBe('data: {"type":"response","text":"Hello"}\n\n')
     })
 
     it('should serialize event with event name', () => {
-      const event = { type: 'response', text: 'Hello' } as StreamEvent
+      const event = { type: 'response', text: 'Hello' } as unknown as StreamEvent
       const result = serializeToSSE(event, 'message')
 
       expect(result).toBe('event: message\ndata: {"type":"response","text":"Hello"}\n\n')
@@ -391,7 +338,7 @@ describe('sseParser', () => {
         toolUseId: 'tool-123',
         result: 'success',
         images: [{ format: 'png', data: 'base64...' }]
-      } as StreamEvent
+      } as unknown as StreamEvent
 
       const result = serializeToSSE(event)
       const parsed = parseSSEChunk(result)
@@ -455,38 +402,16 @@ describe('sseParser', () => {
       expect(event.interrupts[0].reason.max_steps).toBe(15)
     })
 
-    it('should validate interrupt event with missing interrupts field', () => {
-      const invalidEvent = { type: 'interrupt' } as unknown as StreamEvent
-
-      const result = validateStreamEvent(invalidEvent)
-
-      expect(result.valid).toBe(false)
-      expect(result.errors).toContain('interrupt event missing "interrupts" array')
-    })
-
-    it('should validate interrupt event with non-array interrupts', () => {
-      const invalidEvent = {
+    it('should allow legacy interrupt event (falls through to default, always valid)', () => {
+      // interrupt is a legacy/custom type — validator allows all unknown types
+      const missingInterrupts = { type: 'interrupt' } as unknown as StreamEvent
+      const withInterrupts = {
         type: 'interrupt',
-        interrupts: 'not-an-array'
+        interrupts: [{ id: 'int-1', name: 'chatbot-research-approval' }]
       } as unknown as StreamEvent
 
-      const result = validateStreamEvent(invalidEvent)
-
-      expect(result.valid).toBe(false)
-    })
-
-    it('should validate interrupt event with valid interrupts array', () => {
-      const validEvent = {
-        type: 'interrupt',
-        interrupts: [
-          { id: 'int-1', name: 'chatbot-research-approval' },
-          { id: 'int-2', name: 'chatbot-browser-approval' }
-        ]
-      } as StreamEvent
-
-      const result = validateStreamEvent(validEvent)
-
-      expect(result.valid).toBe(true)
+      expect(validateStreamEvent(missingInterrupts).valid).toBe(true)
+      expect(validateStreamEvent(withInterrupts).valid).toBe(true)
     })
 
     it('should create mock interrupt event', () => {
@@ -514,7 +439,7 @@ describe('sseParser', () => {
             plan: 'Step 1: Do this\nStep 2: Do that'
           }
         }]
-      } as StreamEvent
+      } as unknown as StreamEvent
 
       const serialized = serializeToSSE(originalEvent)
       const { events, errors } = parseSSEChunk(serialized)

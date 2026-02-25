@@ -11,6 +11,7 @@ from strands import tool, ToolContext
 from skill import register_skill
 from typing import Dict, Any, Optional
 from builtin_tools.lib.tool_response import build_success_response, build_image_response
+from datetime import datetime, timezone
 import logging
 import os
 
@@ -273,6 +274,33 @@ Saved to workspace for reuse in documents.
             "user_id": user_id,
             "session_id": session_id,
         }
+
+        # Save to agent.state["artifacts"] for Canvas display and session persistence
+        try:
+            artifact_id = f"diagram-{output_filename.rsplit('.', 1)[0]}"
+            artifacts = tool_context.agent.state.get("artifacts") or {}
+            artifacts[artifact_id] = {
+                "id": artifact_id,
+                "type": "diagram",
+                "title": output_filename,
+                "content": s3_info['s3_url'],
+                "tool_name": tool_name,
+                "metadata": metadata,
+                "created_at": artifacts.get(artifact_id, {}).get("created_at", datetime.now(timezone.utc).isoformat()),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            tool_context.agent.state.set("artifacts", artifacts)
+
+            session_manager = tool_context.invocation_state.get("session_manager")
+            if not session_manager and hasattr(tool_context.agent, "session_manager"):
+                session_manager = tool_context.agent.session_manager
+            if session_manager:
+                session_manager.sync_agent(tool_context.agent)
+                logger.info(f"Saved diagram artifact: {artifact_id}")
+            else:
+                logger.warning(f"No session_manager found, diagram artifact not persisted: {artifact_id}")
+        except Exception as e:
+            logger.error(f"Failed to save diagram artifact to agent.state: {e}")
 
         # Add image preview for PNG files
         if not is_pdf:

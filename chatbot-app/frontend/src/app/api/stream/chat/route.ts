@@ -3,7 +3,7 @@
  * Invokes AgentCore Runtime and streams responses
  */
 import { NextRequest } from 'next/server'
-import { invokeAgentCoreRuntime } from '@/lib/agentcore-runtime-client'
+import { invokeAgentCoreRuntime, invokeAgentCoreRuntimeAgui } from '@/lib/agentcore-runtime-client'
 import { extractUserFromRequest, getSessionId, ensureSessionExists } from '@/lib/auth-utils'
 import { createDefaultHookManager } from '@/lib/chat-hooks'
 import { getSystemPrompt } from '@/lib/system-prompts'
@@ -124,6 +124,8 @@ export async function POST(request: NextRequest) {
     let request_type: string | undefined
     let selected_artifact_id: string | undefined
     let system_prompt: string | undefined
+    let threadIdFromBody: string | undefined
+    let runIdFromBody: string | undefined
 
     if (isFormData) {
       // Parse FormData for file uploads
@@ -182,15 +184,30 @@ export async function POST(request: NextRequest) {
         console.log(`[BFF] Converted ${files.length} file(s) to AgentCore format`)
       }
     } else {
-      // Parse JSON for text-only messages
+      // Parse JSON as AG-UI RunAgentInput: { threadId, runId, messages, tools, state }
       const body = await request.json()
-      message = body.message
-      model_id = body.model_id
-      temperature = body.temperature
-      enabled_tools = body.enabled_tools
-      request_type = body.request_type
-      selected_artifact_id = body.selected_artifact_id
-      system_prompt = body.system_prompt
+
+      threadIdFromBody = body.threadId
+      runIdFromBody = body.runId
+
+      // Per-request config lives in body.state (replaces former top-level fields)
+      const state = body.state ?? {}
+      model_id = state.model_id
+      temperature = state.temperature
+      request_type = state.request_type
+      enabled_tools = state.enabled_tools
+      selected_artifact_id = state.selected_artifact_id
+      system_prompt = state.system_prompt
+
+      // If enabled_tools is not in state, fall back to extracting names from AG-UI body.tools
+      if (!enabled_tools && Array.isArray(body.tools)) {
+        enabled_tools = body.tools.map((t: { name: string }) => t.name)
+      }
+
+      // Extract user message from the last element of body.messages
+      const bodyMessages: Array<{ id?: string; role?: string; content?: string }> = body.messages ?? []
+      const lastMsg = bodyMessages[bodyMessages.length - 1]
+      message = lastMsg?.content ?? ''
     }
 
     if (!message) {
@@ -210,7 +227,11 @@ export async function POST(request: NextRequest) {
     console.log(`[BFF] Authorization header present: ${!!authHeader}, starts with Bearer: ${authHeader.startsWith('Bearer ')}, authToken length: ${authToken.length}`)
 
     // Get or generate session ID (user-specific)
-    const { sessionId } = getSessionId(request, userId)
+    // For the AG-UI JSON path, threadId from RunAgentInput is the authoritative session identifier
+    let { sessionId } = getSessionId(request, userId)
+    if (threadIdFromBody) {
+      sessionId = threadIdFromBody
+    }
 
     // Ensure session exists in storage (creates if not exists)
     const { isNew: isNewSession } = await ensureSessionExists(userId, sessionId, {
@@ -434,22 +455,44 @@ export async function POST(request: NextRequest) {
             finalSystemPrompt = `${modelConfig.system_prompt}\n\n${system_prompt}`
           }
 
-          const agentStream = await invokeAgentCoreRuntime(
-            userId,
-            sessionId,
-            message,
-            modelConfig.model_id,
-            enabledToolsList.length > 0 ? enabledToolsList : undefined,
-            files, // Pass uploaded files to AgentCore
-            modelConfig.temperature,
-            finalSystemPrompt,
-            modelConfig.caching_enabled,
-            agentCoreAbortController.signal, // Pass abort signal for cancellation
-            request_type, // Request type: normal, swarm, compose
-            selected_artifact_id, // Selected artifact ID for tool context
-            userApiKeys, // User API keys for tool authentication
-            authToken // Cognito JWT for MCP Runtime 3LO OAuth
-          )
+          let agentStream: ReadableStream
+          if (threadIdFromBody) {
+            // AG-UI path: send RunAgentInput in snake_case so backend uses AGUIStreamEventProcessor
+            const aguiBody: Record<string, any> = {
+              thread_id: threadIdFromBody,
+              run_id: runIdFromBody || crypto.randomUUID(),
+              messages: [{ id: crypto.randomUUID(), role: 'user', content: message }],
+              tools: enabledToolsList.map(name => ({ name, description: '' })),
+              context: [],
+              state: {
+                user_id: userId,
+                model_id: modelConfig.model_id,
+                temperature: modelConfig.temperature,
+                system_prompt: finalSystemPrompt,
+                caching_enabled: modelConfig.caching_enabled,
+                ...(request_type && { request_type }),
+                ...(selected_artifact_id && { selected_artifact_id }),
+              },
+            }
+            agentStream = await invokeAgentCoreRuntimeAgui(aguiBody, agentCoreAbortController.signal)
+          } else {
+            agentStream = await invokeAgentCoreRuntime(
+              userId,
+              sessionId,
+              message,
+              modelConfig.model_id,
+              enabledToolsList.length > 0 ? enabledToolsList : undefined,
+              files,
+              modelConfig.temperature,
+              finalSystemPrompt,
+              modelConfig.caching_enabled,
+              agentCoreAbortController.signal,
+              request_type,
+              selected_artifact_id,
+              userApiKeys,
+              authToken
+            )
+          }
           agentStarted = true
 
           // Read from AgentCore stream and forward chunks
@@ -482,7 +525,7 @@ export async function POST(request: NextRequest) {
           console.error('[BFF] Error:', error)
           const errorEvent = `data: ${JSON.stringify({
             type: 'error',
-            content: error instanceof Error ? error.message : 'Unknown error',
+            message: error instanceof Error ? error.message : 'Unknown error',
             metadata: { session_id: sessionId }
           })}\n\n`
           try {

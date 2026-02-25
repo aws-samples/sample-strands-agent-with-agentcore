@@ -6,19 +6,69 @@ No external dependencies required - the LLM generates the diagram JSON directly.
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
-from strands import tool
+from strands import tool, ToolContext
 from skill import skill
 
 logger = logging.getLogger(__name__)
 
 
+def _save_excalidraw_artifact(
+    tool_context: ToolContext,
+    title: str,
+    s3_key: str,
+    s3_url: str,
+    element_count: int,
+    user_id: str,
+    session_id: str,
+) -> None:
+    """Save Excalidraw diagram as artifact to agent.state for Canvas display."""
+    try:
+        artifact_id = f"excalidraw-{title}"
+        artifacts = tool_context.agent.state.get("artifacts") or {}
+
+        artifacts[artifact_id] = {
+            "id": artifact_id,
+            "type": "excalidraw",
+            "title": title,
+            "content": s3_url,
+            "tool_name": "create_excalidraw_diagram",
+            "metadata": {
+                "filename": f"{title}.json",
+                "s3_key": s3_key,
+                "s3_url": s3_url,
+                "element_count": element_count,
+                "user_id": user_id,
+                "session_id": session_id,
+            },
+            "created_at": artifacts.get(artifact_id, {}).get("created_at", datetime.now(timezone.utc).isoformat()),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        tool_context.agent.state.set("artifacts", artifacts)
+
+        session_manager = tool_context.invocation_state.get("session_manager")
+        if not session_manager and hasattr(tool_context.agent, "session_manager"):
+            session_manager = tool_context.agent.session_manager
+
+        if session_manager:
+            session_manager.sync_agent(tool_context.agent)
+            logger.info(f"Saved Excalidraw artifact: {artifact_id}")
+        else:
+            logger.warning(f"No session_manager found, Excalidraw artifact not persisted: {artifact_id}")
+
+    except Exception as e:
+        logger.error(f"Failed to save Excalidraw artifact: {e}")
+
+
 @skill("excalidraw")
-@tool
+@tool(context=True)
 def create_excalidraw_diagram(
     elements: list[dict[str, Any]],
     title: str = "Diagram",
-    background_color: str = "#ffffff"
+    background_color: str = "#ffffff",
+    tool_context: ToolContext = None
 ) -> str:
     """
     Create a hand-drawn style diagram using Excalidraw element JSON.
@@ -93,9 +143,31 @@ def create_excalidraw_diagram(
         element_count = len(drawable_elements)
         logger.info(f"Created Excalidraw diagram '{title}' with {element_count} elements")
 
+        # Save JSON to S3 and persist to agent.state
+        s3_key = None
+        s3_url = None
+        if tool_context is not None:
+            try:
+                from workspace import ImageManager
+                user_id = tool_context.invocation_state.get("user_id", "default_user")
+                session_id = tool_context.invocation_state.get("session_id", "default_session")
+                image_manager = ImageManager(user_id, session_id)
+                serialized = json.dumps(excalidraw_data, ensure_ascii=False).encode("utf-8")
+                s3_info = image_manager.save_to_s3(
+                    f"{title}.json",
+                    serialized,
+                    metadata={"source": "excalidraw_tool", "diagram_type": "excalidraw"},
+                )
+                s3_key = s3_info["s3_key"]
+                s3_url = s3_info["s3_url"]
+                _save_excalidraw_artifact(tool_context, title, s3_key, s3_url, element_count, user_id, session_id)
+            except Exception as e:
+                logger.warning(f"Failed to save Excalidraw to S3/state (non-fatal): {e}")
+
         return json.dumps({
             "success": True,
             "excalidraw_data": excalidraw_data,
+            "s3_key": s3_key,
             "message": f"Created diagram '{title}' with {element_count} elements"
         })
 

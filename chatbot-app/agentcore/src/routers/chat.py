@@ -8,7 +8,7 @@ Simplified using agent factory pattern - all agent-specific logic moved to agent
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from typing import AsyncGenerator, Optional
+from typing import AsyncGenerator, List, Optional
 import asyncio
 import logging
 import json
@@ -17,8 +17,19 @@ from opentelemetry import trace
 
 from models.schemas import InvocationRequest
 from agents.factory import create_agent
+from streaming.agui_event_processor import AGUIStreamEventProcessor
+from ag_ui.core import RunAgentInput
+from ag_ui.encoder import EventEncoder
 
 logger = logging.getLogger(__name__)
+
+
+def _is_agui_request(body: dict) -> bool:
+    """Returns True if body matches AG-UI RunAgentInput (has thread_id/run_id, lacks session_id/user_id)."""
+    return (
+        "thread_id" in body and "run_id" in body
+        and "session_id" not in body and "user_id" not in body
+    )
 
 router = APIRouter(tags=["chat"])
 
@@ -110,13 +121,19 @@ async def disconnect_aware_stream(
 
 
 @router.post("/invocations")
-async def invocations(request: InvocationRequest, http_request: Request):
+async def invocations(http_request: Request):
     """
     Main endpoint for agent invocations.
 
-    Simplified using agent factory - creates appropriate agent based on request_type
-    and streams response events.
+    Accepts both the existing InvocationRequest format and AG-UI RunAgentInput format,
+    routing to the appropriate handler based on request body fields.
     """
+    body = await http_request.json()
+
+    if _is_agui_request(body):
+        return await _handle_agui_invocation(body, http_request)
+
+    request = InvocationRequest(**body)
     input_data = request.input
 
     # Handle warmup requests (Lambda container warmup)
@@ -282,3 +299,111 @@ def _parse_message(message: str, request_type: str) -> tuple[str, dict]:
 
     # Normal message - no special handling
     return message, special_params
+
+
+async def _handle_agui_invocation(body: dict, http_request: Request) -> StreamingResponse:
+    """Handle AG-UI protocol RunAgentInput requests."""
+    # forwarded_props is required by RunAgentInput but optional in practice; default to None
+    body = {**body, "forwarded_props": body.get("forwarded_props")}
+    input_data = RunAgentInput(**body)
+    thread_id = input_data.thread_id
+    run_id = input_data.run_id
+
+    session_id = thread_id
+    user_id = "agui"
+    if input_data.state and isinstance(input_data.state, dict):
+        user_id = input_data.state.get("user_id", "agui")
+
+    message = ""
+    if input_data.messages:
+        for msg in reversed(input_data.messages):
+            if msg.role == "user":
+                content = msg.content
+                if isinstance(content, str):
+                    message = content
+                elif isinstance(content, list):
+                    for part in content:
+                        if hasattr(part, "text"):
+                            message = part.text
+                            break
+                        elif isinstance(part, dict) and part.get("type") == "text":
+                            message = part.get("text", "")
+                            break
+                break
+
+    # Extract enabled tools from the AG-UI tools list
+    enabled_tools: Optional[List[str]] = None
+    if input_data.tools:
+        tool_names = [t.name for t in input_data.tools if t.name]
+        if tool_names:
+            enabled_tools = tool_names
+
+    # Extract additional config from state
+    model_id = None
+    temperature = None
+    system_prompt = None
+    caching_enabled = None
+    request_type = "normal"
+    if input_data.state and isinstance(input_data.state, dict):
+        model_id = input_data.state.get("model_id")
+        temperature = input_data.state.get("temperature")
+        system_prompt = input_data.state.get("system_prompt")
+        caching_enabled = input_data.state.get("caching_enabled")
+        request_type = input_data.state.get("request_type", "normal")
+
+    logger.info(f"AG-UI invocation: thread_id={thread_id}, run_id={run_id}, user_id={user_id}, tools={len(enabled_tools) if enabled_tools else 0}")
+
+    try:
+        agent = create_agent(
+            request_type=request_type,
+            session_id=session_id,
+            user_id=user_id,
+            enabled_tools=enabled_tools,
+            model_id=model_id,
+            temperature=temperature,
+            system_prompt=system_prompt,
+            caching_enabled=caching_enabled,
+        )
+
+        agui_processor = AGUIStreamEventProcessor(thread_id=thread_id, run_id=run_id)
+
+        os.environ["SESSION_ID"] = session_id
+        os.environ["USER_ID"] = user_id
+
+        invocation_state = {
+            "session_id": session_id,
+            "user_id": user_id,
+            "model_id": agent.model_id,
+            "session_manager": agent.session_manager,
+        }
+
+        stream = agui_processor.process_stream(
+            agent.agent,
+            message,
+            session_id=session_id,
+            invocation_state=invocation_state,
+        )
+
+        wrapped_stream = disconnect_aware_stream(stream, http_request, session_id)
+        final_stream = keepalive_stream(wrapped_stream, session_id)
+
+        accept = http_request.headers.get("accept", "")
+        media_type = EventEncoder(accept=accept).get_content_type()
+
+        return StreamingResponse(
+            final_stream,
+            media_type=media_type,
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+                "Connection": "keep-alive",
+                "X-Thread-ID": thread_id,
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"Error in AG-UI invocation: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Agent processing failed. Please check logs for details."
+        )

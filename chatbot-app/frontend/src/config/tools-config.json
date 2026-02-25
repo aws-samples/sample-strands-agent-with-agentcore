@@ -23,7 +23,7 @@
       "icon": "",
       "enabled": true,
       "isDynamic": false,
-      "displayName": { "running": "Creating diagram", "complete": "Created diagram" },
+      "displayName": { "running": "Creating Excalidraw diagram", "complete": "Created Excalidraw diagram" },
       "systemPromptGuidance": "**Element Format:**\n- Required: type, x, y, id\n- Shapes (rectangle/ellipse/diamond): add width, height\n- Arrows/lines: add width, height, points [[0,0],[dx,dy]]\n- Text: add text, fontSize\n- Use label field on shapes for centered text\n- Connect shapes with arrow elements using points routing",
       "tags": ["diagram", "flowchart", "architecture", "design", "visualization"]
     },
