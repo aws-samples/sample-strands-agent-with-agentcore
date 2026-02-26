@@ -7,6 +7,7 @@ import { invokeAgentCoreRuntime, invokeAgentCoreRuntimeAgui } from '@/lib/agentc
 import { extractUserFromRequest, getSessionId, ensureSessionExists } from '@/lib/auth-utils'
 import { createDefaultHookManager } from '@/lib/chat-hooks'
 import { getSystemPrompt } from '@/lib/system-prompts'
+import * as executionBuffer from '../../lib/execution-buffer'
 import sharp from 'sharp'
 // Note: browser-session-poller is dynamically imported when browser-use-agent is enabled
 
@@ -388,18 +389,23 @@ export async function POST(request: NextRequest) {
     // 1. Immediately starts sending keep-alive (before AgentCore responds)
     // 2. Continues keep-alive during AgentCore processing
     // 3. Forwards AgentCore chunks when they arrive
+    // 4. Buffers all SSE events for resume support (even after client disconnect)
     const stream = new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder()
+        const decoder = new TextDecoder()
         let lastActivityTime = Date.now()
         let keepAliveInterval: NodeJS.Timeout | null = null
         let agentStarted = false
+        let clientDisconnected = false
+        let currentExecutionId: string | null = null
 
         // Send initial keep-alive immediately to establish connection
         controller.enqueue(encoder.encode(`: connected ${new Date().toISOString()}\n\n`))
 
         // Start keep-alive interval (runs every 20 seconds)
         keepAliveInterval = setInterval(() => {
+          if (clientDisconnected) return
           const now = Date.now()
           const timeSinceActivity = now - lastActivityTime
 
@@ -408,7 +414,7 @@ export async function POST(request: NextRequest) {
               controller.enqueue(encoder.encode(`: keep-alive ${new Date().toISOString()}\n\n`))
               lastActivityTime = now
             } catch (err) {
-              // Controller already closed, stop interval
+              clientDisconnected = true
               if (keepAliveInterval) {
                 clearInterval(keepAliveInterval)
                 keepAliveInterval = null
@@ -421,20 +427,52 @@ export async function POST(request: NextRequest) {
         const pollingAbortController = new AbortController()
         let browserSessionPollingStarted = false
 
-        // AbortController for AgentCore stream (to cancel on client disconnect)
+        // AbortController for AgentCore stream
         const agentCoreAbortController = new AbortController()
-        let agentCoreReader: ReadableStreamDefaultReader<Uint8Array> | null = null
 
-        // Listen for client disconnect via request.signal
+        // Listen for client disconnect — do NOT cancel the reader.
+        // We continue reading from AgentCore to buffer events for resume.
         request.signal.addEventListener('abort', () => {
-          console.log('[BFF] Client disconnected (request.signal aborted), cancelling AgentCore stream')
-          agentCoreAbortController.abort()
-          if (agentCoreReader) {
-            agentCoreReader.cancel().catch(err => {
-              console.warn('[BFF] Error cancelling reader on abort:', err)
-            })
+          console.log('[BFF] Client disconnected, continuing background read for event buffer')
+          clientDisconnected = true
+          if (keepAliveInterval) {
+            clearInterval(keepAliveInterval)
+            keepAliveInterval = null
           }
         })
+
+        /**
+         * Parse raw byte chunks into complete SSE event strings.
+         * Returns an array of complete events (each ending with "\n\n").
+         * Leftover partial data is kept in sseBuffer for the next call.
+         */
+        let sseBuffer = ''
+        function parseSSEChunks(value: Uint8Array): string[] {
+          sseBuffer += decoder.decode(value, { stream: true })
+          const events: string[] = []
+          // Split on double-newline (SSE event boundary)
+          let boundary = sseBuffer.indexOf('\n\n')
+          while (boundary !== -1) {
+            const event = sseBuffer.substring(0, boundary + 2)  // include the \n\n
+            sseBuffer = sseBuffer.substring(boundary + 2)
+            events.push(event)
+            boundary = sseBuffer.indexOf('\n\n')
+          }
+          return events
+        }
+
+        /** Extract executionId from an execution_meta SSE event string. */
+        function extractExecutionId(event: string): string | null {
+          const dataMatch = event.match(/^data: (.+)$/m)
+          if (!dataMatch) return null
+          try {
+            const data = JSON.parse(dataMatch[1])
+            if (data.type === 'CUSTOM' && data.name === 'execution_meta') {
+              return data.value?.executionId || null
+            }
+          } catch { /* ignore */ }
+          return null
+        }
 
         try {
           // Execute before hooks (session metadata, tool config, etc.)
@@ -495,29 +533,42 @@ export async function POST(request: NextRequest) {
           }
           agentStarted = true
 
-          // Read from AgentCore stream and forward chunks
+          // Read from AgentCore stream, buffer events, and forward to client
           const reader = agentStream.getReader()
-          agentCoreReader = reader // Store for abort handler
 
           while (true) {
             const { done, value } = await reader.read()
-
             if (done) break
 
-            // Check if controller is still open before enqueueing
-            try {
-              controller.enqueue(value)
-              lastActivityTime = Date.now()
-            } catch (err) {
-              // Controller closed (client disconnected) - gracefully cancel AgentCore stream
-              console.log('[BFF] Controller closed, cancelling AgentCore stream for graceful shutdown')
-              try {
-                await reader.cancel()
-                console.log('[BFF] AgentCore stream cancelled successfully')
-              } catch (cancelErr) {
-                console.error('[BFF] Error cancelling AgentCore stream:', cancelErr)
+            // Parse raw bytes into complete SSE events
+            const sseEvents = parseSSEChunks(value)
+            for (const evt of sseEvents) {
+              // Check for execution_meta to learn the executionId
+              if (!currentExecutionId) {
+                const execId = extractExecutionId(evt)
+                if (execId) {
+                  currentExecutionId = execId
+                  executionBuffer.create(execId)
+                  console.log(`[BFF] Execution buffer created: ${execId}`)
+                }
               }
-              break
+
+              // Buffer the event
+              if (currentExecutionId) {
+                executionBuffer.append(currentExecutionId, evt)
+              }
+            }
+
+            // Forward raw bytes to client if still connected
+            if (!clientDisconnected) {
+              try {
+                controller.enqueue(value)
+                lastActivityTime = Date.now()
+              } catch (err) {
+                // Client disconnected — continue reading for buffer
+                clientDisconnected = true
+                console.log('[BFF] Client disconnected mid-stream, continuing background read')
+              }
             }
           }
 
@@ -529,12 +580,20 @@ export async function POST(request: NextRequest) {
             metadata: { session_id: sessionId }
           })}\n\n`
           try {
-            controller.enqueue(encoder.encode(errorEvent))
+            if (!clientDisconnected) {
+              controller.enqueue(encoder.encode(errorEvent))
+            }
           } catch (err) {
             // Controller already closed, ignore
             console.log('[BFF] Controller closed, cannot send error event')
           }
         } finally {
+          // Mark execution as completed in buffer
+          if (currentExecutionId) {
+            executionBuffer.complete(currentExecutionId)
+            console.log(`[BFF] Execution buffer completed: ${currentExecutionId}`)
+          }
+
           // Update session metadata after message processing
           try {
             let currentSession: any = null
@@ -588,7 +647,9 @@ export async function POST(request: NextRequest) {
           if (keepAliveInterval) {
             clearInterval(keepAliveInterval)
           }
-          controller.close()
+          if (!clientDisconnected) {
+            try { controller.close() } catch { /* already closed */ }
+          }
         }
       }
     })

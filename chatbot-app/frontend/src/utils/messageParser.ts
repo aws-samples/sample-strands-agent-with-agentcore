@@ -64,5 +64,10 @@ export function createToolExecution(
     execution.images = images
   }
 
+  // Restore code agent terminal log from tool_result metadata (persisted by backend)
+  if (toolResult?.metadata?.codeSteps && Array.isArray(toolResult.metadata.codeSteps)) {
+    execution.codeSteps = toolResult.metadata.codeSteps
+  }
+
   return execution
 }

@@ -83,6 +83,9 @@ interface UseChatReturn {
   addArtifactMessage: (artifact: { id: string; type: string; title: string; wordCount?: number }) => void
   // OAuth state
   pendingOAuth: PendingOAuthState | null | undefined
+  // SSE reconnection state
+  isReconnecting: boolean
+  reconnectAttempt: number
 }
 
 // Default preferences when session has no saved preferences
@@ -244,7 +247,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     sendMessage: apiSendMessage,
     cleanup,
     sendStopSignal,
-    loadSession: apiLoadSession
+    loadSession: apiLoadSession,
+    isReconnecting,
+    reconnectAttempt,
   } = useChatAPI({
     backendUrl,
     setUIState,
@@ -258,7 +263,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setSessionId,
     onSessionCreated: handleSessionCreated,
     currentModelId,
-    currentTemperature
+    currentTemperature,
   })
 
   // Initialize polling with apiLoadSession (now available)
@@ -1225,5 +1230,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     addArtifactMessage,
     // OAuth state
     pendingOAuth: sessionState.pendingOAuth,
+    // SSE reconnection state
+    isReconnecting,
+    reconnectAttempt,
   }
 }

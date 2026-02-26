@@ -200,6 +200,8 @@ export function ChatInterface() {
     addArtifactMessage,
     currentModelId,
     updateModelConfig,
+    isReconnecting,
+    reconnectAttempt,
   } = useChat({
     onArtifactUpdated: handleArtifactUpdated,
     onWordDocumentsCreated: handleWordDocumentsCreated,
@@ -1357,6 +1359,17 @@ export function ChatInterface() {
           {agentStatus === 'thinking' && !swarmProgress?.isActive && (
             <div className={`mx-auto w-full max-w-4xl px-4 min-w-0 animate-fade-in`}>
               <AIIcon size={40} isAnimating={true} />
+            </div>
+          )}
+
+          {/* Reconnection banner */}
+          {isReconnecting && (
+            <div className="flex items-center justify-center py-2 px-4 mx-4 mb-2 rounded-md bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400 text-sm">
+              <svg className="animate-spin h-4 w-4 mr-2" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Connection lost. Reconnecting... ({reconnectAttempt}/5)
             </div>
           )}
 

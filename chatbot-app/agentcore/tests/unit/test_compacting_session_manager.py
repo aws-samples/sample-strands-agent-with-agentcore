@@ -1630,25 +1630,21 @@ class TestRepairToolMismatch:
         assert len(result) == 3
         assert result[2]["content"][0]["toolResult"]["toolUseId"] == "id-1"
 
-    def test_injects_synthetic_result_when_no_following_message(self, manager):
-        """toolUse with no following user message → synthetic user message appended"""
+    def test_strips_orphaned_tooluse_when_no_following_message(self, manager):
+        """toolUse with no following user message → assistant message removed entirely"""
         messages = [
             {"role": "user", "content": [{"text": "go"}]},
             {
                 "role": "assistant",
                 "content": [{"toolUse": {"toolUseId": "id-orphan", "name": "browser", "input": {}}}],
             },
-            # no user follow-up — simulates interrupted task
         ]
         result = manager._repair_tool_mismatch(messages)
-        assert len(result) == 3
-        last = result[2]
-        assert last["role"] == "user"
-        assert last["content"][0]["toolResult"]["toolUseId"] == "id-orphan"
-        assert last["content"][0]["toolResult"]["status"] == "error"
+        assert len(result) == 1
+        assert result[0]["role"] == "user"
 
-    def test_injects_synthetic_result_into_existing_user_message(self, manager):
-        """toolUse whose toolResult is missing → injected into the following user message"""
+    def test_strips_orphaned_tooluse_from_existing_user_message(self, manager):
+        """toolUse whose toolResult is missing → orphaned toolUse stripped from assistant"""
         messages = [
             {
                 "role": "assistant",
@@ -1665,12 +1661,10 @@ class TestRepairToolMismatch:
         ]
         result = manager._repair_tool_mismatch(messages)
         assert len(result) == 2
+        tool_use_ids = {b["toolUse"]["toolUseId"] for b in result[0]["content"] if "toolUse" in b}
+        assert tool_use_ids == {"id-1"}
         result_ids = {b["toolResult"]["toolUseId"] for b in result[1]["content"] if "toolResult" in b}
-        assert "id-1" in result_ids
-        assert "id-2" in result_ids
-        # synthetic one is error
-        synthetic = next(b for b in result[1]["content"] if b["toolResult"]["toolUseId"] == "id-2")
-        assert synthetic["toolResult"]["status"] == "error"
+        assert result_ids == {"id-1"}
 
     def test_removes_excess_tool_results(self, manager):
         """toolResult with no matching toolUse → removed (the 'exceeds' ValidationException case)"""
@@ -1694,20 +1688,18 @@ class TestRepairToolMismatch:
         result_ids = {b["toolResult"]["toolUseId"] for b in result[1]["content"] if "toolResult" in b}
         assert result_ids == {"id-1"}
 
-    def test_inserts_synthetic_message_before_next_assistant(self, manager):
-        """toolUse followed immediately by another assistant message → synthetic user inserted"""
+    def test_strips_orphaned_tooluse_before_next_assistant(self, manager):
+        """toolUse followed immediately by another assistant message → orphaned toolUse stripped"""
         messages = [
             {
                 "role": "assistant",
                 "content": [{"toolUse": {"toolUseId": "id-1", "name": "tool_a", "input": {}}}],
             },
-            # no user message — next message is also assistant (unusual but should be handled)
             {"role": "assistant", "content": [{"text": "continuing"}]},
         ]
         result = manager._repair_tool_mismatch(messages)
-        assert len(result) == 3
-        assert result[1]["role"] == "user"
-        assert result[1]["content"][0]["toolResult"]["toolUseId"] == "id-1"
+        assert len(result) == 1
+        assert result[0]["content"][0]["text"] == "continuing"
 
     def test_no_repair_needed_for_plain_messages(self, manager):
         """Conversations with no tools should be returned identical"""

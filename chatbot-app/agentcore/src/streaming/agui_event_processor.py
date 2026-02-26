@@ -33,6 +33,11 @@ class AGUIStreamEventProcessor:
         self.partial_response_text = ""  # Track partial response for graceful abort
         self.tool_use_started = False  # Track if tool_use has been emitted (to prevent duplicate assistant messages)
 
+        # Code agent heartbeat tracking
+        self._code_agent_active = False
+        self._code_agent_start_time = None
+        self._last_skill_event_time = None
+
         # Token usage from last completed stream (for metrics)
         self.last_usage = None
 
@@ -806,13 +811,20 @@ class AGUIStreamEventProcessor:
             except Exception:
                 break
             event_type = item.get("type")
-            if event_type == "code_step":
+            self._last_skill_event_time = time.time()
+
+            if event_type == "code_agent_started":
+                self._code_agent_active = True
+                self._code_agent_start_time = time.time()
+                yield self.formatter.format_event("code_agent_started")
+            elif event_type == "code_step":
                 yield self.formatter.format_event(
                     "code_step", content=item.get("content", ""), stepNumber=item.get("stepNumber", 0)
                 )
             elif event_type == "code_todo_update":
                 yield self.formatter.format_event("code_todo_update", todos=item.get("todos", []))
             elif event_type == "code_result_meta":
+                self._code_agent_active = False
                 yield self.formatter.format_event(
                     "code_result_meta",
                     files_changed=item.get("files_changed", []),
@@ -820,6 +832,19 @@ class AGUIStreamEventProcessor:
                     steps=item.get("steps", 0),
                     status=item.get("status", "completed"),
                 )
+            elif event_type == "code_agent_heartbeat":
+                yield self.formatter.format_event(
+                    "code_agent_heartbeat",
+                    elapsed_seconds=item.get("elapsed_seconds", 0),
+                )
+
+        # If code agent is active and no events for 10+ seconds, emit heartbeat
+        if (self._code_agent_active and self._last_skill_event_time and
+                time.time() - self._last_skill_event_time >= 10):
+            raw = int(time.time() - self._code_agent_start_time) if self._code_agent_start_time else 0
+            elapsed = (raw // 10) * 10  # round down to 10s increments
+            yield self.formatter.format_event("code_agent_heartbeat", elapsed_seconds=elapsed)
+            self._last_skill_event_time = time.time()
 
     async def _process_message_event(self, event: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """Process message events that may contain tool results"""

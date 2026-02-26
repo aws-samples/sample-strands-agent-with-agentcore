@@ -138,8 +138,8 @@ def _list_session_s3_files(user_id: Optional[str], session_id: Optional[str]) ->
         logger.warning(f"[code-agent] Failed to list S3 files: {e}")
         return []
 
-DEFAULT_TIMEOUT = 1200  # 20 minutes for research tasks
-AGENT_TIMEOUT = 1200    # 1200s (20 minutes) per agent call for complex research
+DEFAULT_TIMEOUT = 2400  # 40 minutes for complex coding tasks
+AGENT_TIMEOUT = 2400    # 2400s (40 minutes) per agent call
 
 
 # ============================================================
@@ -177,7 +177,7 @@ def get_http_client(region: str = "us-west-2"):
         )
 
         _cache['http_client'] = httpx.AsyncClient(
-            timeout=httpx.Timeout(DEFAULT_TIMEOUT, connect=30.0),  # 20 min timeout, 30s connect
+            timeout=httpx.Timeout(DEFAULT_TIMEOUT, connect=30.0),  # 40 min timeout, 30s connect
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
             auth=sigv4_auth  # Add SigV4 auth
         )

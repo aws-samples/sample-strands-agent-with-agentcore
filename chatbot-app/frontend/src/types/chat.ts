@@ -14,8 +14,8 @@ export interface ToolExecution {
   isCancelled?: boolean
   isExpanded: boolean
   streamingResponse?: string
-  // Code agent streaming state
-  codeSteps?: string[]
+  // Code agent terminal log (persisted for reconnect + page refresh)
+  codeSteps?: Array<{ stepNumber: number; content: string }>
   codeTodos?: Array<{ id: string; content: string; status: string; priority?: string }>
   codeResultMeta?: { files_changed: string[]; todos: any[]; steps: number }
 }

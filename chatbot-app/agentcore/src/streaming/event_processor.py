@@ -30,6 +30,12 @@ class StreamEventProcessor:
         self.partial_response_text = ""  # Track partial response for graceful abort
         self.tool_use_started = False  # Track if tool_use has been emitted (to prevent duplicate assistant messages)
 
+        # Code agent heartbeat tracking
+        self._code_agent_active = False
+        self._code_agent_start_time = None
+        self._last_skill_event_time = None
+        self._code_steps: list[dict] = []  # Accumulated code steps for persistence
+
         # Token usage from last completed stream (for metrics)
         self.last_usage = None
 
@@ -259,6 +265,7 @@ class StreamEventProcessor:
 
         # Reset seen tool uses for each new stream
         self.seen_tool_uses.clear()
+        self.tool_use_registry = {}
 
         # Reset partial response tracking for this stream
         self.partial_response_text = ""
@@ -268,6 +275,12 @@ class StreamEventProcessor:
 
         # Reset last LLM input tokens for this stream
         self.last_llm_input_tokens = 0
+
+        # Reset code agent state for this stream
+        self._code_steps = []
+        self._code_agent_active = False
+        self._code_agent_start_time = None
+        self._last_skill_event_time = None
 
         # Add stream-level deduplication
         # Handle both string and list (multimodal) messages
@@ -658,6 +671,7 @@ class StreamEventProcessor:
                         step_number = stream_data.get("stepNumber", 0)
 
                         if step_content:
+                            self._code_steps.append({"stepNumber": step_number, "content": step_content})
                             logger.debug(f"[Code Step] Step {step_number}: {step_content[:50]}...")
                             yield self.formatter.create_code_step_event(step_content, step_number)
 
@@ -784,19 +798,41 @@ class StreamEventProcessor:
             except Exception:
                 break
             event_type = item.get("type")
-            if event_type == "code_step":
-                yield self.formatter.create_code_step_event(
-                    item.get("content", ""), item.get("stepNumber", 0)
-                )
+            self._last_skill_event_time = time.time()
+
+            if event_type == "code_agent_started":
+                self._code_agent_active = True
+                self._code_agent_start_time = time.time()
+                self._code_steps = []  # Reset for new code agent run
+                yield self.formatter.create_code_agent_started_event()
+            elif event_type == "code_step":
+                step_content = item.get("content", "")
+                step_number = item.get("stepNumber", 0)
+                if step_content:
+                    self._code_steps.append({"stepNumber": step_number, "content": step_content})
+                yield self.formatter.create_code_step_event(step_content, step_number)
             elif event_type == "code_todo_update":
                 yield self.formatter.create_code_todo_update_event(item.get("todos", []))
             elif event_type == "code_result_meta":
+                self._code_agent_active = False
                 yield self.formatter.create_code_result_meta_event(
                     item.get("files_changed", []),
                     item.get("todos", []),
                     item.get("steps", 0),
                     item.get("status", "completed"),
                 )
+            elif event_type == "code_agent_heartbeat":
+                yield self.formatter.create_code_agent_heartbeat_event(
+                    item.get("elapsed_seconds", 0)
+                )
+
+        # If code agent is active and no events for 10+ seconds, emit heartbeat
+        if (self._code_agent_active and self._last_skill_event_time and
+                time.time() - self._last_skill_event_time >= 10):
+            raw = int(time.time() - self._code_agent_start_time) if self._code_agent_start_time else 0
+            elapsed = (raw // 10) * 10  # round down to 10s increments
+            yield self.formatter.create_code_agent_heartbeat_event(elapsed)
+            self._last_skill_event_time = time.time()
 
     async def _process_message_event(self, event: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """Process message events that may contain tool results"""
@@ -838,6 +874,24 @@ class StreamEventProcessor:
         """Process a single tool result with proper error handling"""
         # Note: browserSessionId is now handled via tool stream events (immediate)
         # No need to extract from tool result (too late)
+
+        # Inject accumulated code steps into code agent tool results for persistence
+        if self._code_steps and tool_use_id:
+            tool_info = self.tool_use_registry.get(tool_use_id, {})
+            tool_name = tool_info.get('tool_name', '')
+            # Match code_agent directly, prefixed (agentcore_code-agent), or via skill_executor
+            tool_input = tool_info.get('input', {})
+            is_code_agent = (
+                'code_agent' in tool_name or
+                tool_name == 'code_agent' or
+                (tool_name == 'skill_executor' and tool_input.get('tool_name') == 'code_agent')
+            )
+            if is_code_agent:
+                if "metadata" not in tool_result:
+                    tool_result["metadata"] = {}
+                tool_result["metadata"]["codeSteps"] = self._code_steps
+                logger.debug(f"[Tool Result] Injected {len(self._code_steps)} code steps into tool_result metadata")
+                self._code_steps = []
 
         # Set context before tool execution and cleanup after
         if tool_use_id:

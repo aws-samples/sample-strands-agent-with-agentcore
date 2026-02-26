@@ -3,7 +3,10 @@ Implements AgentCore Runtime standard endpoints:
 - POST /invocations (required)
 - GET /ping (required)
 
-Simplified using agent factory pattern - all agent-specific logic moved to agent classes.
+Agent execution is decoupled from SSE connections via ExecutionRegistry.
+Agent runs as a background task appending events to a buffer.
+SSE connections tail the buffer so the agent continues running even if the client disconnects.
+Resume/reconnection is handled by the BFF-side event buffer (Next.js).
 """
 
 from fastapi import APIRouter, HTTPException, Request
@@ -14,15 +17,20 @@ import asyncio
 import logging
 import json
 import os
+import time
+import uuid
 from opentelemetry import trace
 
 from models.schemas import InvocationRequest
 from agents.factory import create_agent
 from streaming.agui_event_processor import AGUIStreamEventProcessor
+from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
 from ag_ui.core import RunAgentInput
 from ag_ui.encoder import EventEncoder
 
 logger = logging.getLogger(__name__)
+
+registry = ExecutionRegistry()
 
 
 def _is_agui_request(body: dict) -> bool:
@@ -79,46 +87,98 @@ async def keepalive_stream(
             pass
 
 
-async def disconnect_aware_stream(
-    stream: AsyncGenerator,
+def _inject_event_id(data: str, event_id: int) -> str:
+    """Inject eventId into JSON payload of each SSE data line.
+
+    AG-UI HttpAgent doesn't expose SSE ``id:`` fields to the application,
+    so we embed the event_id inside the JSON object as ``eventId`` so that
+    the frontend can track cursor position for reconnection.
+    """
+    lines = data.split("\n")
+    result = []
+    for line in lines:
+        if line.startswith("data: "):
+            try:
+                obj = json.loads(line[6:])
+                obj["eventId"] = event_id
+                result.append(f"data: {json.dumps(obj, ensure_ascii=False)}")
+            except (json.JSONDecodeError, TypeError):
+                result.append(line)
+        else:
+            result.append(line)
+    return "\n".join(result)
+
+
+def _extract_event_type(sse_chunk: str) -> str:
+    """Extract event type from an SSE data chunk for logging/tracking."""
+    try:
+        for line in sse_chunk.strip().split("\n"):
+            if line.startswith("data: "):
+                data = json.loads(line[6:])
+                return data.get("type", "unknown")
+    except (json.JSONDecodeError, AttributeError):
+        pass
+    return "unknown"
+
+
+async def _create_tail_stream(
+    execution,
+    cursor: int,
     http_request: Request,
-    session_id: str
 ) -> AsyncGenerator[str, None]:
     """
-    Wrapper generator that checks for client disconnection.
+    Tail an execution's event buffer, yielding SSE events with id: prefixes.
 
-    When BFF aborts the connection, FastAPI's Request.is_disconnected()
-    returns True. This wrapper detects that and closes the underlying stream,
-    which triggers the finally block in event_processor (partial response save).
+    1. Replays buffered events from cursor position
+    2. Waits for new events via asyncio.Event (no polling)
+    3. Stops when client disconnects (agent keeps running)
+    4. Stops when execution completes and all events are delivered
     """
-    disconnected = False
+    execution.subscribers += 1
     try:
-        async for chunk in stream:
-            # Check if client disconnected before yielding
+        # Emit execution metadata so the client knows how to resume
+        # Use uppercase "CUSTOM" to comply with AG-UI event schema validation
+        meta = json.dumps({
+            "type": "CUSTOM",
+            "name": "execution_meta",
+            "value": {
+                "executionId": execution.execution_id,
+                "cursor": cursor,
+            },
+        })
+        yield f"id: 0\ndata: {meta}\n\n"
+
+        current_cursor = cursor
+        while True:
+            # Check for client disconnect — agent continues in background
             if await http_request.is_disconnected():
-                logger.info(f"🔌 Client disconnected for session {session_id} - stopping stream")
-                disconnected = True
+                logger.info(f"[TailStream] Client disconnected for {execution.execution_id}, agent continues")
                 break
 
-            yield chunk
+            new_events = execution.get_events_from(current_cursor)
+            for event in new_events:
+                # Inject eventId into JSON payload (needed for AG-UI HttpAgent
+                # which doesn't expose SSE id: fields to the application layer)
+                enriched_data = _inject_event_id(event.data, event.event_id)
+                yield f"id: {event.event_id}\n{enriched_data}"
+                current_cursor = event.event_id
 
-    except GeneratorExit:
-        logger.info(f"🔌 GeneratorExit in disconnect_aware_stream for session {session_id}")
-        disconnected = True
-        raise
-    except Exception as e:
-        logger.error(f"Error in disconnect_aware_stream for session {session_id}: {e}")
-        raise
-    finally:
-        # Close the underlying stream to trigger its finally block
-        # This ensures event_processor saves partial response
-        if disconnected:
-            logger.info(f"🔌 Closing underlying stream for session {session_id} due to disconnect")
+            # Execution done + all events delivered → close stream
+            if execution.status != ExecutionStatus.RUNNING and not execution.get_events_from(current_cursor):
+                break
+
+            # Wait for new events (5s timeout for periodic disconnect check)
             try:
-                await stream.aclose()
-            except Exception as e:
-                logger.debug(f"Error closing stream: {e}")
-        logger.debug(f"disconnect_aware_stream finished for session {session_id}")
+                await asyncio.wait_for(
+                    execution._new_event.wait(),
+                    timeout=5.0,
+                )
+                # Clear after waking so next wait() blocks until a new set()
+                execution._new_event.clear()
+            except asyncio.TimeoutError:
+                continue
+    finally:
+        execution.subscribers -= 1
 
 
 @router.post("/invocations")
@@ -217,26 +277,39 @@ async def invocations(http_request: Request):
             auth_token=input_data.auth_token,
         )
 
-        # Stream response from agent
-        stream = agent.stream_async(
-            message_content,
-            files=input_data.files,
-            selected_artifact_id=input_data.selected_artifact_id,
-            api_keys=input_data.api_keys,
-            **special_params
-        )
+        # Create execution in registry with unique run_id
+        run_id = str(uuid.uuid4())
+        execution = registry.create_execution(input_data.session_id, input_data.user_id, run_id)
 
-        # Wrap stream with disconnect detection
-        wrapped_stream = disconnect_aware_stream(
-            stream,
-            http_request,
-            input_data.session_id
-        )
+        # Run agent as background task — events buffered in execution
+        async def run_agent_to_buffer():
+            try:
+                stream = agent.stream_async(
+                    message_content,
+                    files=input_data.files,
+                    selected_artifact_id=input_data.selected_artifact_id,
+                    api_keys=input_data.api_keys,
+                    **special_params
+                )
+                async for sse_chunk in stream:
+                    event_type = _extract_event_type(sse_chunk)
+                    execution.append_event(sse_chunk, event_type)
+            except Exception as e:
+                logger.error(f"[Execution] Agent error for {execution.execution_id}: {e}", exc_info=True)
+                error_event = f'data: {json.dumps({"type": "error", "message": str(e)})}\n\n'
+                execution.append_event(error_event, "error")
+            finally:
+                if execution.status == ExecutionStatus.RUNNING:
+                    execution.status = ExecutionStatus.COMPLETED
+                execution.completed_at = time.time()
+                logger.info(f"[Execution] Completed {execution.execution_id}, {len(execution.events)} events buffered")
 
-        # Wrap with keepalive to prevent proxy timeout during long silent tool calls
-        final_stream = keepalive_stream(wrapped_stream, input_data.session_id)
+        execution.task = asyncio.create_task(run_agent_to_buffer())
 
-        # Return streaming response with appropriate headers
+        # Return tail stream that replays buffer + follows live events
+        tail_stream = _create_tail_stream(execution, cursor=0, http_request=http_request)
+        final_stream = keepalive_stream(tail_stream, input_data.session_id)
+
         return StreamingResponse(
             final_stream,
             media_type="text/event-stream",
@@ -245,7 +318,9 @@ async def invocations(http_request: Request):
                 "X-Accel-Buffering": "no",
                 "Connection": "keep-alive",
                 "X-Session-ID": input_data.session_id,
-                "X-Request-Type": request_type
+                "X-Request-Type": request_type,
+                "X-Execution-ID": execution.execution_id,
+                "X-Run-ID": run_id,
             }
         )
 
@@ -381,18 +456,40 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
             "session_manager": agent.session_manager,
         }
 
-        stream = agui_processor.process_stream(
-            agent.agent,
-            message,
-            session_id=session_id,
-            invocation_state=invocation_state,
-        )
-
-        wrapped_stream = disconnect_aware_stream(stream, http_request, session_id)
-        final_stream = keepalive_stream(wrapped_stream, session_id)
-
         accept = http_request.headers.get("accept", "")
         media_type = EventEncoder(accept=accept).get_content_type()
+
+        # Create execution in registry
+        execution = registry.create_execution(session_id, user_id, run_id)
+        execution.media_type = media_type
+
+        # Run agent as background task — events buffered in execution
+        async def run_agui_to_buffer():
+            try:
+                stream = agui_processor.process_stream(
+                    agent.agent,
+                    message,
+                    session_id=session_id,
+                    invocation_state=invocation_state,
+                )
+                async for sse_chunk in stream:
+                    event_type = _extract_event_type(sse_chunk)
+                    execution.append_event(sse_chunk, event_type)
+            except Exception as e:
+                logger.error(f"[Execution] AG-UI agent error for {execution.execution_id}: {e}", exc_info=True)
+                error_event = f'data: {json.dumps({"type": "error", "message": str(e)})}\n\n'
+                execution.append_event(error_event, "error")
+            finally:
+                if execution.status == ExecutionStatus.RUNNING:
+                    execution.status = ExecutionStatus.COMPLETED
+                execution.completed_at = time.time()
+                logger.info(f"[Execution] AG-UI completed {execution.execution_id}, {len(execution.events)} events buffered")
+
+        execution.task = asyncio.create_task(run_agui_to_buffer())
+
+        # Return tail stream
+        tail_stream = _create_tail_stream(execution, cursor=0, http_request=http_request)
+        final_stream = keepalive_stream(tail_stream, session_id)
 
         return StreamingResponse(
             final_stream,
@@ -402,6 +499,8 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
                 "X-Accel-Buffering": "no",
                 "Connection": "keep-alive",
                 "X-Thread-ID": thread_id,
+                "X-Execution-ID": execution.execution_id,
+                "X-Run-ID": run_id,
             }
         )
 
@@ -411,3 +510,16 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
             status_code=500,
             detail="Agent processing failed. Please check logs for details."
         )
+
+
+@router.on_event("startup")
+async def start_cleanup_task():
+    """Periodically clean up expired execution buffers."""
+    async def periodic_cleanup():
+        while True:
+            await asyncio.sleep(60)
+            try:
+                registry.cleanup_expired()
+            except Exception as e:
+                logger.error(f"[ExecutionRegistry] Cleanup error: {e}")
+    asyncio.create_task(periodic_cleanup())

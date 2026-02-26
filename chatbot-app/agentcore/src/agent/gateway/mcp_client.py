@@ -62,8 +62,20 @@ class FilteredMCPClient(MCPClient):
         return super().__exit__(exc_type, exc_val, exc_tb)
 
     def ensure_session(self):
-        """Deprecated: Session is managed by Strands ToolRegistry."""
-        pass
+        """Ensure the MCP session is alive, restarting if necessary.
+
+        When MCP tools are used through skill_executor (not Strands' managed
+        integration), the session can die due to HTTP timeouts or connection
+        drops.  This method provides a safe restart mechanism.
+        """
+        if not self._is_session_active():
+            logger.info("FilteredMCPClient session not active — restarting")
+            try:
+                self.start()
+                self._session_started = True
+            except Exception as e:
+                logger.error(f"Failed to restart MCP session: {e}")
+                raise
 
     def list_tools_sync(self, *args, **kwargs):
         """List tools from Gateway and filter based on enabled_tool_ids.

@@ -606,29 +606,55 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         return False
 
     def _repair_tool_mismatch(self, messages: List[Dict]) -> List[Dict]:
-        """
-        Repair toolUse/toolResult mismatches caused by interrupted tasks.
-
-        When a user stops a task mid-execution, session history can contain:
-        - Orphaned toolUse blocks (no matching toolResult) → inject synthetic error toolResult
-        - Excess toolResult blocks (more than preceding toolUse) → remove the extras
-
-        Both cases cause Bedrock ValidationException on the next request.
-        """
-        import copy
+        """Strip unmatched toolResult/toolUse blocks to prevent Bedrock ValidationException."""
         repaired = copy.deepcopy(messages)
-        i = 0
         total_repairs = 0
 
-        while i < len(repaired):
-            msg = repaired[i]
-            if msg.get('role') != 'assistant':
-                i += 1
+        # Pass 1: remove toolResult blocks with no matching toolUse in the preceding assistant message.
+        for i, msg in enumerate(repaired):
+            if msg.get('role') != 'user':
                 continue
-
             content = msg.get('content', [])
             if not isinstance(content, list):
-                i += 1
+                continue
+
+            valid_tool_use_ids: List[str] = []
+            if i > 0 and repaired[i - 1].get('role') == 'assistant':
+                prev_content = repaired[i - 1].get('content', [])
+                if isinstance(prev_content, list):
+                    valid_tool_use_ids = [
+                        block['toolUse']['toolUseId']
+                        for block in prev_content
+                        if isinstance(block, dict) and 'toolUse' in block
+                    ]
+
+            seen_ids: set = set()
+            new_content = []
+            removed = 0
+            for block in content:
+                if isinstance(block, dict) and 'toolResult' in block:
+                    tid = block['toolResult']['toolUseId']
+                    if tid in valid_tool_use_ids and tid not in seen_ids:
+                        seen_ids.add(tid)
+                        new_content.append(block)
+                    else:
+                        removed += 1
+                else:
+                    new_content.append(block)
+
+            if removed:
+                msg['content'] = new_content
+                total_repairs += removed
+                logger.warning(f"[ToolRepair] Removed {removed} unmatched toolResult(s) from user message at index {i}")
+
+        # Pass 2: remove toolUse blocks with no matching toolResult in the following user message.
+        # Reverse iteration so pop() doesn't shift unvisited indices.
+        for i in range(len(repaired) - 1, -1, -1):
+            msg = repaired[i]
+            if msg.get('role') != 'assistant':
+                continue
+            content = msg.get('content', [])
+            if not isinstance(content, list):
                 continue
 
             tool_use_ids = [
@@ -636,71 +662,38 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
                 for block in content
                 if isinstance(block, dict) and 'toolUse' in block
             ]
-
             if not tool_use_ids:
-                i += 1
                 continue
 
             next_idx = i + 1
-
-            # No following user message at all — append a synthetic one
-            if next_idx >= len(repaired) or repaired[next_idx].get('role') != 'user':
-                synthetic = [
-                    {
-                        "toolResult": {
-                            "toolUseId": tid,
-                            "content": [{"text": "[Tool result lost — task was interrupted by user.]"}],
-                            "status": "error",
-                        }
+            matched_ids: set = set()
+            if next_idx < len(repaired) and repaired[next_idx].get('role') == 'user':
+                next_content = repaired[next_idx].get('content', [])
+                if isinstance(next_content, list):
+                    matched_ids = {
+                        block['toolResult']['toolUseId']
+                        for block in next_content
+                        if isinstance(block, dict) and 'toolResult' in block
                     }
-                    for tid in tool_use_ids
-                ]
-                repaired.insert(next_idx, {"role": "user", "content": synthetic})
-                total_repairs += len(tool_use_ids)
-                logger.warning(
-                    f"[ToolRepair] Inserted synthetic user message with {len(tool_use_ids)} toolResult(s)"
-                )
-                i += 2
+
+            orphaned_ids = [tid for tid in tool_use_ids if tid not in matched_ids]
+            if not orphaned_ids:
                 continue
 
-            next_msg = repaired[next_idx]
-            next_content = next_msg.get('content', [])
-            if not isinstance(next_content, list):
-                next_content = []
-                next_msg['content'] = next_content
+            orphaned_set = set(orphaned_ids)
+            new_content = [
+                block for block in content
+                if not (isinstance(block, dict) and 'toolUse' in block
+                        and block['toolUse']['toolUseId'] in orphaned_set)
+            ]
+            total_repairs += len(orphaned_ids)
 
-            existing_result_ids = {
-                block['toolResult']['toolUseId']
-                for block in next_content
-                if isinstance(block, dict) and 'toolResult' in block
-            }
-
-            # Add synthetic results for toolUse IDs with no matching toolResult
-            missing_ids = [tid for tid in tool_use_ids if tid not in existing_result_ids]
-            for tid in missing_ids:
-                next_content.insert(0, {
-                    "toolResult": {
-                        "toolUseId": tid,
-                        "content": [{"text": "[Tool result lost — task was interrupted by user.]"}],
-                        "status": "error",
-                    }
-                })
-            if missing_ids:
-                total_repairs += len(missing_ids)
-                logger.warning(f"[ToolRepair] Added {len(missing_ids)} missing toolResult(s) to next user message")
-
-            # Remove toolResult blocks that have no matching toolUse (excess)
-            extra_ids = existing_result_ids - set(tool_use_ids)
-            if extra_ids:
-                next_msg['content'] = [
-                    block for block in next_content
-                    if not (isinstance(block, dict) and 'toolResult' in block
-                            and block['toolResult']['toolUseId'] in extra_ids)
-                ]
-                total_repairs += len(extra_ids)
-                logger.warning(f"[ToolRepair] Removed {len(extra_ids)} excess toolResult(s) from user message")
-
-            i += 2
+            if new_content:
+                msg['content'] = new_content
+                logger.warning(f"[ToolRepair] Removed {len(orphaned_ids)} unmatched toolUse(s) from assistant message at index {i}")
+            else:
+                repaired.pop(i)
+                logger.warning(f"[ToolRepair] Removed empty assistant message at index {i}")
 
         if total_repairs > 0:
             logger.warning(f"[ToolRepair] Repaired {total_repairs} toolUse/toolResult mismatch(es) in history")

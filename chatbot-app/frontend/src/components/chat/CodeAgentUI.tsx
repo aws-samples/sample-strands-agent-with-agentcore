@@ -19,47 +19,80 @@ export const shortenWorkspacePath = (p: string): string => {
   return p.split('/').pop() || p
 }
 
-/** Strip workspace paths from content text. */
+/** Strip workspace prefix up to session ID, keeping only the relative path.
+ *  /tmp/workspaces/{user}/{session}/src/foo.py  →  src/foo.py
+ *  /workspaces/{user}/{session}/src/foo.py      →  src/foo.py
+ *  /tmp/workspaces/{user}/{session}             →  .
+ */
 const cleanContent = (s: string) =>
-  s.replace(/\/(?:tmp\/)?workspaces\/[^/]+\/[^/]+\/(\S+)/g, '$1')
+  s.replace(/\/(?:tmp\/)?workspaces\/[^\s/]+\/[^\s/]+(?:\/(\S+))?/g,
+    (_m, rest) => rest || '.')
 
 // ---- Real-time progress (terminal style) ----
 
 interface CodeAgentTerminalProps {
   steps: Array<{ stepNumber: number; content: string }>
+  completed?: boolean  // When true, renders in collapsed state with expand toggle
 }
 
 /** Terminal-style progress log for code agent steps. Auto-scrolls to bottom. */
-export const CodeAgentTerminal = React.memo<CodeAgentTerminalProps>(({ steps }) => {
+export const CodeAgentTerminal = React.memo<CodeAgentTerminalProps>(({ steps, completed = false }) => {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [isExpanded, setIsExpanded] = useState(!completed)
 
   useEffect(() => {
-    if (scrollRef.current) {
+    if (scrollRef.current && isExpanded) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
-  }, [steps.length])
+  }, [steps.length, isExpanded])
 
   return (
     <div className="mt-1 rounded-md border border-gray-300 dark:border-white/10 bg-gray-900 dark:bg-[#0d1117] overflow-hidden shadow-sm">
       {/* Title bar */}
-      <div className="flex items-center gap-1.5 px-3 py-1 border-b border-white/5">
+      <div
+        className={`flex items-center gap-1.5 px-3 py-1 border-b border-white/5 ${completed ? 'cursor-pointer hover:bg-white/5' : ''}`}
+        onClick={completed ? () => setIsExpanded(prev => !prev) : undefined}
+      >
         <Terminal className="h-3 w-3 text-green-400/70" />
         <span className="text-[11px] text-gray-400 font-mono">code-agent</span>
+        {completed && (
+          <span className="text-[10px] text-gray-500 font-mono ml-1">
+            ({steps.length} steps)
+          </span>
+        )}
         <span className="ml-auto flex gap-0.5">
-          <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" />
-          <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
-          <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+          {completed ? (
+            <svg className={`h-3 w-3 text-gray-500 transition-transform ${isExpanded ? 'rotate-180' : ''}`} viewBox="0 0 12 12" fill="none">
+              <path d="M3 5l3 3 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          ) : (
+            <>
+              <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" />
+              <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+              <span className="w-1 h-1 bg-green-400 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+            </>
+          )}
         </span>
       </div>
       {/* Log area */}
-      <div ref={scrollRef} className="px-3 py-2 max-h-40 overflow-y-auto scrollbar-thin">
-        {steps.map((step, i) => (
-          <div key={i} className="flex gap-2 text-[12px] leading-relaxed font-mono">
-            <span className="text-green-500/70 select-none flex-shrink-0">$</span>
-            <span className="text-gray-300 whitespace-pre-wrap break-words">{cleanContent(step.content)}</span>
-          </div>
-        ))}
-      </div>
+      {isExpanded && (
+        <div ref={scrollRef} className="px-3 py-2 max-h-40 overflow-y-auto scrollbar-thin">
+          {steps.map((step, i) => {
+            const isHeartbeat = step.content.startsWith('Working...') ||
+                                step.content.startsWith('Code agent started')
+            return (
+              <div key={i} className="flex gap-2 text-[12px] leading-relaxed font-mono">
+                <span className={`select-none flex-shrink-0 ${isHeartbeat ? 'text-blue-400' : 'text-green-500/70'}`}>
+                  {isHeartbeat ? '●' : '$'}
+                </span>
+                <span className={`whitespace-pre-wrap break-words ${isHeartbeat ? 'text-gray-400 italic' : 'text-gray-300'}`}>
+                  {cleanContent(step.content)}
+                </span>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 })
