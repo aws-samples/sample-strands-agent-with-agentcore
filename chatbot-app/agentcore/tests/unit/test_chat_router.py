@@ -125,115 +125,111 @@ class TestAgentFactory:
 # Disconnect-Aware Stream Tests
 # ============================================================
 
-class TestDisconnectAwareStream:
-    """Tests for disconnect_aware_stream wrapper."""
+class TestExecutionRegistry:
+    """Tests for ExecutionRegistry and _create_tail_stream."""
+
+    def test_create_and_get_execution(self):
+        """Test creating and retrieving an execution."""
+        from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
+        ExecutionRegistry.reset()
+        registry = ExecutionRegistry()
+        execution = registry.create_execution("sess1", "user1", "run1")
+        assert execution.execution_id == "sess1:run1"
+        assert execution.status == ExecutionStatus.RUNNING
+
+        found = registry.get_execution("sess1:run1")
+        assert found is execution
+
+        latest = registry.get_latest_execution("sess1")
+        assert latest is execution
+
+    def test_append_and_get_events(self):
+        """Test appending events and cursor-based retrieval."""
+        from streaming.execution_registry import ExecutionRegistry
+        ExecutionRegistry.reset()
+        registry = ExecutionRegistry()
+        execution = registry.create_execution("sess2", "user1", "run2")
+
+        e1 = execution.append_event('data: {"type":"init"}\n\n', "init")
+        e2 = execution.append_event('data: {"type":"response"}\n\n', "response")
+        e3 = execution.append_event('data: {"type":"complete"}\n\n', "complete")
+
+        assert e1.event_id == 1
+        assert e2.event_id == 2
+        assert e3.event_id == 3
+
+        # Get events from cursor 0 (all)
+        events = execution.get_events_from(0)
+        assert len(events) == 3
+
+        # Get events from cursor 2 (only event 3)
+        events = execution.get_events_from(2)
+        assert len(events) == 1
+        assert events[0].event_id == 3
+
+    def test_cleanup_expired(self):
+        """Test that completed executions are cleaned up after TTL."""
+        import time
+        from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
+        ExecutionRegistry.reset()
+        registry = ExecutionRegistry()
+        execution = registry.create_execution("sess3", "user1", "run3")
+        execution.status = ExecutionStatus.COMPLETED
+        execution.completed_at = time.time() - 400  # Past TTL
+
+        removed = registry.cleanup_expired()
+        assert removed == 1
+        assert registry.get_execution("sess3:run3") is None
 
     @pytest.mark.asyncio
-    async def test_yields_chunks_when_connected(self):
-        """Test that chunks are yielded when client is connected."""
-        from routers.chat import disconnect_aware_stream
+    async def test_tail_stream_replays_and_closes(self):
+        """Test that _create_tail_stream replays buffered events."""
+        from routers.chat import _create_tail_stream
+        from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
+        ExecutionRegistry.reset()
+        registry = ExecutionRegistry()
+        execution = registry.create_execution("sess4", "user1", "run4")
 
-        async def mock_stream():
-            yield "chunk1"
-            yield "chunk2"
-            yield "chunk3"
+        # Pre-buffer events
+        execution.append_event('data: {"type":"init"}\n\n', "init")
+        execution.append_event('data: {"type":"response"}\n\n', "response")
+        execution.status = ExecutionStatus.COMPLETED
+        execution.completed_at = 0
 
         mock_request = MagicMock(spec=Request)
         mock_request.is_disconnected = AsyncMock(return_value=False)
 
         chunks = []
-        async for chunk in disconnect_aware_stream(
-            mock_stream(),
-            mock_request,
-            "test-session"
-        ):
+        async for chunk in _create_tail_stream(execution, cursor=0, http_request=mock_request):
             chunks.append(chunk)
 
-        assert chunks == ["chunk1", "chunk2", "chunk3"]
+        # Should have execution_meta + 2 events
+        assert len(chunks) == 3
+        assert "execution_meta" in chunks[0]
+        assert "init" in chunks[1]
+        assert "response" in chunks[2]
 
     @pytest.mark.asyncio
-    async def test_stops_when_disconnected(self):
-        """Test that stream stops when client disconnects."""
-        from routers.chat import disconnect_aware_stream
-
-        call_count = 0
-
-        async def mock_stream():
-            nonlocal call_count
-            for i in range(10):
-                call_count += 1
-                yield f"chunk{i}"
+    async def test_tail_stream_stops_on_disconnect(self):
+        """Test that tail stream stops when client disconnects."""
+        from routers.chat import _create_tail_stream
+        from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
+        ExecutionRegistry.reset()
+        registry = ExecutionRegistry()
+        execution = registry.create_execution("sess5", "user1", "run5")
+        # Keep status as RUNNING so the stream would normally wait
 
         mock_request = MagicMock(spec=Request)
-        # Disconnect after 2 chunks
-        mock_request.is_disconnected = AsyncMock(
-            side_effect=[False, False, True] + [True] * 10
-        )
-
-        chunks = []
-        async for chunk in disconnect_aware_stream(
-            mock_stream(),
-            mock_request,
-            "test-session"
-        ):
-            chunks.append(chunk)
-
-        # Should only get chunks before disconnect
-        assert len(chunks) <= 3
-
-    @pytest.mark.asyncio
-    async def test_handles_generator_exit(self):
-        """Test that GeneratorExit is properly handled."""
-        from routers.chat import disconnect_aware_stream
-
-        async def mock_stream():
-            yield "chunk1"
-            yield "chunk2"
-
-        mock_request = MagicMock(spec=Request)
-        mock_request.is_disconnected = AsyncMock(return_value=False)
-
-        gen = disconnect_aware_stream(
-            mock_stream(),
-            mock_request,
-            "test-session"
-        )
-
-        # Get first chunk
-        chunk = await gen.__anext__()
-        assert chunk == "chunk1"
-
-        # Close generator
-        await gen.aclose()
-
-    @pytest.mark.asyncio
-    async def test_closes_underlying_stream_on_disconnect(self):
-        """Test that underlying stream is closed when client disconnects."""
-        from routers.chat import disconnect_aware_stream
-
-        stream_closed = False
-
-        async def mock_stream():
-            nonlocal stream_closed
-            try:
-                yield "chunk1"
-                yield "chunk2"
-            finally:
-                stream_closed = True
-
-        mock_request = MagicMock(spec=Request)
+        # Disconnect immediately after yielding metadata
         mock_request.is_disconnected = AsyncMock(side_effect=[False, True])
 
         chunks = []
-        async for chunk in disconnect_aware_stream(
-            mock_stream(),
-            mock_request,
-            "test-session"
-        ):
+        async for chunk in _create_tail_stream(execution, cursor=0, http_request=mock_request):
             chunks.append(chunk)
 
-        # Stream should be closed
-        assert stream_closed
+        # Should only have the metadata event before disconnect
+        assert len(chunks) == 1
+        assert "execution_meta" in chunks[0]
 
 
 # ============================================================

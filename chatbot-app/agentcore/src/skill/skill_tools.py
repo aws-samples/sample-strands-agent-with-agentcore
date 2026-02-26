@@ -42,7 +42,8 @@ def _run_async(coro):
         return asyncio.run(coro)
 
 
-_SKILL_STREAM_TYPES = ("code_step", "code_todo_update", "code_result_meta")
+_SKILL_STREAM_TYPES = ("code_step", "code_todo_update", "code_result_meta",
+                       "code_agent_started", "code_agent_heartbeat")
 
 
 async def _consume_async_generator(agen, session_id=None):
@@ -54,18 +55,51 @@ async def _consume_async_generator(agen, session_id=None):
     are forwarded to the side-channel queue so process_stream can drain and
     yield them to the frontend in real time.
     """
+    import time
+
+    # Push start event immediately so the UI shows progress right away
+    if session_id:
+        from streaming import skill_event_bus
+        q = skill_event_bus.get_queue(session_id)
+        if q is not None:
+            q.put_nowait({"type": "code_agent_started"})
+
     final_text = None
     final_status = "success"
+    start_time = time.time()
+    last_activity = start_time
+    code_steps: list[str] = []  # Accumulate code steps for tool result
 
     async for event in agen:
+        now = time.time()
         if not isinstance(event, dict):
+            # Send heartbeat if no real event for 10+ seconds
+            if session_id and (now - last_activity) >= 10:
+                from streaming import skill_event_bus
+                q = skill_event_bus.get_queue(session_id)
+                if q is not None:
+                    raw = int(now - start_time)
+                    q.put_nowait({
+                        "type": "code_agent_heartbeat",
+                        "elapsed_seconds": (raw // 10) * 10,
+                    })
+                last_activity = now
             continue
+
+        last_activity = now
         # Forward intermediate skill events to the side-channel queue (thread-safe)
         if event.get("type") in _SKILL_STREAM_TYPES and session_id:
             from streaming import skill_event_bus
             q = skill_event_bus.get_queue(session_id)
             if q is not None:
                 q.put_nowait(event)
+
+        # Accumulate code steps so the agent knows what happened
+        if event.get("type") == "code_step":
+            step_content = event.get("content", "")
+            if step_content:
+                code_steps.append(step_content)
+
         status = event.get("status")
         if status in ("success", "error"):
             content = event.get("content", [])
@@ -75,6 +109,17 @@ async def _consume_async_generator(agen, session_id=None):
 
     if final_status == "error":
         return json.dumps({"status": "error", "error": final_text or "A2A tool failed"})
+
+    # Include code steps in the tool result so the agent understands the execution process
+    # Filter out the last step if it duplicates the final summary text
+    if code_steps and final_text:
+        last = code_steps[-1]
+        if last.strip() == final_text.strip() or final_text.strip().startswith(last.strip()):
+            code_steps = code_steps[:-1]
+    if code_steps:
+        steps_log = "\n".join(f"- {s}" for s in code_steps)
+        result = f"{final_text}\n\n<execution_steps>\n{steps_log}\n</execution_steps>"
+        return result
 
     return final_text or json.dumps({"status": "success", "result": ""})
 
@@ -325,6 +370,9 @@ def _execute_tool(
 
         if is_mcp_tool:
             # MCP tool — delegate to mcp_client.call_tool_sync()
+            # Ensure MCP session is alive (may have timed out since startup)
+            if hasattr(target_tool.mcp_client, 'ensure_session'):
+                target_tool.mcp_client.ensure_session()
             # Uses the original MCP tool name for server communication
             mcp_result = target_tool.mcp_client.call_tool_sync(
                 tool_use_id=tool_context.tool_use.get("toolUseId", "skill-exec"),

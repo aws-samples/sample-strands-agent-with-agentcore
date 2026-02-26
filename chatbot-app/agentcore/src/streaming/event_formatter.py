@@ -431,6 +431,21 @@ class StreamEventFormatter:
         })
 
     @staticmethod
+    def create_code_agent_started_event() -> str:
+        """Create code agent started event to signal immediate progress"""
+        return StreamEventFormatter.format_sse_event({
+            "type": "code_agent_started"
+        })
+
+    @staticmethod
+    def create_code_agent_heartbeat_event(elapsed_seconds: int) -> str:
+        """Create code agent heartbeat event during long-running operations"""
+        return StreamEventFormatter.format_sse_event({
+            "type": "code_agent_heartbeat",
+            "elapsed_seconds": elapsed_seconds
+        })
+
+    @staticmethod
     def create_code_todo_update_event(todos: list) -> str:
         """Create code todo update event from code agent's TodoWrite state"""
         return StreamEventFormatter.format_sse_event({

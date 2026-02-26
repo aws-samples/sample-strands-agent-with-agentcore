@@ -14,6 +14,7 @@ For local testing:
 import json
 import logging
 import os
+import re
 import uuid
 import zipfile
 from pathlib import Path
@@ -417,6 +418,23 @@ class ClaudeCodeExecutor(AgentExecutor):
         workspace = Path(WORKSPACE_BASE) / user_id / session_id
         workspace.mkdir(parents=True, exist_ok=True)
 
+        # --- Inject workspace CLAUDE.md if not present ---
+        claude_md = workspace / "CLAUDE.md"
+        if not claude_md.exists():
+            claude_md.write_text(
+                "# Agent Context\n\n"
+                "You are being orchestrated by an AI agent (not a human directly). "
+                "Your task descriptions come from the orchestrating agent, which communicates with the human user.\n\n"
+                "## Guidelines\n\n"
+                "- Focus on completing the task efficiently and correctly.\n"
+                "- If you encounter a genuine ambiguity that the codebase alone cannot resolve "
+                "(e.g., a design choice between two valid approaches, unclear requirements), "
+                "state the question clearly in your response — the orchestrator will resolve it.\n"
+                "- Do NOT ask for confirmation on implementation details you can figure out yourself.\n"
+                "- Keep your final response concise: summarize what you did, what files changed, "
+                "and any issues or decisions worth noting.\n"
+            )
+
         # --- Session management ---
         sdk_key = f"{user_id}-{session_id}"
         reset_session = metadata.get("reset_session", False)
@@ -639,6 +657,15 @@ def _extract_metadata(context: RequestContext) -> dict:
     return metadata
 
 
+def _strip_workspace_path(val: str) -> str:
+    """Strip /[tmp/]workspaces/{user}/{session}/ prefix, returning relative path."""
+    return re.sub(
+        r'/(?:tmp/)?workspaces/[^/]+/[^/]+(?:/(.+))?$',
+        lambda m: m.group(1) or '.',
+        val,
+    )
+
+
 def _format_tool_step(step: int, block: ToolUseBlock) -> str:
     """Format a tool_use block into a human-readable progress string."""
     tool_name = block.name
@@ -647,9 +674,23 @@ def _format_tool_step(step: int, block: ToolUseBlock) -> str:
 
     context_info = ""
     if isinstance(tool_input, dict):
-        for key in ["file_path", "path", "command", "query", "pattern"]:
+        # For search tools, prefer showing the search pattern/query over the directory path
+        if tool_name == "Grep":
+            key_order = ["pattern", "query", "path", "file_path"]
+        elif tool_name == "Glob":
+            key_order = ["pattern", "path", "file_path"]
+        elif tool_name == "WebSearch":
+            key_order = ["query", "pattern"]
+        elif tool_name == "WebFetch":
+            key_order = ["url", "path", "file_path"]
+        else:
+            key_order = ["file_path", "path", "command", "query", "pattern"]
+
+        for key in key_order:
             if key in tool_input:
-                val = str(tool_input[key])[:80]
+                val = str(tool_input[key])
+                val = _strip_workspace_path(val)
+                val = val[:120]
                 context_info = f": {val}"
                 break
 

@@ -11,6 +11,7 @@ import { apiGet, apiPost } from '@/lib/api-client'
 import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
 import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData, triggerWarmup, generateSessionId } from '@/config/session'
 import { isA2ATool } from './usePolling'
+import { useSSEReconnect } from './useSSEReconnect'
 
 /**
  * Process swarm message content blocks in order to preserve text/tool interleaving.
@@ -205,11 +206,12 @@ export const useChatAPI = ({
   sessionId,
   setSessionId,
   currentModelId,
-  currentTemperature
+  currentTemperature,
 }: UseChatAPIProps) => {
 
   const abortRef = useRef<{ unsubscribe: () => void } | null>(null)
   const sessionIdRef = useRef<string | null>(null)
+  const reconnect = useSSEReconnect()
 
   // Restore last session on page load (with timeout check) and trigger warmup
   useEffect(() => {
@@ -503,6 +505,7 @@ export const useChatAPI = ({
 
     abortRef.current?.unsubscribe()
     abortRef.current = null
+    reconnect.reset()
 
     try {
       const authHeaders = await getAuthHeaders()
@@ -704,8 +707,15 @@ export const useChatAPI = ({
             continue
           }
 
+          let currentEventId: number | null = null
           for (const line of lines) {
             if (line.startsWith('event: ')) {
+              continue
+            }
+
+            // Track SSE id: field for event injection
+            if (line.startsWith('id: ')) {
+              currentEventId = parseInt(line.substring(4), 10)
               continue
             }
 
@@ -717,6 +727,22 @@ export const useChatAPI = ({
                 if (!eventData || typeof eventData !== 'object') {
                   continue
                 }
+
+                // Extract execution metadata for reconnection
+                if (eventData.type === 'CUSTOM' && eventData.name === 'execution_meta') {
+                  const execId = eventData.value?.executionId
+                  if (execId) {
+                    reconnect.onStreamStart(execId)
+                    logger.info(`[useChatAPI] Execution started: ${execId}`)
+                  }
+                  continue  // Don't dispatch metadata to UI
+                }
+
+                // Inject eventId for deduplication
+                if (currentEventId !== null && currentEventId > 0) {
+                  eventData._eventId = currentEventId
+                }
+                currentEventId = null
 
                 // Debug: log metadata events (always show in production for debugging)
                 if (eventData.type === 'metadata') {
@@ -803,7 +829,18 @@ export const useChatAPI = ({
             const sub = agent.run(runInput).subscribe({
               next: (event) => {
                 if (sessionIdRef.current !== streamSessionId) return
+
+                // Extract execution metadata for reconnection
                 if (event.type === EventType.CUSTOM) {
+                  const customEvent = event as any
+                  if (customEvent.name === 'execution_meta') {
+                    const execId = customEvent.value?.executionId
+                    if (execId) {
+                      reconnect.onStreamStart(execId)
+                      logger.info(`[useChatAPI] Execution started: ${execId}`)
+                    }
+                    return  // Don't dispatch metadata to UI
+                  }
                   logger.info('[useChatAPI] Received custom event:', event)
                 }
                 handleStreamEvent(event as AGUIStreamEvent)
@@ -840,11 +877,49 @@ export const useChatAPI = ({
           return
         }
 
+        reconnect.reset()  // Clear persisted cursor on normal stream completion
         onSuccess?.()
       }
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         return
+      }
+
+      // Attempt SSE reconnection on network errors (not user-initiated aborts)
+      const isNetworkError = (error instanceof TypeError && (error.message === 'Failed to fetch' || error.message.includes('network')))
+        || (error instanceof Error && error.message.includes('Stream read error'))
+      if (isNetworkError) {
+        logger.info('[useChatAPI] Network error detected, attempting SSE reconnection...')
+        setUIState(prev => ({ ...prev, isReconnecting: true }))
+        try {
+          await reconnect.attemptReconnect(
+            (event) => handleStreamEvent(event),
+            () => {
+              // Resume succeeded
+              setUIState(prev => ({ ...prev, isReconnecting: false, isConnected: true }))
+              onSuccess?.()
+            },
+            () => {
+              // Resume failed — show error
+              setUIState(prev => ({ ...prev, isReconnecting: false, isConnected: false, isTyping: false }))
+              setMessages(prev => [...prev, {
+                id: String(Date.now()),
+                text: 'Connection lost. The response may be incomplete.',
+                sender: 'bot',
+                timestamp: new Date().toLocaleTimeString()
+              }])
+            },
+            getAuthHeaders,
+            () => {
+              // Connected — clear badge while stream continues
+              setUIState(prev => ({ ...prev, isReconnecting: false, isConnected: true }))
+            },
+          )
+          return
+        } catch {
+          // Fall through to normal error handling
+          setUIState(prev => ({ ...prev, isReconnecting: false }))
+        }
       }
 
       logger.error('Error sending message:', error)
@@ -871,7 +946,7 @@ export const useChatAPI = ({
 
       onError?.(errorMessage)
     }
-  }, [handleStreamEvent, handleLegacyEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature])
+  }, [handleStreamEvent, handleLegacyEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature, reconnect])
   // sessionId removed from dependency array - using sessionIdRef.current instead
 
   /**
@@ -1236,13 +1311,54 @@ export const useChatAPI = ({
 
       logger.info(`Session loaded: ${newSessionId} with ${finalMessages.length} messages`)
 
+      // Check for a running execution that can be resumed (e.g., after page refresh)
+      const hasExecution = reconnect.restoreFromSession(newSessionId)
+      if (hasExecution) {
+        logger.info(`[loadSession] Found persisted execution for session ${newSessionId}, attempting resume...`)
+
+        // Remove the last assistant turn from history — replay will rebuild it.
+        // This prevents duplicate messages (history + replay showing the same content).
+        setMessages(prev => {
+          let lastUserIdx = -1
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].sender === 'user') { lastUserIdx = i; break }
+          }
+          if (lastUserIdx >= 0) {
+            return prev.slice(0, lastUserIdx + 1)
+          }
+          return prev
+        })
+
+        setUIState(prev => ({ ...prev, isTyping: true, isReconnecting: true, agentStatus: 'thinking' }))
+        reconnect.attemptReconnect(
+          (event) => handleStreamEvent(event),
+          () => {
+            // Resume succeeded
+            logger.info('[loadSession] Resume after page refresh succeeded')
+            setUIState(prev => ({ ...prev, isReconnecting: false, isTyping: false, isConnected: true, agentStatus: 'idle' }))
+          },
+          () => {
+            // Resume failed — show history only
+            logger.info('[loadSession] Resume after page refresh failed, showing history only')
+            setUIState(prev => ({ ...prev, isReconnecting: false, isTyping: false, agentStatus: 'idle' }))
+          },
+          getAuthHeaders,
+          () => {
+            // Connected — clear badge, keep isTyping true since stream continues
+            setUIState(prev => ({ ...prev, isReconnecting: false, isConnected: true }))
+          },
+        ).catch(() => {
+          setUIState(prev => ({ ...prev, isReconnecting: false, isTyping: false, agentStatus: 'idle' }))
+        })
+      }
+
       // Return session preferences and messages for caller use
       return { preferences: sessionPreferences, messages: finalMessages }
     } catch (error) {
       logger.error('Failed to load session:', error)
       throw error
     }
-  }, [setMessages, getAuthHeaders])
+  }, [setMessages, getAuthHeaders, reconnect, handleStreamEvent, setUIState])
 
   const cleanup = useCallback(() => {
     abortRef.current?.unsubscribe()
@@ -1263,6 +1379,8 @@ export const useChatAPI = ({
     cleanup,
     sendStopSignal,
     isLoadingTools: false,
-    loadSession
+    loadSession,
+    isReconnecting: reconnect.isReconnecting,
+    reconnectAttempt: reconnect.reconnectAttempt,
   }
 }

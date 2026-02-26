@@ -246,6 +246,8 @@ export interface TokenUsage {
 export interface ChatUIState {
   isConnected: boolean;
   isTyping: boolean;
+  isReconnecting?: boolean;
+  reconnectAttempt?: number;
   showProgressPanel: boolean;
   agentStatus: AgentStatus;
   latencyMetrics: LatencyMetrics;

@@ -488,7 +488,7 @@ export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, current
             )
           })}
 
-          {/* Code agent real-time progress — only in the turn with an active code agent */}
+          {/* Code agent real-time progress — live terminal for active code agent */}
           {codeProgress && codeProgress.length > 0 && messages.some(m =>
             m.toolExecutions?.some(t => isCodeAgentExecution(t) && !t.isComplete)
           ) && (

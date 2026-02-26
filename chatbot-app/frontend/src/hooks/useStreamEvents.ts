@@ -76,6 +76,9 @@ export const useStreamEvents = ({
   // Accumulates TOOL_CALL_ARGS deltas keyed by toolCallId
   const toolInputAccumulatorRef = useRef<Record<string, string>>({})
 
+  // Event deduplication for SSE reconnection (tracks processed "eventId:type" keys)
+  const processedEventIdsRef = useRef(new Set<string>())
+
   // Swarm mode state
   const swarmModeRef = useRef<{
     isActive: boolean
@@ -222,7 +225,7 @@ export const useStreamEvents = ({
 
     // Append chunk to buffer (not directly to state)
     textBuffer.appendChunk(event.delta)
-  }, [setSessionState, textBuffer])
+  }, [setSessionState, setMessages, setUIState, textBuffer])
 
   const handleTextMessageEndEvent = useCallback((_event: TextMessageEndEvent) => {
     // Swarm mode: non-responder has no streaming message to close
@@ -1086,18 +1089,61 @@ export const useStreamEvents = ({
     t.toolName === 'agentcore_code-agent' ||
     (t.toolName === 'skill_executor' && t.toolInput?.tool_name === 'code_agent')
 
-  const handleCodeStepEvent = useCallback((event: CustomEvent) => {
-    const ev = (event as any).value
-    // Accumulate code steps for terminal-style display — bypasses messages/memo chain
-    // for immediate real-time rendering (same pattern as researchProgress).
+  const handleCodeAgentStartedEvent = useCallback((_event: CustomEvent) => {
     setSessionState(prev => ({
       ...prev,
       codeProgress: [
-        ...(prev.codeProgress || []),
-        { stepNumber: ev.stepNumber || 0, content: ev.content || '' },
+        { stepNumber: 0, content: 'Code agent started — exploring workspace...' }
       ]
     }))
   }, [setSessionState])
+
+  const handleCodeAgentHeartbeatEvent = useCallback((event: CustomEvent) => {
+    const ev = (event as any).value
+    const elapsed = ev?.elapsed_seconds || 0
+    setSessionState(prev => {
+      const existing = prev.codeProgress || []
+      // Overwrite the last heartbeat entry instead of appending
+      const lastIdx = existing.length - 1
+      if (lastIdx >= 0 && existing[lastIdx].content.startsWith('Working...')) {
+        const updated = [...existing]
+        updated[lastIdx] = { stepNumber: 0, content: `Working... (${elapsed}s elapsed)` }
+        return { ...prev, codeProgress: updated }
+      }
+      return { ...prev, codeProgress: [...existing, { stepNumber: 0, content: `Working... (${elapsed}s elapsed)` }] }
+    })
+  }, [setSessionState])
+
+  const handleCodeStepEvent = useCallback((event: CustomEvent) => {
+    const ev = (event as any).value
+    const step = { stepNumber: ev.stepNumber || 0, content: ev.content || '' }
+
+    // 1. Update ephemeral codeProgress for live rendering
+    setSessionState(prev => ({
+      ...prev,
+      codeProgress: [...(prev.codeProgress || []), step],
+    }))
+
+    // 2. Persist to toolExecution.codeSteps (survives reconnect + used after completion)
+    const activeExec = currentToolExecutionsRef.current.find(
+      t => isCodeAgentExec(t) && !t.isComplete
+    )
+    if (activeExec) {
+      const updatedSteps = [...(activeExec.codeSteps || []), step]
+      const updatedExecutions = currentToolExecutionsRef.current.map(t =>
+        t.id === activeExec.id ? { ...t, codeSteps: updatedSteps } : t
+      )
+      currentToolExecutionsRef.current = updatedExecutions
+      setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
+      setMessages(prev => prev.map(msg =>
+        msg.isToolMessage && msg.toolExecutions
+          ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
+              t.id === activeExec.id ? { ...t, codeSteps: updatedSteps } : t
+            )}
+          : msg
+      ))
+    }
+  }, [setSessionState, currentToolExecutionsRef, setMessages])
 
   const handleCodeTodoUpdateEvent = useCallback((event: CustomEvent) => {
     const ev = (event as any).value
@@ -1135,6 +1181,7 @@ export const useStreamEvents = ({
       t.id === codeExec.id ? { ...t, codeResultMeta: meta } : t
     )
     currentToolExecutionsRef.current = updatedExecutions
+    // Clear codeProgress — live terminal disappears when tool result arrives
     setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions, codeProgress: undefined }))
     setMessages(prev => prev.map(msg =>
       msg.isToolMessage && msg.toolExecutions
@@ -1432,6 +1479,17 @@ export const useStreamEvents = ({
 
   const handleStreamEvent = useCallback((event: StreamEvent) => {
     try {
+      // Event deduplication for SSE reconnection
+      // Use "eventId:type" as key because multiple event types can share the same SSE event id
+      const eventId = (event as any)._eventId as number | undefined
+      if (eventId && eventId > 0) {
+        const dedupKey = `${eventId}:${event.type}`
+        if (processedEventIdsRef.current.has(dedupKey)) {
+          return  // Skip duplicate
+        }
+        processedEventIdsRef.current.add(dedupKey)
+      }
+
       switch (event.type) {
         case EventType.RUN_STARTED:
           handleInitEvent()
@@ -1492,6 +1550,12 @@ export const useStreamEvents = ({
               break
             case 'oauth_elicitation':
               handleOAuthElicitationEvent(customEvent)
+              break
+            case 'code_agent_started':
+              handleCodeAgentStartedEvent(customEvent)
+              break
+            case 'code_agent_heartbeat':
+              handleCodeAgentHeartbeatEvent(customEvent)
               break
             case 'code_step':
               handleCodeStepEvent(customEvent)
@@ -1584,6 +1648,8 @@ export const useStreamEvents = ({
     handleBrowserProgressEvent,
     handleResearchProgressEvent,
     handleOAuthElicitationEvent,
+    handleCodeAgentStartedEvent,
+    handleCodeAgentHeartbeatEvent,
     handleCodeStepEvent,
     handleCodeTodoUpdateEvent,
     handleCodeResultMetaEvent,
@@ -1606,6 +1672,7 @@ export const useStreamEvents = ({
     streamingIdRef.current = null
     completeProcessedRef.current = false
     tokenUsageRef.current = null
+    processedEventIdsRef.current.clear()
     metadataTracking.reset()
 
     // Reset swarm mode state if active
