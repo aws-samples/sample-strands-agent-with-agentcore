@@ -11,6 +11,7 @@ interface BufferedExecution {
   events: string[]                       // raw SSE event strings ("id: N\ndata: {...}\n\n")
   completed: boolean
   completedAt: number | null
+  lastEventAt: number                    // timestamp of last appended event
   listeners: Set<(event: string) => void>  // live-tail subscribers
 }
 
@@ -18,6 +19,12 @@ const executions = new Map<string, BufferedExecution>()
 
 /** TTL for completed executions (5 minutes). */
 const COMPLETED_TTL_MS = 5 * 60 * 1000
+
+/** TTL for running executions without new events (10 minutes). */
+const RUNNING_STALE_TTL_MS = 10 * 60 * 1000
+
+/** Max events per execution (matches backend's 10K limit). */
+const MAX_EVENTS_PER_EXECUTION = 10000
 
 /** Cleanup interval (30 seconds). */
 const CLEANUP_INTERVAL_MS = 30 * 1000
@@ -30,7 +37,14 @@ function ensureCleanupTimer() {
   cleanupTimer = setInterval(() => {
     const now = Date.now()
     for (const [id, exec] of executions) {
+      // Remove completed executions past TTL
       if (exec.completed && exec.completedAt && now - exec.completedAt > COMPLETED_TTL_MS) {
+        executions.delete(id)
+        continue
+      }
+      // Remove stale running executions (no new events for 10 minutes)
+      if (!exec.completed && now - exec.lastEventAt > RUNNING_STALE_TTL_MS) {
+        console.log(`[ExecutionBuffer] Removing stale running execution: ${id}`)
         executions.delete(id)
       }
     }
@@ -49,6 +63,7 @@ export function create(executionId: string): void {
     events: [],
     completed: false,
     completedAt: null,
+    lastEventAt: Date.now(),
     listeners: new Set(),
   })
   ensureCleanupTimer()
@@ -57,7 +72,15 @@ export function create(executionId: string): void {
 export function append(executionId: string, sseChunk: string): void {
   const exec = executions.get(executionId)
   if (!exec) return
+
+  // Overflow protection: trim oldest 20% when exceeding limit (mirrors backend)
+  if (exec.events.length >= MAX_EVENTS_PER_EXECUTION) {
+    const trimCount = Math.floor(MAX_EVENTS_PER_EXECUTION * 0.2)
+    exec.events.splice(0, trimCount)
+  }
+
   exec.events.push(sseChunk)
+  exec.lastEventAt = Date.now()
   // Notify live-tail listeners
   for (const listener of exec.listeners) {
     try { listener(sseChunk) } catch { /* ignore */ }

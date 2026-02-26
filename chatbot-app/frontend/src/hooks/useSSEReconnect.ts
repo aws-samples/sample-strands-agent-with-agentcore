@@ -11,6 +11,7 @@ interface ReconnectState {
 const MAX_ATTEMPTS = 5
 const BASE_DELAY_MS = 1000
 const MAX_DELAY_MS = 16000
+const FETCH_TIMEOUT_MS = 10000
 const STORAGE_KEY_PREFIX = 'sse_exec_'
 
 /** Persist executionId to sessionStorage. */
@@ -128,17 +129,25 @@ export function useSSEReconnect() {
       setReconnectAttempt(attempt + 1)
       setIsReconnecting(true)
 
-      // Exponential backoff
+      // Exponential backoff with jitter
       if (attempt > 0) {
-        const delay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt - 1), MAX_DELAY_MS)
+        const baseDelay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt - 1), MAX_DELAY_MS)
+        const delay = Math.floor(baseDelay * (0.5 + Math.random() * 0.5))
         await new Promise(resolve => setTimeout(resolve, delay))
       }
 
       try {
         // 1. Check execution status via BFF buffer
-        const statusUrl = `${getApiUrl('stream/execution-status')}?executionId=${encodeURIComponent(executionId)}`
-        const statusRes = await fetch(statusUrl)
-        const statusData = await statusRes.json()
+        const statusController = new AbortController()
+        const statusTimeout = setTimeout(() => statusController.abort(), FETCH_TIMEOUT_MS)
+        let statusData: { status: string }
+        try {
+          const statusUrl = `${getApiUrl('stream/execution-status')}?executionId=${encodeURIComponent(executionId)}`
+          const statusRes = await fetch(statusUrl, { signal: statusController.signal })
+          statusData = await statusRes.json()
+        } finally {
+          clearTimeout(statusTimeout)
+        }
 
         if (statusData.status === 'not_found') {
           console.log('[SSEReconnect] Execution not found, falling back to history')
@@ -146,11 +155,19 @@ export function useSSEReconnect() {
         }
 
         // 2. Resume SSE stream from cursor=0 (full replay from BFF buffer)
+        const resumeController = new AbortController()
+        const resumeTimeout = setTimeout(() => resumeController.abort(), FETCH_TIMEOUT_MS)
         const resumeUrl = `${getApiUrl('stream/resume')}?executionId=${encodeURIComponent(executionId)}&cursor=0`
         const headers = await getAuthHeaders()
-        const response = await fetch(resumeUrl, {
-          headers: { ...headers, 'Accept': 'text/event-stream' },
-        })
+        let response: Response
+        try {
+          response = await fetch(resumeUrl, {
+            headers: { ...headers, 'Accept': 'text/event-stream' },
+            signal: resumeController.signal,
+          })
+        } finally {
+          clearTimeout(resumeTimeout)
+        }
 
         if (!response.ok) {
           console.warn(`[SSEReconnect] Resume failed with ${response.status}, attempt ${attempt + 1}`)

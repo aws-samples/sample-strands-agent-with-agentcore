@@ -279,7 +279,7 @@ async def invocations(http_request: Request):
 
         # Create execution in registry with unique run_id
         run_id = str(uuid.uuid4())
-        execution = registry.create_execution(input_data.session_id, input_data.user_id, run_id)
+        execution = await registry.create_execution(input_data.session_id, input_data.user_id, run_id)
 
         # Run agent as background task — events buffered in execution
         async def run_agent_to_buffer():
@@ -460,7 +460,7 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         media_type = EventEncoder(accept=accept).get_content_type()
 
         # Create execution in registry
-        execution = registry.create_execution(session_id, user_id, run_id)
+        execution = await registry.create_execution(session_id, user_id, run_id)
         execution.media_type = media_type
 
         # Run agent as background task — events buffered in execution
@@ -512,14 +512,33 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         )
 
 
+_cleanup_task: Optional[asyncio.Task] = None
+
+
 @router.on_event("startup")
 async def start_cleanup_task():
     """Periodically clean up expired execution buffers."""
+    global _cleanup_task
+
     async def periodic_cleanup():
         while True:
             await asyncio.sleep(60)
             try:
-                registry.cleanup_expired()
+                await registry.cleanup_expired()
             except Exception as e:
                 logger.error(f"[ExecutionRegistry] Cleanup error: {e}")
-    asyncio.create_task(periodic_cleanup())
+
+    _cleanup_task = asyncio.create_task(periodic_cleanup())
+
+
+@router.on_event("shutdown")
+async def stop_cleanup_task():
+    """Cancel cleanup task on shutdown."""
+    global _cleanup_task
+    if _cleanup_task and not _cleanup_task.done():
+        _cleanup_task.cancel()
+        try:
+            await _cleanup_task
+        except asyncio.CancelledError:
+            pass
+        _cleanup_task = None

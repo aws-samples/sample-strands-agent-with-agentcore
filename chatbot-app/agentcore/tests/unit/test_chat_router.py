@@ -128,12 +128,13 @@ class TestAgentFactory:
 class TestExecutionRegistry:
     """Tests for ExecutionRegistry and _create_tail_stream."""
 
-    def test_create_and_get_execution(self):
+    @pytest.mark.asyncio
+    async def test_create_and_get_execution(self):
         """Test creating and retrieving an execution."""
         from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
         ExecutionRegistry.reset()
         registry = ExecutionRegistry()
-        execution = registry.create_execution("sess1", "user1", "run1")
+        execution = await registry.create_execution("sess1", "user1", "run1")
         assert execution.execution_id == "sess1:run1"
         assert execution.status == ExecutionStatus.RUNNING
 
@@ -143,12 +144,13 @@ class TestExecutionRegistry:
         latest = registry.get_latest_execution("sess1")
         assert latest is execution
 
-    def test_append_and_get_events(self):
+    @pytest.mark.asyncio
+    async def test_append_and_get_events(self):
         """Test appending events and cursor-based retrieval."""
         from streaming.execution_registry import ExecutionRegistry
         ExecutionRegistry.reset()
         registry = ExecutionRegistry()
-        execution = registry.create_execution("sess2", "user1", "run2")
+        execution = await registry.create_execution("sess2", "user1", "run2")
 
         e1 = execution.append_event('data: {"type":"init"}\n\n', "init")
         e2 = execution.append_event('data: {"type":"response"}\n\n', "response")
@@ -167,17 +169,18 @@ class TestExecutionRegistry:
         assert len(events) == 1
         assert events[0].event_id == 3
 
-    def test_cleanup_expired(self):
+    @pytest.mark.asyncio
+    async def test_cleanup_expired(self):
         """Test that completed executions are cleaned up after TTL."""
         import time
         from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
         ExecutionRegistry.reset()
         registry = ExecutionRegistry()
-        execution = registry.create_execution("sess3", "user1", "run3")
+        execution = await registry.create_execution("sess3", "user1", "run3")
         execution.status = ExecutionStatus.COMPLETED
         execution.completed_at = time.time() - 400  # Past TTL
 
-        removed = registry.cleanup_expired()
+        removed = await registry.cleanup_expired()
         assert removed == 1
         assert registry.get_execution("sess3:run3") is None
 
@@ -188,7 +191,7 @@ class TestExecutionRegistry:
         from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
         ExecutionRegistry.reset()
         registry = ExecutionRegistry()
-        execution = registry.create_execution("sess4", "user1", "run4")
+        execution = await registry.create_execution("sess4", "user1", "run4")
 
         # Pre-buffer events
         execution.append_event('data: {"type":"init"}\n\n', "init")
@@ -216,7 +219,7 @@ class TestExecutionRegistry:
         from streaming.execution_registry import ExecutionRegistry, ExecutionStatus
         ExecutionRegistry.reset()
         registry = ExecutionRegistry()
-        execution = registry.create_execution("sess5", "user1", "run5")
+        execution = await registry.create_execution("sess5", "user1", "run5")
         # Keep status as RUNNING so the stream would normally wait
 
         mock_request = MagicMock(spec=Request)

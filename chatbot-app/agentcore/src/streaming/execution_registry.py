@@ -99,6 +99,7 @@ class ExecutionRegistry:
             cls._instance = super().__new__(cls)
             cls._instance._executions = {}
             cls._instance._session_latest = {}
+            cls._instance._lock = asyncio.Lock()
         return cls._instance
 
     @classmethod
@@ -106,18 +107,19 @@ class ExecutionRegistry:
         """Reset singleton (for testing)."""
         cls._instance = None
 
-    def create_execution(self, session_id: str, user_id: str, run_id: str) -> Execution:
-        execution_id = f"{session_id}:{run_id}"
-        execution = Execution(
-            execution_id=execution_id,
-            session_id=session_id,
-            user_id=user_id,
-            status=ExecutionStatus.RUNNING,
-        )
-        self._executions[execution_id] = execution
-        self._session_latest[session_id] = execution_id
-        logger.info(f"[ExecutionRegistry] Created execution {execution_id}")
-        return execution
+    async def create_execution(self, session_id: str, user_id: str, run_id: str) -> Execution:
+        async with self._lock:
+            execution_id = f"{session_id}:{run_id}"
+            execution = Execution(
+                execution_id=execution_id,
+                session_id=session_id,
+                user_id=user_id,
+                status=ExecutionStatus.RUNNING,
+            )
+            self._executions[execution_id] = execution
+            self._session_latest[session_id] = execution_id
+            logger.info(f"[ExecutionRegistry] Created execution {execution_id}")
+            return execution
 
     def get_execution(self, execution_id: str) -> Optional[Execution]:
         return self._executions.get(execution_id)
@@ -128,26 +130,27 @@ class ExecutionRegistry:
             return self._executions.get(execution_id)
         return None
 
-    def cleanup_expired(self) -> int:
+    async def cleanup_expired(self) -> int:
         """Remove completed executions past their TTL. Returns count removed."""
-        now = time.time()
-        to_remove = []
-        for eid, execution in self._executions.items():
-            if (
-                execution.status != ExecutionStatus.RUNNING
-                and execution.completed_at
-                and (now - execution.completed_at) > self.BUFFER_TTL_AFTER_COMPLETE
-                and execution.subscribers == 0
-            ):
-                to_remove.append(eid)
+        async with self._lock:
+            now = time.time()
+            to_remove = []
+            for eid, execution in self._executions.items():
+                if (
+                    execution.status != ExecutionStatus.RUNNING
+                    and execution.completed_at
+                    and (now - execution.completed_at) > self.BUFFER_TTL_AFTER_COMPLETE
+                    and execution.subscribers == 0
+                ):
+                    to_remove.append(eid)
 
-        for eid in to_remove:
-            execution = self._executions.pop(eid, None)
-            if execution:
-                # Clean up session_latest if it points to this execution
-                if self._session_latest.get(execution.session_id) == eid:
-                    del self._session_latest[execution.session_id]
+            for eid in to_remove:
+                execution = self._executions.pop(eid, None)
+                if execution:
+                    # Clean up session_latest if it points to this execution
+                    if self._session_latest.get(execution.session_id) == eid:
+                        del self._session_latest[execution.session_id]
 
-        if to_remove:
-            logger.info(f"[ExecutionRegistry] Cleaned up {len(to_remove)} expired executions")
-        return len(to_remove)
+            if to_remove:
+                logger.info(f"[ExecutionRegistry] Cleaned up {len(to_remove)} expired executions")
+            return len(to_remove)

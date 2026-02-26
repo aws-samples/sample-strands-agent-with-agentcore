@@ -616,7 +616,8 @@ export const useChatAPI = ({
           if (RETRYABLE_STATUSES.includes(response.status) && !localAbortController.signal.aborted) {
             let lastStatus = response.status
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-              const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000) // 1s, 2s, 4s
+              const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 4000)
+              const delay = Math.floor(baseDelay * (0.5 + Math.random() * 0.5)) // jitter to avoid thundering herd
               logger.info(`[useChatAPI] Retrying after ${response.status} (attempt ${attempt}/${MAX_RETRIES}, wait ${delay}ms)`)
               await new Promise(resolve => setTimeout(resolve, delay))
 
@@ -816,7 +817,8 @@ export const useChatAPI = ({
         let streamAborted = false
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
           if (attempt > 0) {
-            const delay = Math.min(1000 * Math.pow(2, attempt - 1), 4000) // 1s, 2s, 4s
+            const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 4000)
+            const delay = Math.floor(baseDelay * (0.5 + Math.random() * 0.5)) // jitter to avoid thundering herd
             logger.info(`[useChatAPI] Retrying after ${lastHttpStatus} (attempt ${attempt}/${MAX_RETRIES}, wait ${delay}ms)`)
             await new Promise(resolve => setTimeout(resolve, delay))
             if (streamAborted) break
