@@ -394,6 +394,8 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         user_id = input_data.state.get("user_id", "agui")
 
     message = ""
+    image_content_parts = []  # Inline base64 images from AG-UI multimodal
+    doc_content_parts = []    # Inline base64 documents (PDF, DOCX, etc.)
     if input_data.messages:
         for msg in reversed(input_data.messages):
             if msg.role == "user":
@@ -402,12 +404,26 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
                     message = content
                 elif isinstance(content, list):
                     for part in content:
-                        if hasattr(part, "text"):
-                            message = part.text
-                            break
-                        elif isinstance(part, dict) and part.get("type") == "text":
-                            message = part.get("text", "")
-                            break
+                        part_dict = part if isinstance(part, dict) else (part.dict() if hasattr(part, "dict") else {})
+                        part_type = part_dict.get("type") or (getattr(part, "type", None))
+                        if part_type == "text":
+                            message = part_dict.get("text") or getattr(part, "text", "") or ""
+                        elif part_type == "binary":
+                            mime_type = (part_dict.get("mime_type") or part_dict.get("mimeType")
+                                         or getattr(part, "mime_type", "") or "")
+                            data = part_dict.get("data") or getattr(part, "data", "") or ""
+                            filename = part_dict.get("filename") or getattr(part, "filename", "") or ""
+                            if mime_type.startswith("image/"):
+                                image_content_parts.append({
+                                    "mediaType": mime_type,
+                                    "data": data,
+                                })
+                            else:
+                                doc_content_parts.append({
+                                    "mediaType": mime_type or "application/octet-stream",
+                                    "data": data,
+                                    "name": filename or "document",
+                                })
                 break
 
     # Extract enabled tools from the AG-UI tools list
@@ -423,12 +439,14 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
     system_prompt = None
     caching_enabled = None
     request_type = "normal"
+    auth_token = None
     if input_data.state and isinstance(input_data.state, dict):
         model_id = input_data.state.get("model_id")
         temperature = input_data.state.get("temperature")
         system_prompt = input_data.state.get("system_prompt")
         caching_enabled = input_data.state.get("caching_enabled")
         request_type = input_data.state.get("request_type", "normal")
+        auth_token = input_data.state.get("auth_token")
 
     logger.info(f"AG-UI invocation: thread_id={thread_id}, run_id={run_id}, user_id={user_id}, tools={len(enabled_tools) if enabled_tools else 0}")
 
@@ -442,6 +460,7 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
             temperature=temperature,
             system_prompt=system_prompt,
             caching_enabled=caching_enabled,
+            auth_token=auth_token,
         )
 
         agui_processor = AGUIStreamEventProcessor(thread_id=thread_id, run_id=run_id)
@@ -463,14 +482,47 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         execution = await registry.create_execution(session_id, user_id, run_id)
         execution.media_type = media_type
 
+        # Parse message for special cases (HITL interrupt response, compose confirmation)
+        message_content, special_params = _parse_message(message, request_type)
+
+        # Build multimodal message when inline image/document parts were found
+        agui_message = message_content
+        if not isinstance(message_content, list) and (image_content_parts or doc_content_parts):
+            import base64 as _base64
+            content_list = []
+            if message:
+                content_list.append({"text": message})
+            for img in image_content_parts:
+                mime = img["mediaType"]
+                fmt = mime.split("/")[-1] if "/" in mime else "jpeg"
+                if fmt == "jpg":
+                    fmt = "jpeg"
+                raw_bytes = _base64.b64decode(img["data"])
+                content_list.append({"image": {"format": fmt, "source": {"bytes": raw_bytes}}})
+            for doc in doc_content_parts:
+                mime = doc["mediaType"]
+                fmt = mime.split("/")[-1] if "/" in mime else "pdf"
+                # Normalize common MIME subtypes to Bedrock-accepted format names
+                fmt_map = {"vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+                           "vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+                           "vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+                           "msword": "doc", "plain": "txt", "html": "html"}
+                fmt = fmt_map.get(fmt, fmt)
+                raw_bytes = _base64.b64decode(doc["data"])
+                name = doc.get("name", "document")
+                name_without_ext = name.rsplit(".", 1)[0] if "." in name else name
+                content_list.append({"document": {"format": fmt, "name": name_without_ext, "source": {"bytes": raw_bytes}}})
+            agui_message = content_list
+
         # Run agent as background task — events buffered in execution
         async def run_agui_to_buffer():
             try:
                 stream = agui_processor.process_stream(
                     agent.agent,
-                    message,
+                    agui_message,
                     session_id=session_id,
                     invocation_state=invocation_state,
+                    elicitation_bridge=getattr(agent, 'elicitation_bridge', None),
                 )
                 async for sse_chunk in stream:
                     event_type = _extract_event_type(sse_chunk)

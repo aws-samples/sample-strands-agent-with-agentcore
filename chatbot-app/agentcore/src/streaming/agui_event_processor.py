@@ -948,8 +948,10 @@ class AGUIStreamEventProcessor:
         This method is kept as a no-op for backwards compatibility."""
         pass
 
-    def _create_multimodal_message(self, text: str, file_paths: list = None):
+    def _create_multimodal_message(self, text, file_paths: list = None):
         """Create a multimodal message with text, images, and documents for Strands SDK"""
+        if isinstance(text, list):
+            return text  # Already structured (e.g. HITL interrupt response)
         if not file_paths:
             return text
 

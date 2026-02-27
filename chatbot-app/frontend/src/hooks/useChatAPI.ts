@@ -568,7 +568,7 @@ export const useChatAPI = ({
 
       if (files && files.length > 0) {
         // ---------------------------------------------------------------
-        // FormData path — file uploads use raw fetch + SSE reader
+        // AG-UI multimodal path — files converted to base64 inline
         // ---------------------------------------------------------------
         const localAbortController = new AbortController()
         const readerHolder = { current: null as ReadableStreamDefaultReader<Uint8Array> | null }
@@ -579,26 +579,43 @@ export const useChatAPI = ({
           }
         }
 
-        const formData = new FormData()
-        formData.append('message', messageToSend)
-        formData.append('enabled_tools', JSON.stringify(allEnabledToolIds))
-        formData.append('model_id', currentModelId)
-        formData.append('temperature', String(currentTemperature))
+        // Convert files to base64 and build AG-UI InputContentPart array
+        // AG-UI only supports 'text' and 'binary' content types
+        type ContentPart =
+          | { type: 'text'; text: string }
+          | { type: 'binary'; mimeType: string; data: string; filename: string }
 
-        if (requestType) {
-          formData.append('request_type', requestType)
+        const contentParts: ContentPart[] = [{ type: 'text', text: messageToSend }]
+        for (const file of files) {
+          const arrayBuffer = await file.arrayBuffer()
+          const base64 = btoa(new Uint8Array(arrayBuffer).reduce((d, b) => d + String.fromCharCode(b), ''))
+          contentParts.push({
+            type: 'binary',
+            mimeType: file.type || 'application/octet-stream',
+            data: base64,
+            filename: file.name,
+          })
         }
 
-        if (systemPrompt) {
-          formData.append('system_prompt', systemPrompt)
-        }
-
-        files.forEach((file) => {
-          formData.append('files', file)
+        const threadId = sessionIdRef.current ?? crypto.randomUUID()
+        const aguiBody = JSON.stringify({
+          threadId,
+          runId: crypto.randomUUID(),
+          messages: [{ id: crypto.randomUUID(), role: 'user', content: contentParts }],
+          tools: allEnabledToolIds.map(id => ({ name: id, description: '' })),
+          context: [],
+          state: {
+            model_id: currentModelId,
+            temperature: currentTemperature,
+            ...(requestType && { request_type: requestType }),
+            ...(systemPrompt && { system_prompt: systemPrompt }),
+            ...(selectedArtifactId && { selected_artifact_id: selectedArtifactId }),
+          },
         })
 
         const headers: Record<string, string> = {
-          ...authHeaders
+          'Content-Type': 'application/json',
+          ...authHeaders,
         }
         if (currentSessionId) {
           headers['X-Session-ID'] = currentSessionId
@@ -607,7 +624,7 @@ export const useChatAPI = ({
         let response = await fetch(getApiUrl('stream/chat'), {
           method: 'POST',
           headers,
-          body: formData,
+          body: aguiBody,
           signal: localAbortController.signal
         })
 
@@ -624,20 +641,12 @@ export const useChatAPI = ({
               if (localAbortController.signal.aborted) break
 
               try {
-                const retryFormData = new FormData()
-                retryFormData.append('message', messageToSend)
-                retryFormData.append('enabled_tools', JSON.stringify(allEnabledToolIds))
-                retryFormData.append('model_id', currentModelId)
-                retryFormData.append('temperature', String(currentTemperature))
-                if (requestType) retryFormData.append('request_type', requestType)
-                if (systemPrompt) retryFormData.append('system_prompt', systemPrompt)
-                files.forEach((file) => retryFormData.append('files', file))
-                const retryHeaders: Record<string, string> = { ...authHeaders }
+                const retryHeaders: Record<string, string> = { 'Content-Type': 'application/json', ...authHeaders }
                 if (currentSessionId) retryHeaders['X-Session-ID'] = currentSessionId
                 response = await fetch(getApiUrl('stream/chat'), {
                   method: 'POST',
                   headers: retryHeaders,
-                  body: retryFormData,
+                  body: aguiBody,
                   signal: localAbortController.signal
                 })
 

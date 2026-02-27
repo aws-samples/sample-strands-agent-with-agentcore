@@ -105,6 +105,29 @@ async function resizeImageIfNeeded(
   }
 }
 
+/**
+ * Resize base64-encoded images inside an AG-UI messages array that exceed 5MB.
+ * Iterates message content parts and replaces oversized image data in-place.
+ */
+async function processAguiMessagesImages(
+  messages: Array<{ role?: string; content?: unknown }>
+): Promise<void> {
+  for (const msg of messages) {
+    if (!Array.isArray(msg.content)) continue
+    for (const part of msg.content as any[]) {
+      if (part.type !== 'image') continue
+      const source = part.source
+      if (!source || source.type !== 'base64' || !source.data) continue
+      const raw = Buffer.from(source.data, 'base64')
+      const mime: string = source.mediaType || 'image/jpeg'
+      const { buffer: resized, resized: didResize } = await resizeImageIfNeeded(raw, mime, 'inline')
+      if (didResize) {
+        source.data = resized.toString('base64')
+      }
+    }
+  }
+}
+
 // Check if running in local mode
 const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
 
@@ -127,6 +150,8 @@ export async function POST(request: NextRequest) {
     let system_prompt: string | undefined
     let threadIdFromBody: string | undefined
     let runIdFromBody: string | undefined
+    // Holds the original messages array from AG-UI JSON body (may contain multimodal content)
+    let aguiMessages: Array<{ id?: string; role?: string; content?: unknown }> | undefined
 
     if (isFormData) {
       // Parse FormData for file uploads
@@ -190,6 +215,7 @@ export async function POST(request: NextRequest) {
 
       threadIdFromBody = body.threadId
       runIdFromBody = body.runId
+      aguiMessages = body.messages ?? []
 
       // Per-request config lives in body.state (replaces former top-level fields)
       const state = body.state ?? {}
@@ -205,13 +231,21 @@ export async function POST(request: NextRequest) {
         enabled_tools = body.tools.map((t: { name: string }) => t.name)
       }
 
-      // Extract user message from the last element of body.messages
-      const bodyMessages: Array<{ id?: string; role?: string; content?: string }> = body.messages ?? []
+      // Extract user message from the last element of body.messages.
+      // content may be a string (text-only) or an InputContentPart[] (multimodal).
+      const bodyMessages: Array<{ id?: string; role?: string; content?: unknown }> = body.messages ?? []
       const lastMsg = bodyMessages[bodyMessages.length - 1]
-      message = lastMsg?.content ?? ''
+      const lastContent = lastMsg?.content
+      if (Array.isArray(lastContent)) {
+        const textPart = lastContent.find((p: any) => p.type === 'text')
+        message = (textPart as any)?.text ?? ''
+      } else {
+        message = (lastContent as string) ?? ''
+      }
     }
 
-    if (!message) {
+    // Message is required unless it's an AG-UI JSON request with attached files (images/docs only).
+    if (!message && (isFormData || !threadIdFromBody)) {
       return new Response(
         JSON.stringify({ error: 'Message is required' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -495,11 +529,18 @@ export async function POST(request: NextRequest) {
 
           let agentStream: ReadableStream
           if (threadIdFromBody) {
-            // AG-UI path: send RunAgentInput in snake_case so backend uses AGUIStreamEventProcessor
+            // AG-UI path: pass original messages (may contain multimodal content parts)
+            // Apply server-side image resize for any base64 images exceeding 5MB
+            const messagesForBackend = aguiMessages && aguiMessages.length > 0
+              ? aguiMessages
+              : [{ id: crypto.randomUUID(), role: 'user', content: message }]
+
+            await processAguiMessagesImages(messagesForBackend)
+
             const aguiBody: Record<string, any> = {
               thread_id: threadIdFromBody,
               run_id: runIdFromBody || crypto.randomUUID(),
-              messages: [{ id: crypto.randomUUID(), role: 'user', content: message }],
+              messages: messagesForBackend,
               tools: enabledToolsList.map(name => ({ name, description: '' })),
               context: [],
               state: {
@@ -510,6 +551,7 @@ export async function POST(request: NextRequest) {
                 caching_enabled: modelConfig.caching_enabled,
                 ...(request_type && { request_type }),
                 ...(selected_artifact_id && { selected_artifact_id }),
+                ...(authToken && { auth_token: authToken }),
               },
             }
             agentStream = await invokeAgentCoreRuntimeAgui(aguiBody, agentCoreAbortController.signal)
