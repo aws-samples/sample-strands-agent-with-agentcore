@@ -410,7 +410,7 @@ export function ChatInputArea({
           >
             <Input
               type="file"
-              accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,.zip,application/zip,application/x-zip,application/x-zip-compressed"
+              accept="image/*,application/pdf,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,.xlsx,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx,.zip,application/zip,application/x-zip,application/x-zip-compressed,text/csv,.csv"
               multiple
               onChange={handleFileSelect}
               className="hidden"

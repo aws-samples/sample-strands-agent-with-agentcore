@@ -6,9 +6,9 @@ Skill infrastructure tools for progressive disclosure.
 """
 
 import asyncio
-import concurrent.futures
 import json
 import logging
+from datetime import timedelta
 from strands import tool
 from strands.types.tools import ToolContext
 
@@ -368,6 +368,11 @@ def _execute_tool(
         # Determine execution path based on tool type
         is_mcp_tool = hasattr(target_tool, 'mcp_client')
 
+        # Timeout for MCP tool calls (seconds).
+        # Must exceed the OAuth elicitation bridge timeout (300s) to allow
+        # the user to complete 3LO consent without being prematurely killed.
+        MCP_TOOL_TIMEOUT = 360
+
         if is_mcp_tool:
             # MCP tool — delegate to mcp_client.call_tool_sync()
             # Ensure MCP session is alive (may have timed out since startup)
@@ -378,6 +383,7 @@ def _execute_tool(
                 tool_use_id=tool_context.tool_use.get("toolUseId", "skill-exec"),
                 name=target_tool.mcp_tool.name,
                 arguments=tool_input,
+                read_timeout_seconds=timedelta(seconds=MCP_TOOL_TIMEOUT),
             )
 
             # Extract text content from MCPToolResult for the LLM

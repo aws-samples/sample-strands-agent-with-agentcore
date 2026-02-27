@@ -692,7 +692,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         undefined,
         () => setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' })),
         overrideTools,
-        skillsEnabled ? "skill" : swarmEnabled ? "swarm" : undefined // preserve request type
+        undefined // interrupt responses must use "normal" request_type for backend parsing
       )
     } catch (error) {
       console.error('[Interrupt] Failed to respond to interrupt:', error)

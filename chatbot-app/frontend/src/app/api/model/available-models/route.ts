@@ -27,6 +27,14 @@ const AVAILABLE_MODELS = [
     description: 'Fast and efficient, cost-effective'
   },
 
+  // DeepSeek
+  {
+    id: 'deepseek.v3.2',
+    name: 'DeepSeek V3.2',
+    provider: 'DeepSeek',
+    description: 'Advanced language model with strong reasoning capabilities'
+  },
+
   // Nova (Amazon)
   {
     id: 'us.amazon.nova-2-omni-v1:0',

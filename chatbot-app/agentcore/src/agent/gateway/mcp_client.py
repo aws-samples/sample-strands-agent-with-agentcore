@@ -149,7 +149,7 @@ class FilteredMCPClient(MCPClient):
 
         return PaginatedList(simplified_tools, token=paginated_result.pagination_token)
 
-    def call_tool_sync(self, tool_use_id: str, name: str, arguments: dict):
+    def call_tool_sync(self, tool_use_id: str, name: str, arguments: dict, **kwargs):
         """
         Call tool with automatic name conversion and API key injection.
 
@@ -170,7 +170,7 @@ class FilteredMCPClient(MCPClient):
             arguments = {**arguments, '__user_api_keys': self.api_keys}
             logger.debug("Injected user API keys into tool arguments")
 
-        return super().call_tool_sync(tool_use_id, actual_name, arguments)
+        return super().call_tool_sync(tool_use_id, actual_name, arguments, **kwargs)
 
 
 def get_gateway_url_from_ssm(
