@@ -42,12 +42,6 @@ const API_KEY_SECTIONS = [
     link: 'https://developers.google.com/maps/documentation/javascript/get-api-key',
     keys: [{ name: 'google_maps_api_key', label: 'API Key' }],
   },
-  {
-    id: 'nova_act',
-    title: 'Nova Act',
-    link: 'https://nova.amazon.com/dev/api',
-    keys: [{ name: 'nova_act_api_key', label: 'API Key' }],
-  },
 ];
 
 interface SettingsDialogProps {

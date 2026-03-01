@@ -309,36 +309,24 @@
     {
       "id": "browser_automation",
       "name": "Nova Act Browser Control",
-      "description": "Web browser automation powered by Nova Act AI (7 tools)",
+      "description": "Web browser automation powered by Nova Act AI (4 tools)",
       "category": "browser_automation_agents",
       "icon": "",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "**Tool Selection:**\n- navigate + act: UI interactions (click, type, scroll, form fill)\n- extract: Structured data from visible content (auto-scrolls)\n- get_page_info: Fast page structure check (<300ms)\n- save_screenshot: Save milestone screenshots (search results, confirmations, key data) to workspace for documents\n\n**browser_act Best Practice:**\n- Combine up to 3 predictable steps: \"1. Type 'laptop' in search 2. Click search button 3. Click first result\"\n- On failure: check the screenshot to see current state, then retry from that point\n- For visual creation (diagrams, drawings), prefer code/text input methods over mouse interactions",
+      "systemPromptGuidance": "**Tool Selection:**\n- browser_act: UI interactions (click, type, scroll, form fill). Use starting_url to navigate and act in one call.\n- browser_get_page_info: Fast DOM inspection (<300ms). Use url param to navigate first; text/tables/links params for content extraction.\n- browser_manage_tabs: Switch, close, or create tabs.\n- browser_save_screenshot: Save milestone screenshots to workspace for documents.\n\n**browser_act Best Practice:**\n- Combine up to 3 predictable steps: \"1. Type 'laptop' in search 2. Click search button 3. Click first result\"\n- Use starting_url when opening a fresh page: browser_act(instruction='...', starting_url='https://...')\n- On failure: check the screenshot to see current state, then retry from that point\n\n**browser_get_page_info Best Practice:**\n- Use url param to navigate and inspect in one call: browser_get_page_info(url='https://...', tables=True)\n- Use text=True for full page text, tables=True for table data, links=True for all page links",
       "tags": ["shopping", "automation", "scraping", "research"],
       "tools": [
         {
-          "id": "browser_navigate",
-          "name": "Navigate",
-          "description": "Navigate browser to a URL and see the page",
-          "displayName": { "running": "Navigating to page", "complete": "Navigated to page" }
-        },
-        {
           "id": "browser_act",
           "name": "Browser Action",
-          "description": "Execute browser actions using natural language (click, type, scroll, select). Does NOT support drag - use browser_drag instead.",
+          "description": "Execute browser actions using natural language (click, type, scroll, select). Optional starting_url to navigate first.",
           "displayName": { "running": "Performing browser action", "complete": "Performed browser action" }
-        },
-        {
-          "id": "browser_extract",
-          "name": "Extract Data",
-          "description": "Extract structured data (auto-scrolls entire page, collects all data in single call)",
-          "displayName": { "running": "Extracting data", "complete": "Extracted data" }
         },
         {
           "id": "browser_get_page_info",
           "name": "Get Page Info",
-          "description": "Get page structure and all open tabs (fast, no AI)",
+          "description": "Get page structure and DOM data (fast, no AI). Optional url to navigate first; text/tables/links for content extraction.",
           "displayName": { "running": "Getting page info", "complete": "Got page info" }
         },
         {

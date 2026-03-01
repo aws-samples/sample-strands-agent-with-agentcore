@@ -9,10 +9,12 @@ const projectName = process.env.PROJECT_NAME || 'strands-agent-chatbot'
 const environment = process.env.ENVIRONMENT || 'dev'
 const awsRegion = process.env.AWS_REGION || process.env.CDK_DEFAULT_REGION || 'us-west-2'
 const awsAccount = process.env.AWS_ACCOUNT || process.env.CDK_DEFAULT_ACCOUNT
+const novaActWorkflowDefinitionName = process.env.NOVA_ACT_WORKFLOW_DEFINITION_NAME || ''
 
 new AgentRuntimeStack(app, 'AgentRuntimeStack', {
   projectName,
   environment,
+  novaActWorkflowDefinitionName,
   env: {
     account: awsAccount,
     region: awsRegion,

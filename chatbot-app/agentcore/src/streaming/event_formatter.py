@@ -546,45 +546,43 @@ class StreamEventFormatter:
     @staticmethod
     def _extract_metadata_from_json_result(tool_result: Dict[str, Any], result_text: str) -> str:
         """
-        Extract metadata (like browserSessionId) from JSON result text.
-        A2A browser-use-agent returns JSON with metadata containing browserSessionId.
-        This method parses the result and extracts metadata into tool_result.
-        Returns the cleaned result text (without metadata wrapper if extracted).
+        Extract metadata from JSON-wrapped result text produced by build_success_response
+        or build_image_response.  These helpers embed metadata inside the content text as
+        {"text": "...", "metadata": {...}} because the Strands SDK → Bedrock toolResult
+        pipeline drops top-level metadata fields.
+
+        This method:
+        1. Merges the embedded metadata dict into tool_result["metadata"]
+        2. Returns the unwrapped "text" value so downstream consumers see clean text
         """
         import json
 
         try:
-            # Try to parse result_text as JSON
             parsed = json.loads(result_text)
 
             if isinstance(parsed, dict):
-                # Check for metadata field with browserSessionId
+                # Generic metadata extraction — handles ALL tools (visual-design,
+                # browser-use, etc.) that use the {"text": ..., "metadata": ...} wrapper
                 if "metadata" in parsed and isinstance(parsed["metadata"], dict):
-                    browser_session_id = parsed["metadata"].get("browserSessionId")
-                    if browser_session_id:
-                        # Add to tool_result metadata
-                        if "metadata" not in tool_result:
-                            tool_result["metadata"] = {}
-                        tool_result["metadata"]["browserSessionId"] = browser_session_id
-                        print(f"[Live View] Extracted browserSessionId from tool result: {browser_session_id}")
+                    if "metadata" not in tool_result:
+                        tool_result["metadata"] = {}
+                    tool_result["metadata"].update(parsed["metadata"])
 
-                        # Return the actual text content, not the wrapper JSON
-                        if "text" in parsed:
-                            return parsed["text"]
+                    # Return the unwrapped text content
+                    if "text" in parsed:
+                        return parsed["text"]
 
-                # Check for browser_session_arn field directly
+                # Legacy: browser_session_arn at top level (older A2A format)
                 browser_session_arn = parsed.get("browser_session_arn")
                 if browser_session_arn:
                     if "metadata" not in tool_result:
                         tool_result["metadata"] = {}
                     tool_result["metadata"]["browserSessionId"] = browser_session_arn
-                    print(f"[Live View] Extracted browser_session_arn from tool result: {browser_session_arn}")
 
                     if "text" in parsed:
                         return parsed["text"]
 
         except (json.JSONDecodeError, TypeError):
-            # Not JSON, return original
             pass
 
         return result_text

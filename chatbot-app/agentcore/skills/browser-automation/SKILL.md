@@ -6,11 +6,9 @@ description: Web browser automation for tasks requiring UI interaction, login-pr
 # Browser Automation
 
 ## Available Tools
-- **browser_navigate(url)**: Navigate to a URL and capture screenshot
-- **browser_act(instruction)**: Execute browser actions using natural language (click, type, scroll, select). Does NOT support drag.
-- **browser_extract(extraction_instruction)**: Extract structured data (auto-scrolls entire page, collects all data in single call)
-- **browser_get_page_info()**: Get page structure and all open tabs (fast, no AI)
-- **browser_manage_tabs(action, tab_index)**: Switch, close, or create browser tabs
+- **browser_act(instruction, starting_url?)**: Execute browser actions using natural language (click, type, scroll, select). Use `starting_url` to navigate to a page and act in a single call.
+- **browser_get_page_info(url?, text?, tables?, links?)**: Get page structure and DOM data (fast, no AI). Use `url` to navigate first; `text=True` for full text, `tables=True` for table data, `links=True` for all links.
+- **browser_manage_tabs(action, tab_index?, url?)**: Switch, close, or create browser tabs
 - **browser_save_screenshot(filename)**: Save current page screenshot to workspace
 
 ## When to Use
@@ -24,12 +22,19 @@ Use browser automation when the task genuinely requires it:
 Prefer **web search or url_fetcher** for general information lookup, news, or publicly accessible pages — browser automation is slower and heavier. Reserve it for tasks where simpler tools are insufficient.
 
 ## Tool Selection
-- `browser_navigate` + `browser_act`: UI interactions (click, type, scroll, form fill)
-- `browser_extract`: Structured data from visible content (auto-scrolls)
-- `browser_get_page_info`: Fast page structure check (<300ms)
+- `browser_act`: UI interactions (click, type, scroll, form fill). Use `starting_url` to open a page and act in one call.
+- `browser_get_page_info`: Fast page structure check and optional content extraction (<300ms). Use `url` to navigate first.
+- `browser_manage_tabs`: Switch/close/create tabs (view tabs via `get_page_info`)
 - `browser_save_screenshot`: Save milestone screenshots (search results, confirmations, key data)
 
 ## browser_act Best Practice
 - Combine up to 3 predictable steps: "1. Type 'laptop' in search 2. Click search button 3. Click first result"
+- Use `starting_url` when opening a fresh page: `browser_act(instruction='Search for laptops', starting_url='https://amazon.com')`
 - On failure: check the screenshot to see current state, then retry from that point
 - For visual creation (diagrams, drawings), prefer code/text input methods over mouse interactions
+
+## browser_get_page_info Best Practice
+- Use `url` to navigate and inspect in one call: `browser_get_page_info(url='https://example.com', tables=True)`
+- Use `text=True` to get full page text content (useful for reading article text)
+- Use `tables=True` to extract structured table data from the page
+- Use `links=True` to get all links on the page (up to 200)

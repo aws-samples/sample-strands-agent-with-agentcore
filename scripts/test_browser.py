@@ -57,25 +57,11 @@ def get_browser_id() -> str:
 
 
 def get_nova_act_config() -> dict:
-    """Get Nova Act configuration."""
-    config = {
-        'api_key': os.getenv('NOVA_ACT_API_KEY'),
+    """Get Nova Act configuration (IAM-based only)."""
+    return {
         'workflow_definition_name': os.getenv('NOVA_ACT_WORKFLOW_DEFINITION_NAME'),
         'model_id': os.getenv('NOVA_ACT_MODEL_ID', 'nova-act-latest')
     }
-
-    # Try Secrets Manager if no API key in environment
-    if not config['api_key'] and not config['workflow_definition_name']:
-        try:
-            secrets_client = boto3.client('secretsmanager', region_name=REGION)
-            secret_name = f"{PROJECT_NAME}/nova-act-api-key"
-            response = secrets_client.get_secret_value(SecretId=secret_name)
-            config['api_key'] = response['SecretString']
-            config['api_key_source'] = 'secrets_manager'
-        except Exception:
-            pass
-
-    return config
 
 
 def test_browser_config():
@@ -101,17 +87,13 @@ def test_browser_config():
         print()
         print(f"   Nova Act Configuration:")
 
-        if nova_config['api_key']:
-            source = nova_config.get('api_key_source', 'environment')
-            print(f"   ✅ API Key found ({source})")
-            print(f"   Auth method: API Key")
-        elif nova_config['workflow_definition_name']:
+        if nova_config['workflow_definition_name']:
             print(f"   ✅ Workflow: {nova_config['workflow_definition_name']}")
             print(f"   Model: {nova_config['model_id']}")
             print(f"   Auth method: AWS IAM")
         else:
             print(f"   ⚠️  No Nova Act authentication configured")
-            print(f"   Set NOVA_ACT_API_KEY or NOVA_ACT_WORKFLOW_DEFINITION_NAME")
+            print(f"   Set NOVA_ACT_WORKFLOW_DEFINITION_NAME")
 
         return True, browser_id
 
@@ -341,25 +323,17 @@ def test_nova_act_direct():
 
         nova_config = get_nova_act_config()
 
-        if not nova_config['api_key'] and not nova_config['workflow_definition_name']:
-            print("⚠️  Nova Act authentication not configured, skipping")
+        if not nova_config['workflow_definition_name']:
+            print("⚠️  NOVA_ACT_WORKFLOW_DEFINITION_NAME not configured, skipping")
             return True  # Not a failure, just skip
 
         print(f"   Creating Nova Act workflow...")
 
-        # Create workflow based on auth method
-        if nova_config['api_key']:
-            workflow = Workflow(
-                model_id=nova_config['model_id'],
-                nova_act_api_key=nova_config['api_key']
-            )
-            print(f"   Auth: API Key")
-        else:
-            workflow = Workflow(
-                model_id=nova_config['model_id'],
-                workflow_definition_name=nova_config['workflow_definition_name']
-            )
-            print(f"   Auth: AWS IAM (workflow: {nova_config['workflow_definition_name']})")
+        workflow = Workflow(
+            model_id=nova_config['model_id'],
+            workflow_definition_name=nova_config['workflow_definition_name']
+        )
+        print(f"   Auth: AWS IAM (workflow: {nova_config['workflow_definition_name']})")
 
         print(f"   Model: {nova_config['model_id']}")
 
@@ -415,21 +389,14 @@ def test_nova_act_extract():
 
         nova_config = get_nova_act_config()
 
-        if not nova_config['api_key'] and not nova_config['workflow_definition_name']:
-            print("⚠️  Nova Act authentication not configured, skipping")
+        if not nova_config['workflow_definition_name']:
+            print("⚠️  NOVA_ACT_WORKFLOW_DEFINITION_NAME not configured, skipping")
             return True
 
-        # Create workflow
-        if nova_config['api_key']:
-            workflow = Workflow(
-                model_id=nova_config['model_id'],
-                nova_act_api_key=nova_config['api_key']
-            )
-        else:
-            workflow = Workflow(
-                model_id=nova_config['model_id'],
-                workflow_definition_name=nova_config['workflow_definition_name']
-            )
+        workflow = Workflow(
+            model_id=nova_config['model_id'],
+            workflow_definition_name=nova_config['workflow_definition_name']
+        )
 
         with workflow:
             with NovaAct(

@@ -30,6 +30,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Suppress known OpenTelemetry context detach error (Python 3.13 + async generators)
+# Token created in one contextvars.Context cannot be reset in another — harmless noise
+logging.getLogger("opentelemetry.context").setLevel(logging.CRITICAL)
+
 # Filter out /ping and /health from access logs
 class HealthCheckFilter(logging.Filter):
     def filter(self, record):

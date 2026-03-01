@@ -158,44 +158,47 @@ deploy_agentcore_runtime() {
     log_step "Deploying AgentCore Runtime..."
     echo ""
 
-    # Check and configure Nova Act API key
+    # Check and configure Nova Act IAM workflow
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  Browser Automation Setup (Nova Act)"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    NOVA_SECRET_EXISTS=$(aws secretsmanager describe-secret \
-        --secret-id "strands-agent-chatbot/nova-act-api-key" \
-        --query 'Name' \
-        --output text \
-        --region "$AWS_REGION" 2>/dev/null || echo "")
+    # Auto-generate workflow definition name from project name
+    local _project="${PROJECT_NAME:-strands-agent-chatbot}"
+    NOVA_WORKFLOW_NAME="${_project//-/_}_workflow"
 
-    if [ -z "$NOVA_SECRET_EXISTS" ]; then
-        log_warn "Nova Act API Key not configured"
-        echo ""
-        echo "Nova Act is required for browser automation tools."
-        echo "Get your API key from Nova Act dashboard."
-        echo ""
-        read -p "Enter Nova Act API Key (or press Enter to skip): " NOVA_ACT_KEY
-
-        if [ -n "$NOVA_ACT_KEY" ]; then
-            log_step "Setting Nova Act API Key in Secrets Manager..."
-            aws secretsmanager create-secret \
-                --name "strands-agent-chatbot/nova-act-api-key" \
-                --secret-string "$NOVA_ACT_KEY" \
-                --description "Nova Act API Key for browser automation" \
-                --region "$AWS_REGION" > /dev/null 2>&1 || \
-            aws secretsmanager put-secret-value \
-                --secret-id "strands-agent-chatbot/nova-act-api-key" \
-                --secret-string "$NOVA_ACT_KEY" \
-                --region "$AWS_REGION" > /dev/null 2>&1
-            log_info "Nova Act API Key configured"
-        else
-            log_warn "Skipped - Browser automation tools will not work without API key"
-        fi
-    else
-        log_info "Nova Act API Key already configured"
+    # Ensure nova-act 3.1.263 is available (supports IAM auth)
+    if ! python3 -c "from nova_act.cli.workflow.workflow_manager import WorkflowManager" &>/dev/null; then
+        log_step "Installing nova-act==3.1.263..."
+        pip install nova-act==3.1.263 --no-deps -q
     fi
+
+    # Create workflow definition if it doesn't exist (idempotent)
+    log_step "Ensuring Nova Act workflow definition exists: $NOVA_WORKFLOW_NAME"
+    python3 - <<PYEOF
+import sys
+import boto3
+from nova_act.cli.workflow.workflow_manager import WorkflowManager
+
+try:
+    session = boto3.Session(region_name="us-east-1")
+    account_id = boto3.client("sts", region_name="us-east-1").get_caller_identity()["Account"]
+    manager = WorkflowManager(session=session, region="us-east-1", account_id=account_id)
+    try:
+        arn = manager.create_workflow_definition(name="$NOVA_WORKFLOW_NAME", skip_s3_creation=True)
+        print(f"Nova Act workflow definition created: $NOVA_WORKFLOW_NAME")
+    except Exception as ce:
+        if "ConflictException" in type(ce).__name__ or "already exists" in str(ce).lower():
+            print(f"Nova Act workflow definition already exists: $NOVA_WORKFLOW_NAME")
+        else:
+            raise
+except Exception as e:
+    print(f"Error: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+    export NOVA_ACT_WORKFLOW_DEFINITION_NAME="$NOVA_WORKFLOW_NAME"
     echo ""
 
     cd agentcore-runtime-stack

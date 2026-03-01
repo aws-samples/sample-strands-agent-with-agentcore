@@ -25,7 +25,7 @@ You can verify the sync with: GET http://localhost:3000/api/tools
 from .diagram_tool import generate_chart, create_visual_design
 
 # Nova Act browser tools
-from .nova_act_browser_tools import browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs, browser_save_screenshot
+from .nova_act_browser_tools import browser_act, browser_get_page_info, browser_manage_tabs, browser_save_screenshot
 
 from .word_document_tool import (
     create_word_document,
@@ -62,9 +62,7 @@ from .powerpoint_presentation_tool import (
 __all__ = [
     'generate_chart',
     'create_visual_design',
-    'browser_navigate',
     'browser_act',
-    'browser_extract',
     'browser_get_page_info',
     'browser_manage_tabs',
     'browser_save_screenshot',
@@ -132,9 +130,7 @@ BUILTIN_TOOLS.extend([execute_code, execute_command, file_operations, ci_push_to
 
 # Nova Act browser tools
 BUILTIN_TOOLS.extend([
-    browser_navigate,
     browser_act,
-    browser_extract,
     browser_get_page_info,
     browser_manage_tabs,
     browser_save_screenshot,

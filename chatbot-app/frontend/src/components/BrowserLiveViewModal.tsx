@@ -123,7 +123,7 @@ export function BrowserLiveViewModal({
             presignedUrl = fallbackUrl;
           } else {
             throw new Error(
-              'No live view URL available and BFF refresh failed. Please run a browser tool first (browser_navigate, browser_act, or browser_extract).'
+              'No live view URL available and BFF refresh failed. Please run a browser tool first (browser_act or browser_get_page_info).'
             );
           }
         }

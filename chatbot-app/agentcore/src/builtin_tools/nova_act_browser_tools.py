@@ -5,7 +5,7 @@ Each tool returns a screenshot to show current browser state.
 
 import os
 import logging
-from typing import Dict, Any, Optional, List, Union
+from typing import Dict, Any, Optional, List
 from strands import tool, ToolContext
 from skill import register_skill
 from .lib.browser_controller import get_or_create_controller
@@ -49,115 +49,6 @@ def _format_tab_summary(tabs: List[Dict], current_tab: int = 0) -> str:
     return f"**Tabs** ({len(tabs)}): " + " | ".join(tab_parts)
 
 
-def _save_extracted_data_artifact(
-    tool_context: ToolContext,
-    description: str,
-    extracted_data: Any,
-    page_url: str,
-    page_title: str,
-    session_id: str
-) -> Optional[str]:
-    """Save extracted data as JSON artifact to agent.state for Canvas display.
-
-    Args:
-        tool_context: Strands ToolContext
-        description: Extraction description
-        extracted_data: The extracted data (dict or list)
-        page_url: Source page URL
-        page_title: Source page title
-        session_id: Session ID for isolation
-
-    Returns:
-        artifact_id if successful, None otherwise
-    """
-    import json
-    from datetime import datetime, timezone
-
-    try:
-        # Check if agent is available
-        logger.info(f"[_save_extracted_data_artifact] tool_context: {tool_context}, has agent: {hasattr(tool_context, 'agent') if tool_context else False}")
-        if tool_context:
-            logger.info(f"[_save_extracted_data_artifact] agent: {tool_context.agent}")
-
-        if not tool_context or not tool_context.agent:
-            logger.warning("No agent available in tool_context, skipping artifact save")
-            return None
-
-        # Generate artifact ID using timestamp
-        timestamp = datetime.now(timezone.utc)
-        artifact_id = f"extracted-{timestamp.strftime('%Y%m%d-%H%M%S')}"
-
-        # Create title from description (truncate if too long)
-        title = description[:50] + "..." if len(description) > 50 else description
-
-        # Get user_id from environment
-        user_id = os.environ.get('USER_ID', 'default_user')
-
-        # Save JSON file to workspace (S3)
-        try:
-            import boto3
-            from workspace import get_workspace_bucket
-
-            bucket = get_workspace_bucket()
-            s3_key = f"documents/{user_id}/{session_id}/extracted/{artifact_id}.json"
-
-            json_content = json.dumps(extracted_data, indent=2, ensure_ascii=False)
-
-            s3_client = boto3.client('s3')
-            s3_client.put_object(
-                Bucket=bucket,
-                Key=s3_key,
-                Body=json_content.encode('utf-8'),
-                ContentType='application/json'
-            )
-            logger.info(f"Saved extracted data to S3: s3://{bucket}/{s3_key}")
-        except Exception as s3_error:
-            logger.warning(f"Failed to save JSON to S3: {s3_error}")
-            s3_key = None
-
-        # Get current artifacts from agent.state
-        artifacts = tool_context.agent.state.get("artifacts") or {}
-
-        # Create artifact
-        artifacts[artifact_id] = {
-            "id": artifact_id,
-            "type": "extracted_data",
-            "title": title,
-            "content": json.dumps(extracted_data, indent=2, ensure_ascii=False),
-            "description": description,
-            "toolName": "browser_extract",
-            "metadata": {
-                "source_url": page_url,
-                "source_title": page_title,
-                "s3_key": s3_key,
-                "user_id": user_id,
-                "session_id": session_id
-            },
-            "created_at": timestamp.isoformat(),
-            "updated_at": timestamp.isoformat()
-        }
-
-        # Save to agent.state
-        tool_context.agent.state.set("artifacts", artifacts)
-
-        # Sync agent state to persistence
-        session_manager = tool_context.invocation_state.get("session_manager")
-        if not session_manager and hasattr(tool_context.agent, 'session_manager'):
-            session_manager = tool_context.agent.session_manager
-
-        if session_manager:
-            session_manager.sync_agent(tool_context.agent)
-            logger.info(f"Saved extracted data artifact: {artifact_id}")
-        else:
-            logger.warning(f"No session_manager found, artifact not persisted: {artifact_id}")
-
-        return artifact_id
-
-    except Exception as e:
-        logger.error(f"Failed to save extracted data artifact: {e}")
-        return None
-
-
 def _format_tab_list_detailed(tabs: List[Dict]) -> str:
     """Format tab list with full details for get_page_info.
 
@@ -182,94 +73,14 @@ def _format_tab_list_detailed(tabs: List[Dict]) -> str:
 
 
 @tool(context=True)
-def browser_navigate(url: str, tool_context: ToolContext) -> Dict[str, Any]:
-    """
-    Navigate browser to a URL and capture the loaded page with screenshot.
-
-    Args:
-        url: Complete URL to navigate to
-
-    Returns screenshot showing the loaded page.
-    """
-    try:
-        # Get session_id from ToolContext to avoid race condition with os.environ
-        # Try invocation_state first, then agent's session_manager
-        session_id = tool_context.invocation_state.get("session_id")
-        if not session_id and hasattr(tool_context.agent, '_session_manager'):
-            session_id = tool_context.agent._session_manager.session_id
-            logger.info(f"[browser_navigate] Using session_id from agent._session_manager: {session_id}")
-        elif session_id:
-            logger.info(f"[browser_navigate] Using session_id from invocation_state: {session_id}")
-        else:
-            raise ValueError("session_id not found in ToolContext")
-
-        controller = get_or_create_controller(session_id)
-        result = controller.navigate(url)
-
-        if result["status"] == "success":
-            # Format tab summary if multiple tabs
-            tab_summary = _format_tab_summary(
-                result.get('tabs', []),
-                result.get('current_tab', 0)
-            )
-            tab_line = f"\n{tab_summary}" if tab_summary else ""
-
-            # Prepare response with screenshot (code interpreter format)
-            content = [{
-                "text": f"""**Navigated successfully**
-
-**URL**: {result.get('current_url', url)}
-**Page Title**: {result.get('page_title', 'N/A')}{tab_line}
-
-Current page is shown in the screenshot below."""
-            }]
-
-            # Add screenshot as image content (raw bytes, like code interpreter)
-            if result.get("screenshot"):
-                content.append({
-                    "image": {
-                        "format": "jpeg",
-                        "source": {
-                            "bytes": result["screenshot"]  # Raw bytes
-                        }
-                    }
-                })
-
-            # Get browser session info for Live View
-            # Note: URL generation moved to BFF for on-demand refresh capability
-            metadata = {}
-            if controller.browser_session_client and controller.browser_session_client.session_id:
-                metadata["browserSessionId"] = controller.browser_session_client.session_id
-                if controller.browser_id:
-                    metadata["browserId"] = controller.browser_id
-
-            return _build_browser_response(content, metadata)
-        else:
-            return {
-                "content": [{
-                    "text": f"**Navigation failed**\n\n{result.get('message', 'Unknown error')}"
-                }],
-                "status": "error"
-            }
-
-    except Exception as e:
-        logger.error(f"browser_navigate failed: {e}")
-        return {
-            "content": [{
-                "text": f"**Navigation error**: {str(e)}"
-            }],
-            "status": "error"
-        }
-
-
-@tool(context=True)
-def browser_act(instruction: str, tool_context: ToolContext) -> Dict[str, Any]:
+def browser_act(instruction: str, starting_url: Optional[str] = None, tool_context: ToolContext = None) -> Dict[str, Any]:
     """
     Execute browser UI actions using an agent. Handles sequential visible UI tasks.
 
     Capabilities:
     - Actions: click, type, scroll, select dropdowns
     - Can execute up to 3 predictable steps in sequence
+    - Optional starting_url: navigate to a page first, then execute the instruction
 
     Limitations:
     - Has 5-step limit. If fails, check screenshot and retry from current state
@@ -279,6 +90,8 @@ def browser_act(instruction: str, tool_context: ToolContext) -> Dict[str, Any]:
         instruction: Natural language instruction for UI actions.
                     Use numbered steps for predictable sequences:
                     "1. Type 'laptop' in search box 2. Click search button 3. Click first result"
+        starting_url: Optional URL to navigate to before executing the instruction.
+                     Use this to open a page and interact with it in a single call.
 
     Returns screenshot showing the result.
     """
@@ -294,6 +107,16 @@ def browser_act(instruction: str, tool_context: ToolContext) -> Dict[str, Any]:
             raise ValueError("session_id not found in ToolContext")
 
         controller = get_or_create_controller(session_id)
+
+        # Navigate to starting URL if provided
+        if starting_url:
+            nav_result = controller.navigate(starting_url)
+            if nav_result["status"] != "success":
+                return {
+                    "content": [{"text": f"**Navigation failed**: {nav_result.get('message', 'Unknown error')}"}],
+                    "status": "error"
+                }
+
         result = controller.act(instruction)
 
         status_emoji = "[OK]" if result["status"] == "success" else "[WARN]"
@@ -305,9 +128,10 @@ def browser_act(instruction: str, tool_context: ToolContext) -> Dict[str, Any]:
         )
         tab_line = f"\n{tab_summary}" if tab_summary else ""
 
+        nav_line = f"\n**Started at**: {starting_url}" if starting_url else ""
         content = [{
             "text": f"""{status_emoji} **Action executed**
-
+{nav_line}
 **Instruction**: {instruction}
 **Result**: {result.get('message', 'Action completed')}
 **Current URL**: {result.get('current_url', 'N/A')}
@@ -350,149 +174,32 @@ Current page state is shown in the screenshot below."""
         }
 
 
+
 @tool(context=True)
-def browser_extract(description: str, extraction_schema: dict, tool_context: ToolContext) -> Dict[str, Any]:
+def browser_get_page_info(
+    url: Optional[str] = None,
+    text: bool = False,
+    tables: bool = False,
+    links: bool = False,
+    tool_context: ToolContext = None
+) -> Dict[str, Any]:
     """
-    Extract visible text/numbers from page into structured JSON using an agent.
-    Handles multi-screen data collection automatically.
+    Get page structure and DOM data - FAST, no AI needed.
 
-    Capabilities:
-    - Auto-scroll and paginate to collect data across multiple screens
-    - Detects repeated patterns and extracts systematically
-
-    Limitations:
-    - Has 12-step limit. Check screenshot on failure and retry from current state
-    - For DOM attributes, use browser_get_page_info()
+    Returns page structure, interactive elements, and optional content extraction.
 
     Args:
-        description: What to extract. Example: "Extract all product names and prices"
-        extraction_schema: JSON schema with 'type', 'properties', field descriptions.
+        url: Optional URL to navigate to before getting page info.
+             Use this to open a page and inspect it in a single call.
+        text: If True, include full page text content
+        tables: If True, extract and return all table data
+        links: If True, return all links on the page (not just top 10 visible)
 
-    Schema Example:
-        {
-            "type": "array",
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Product title"},
-                    "price": {"type": "number", "description": "Price in dollars"}
-                }
-            }
-        }
-
-    Returns extracted data as JSON (no screenshot).
-    """
-    try:
-        # Get session_id from ToolContext to avoid race condition with os.environ
-        session_id = tool_context.invocation_state.get("session_id")
-        if not session_id and hasattr(tool_context.agent, '_session_manager'):
-            session_id = tool_context.agent._session_manager.session_id
-            logger.info(f"[browser_extract] Using session_id from agent._session_manager: {session_id}")
-        elif session_id:
-            logger.info(f"[browser_extract] Using session_id from invocation_state: {session_id}")
-        else:
-            raise ValueError("session_id not found in ToolContext")
-
-        controller = get_or_create_controller(session_id)
-
-        # Extract data using description and JSON schema
-        result = controller.extract(description, schema=extraction_schema)
-
-        if result["status"] == "success":
-            import json
-            extracted_data = result.get("data", {})
-            extracted_data_str = json.dumps(extracted_data, indent=2, ensure_ascii=False)
-            schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
-
-            # Format tab summary if multiple tabs
-            tab_summary = _format_tab_summary(
-                result.get('tabs', []),
-                result.get('current_tab', 0)
-            )
-            tab_line = f"\n{tab_summary}" if tab_summary else ""
-
-            # Save extracted data as artifact
-            artifact_id = _save_extracted_data_artifact(
-                tool_context=tool_context,
-                description=description,
-                extracted_data=extracted_data,
-                page_url=result.get('current_url', 'N/A'),
-                page_title=result.get('page_title', 'N/A'),
-                session_id=session_id
-            )
-            artifact_line = f"\n\n**Saved as artifact**: {artifact_id} (view in Canvas)" if artifact_id else ""
-
-            content = [{
-                "text": f"""**Data extracted successfully**
-
-**Description**: {description}
-
-**Schema**:
-```json
-{schema_str}
-```
-
-**Current URL**: {result.get('current_url', 'N/A')}
-**Page Title**: {result.get('page_title', 'N/A')}{tab_line}{artifact_line}
-
-**Extracted Data**:
-```json
-{extracted_data_str}
-```"""
-            }]
-
-            # Get browser session info for Live View
-            # Note: URL generation moved to BFF for on-demand refresh capability
-            metadata = {}
-            if controller.browser_session_client and controller.browser_session_client.session_id:
-                metadata["browserSessionId"] = controller.browser_session_client.session_id
-                if controller.browser_id:
-                    metadata["browserId"] = controller.browser_id
-            if artifact_id:
-                metadata["artifactId"] = artifact_id
-
-            return _build_browser_response(content, metadata)
-        else:
-            import json
-            schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
-            return {
-                "content": [{
-                    "text": f"**Extraction failed**\n\n{result.get('message', 'Unknown error')}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"
-                }],
-                "status": "error"
-            }
-
-    except Exception as e:
-        import json
-        logger.error(f"browser_extract failed: {e}")
-        schema_str = json.dumps(extraction_schema, indent=2, ensure_ascii=False)
-        return {
-            "content": [{
-                "text": f"**Extraction error**: {str(e)}\n\n**Description**: {description}\n\n**Schema**:\n```json\n{schema_str}\n```"
-            }],
-            "status": "error"
-        }
-
-
-@tool(context=True)
-def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
-    """
-    Get page structure and DOM data - FAST (<300ms), no AI needed.
-
-    Returns:
-    - URL, title, scroll position, all tabs
-    - Interactive elements: buttons, links, input fields (with text/href)
-    - Content: headings, images (count only - not URLs), forms, tables
+    Default output (always returned):
+    - URL, title, scroll position, all open tabs
+    - Interactive elements: buttons, links, input fields
+    - Content summary: headings, image count, has_form, has_table
     - State: alerts, modals, loading indicators
-
-    Use when you need:
-    - Page structure understanding
-    - Check what tabs are open
-    - Find available buttons/links/inputs
-    - Detect modals or loading states
-
-    Note: Shows image count, not URLs. For DOM attributes (img src, link href),
-    you'll need to add a dedicated tool using Playwright's page.evaluate().
 
     Returns JSON (no screenshot).
     """
@@ -508,7 +215,17 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
             raise ValueError("session_id not found in ToolContext")
 
         controller = get_or_create_controller(session_id)
-        result = controller.get_page_info()
+
+        # Navigate to URL if provided
+        if url:
+            nav_result = controller.navigate(url)
+            if nav_result["status"] != "success":
+                return {
+                    "content": [{"text": f"**Navigation failed**: {nav_result.get('message', 'Unknown error')}"}],
+                    "status": "error"
+                }
+
+        result = controller.get_page_info(text=text, tables=tables, all_links=links)
 
         if result["status"] == "success":
             import json
@@ -568,7 +285,19 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
 
             summary = "\n".join(summary_lines)
 
-            content = [{
+            # Build extra sections for optional data
+            extra_sections = ""
+            if text and content.get("text"):
+                extra_sections += f"\n\n**Page Text**:\n{content['text'][:5000]}"
+            if tables and content.get("tables"):
+                tables_str = json.dumps(content["tables"], indent=2, ensure_ascii=False)
+                extra_sections += f"\n\n**Tables**:\n```json\n{tables_str}\n```"
+            if links:
+                links_data = interactive.get("links", [])
+                links_str = json.dumps(links_data, indent=2, ensure_ascii=False)
+                extra_sections += f"\n\n**All Links** ({len(links_data)}):\n```json\n{links_str}\n```"
+
+            response_content = [{
                 "text": f"""**Page information collected**
 
 {summary}
@@ -576,7 +305,7 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
 **Full Details**:
 ```json
 {page_data_str}
-```"""
+```{extra_sections}"""
             }]
 
             # Get browser session info for Live View
@@ -587,7 +316,7 @@ def browser_get_page_info(tool_context: ToolContext) -> Dict[str, Any]:
                 if controller.browser_id:
                     metadata["browserId"] = controller.browser_id
 
-            return _build_browser_response(content, metadata)
+            return _build_browser_response(response_content, metadata)
         else:
             return {
                 "content": [{
@@ -924,4 +653,4 @@ This image is now available in workspace and can be referenced by filename in do
 
 
 # --- Skill registration ---
-register_skill("browser-automation", tools=[browser_navigate, browser_act, browser_extract, browser_get_page_info, browser_manage_tabs, browser_save_screenshot])
+register_skill("browser-automation", tools=[browser_act, browser_get_page_info, browser_manage_tabs, browser_save_screenshot])

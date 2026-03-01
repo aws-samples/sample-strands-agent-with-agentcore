@@ -22,6 +22,7 @@ export interface AgentRuntimeStackProps extends cdk.StackProps {
   projectName?: string
   environment?: string
   vpcId?: string
+  novaActWorkflowDefinitionName?: string
 }
 
 export class AgentRuntimeStack extends cdk.Stack {
@@ -35,6 +36,7 @@ export class AgentRuntimeStack extends cdk.Stack {
 
     const projectName = props?.projectName || 'strands-agent-chatbot'
     const environment = props?.environment || 'dev'
+    const novaActWorkflowDefinitionName = props?.novaActWorkflowDefinitionName || ''
 
     // ECR Repository for Agent Core container
     // Use existing repository if USE_EXISTING_ECR=true
@@ -774,6 +776,17 @@ async function sendResponse(event, status, data, reason) {
       tier: ssm.ParameterTier.STANDARD,
     })
 
+    // Store Nova Act Workflow Definition Name in Parameter Store
+    // Note: Create the workflow definition in advance via CLI:
+    //   aws nova-act create-workflow-definition --name 'my-workflow'
+    // Then pass the name via NOVA_ACT_WORKFLOW_DEFINITION_NAME env var when deploying.
+    new ssm.StringParameter(this, 'NovaActWorkflowParameter', {
+      parameterName: `/${projectName}/${environment}/agentcore/nova-act-workflow-name`,
+      stringValue: novaActWorkflowDefinitionName || 'NOT_CONFIGURED',
+      description: 'Nova Act Workflow Definition Name for IAM-based browser automation',
+      tier: ssm.ParameterTier.STANDARD,
+    })
+
     // Create Memory with short-term and long-term strategies using L1 construct (CfnMemory)
     const memoryName = projectName.replace(/-/g, '_') + '_memory'
     const memory = new agentcore.CfnMemory(this, 'AgentCoreMemory', {
@@ -847,13 +860,14 @@ async function sendResponse(event, status, data, reason) {
     })
 
 
-    // Secrets Manager permissions for Nova Act API key (browser automation)
+    // Nova Act IAM permissions for workflow-based browser automation
     executionRole.addToPolicy(
       new iam.PolicyStatement({
+        sid: 'NovaActWorkflowAccess',
         effect: iam.Effect.ALLOW,
-        actions: ['secretsmanager:GetSecretValue'],
+        actions: ['nova-act:*'],
         resources: [
-          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:${projectName}/nova-act-api-key-*`,
+          `arn:aws:nova-act:us-east-1:${this.account}:workflow-definition/*`,
         ],
       })
     )
@@ -911,6 +925,8 @@ async function sendResponse(event, status, data, reason) {
         MEMORY_ID: memory.attrMemoryId,
         BROWSER_ID: browser.attrBrowserId,
         BROWSER_NAME: browserCustomName,
+        NOVA_ACT_WORKFLOW_DEFINITION_NAME: novaActWorkflowDefinitionName,
+        NOVA_ACT_REGION: 'us-east-1',
         CODE_INTERPRETER_ID: codeInterpreter.attrCodeInterpreterId,
         DOCUMENT_BUCKET: documentBucket.bucketName,
         // OpenTelemetry observability configuration
@@ -1021,6 +1037,11 @@ async function sendResponse(event, status, data, reason) {
       value: documentBucket.bucketArn,
       description: 'S3 bucket ARN for document storage',
       exportName: `${projectName}-document-bucket-arn`,
+    })
+
+    new cdk.CfnOutput(this, 'NovaActWorkflowDefinitionName', {
+      value: novaActWorkflowDefinitionName || 'NOT_CONFIGURED',
+      description: 'Nova Act Workflow Definition Name for IAM-based browser automation',
     })
   }
 }

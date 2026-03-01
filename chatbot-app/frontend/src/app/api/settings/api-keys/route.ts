@@ -28,7 +28,6 @@ const API_KEY_NAMES = [
   'google_api_key',
   'google_search_engine_id',
   'google_maps_api_key',
-  'nova_act_api_key',
 ] as const
 
 type ApiKeyName = typeof API_KEY_NAMES[number]

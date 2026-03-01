@@ -30,7 +30,7 @@ const TOOL_REQUIRED_KEYS: Record<string, string[]> = {
   'gateway_google_web_search': ['google_api_key', 'google_search_engine_id'],
   'gateway_google_image_search': ['google_api_key', 'google_search_engine_id'],
   'gateway_google-maps': ['google_maps_api_key'],
-  'browser_automation': ['nova_act_api_key'],
+  'browser_automation': [],
 };
 
 // Per-tool brand colors (hex)

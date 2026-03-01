@@ -36,44 +36,19 @@ class BrowserController:
         self.browser_id = self._get_browser_id()
         self.browser_name = os.getenv('BROWSER_NAME')
 
-        # Nova Act authentication - supports both API Key and AWS IAM methods
-        # Priority: 1) API Key (env/secrets), 2) AWS IAM (workflow definition)
-        self.nova_api_key = os.getenv('NOVA_ACT_API_KEY')
+        # Nova Act authentication - AWS IAM via workflow definition name
         self.nova_workflow_definition_name = os.getenv('NOVA_ACT_WORKFLOW_DEFINITION_NAME')
         self.nova_model_id = os.getenv('NOVA_ACT_MODEL_ID', 'nova-act-latest')
+        self.nova_act_region = os.getenv('NOVA_ACT_REGION', 'us-east-1')
 
-        # If API key not in environment, try Secrets Manager
-        if not self.nova_api_key and not self.nova_workflow_definition_name:
-            try:
-                import boto3
-
-                secrets_client = boto3.client('secretsmanager', region_name=self.region)
-                project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
-                secret_name = f"{project_name}/nova-act-api-key"
-
-                logger.info(f"Loading Nova Act API key from Secrets Manager: {secret_name}")
-                response = secrets_client.get_secret_value(SecretId=secret_name)
-
-                self.nova_api_key = response['SecretString']
-                logger.info("Nova Act API key loaded successfully from Secrets Manager")
-            except Exception as e:
-                # API key not found, check if workflow definition is available
-                logger.warning(f"Nova Act API key not found: {e}")
-                logger.info("Will attempt AWS IAM authentication if workflow definition is configured")
-
-        # Validate at least one auth method is available
-        if not self.nova_api_key and not self.nova_workflow_definition_name:
+        if not self.nova_workflow_definition_name:
             raise ValueError(
                 "Nova Act authentication not configured. "
-                "Set either NOVA_ACT_API_KEY or NOVA_ACT_WORKFLOW_DEFINITION_NAME. "
-                "For AWS IAM auth, create a workflow: aws nova-act create-workflow-definition --name 'my-workflow'"
+                "Set NOVA_ACT_WORKFLOW_DEFINITION_NAME for AWS IAM auth. "
+                "Create a workflow with: aws nova-act create-workflow-definition --name 'my-workflow'"
             )
 
-        # Log auth method
-        if self.nova_api_key:
-            logger.info("Nova Act: Using API Key authentication")
-        else:
-            logger.info(f"Nova Act: Using AWS IAM authentication (workflow: {self.nova_workflow_definition_name}, model: {self.nova_model_id})")
+        logger.info(f"Nova Act: Using AWS IAM authentication (workflow: {self.nova_workflow_definition_name}, model: {self.nova_model_id})")
 
         self.browser_session_client = None
         self.page = None  # Will be set from NovaAct.page
@@ -178,23 +153,15 @@ class BrowserController:
                 'ignore_https_errors': True  # Ignore SSL certificate errors (ads, trackers, etc.)
             }
 
-            # Both API Key and IAM authentication use Workflow for model selection
+            # AWS IAM authentication via workflow definition
             from nova_act import Workflow
 
-            if self.nova_api_key:
-                # API Key authentication with model selection
-                self.workflow = Workflow(
-                    model_id=self.nova_model_id,
-                    nova_act_api_key=self.nova_api_key
-                )
-                logger.info(f"Nova Act: API Key auth, model={self.nova_model_id}")
-            else:
-                # AWS IAM authentication
-                self.workflow = Workflow(
-                    model_id=self.nova_model_id,
-                    workflow_definition_name=self.nova_workflow_definition_name
-                )
-                logger.info(f"Nova Act: IAM auth, workflow={self.nova_workflow_definition_name}, model={self.nova_model_id}")
+            self.workflow = Workflow(
+                model_id=self.nova_model_id,
+                workflow_definition_name=self.nova_workflow_definition_name,
+                boto_session_kwargs={"region_name": self.nova_act_region},
+            )
+            logger.info(f"Nova Act: IAM auth, workflow={self.nova_workflow_definition_name}, model={self.nova_model_id}, region={self.nova_act_region}")
 
             # Enter Workflow context manager first
             self.workflow.__enter__()
@@ -533,11 +500,16 @@ class BrowserController:
                 "screenshot": screenshot_data
             }
 
-    def get_page_info(self) -> Dict[str, Any]:
+    def get_page_info(self, text: bool = False, tables: bool = False, all_links: bool = False) -> Dict[str, Any]:
         """Get structured information about the current page state.
 
         Fast and reliable - uses Playwright API directly (no AI inference).
         Returns comprehensive page state for quick situation assessment.
+
+        Args:
+            text: If True, include full page text content
+            tables: If True, extract and return table data
+            all_links: If True, return all links (default: top 10 visible)
         """
         try:
             if not self._connected:
@@ -661,6 +633,34 @@ class BrowserController:
                 "has_form": content_info['has_form'],
                 "has_table": content_info['has_table']
             }
+
+            # Optional: full page text
+            if text:
+                content["text"] = page.evaluate("() => document.body.innerText")
+
+            # Optional: extract table data
+            if tables and content_info['has_table']:
+                content["tables"] = page.evaluate("""() => {
+                    return Array.from(document.querySelectorAll('table')).slice(0, 5).map(table => {
+                        const headers = Array.from(table.querySelectorAll('th')).map(th => th.textContent.trim());
+                        const rows = Array.from(table.querySelectorAll('tr')).slice(0, 50).map(tr =>
+                            Array.from(tr.querySelectorAll('td')).map(td => td.textContent.trim())
+                        ).filter(row => row.length > 0);
+                        return { headers, rows };
+                    });
+                }""")
+
+            # Optional: all links (not just top 10 visible)
+            if all_links:
+                interactive["links"] = page.evaluate("""() => {
+                    return Array.from(document.querySelectorAll('a[href]'))
+                        .map(link => ({
+                            text: (link.innerText || link.textContent || '').trim().slice(0, 80),
+                            href: link.getAttribute('href')
+                        }))
+                        .filter(link => link.text.length > 0)
+                        .slice(0, 200);
+                }""")
 
             # State indicators
             state_info = page.evaluate("""() => {

@@ -82,7 +82,6 @@ export interface UserApiKeys {
   google_api_key?: string
   google_search_engine_id?: string
   google_maps_api_key?: string
-  nova_act_api_key?: string
 }
 
 export interface UserPreferences {
