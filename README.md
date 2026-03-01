@@ -15,14 +15,16 @@ https://github.com/user-attachments/assets/11b383c2-2e14-4135-833f-b0b2bce62953
 
 > **[Full demo (6 min)](https://drive.google.com/file/d/1Hk4hgiqqMntNRUN1xDkwcbJUA8MVEJEA/view?usp=sharing)**
 
-**Scenarios covered in the demo:**
+### Mobile App
 
-| Scenario | Tools | What it does |
-|----------|-------|--------------|
-| **Personal AI Agent** | Notion, Gmail, Google Maps, Google Calendar | Check to-dos, find emails, get directions, set reminders |
-| **Financial Research** | Finance, Google Search, Deep Research | Analyze crypto price history, summarize market news, compare bear markets |
-| **Document Generation** | Presentation, Code Interpreter | Build an executive deck with charts from research results |
-| **Autonomous Browsing** | Amazon Nova Act, AgentCore Browser | Search Google Flights and extract results |
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/claude-code-agent.png" width="180"><br><sub>Coding Agent</sub></td>
+    <td align="center"><img src="docs/images/finance-analysis.png" width="180"><br><sub>Financial Analysis</sub></td>
+    <td align="center"><img src="docs/images/browser-automation.png" width="180"><br><sub>Browser Automation</sub></td>
+    <td align="center"><img src="docs/images/browser-automation-2.png" width="180"><br><sub>Web Search</sub></td>
+  </tr>
+</table>
 
 ---
 
