@@ -44,6 +44,7 @@ interface UseStreamEventsProps {
   onBrowserSessionDetected?: (browserSessionId: string, browserId: string) => void  // Callback when browser session is first detected
   onExtractedDataCreated?: (data: ExtractedDataInfo) => void  // Callback when browser_extract creates artifact
   onExcalidrawCreated?: (data: { elements: any[]; appState: any; title: string }, toolCallId: string) => void  // Callback when excalidraw diagram is created
+  uploadedDocTypesRef?: React.MutableRefObject<Set<DocumentType>>  // Doc types from user file uploads (set before send)
 }
 
 export const useStreamEvents = ({
@@ -65,7 +66,8 @@ export const useStreamEvents = ({
   onDiagramCreated,
   onBrowserSessionDetected,
   onExtractedDataCreated,
-  onExcalidrawCreated
+  onExcalidrawCreated,
+  uploadedDocTypesRef
 }: UseStreamEventsProps) => {
   // Refs to track streaming state synchronously (avoid React batching issues)
   const streamingStartedRef = useRef(false)
@@ -238,14 +240,16 @@ export const useStreamEvents = ({
 
     if (!streamingStartedRef.current || !streamingIdRef.current) return
 
-    // Flush remaining buffer
-    textBuffer.reset()
+    // Flush remaining buffer and capture final text
+    const finalText = textBuffer.reset()
 
     const ttft = uiState.latencyMetrics.timeToFirstToken
     setMessages(prevMsgs => prevMsgs.map(msg => {
       if (msg.id === streamingIdRef.current) {
         return {
           ...msg,
+          // Apply final buffered text in the same update to avoid React batching race
+          ...(finalText && { text: finalText }),
           isStreaming: false,
           ...(ttft && !msg.latencyMetrics && { latencyMetrics: { timeToFirstToken: ttft } })
         }
@@ -302,8 +306,8 @@ export const useStreamEvents = ({
       startPollingRef.current(sessionId)
     }
 
-    // Flush buffer before tool execution to ensure all text is rendered
-    textBuffer.reset()
+    // Flush buffer and capture final text before tool execution
+    const finalText = textBuffer.reset()
 
     // Finalize current streaming message before adding tool
     if (streamingStartedRef.current && streamingIdRef.current) {
@@ -312,6 +316,8 @@ export const useStreamEvents = ({
         if (msg.id === streamingIdRef.current) {
           return {
             ...msg,
+            // Apply final buffered text in the same update to avoid React batching race
+            ...(finalText && { text: finalText }),
             isStreaming: false,
             ...(ttft && !msg.latencyMetrics && { latencyMetrics: { timeToFirstToken: ttft } })
           }
@@ -678,6 +684,14 @@ export const useStreamEvents = ({
         }
       }
 
+      // Include doc types from user file uploads (images, docs, etc.)
+      if (uploadedDocTypesRef?.current) {
+        for (const dt of uploadedDocTypesRef.current) {
+          usedDocTypes.add(dt)
+        }
+        uploadedDocTypesRef.current.clear()
+      }
+
       // Fetch workspace files for each used document type
       if (usedDocTypes.size > 0 && currentSessionId) {
         try {
@@ -900,6 +914,10 @@ export const useStreamEvents = ({
   }, [setSessionState, setMessages, setUIState, streamingStartedRef, streamingIdRef, completeProcessedRef, metadataTracking, currentToolExecutionsRef, textBuffer, stopPollingRef])
 
   const handleInitEvent = useCallback(() => {
+    // Clear dedup set at the start of each new run so that events from the new
+    // execution (which restart eventId from 1) are not mistakenly dropped.
+    processedEventIdsRef.current.clear()
+
     setUIState(prev => {
       if (prev.latencyMetrics.requestStartTime) {
         metadataTracking.startTracking(prev.latencyMetrics.requestStartTime)
@@ -1481,7 +1499,7 @@ export const useStreamEvents = ({
     try {
       // Event deduplication for SSE reconnection
       // Use "eventId:type" as key because multiple event types can share the same SSE event id
-      const eventId = (event as any)._eventId as number | undefined
+      const eventId = (event as any).eventId as number | undefined
       if (eventId && eventId > 0) {
         const dedupKey = `${eventId}:${event.type}`
         if (processedEventIdsRef.current.has(dedupKey)) {

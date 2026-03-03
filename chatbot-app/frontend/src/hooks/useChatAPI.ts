@@ -459,6 +459,35 @@ export const useChatAPI = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Truncate session from a given event (by eventId or timestamp fallback)
+  const truncateSession = useCallback(async (params: { fromEventId?: string; fromTimestamp?: number }): Promise<boolean> => {
+    try {
+      const currentSessionId = sessionIdRef.current
+      if (!currentSessionId) return false
+
+      const authHeaders = await getAuthHeaders()
+      const response = await fetch(getApiUrl('session/truncate'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeaders },
+        body: JSON.stringify({ sessionId: currentSessionId, ...params }),
+      })
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.message || `Truncate failed: ${response.status}`)
+      }
+
+      const data = await response.json()
+      if (!data.success) throw new Error(data.message || 'Truncate failed')
+
+      return true
+    } catch (error) {
+      logger.error('Error truncating session:', error)
+      return false
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Delete specified eventIds from the session (pass oldEventIds captured before summary was sent)
   const compactSession = useCallback(async (eventIds?: string[]): Promise<boolean> => {
     try {
@@ -1232,6 +1261,7 @@ export const useChatAPI = ({
             text: cleanedText,
             sender: msg.role === 'user' ? 'user' : 'bot',
             timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : new Date().toLocaleTimeString(),
+            rawTimestamp: msg.timestamp ? new Date(msg.timestamp).getTime() : undefined,
             ...(toolExecutions.length > 0 && {
               toolExecutions: toolExecutions,
               isToolMessage: true
@@ -1384,6 +1414,7 @@ export const useChatAPI = ({
     toggleTool,
     newChat,
     compactSession,
+    truncateSession,
     summarizeForCompact,
     listSessionEvents,
     sendMessage,

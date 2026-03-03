@@ -71,7 +71,9 @@ export async function POST(request: NextRequest) {
       'powerpoint_presentation': { docType: 'powerpoint', extension: '.pptx' },
       'powerpoint': { docType: 'powerpoint', extension: '.pptx' },
       'image': { docType: 'image', extension: '' },  // PNG files already have extension
-      'diagram': { docType: 'image', extension: '' }  // Diagrams stored as images
+      'diagram': { docType: 'image', extension: '' },  // Diagrams stored as images
+      'code_output': { docType: 'code-output', extension: '' },
+      'code-output': { docType: 'code-output', extension: '' }
     }
 
     const config = toolTypeConfig[toolType] || { docType: toolType, extension: '' }

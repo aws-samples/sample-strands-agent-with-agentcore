@@ -42,7 +42,7 @@ from .excel_spreadsheet_tool import (
     preview_excel_sheets
 )
 # Code Interpreter (general-purpose sandbox)
-from .code_interpreter_tool import execute_code, execute_command, file_operations, ci_push_to_workspace, ci_pull_from_workspace
+from .code_interpreter_tool import execute_code, execute_command, file_operations, ci_push_to_workspace
 
 from .powerpoint_presentation_tool import (
     get_slide_design_reference,
@@ -94,7 +94,6 @@ __all__ = [
     'execute_command',
     'file_operations',
     'ci_push_to_workspace',
-    'ci_pull_from_workspace',
 ]
 
 # Collection of all builtin tools for registry sync
@@ -126,7 +125,7 @@ BUILTIN_TOOLS = [
 ]
 
 # Code Interpreter tools
-BUILTIN_TOOLS.extend([execute_code, execute_command, file_operations, ci_push_to_workspace, ci_pull_from_workspace])
+BUILTIN_TOOLS.extend([execute_code, execute_command, file_operations, ci_push_to_workspace])
 
 # Nova Act browser tools
 BUILTIN_TOOLS.extend([

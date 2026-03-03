@@ -20,14 +20,12 @@ Usage:
 
 import base64
 import logging
-import os
 from typing import Any, Dict, List, Optional, Tuple
 
 from agent.config.constants import (
     IMAGE_EXTENSIONS,
     DOCUMENT_EXTENSIONS,
     OFFICE_EXTENSIONS,
-    EnvVars,
 )
 from agent.processor.file_processor import (
     sanitize_full_filename,
@@ -36,13 +34,8 @@ from agent.processor.file_processor import (
 
 logger = logging.getLogger(__name__)
 
-# Check for AgentCore Memory availability
-try:
-    from bedrock_agentcore.memory.integrations.strands.session_manager import AgentCoreMemorySessionManager
-    AGENTCORE_MEMORY_AVAILABLE = True
-except ImportError:
-    AGENTCORE_MEMORY_AVAILABLE = False
-
+# Bedrock ConverseStream rejects document ContentBlocks larger than 4.5 MB
+_BEDROCK_DOC_MAX_BYTES = 4_500_000
 
 def get_image_format(content_type: str, filename: str) -> str:
     """
@@ -95,16 +88,9 @@ def get_document_format(filename: str) -> str:
     return "txt"  # default
 
 
-def _is_cloud_mode() -> bool:
-    """Check if running in cloud mode (AgentCore Memory available)."""
-    memory_id = os.environ.get(EnvVars.MEMORY_ID)
-    return memory_id is not None and AGENTCORE_MEMORY_AVAILABLE
-
-
 def _build_file_hints(
     sanitized_filenames: List[str],
     workspace_only_files: List[str],
-    enabled_tools: Optional[List[str]],
 ) -> str:
     """
     Build file hints section for prompt.
@@ -121,57 +107,86 @@ def _build_file_hints(
     """
     # Categorize files
     pptx_files = [fn for fn in sanitized_filenames if fn.endswith('.pptx')]
-    docx_files = [fn for fn in workspace_only_files if fn.endswith('.docx')]
-    xlsx_files = [fn for fn in workspace_only_files if fn.endswith('.xlsx')]
+    zip_files = [fn for fn in workspace_only_files if fn.endswith('.zip')]
     # Files sent as ContentBlocks (not in workspace_only_files)
     attached_files = [fn for fn in sanitized_filenames if fn not in workspace_only_files]
 
+    # docx/xlsx sent as ContentBlocks
+    docx_attached = [fn for fn in attached_files if fn.endswith('.docx')]
+    xlsx_attached = [fn for fn in attached_files if fn.endswith('.xlsx')]
+    other_attached = [fn for fn in attached_files if not fn.endswith(('.docx', '.xlsx'))]
+
+    # docx/xlsx too large for ContentBlock — workspace only
+    docx_workspace = [fn for fn in workspace_only_files if fn.endswith('.docx')]
+    xlsx_workspace = [fn for fn in workspace_only_files if fn.endswith('.xlsx')]
+    # other doc types too large for ContentBlock — workspace only
+    other_workspace = [
+        fn for fn in workspace_only_files
+        if not fn.endswith(('.docx', '.xlsx', '.pptx', '.zip'))
+    ]
+
     file_hints_lines = []
 
-    # Add files sent as ContentBlocks (attached directly)
-    if attached_files:
+    # Add non-office files sent as ContentBlocks (images, PDFs, etc.)
+    if other_attached:
         file_hints_lines.append("Attached files:")
-        file_hints_lines.extend([f"- {fn}" for fn in attached_files])
+        file_hints_lines.extend([f"- {fn}" for fn in other_attached])
 
-    # Add workspace-only files with tool hints
-    # Word documents
-    if docx_files:
+    # Word documents: attached as ContentBlock AND saved to workspace
+    if docx_attached:
         if file_hints_lines:
             file_hints_lines.append("")
-        word_tools_enabled = enabled_tools and 'word_document_tools' in enabled_tools
+        file_hints_lines.append("Word documents (attached and saved to workspace):")
+        for fn in docx_attached:
+            file_hints_lines.append(f"- {fn} (also saved to workspace)")
+
+    # Excel spreadsheets: attached as ContentBlock AND saved to workspace
+    if xlsx_attached:
+        if file_hints_lines:
+            file_hints_lines.append("")
+        file_hints_lines.append("Excel spreadsheets (attached and saved to workspace):")
+        for fn in xlsx_attached:
+            file_hints_lines.append(f"- {fn} (also saved to workspace)")
+
+    # Word documents too large for ContentBlock — workspace only
+    if docx_workspace:
+        if file_hints_lines:
+            file_hints_lines.append("")
         file_hints_lines.append("Word documents in workspace:")
-        for fn in docx_files:
-            name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
-            if word_tools_enabled:
-                file_hints_lines.append(f"- {fn} (use read_word_document('{name_without_ext}') to view content)")
-            else:
-                file_hints_lines.append(f"- {fn}")
+        for fn in docx_workspace:
+            file_hints_lines.append(f"- {fn}")
 
-    # Excel spreadsheets
-    if xlsx_files:
+    # Excel spreadsheets too large for ContentBlock — workspace only
+    if xlsx_workspace:
         if file_hints_lines:
             file_hints_lines.append("")
-        excel_tools_enabled = enabled_tools and 'excel_spreadsheet_tools' in enabled_tools
         file_hints_lines.append("Excel spreadsheets in workspace:")
-        for fn in xlsx_files:
-            name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
-            if excel_tools_enabled:
-                file_hints_lines.append(f"- {fn} (use read_excel_spreadsheet('{name_without_ext}') to view content)")
-            else:
-                file_hints_lines.append(f"- {fn}")
+        for fn in xlsx_workspace:
+            file_hints_lines.append(f"- {fn}")
+
+    # Other documents too large for ContentBlock — workspace only
+    if other_workspace:
+        if file_hints_lines:
+            file_hints_lines.append("")
+        file_hints_lines.append("Documents in workspace (too large to attach directly):")
+        for fn in other_workspace:
+            file_hints_lines.append(f"- {fn}")
 
     # PowerPoint presentations
     if pptx_files:
         if file_hints_lines:
             file_hints_lines.append("")
-        ppt_tools_enabled = enabled_tools and 'powerpoint_presentation_tools' in enabled_tools
         file_hints_lines.append("PowerPoint presentations in workspace:")
         for fn in pptx_files:
-            name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
-            if ppt_tools_enabled:
-                file_hints_lines.append(f"- {fn} (use analyze_presentation('{name_without_ext}', verbose=False) to view content)")
-            else:
-                file_hints_lines.append(f"- {fn}")
+            file_hints_lines.append(f"- {fn}")
+
+    # ZIP archives
+    if zip_files:
+        if file_hints_lines:
+            file_hints_lines.append("")
+        file_hints_lines.append("ZIP archives uploaded to workspace (already available in code interpreter sandbox):")
+        for fn in zip_files:
+            file_hints_lines.append(f"- {fn}")
 
     return "\n".join(file_hints_lines) if file_hints_lines else ""
 
@@ -216,11 +231,6 @@ def build_prompt(
     # If no files, return simple text message
     if not files or len(files) == 0:
         return message, []
-
-    # Check if using AgentCore Memory (cloud mode)
-    # AgentCore Memory has a bug where bytes in document ContentBlock cause JSON serialization errors
-    # In cloud mode, we skip document ContentBlocks and rely on workspace tools instead
-    is_cloud_mode = _is_cloud_mode()
 
     # Build ContentBlock list for multimodal input
     content_blocks: List[Dict[str, Any]] = []
@@ -275,14 +285,39 @@ def build_prompt(
             workspace_only_files.append(sanitized_full_name)
             logger.debug(f"PowerPoint presentation uploaded: {sanitized_full_name} (will be stored in workspace, not sent to model)")
 
+        elif filename.endswith(".zip"):
+            # ZIP archives - always use workspace (not a supported Bedrock document format)
+            workspace_only_files.append(sanitized_full_name)
+            logger.debug(f"ZIP archive uploaded: {sanitized_full_name} (will be stored in workspace, not sent to model)")
+
         elif filename.endswith((".docx", ".xlsx")):
-            # Word/Excel documents - use workspace in cloud mode to avoid bytes serialization error
-            if is_cloud_mode:
+            # Word/Excel: send as ContentBlock if within Bedrock's 4.5 MB limit, else workspace-only
+            if len(file_bytes) > _BEDROCK_DOC_MAX_BYTES:
                 workspace_only_files.append(sanitized_full_name)
-                logger.debug(f"[Cloud Mode] {sanitized_full_name} stored in workspace (skipping document ContentBlock to avoid AgentCore Memory serialization error)")
+                logger.warning(f"File too large for ContentBlock ({len(file_bytes)} bytes), storing to workspace only: {sanitized_full_name}")
             else:
-                # Local mode - can send as document ContentBlock
                 doc_format = get_document_format(filename)
+                name_without_ext = sanitized_full_name.rsplit('.', 1)[0] if '.' in sanitized_full_name else sanitized_full_name
+                content_blocks.append({
+                    "document": {
+                        "format": doc_format,
+                        "name": name_without_ext,
+                        "source": {
+                            "bytes": file_bytes
+                        }
+                    }
+                })
+                logger.debug(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
+
+        elif filename.endswith(tuple(DOCUMENT_EXTENSIONS)):
+            # Other documents (PDF, CSV, HTML, TXT, MD) — workspace-only if over 4.5 MB limit
+            if len(file_bytes) > _BEDROCK_DOC_MAX_BYTES:
+                workspace_only_files.append(sanitized_full_name)
+                logger.warning(f"File too large for ContentBlock ({len(file_bytes)} bytes), storing to workspace only: {sanitized_full_name}")
+            else:
+                doc_format = get_document_format(filename)
+
+                # For Bedrock ContentBlock: name should be WITHOUT extension (extension is in format field)
                 name_without_ext = sanitized_full_name.rsplit('.', 1)[0] if '.' in sanitized_full_name else sanitized_full_name
 
                 content_blocks.append({
@@ -296,30 +331,12 @@ def build_prompt(
                 })
                 logger.debug(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
 
-        elif filename.endswith(tuple(DOCUMENT_EXTENSIONS)):
-            # Other documents - send as ContentBlock (PDF, CSV, etc. are usually smaller and work better)
-            doc_format = get_document_format(filename)
-
-            # For Bedrock ContentBlock: name should be WITHOUT extension (extension is in format field)
-            name_without_ext = sanitized_full_name.rsplit('.', 1)[0] if '.' in sanitized_full_name else sanitized_full_name
-
-            content_blocks.append({
-                "document": {
-                    "format": doc_format,
-                    "name": name_without_ext,
-                    "source": {
-                        "bytes": file_bytes
-                    }
-                }
-            })
-            logger.debug(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
-
         else:
             logger.warning(f"Unsupported file type: {filename} ({content_type})")
 
     # Add file hints to text block (so agent knows the exact filenames stored in workspace)
     if sanitized_filenames:
-        file_hints = _build_file_hints(sanitized_filenames, workspace_only_files, enabled_tools)
+        file_hints = _build_file_hints(sanitized_filenames, workspace_only_files)
         if file_hints:
             text_block_content = f"{text_block_content}\n\n<uploaded_files>\n{file_hints}\n</uploaded_files>"
             logger.debug(f"Added file hints to prompt: {sanitized_filenames}")

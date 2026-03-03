@@ -18,7 +18,6 @@ import logging
 from typing import Dict, Any, Optional
 from strands import tool, ToolContext
 from skill import register_skill
-from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from workspace import ExcelManager
 from builtin_tools.lib.excel_recalc import recalc_spreadsheet
 from builtin_tools.lib.tool_response import build_success_response, build_image_response
@@ -124,33 +123,6 @@ def _sanitize_spreadsheet_name_for_bedrock(filename: str) -> str:
         logger.info(f"Sanitized spreadsheet name for Bedrock: '{filename}' → '{name}'")
 
     return name
-
-
-def _get_code_interpreter_id() -> Optional[str]:
-    """Get Custom Code Interpreter ID from environment or Parameter Store"""
-    # 1. Check environment variable (set by AgentCore Runtime)
-    code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
-    if code_interpreter_id:
-        logger.info(f"Found CODE_INTERPRETER_ID in environment: {code_interpreter_id}")
-        return code_interpreter_id
-
-    # 2. Try Parameter Store (for local development or alternative configuration)
-    try:
-        import boto3
-        project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
-        environment = os.getenv('ENVIRONMENT', 'dev')
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
-
-        logger.info(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
-        ssm = boto3.client('ssm', region_name=region)
-        response = ssm.get_parameter(Name=param_name)
-        code_interpreter_id = response['Parameter']['Value']
-        logger.info(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
-        return code_interpreter_id
-    except Exception as e:
-        logger.warning(f"Custom Code Interpreter ID not found in Parameter Store: {e}")
-        return None
 
 
 def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
@@ -394,19 +366,16 @@ ws3['A1'] = 'Detailed Analysis'
         # Initialize document manager
         doc_manager = ExcelManager(user_id, session_id)
 
-        # Get Code Interpreter
-        code_interpreter_id = _get_code_interpreter_id()
-        if not code_interpreter_id:
+        # Get shared CI session
+        from builtin_tools.code_interpreter_tool import get_ci_session
+        code_interpreter = get_ci_session(tool_context)
+        if code_interpreter is None:
             return {
                 "content": [{
                     "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
-
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        code_interpreter = CodeInterpreter(region)
-        code_interpreter.start(identifier=code_interpreter_id)
 
         try:
             # Load all workspace images from S3 to Code Interpreter
@@ -450,7 +419,6 @@ print(f"Spreadsheet created: {ci_path}")
                 if result.get("isError", False):
                     error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
                     logger.error(f"Creation failed: {error_msg[:500]}")
-                    code_interpreter.stop()
                     return {
                         "content": [{
                             "text": f"**Failed to create spreadsheet**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your openpyxl code for syntax errors or incorrect API usage."
@@ -513,8 +481,9 @@ print(f"Spreadsheet created: {ci_path}")
                 "session_id": session_id
             })
 
-        finally:
-            code_interpreter.stop()
+        except Exception as e:
+            logger.error(f"CI execution error in create_excel_spreadsheet: {e}")
+            raise
 
     except Exception as e:
         logger.error(f"create_excel_spreadsheet failed: {e}")
@@ -657,19 +626,16 @@ if images:
         # Initialize document manager
         doc_manager = ExcelManager(user_id, session_id)
 
-        # Get Code Interpreter
-        code_interpreter_id = _get_code_interpreter_id()
-        if not code_interpreter_id:
+        # Get shared CI session
+        from builtin_tools.code_interpreter_tool import get_ci_session
+        code_interpreter = get_ci_session(tool_context)
+        if code_interpreter is None:
             return {
                 "content": [{
                     "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
-
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        code_interpreter = CodeInterpreter(region)
-        code_interpreter.start(identifier=code_interpreter_id)
 
         try:
             # Load all workspace images from S3 to Code Interpreter
@@ -715,7 +681,6 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
                 if result.get("isError", False):
                     error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
                     logger.error(f"Modification failed: {error_msg[:500]}")
-                    code_interpreter.stop()
                     return {
                         "content": [{
                             "text": f"**Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your openpyxl code for syntax errors or incorrect API usage."
@@ -784,8 +749,9 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
                 "session_id": session_id
             })
 
-        finally:
-            code_interpreter.stop()
+        except Exception as e:
+            logger.error(f"CI execution error in modify_excel_spreadsheet: {e}")
+            raise
 
     except FileNotFoundError as e:
         logger.error(f"Spreadsheet not found: {e}")
@@ -962,19 +928,16 @@ def read_excel_spreadsheet(
         if not doc_info:
             raise FileNotFoundError(f"Spreadsheet not found: {spreadsheet_filename}")
 
-        # Get Code Interpreter
-        code_interpreter_id = _get_code_interpreter_id()
-        if not code_interpreter_id:
+        # Get shared CI session
+        from builtin_tools.code_interpreter_tool import get_ci_session
+        code_interpreter = get_ci_session(tool_context)
+        if code_interpreter is None:
             return {
                 "content": [{
                     "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
-
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        code_interpreter = CodeInterpreter(region)
-        code_interpreter.start(identifier=code_interpreter_id)
 
         try:
             # Upload spreadsheet to Code Interpreter
@@ -1035,7 +998,6 @@ print(json.dumps(result, ensure_ascii=False))
                 if result.get("isError", False):
                     error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
                     logger.error(f"Extraction failed: {error_msg[:500]}")
-                    code_interpreter.stop()
                     return {
                         "content": [{
                             "text": f"**Failed to read spreadsheet**\n\n```\n{error_msg[:1000]}\n```"
@@ -1090,8 +1052,6 @@ print(json.dumps(result, ensure_ascii=False))
             if len(output_text) > max_chars:
                 output_text = output_text[:max_chars] + f"\n\n... (truncated, total {len(output_text)} characters)"
 
-            code_interpreter.stop()
-
             return build_success_response(output_text, {
                 "filename": spreadsheet_filename,
                 "s3_key": doc_manager.get_s3_key(spreadsheet_filename),
@@ -1103,8 +1063,8 @@ print(json.dumps(result, ensure_ascii=False))
             })
 
         except Exception as e:
-            code_interpreter.stop()
-            raise e
+            logger.error(f"CI execution error in read_excel_spreadsheet: {e}")
+            raise
 
     except FileNotFoundError as e:
         logger.error(f"Spreadsheet not found: {e}")

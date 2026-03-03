@@ -462,139 +462,10 @@ class ChatAgent(BaseAgent):
             logger.warning(f"CODE_INTERPRETER_ID not found in env or Parameter Store: {e}")
             return None
 
-    def _store_files_by_type(
-        self,
-        uploaded_files: List[Dict[str, Any]],
-        code_interpreter,
-        extensions: List[str],
-        manager_class,
-        document_type: str
-    ):
-        """Store files of specific type to workspace"""
-        # Debug: log what we're filtering
-        logger.debug(f"Filtering {len(uploaded_files)} files for {document_type} (extensions: {extensions})")
-        for f in uploaded_files:
-            logger.debug(f"   - {f['filename']} (matches: {any(f['filename'].lower().endswith(ext) for ext in extensions)})")
-
-        # Filter files by extensions
-        filtered_files = [
-            f for f in uploaded_files
-            if any(f['filename'].lower().endswith(ext) for ext in extensions)
-        ]
-
-        logger.debug(f"Filtered {len(filtered_files)} {document_type} file(s)")
-
-        if not filtered_files:
-            return
-
-        # Initialize document manager
-        doc_manager = manager_class(self.user_id, self.session_id)
-
-        # Store each file
-        for file_info in filtered_files:
-            try:
-                filename = file_info['filename']
-                file_bytes = file_info['bytes']
-
-                # Sync to both S3 and Code Interpreter
-                doc_manager.sync_to_both(
-                    code_interpreter,
-                    filename,
-                    file_bytes,
-                    metadata={'auto_stored': 'true'}
-                )
-                logger.debug(f"Auto-stored {document_type}: {filename}")
-            except Exception as e:
-                logger.error(f"Failed to auto-store {document_type} file {filename}: {e}")
-
     def _auto_store_files(self, uploaded_files: List[Dict[str, Any]]):
-        """Automatically store all uploaded files to S3 workspace.
-
-        Architecture: S3 as Single Source of Truth
-        - All uploaded files → S3 workspace (persistent storage)
-        - Code Interpreter sync is optional (only when CODE_INTERPRETER_ID is configured)
-        """
-        if not uploaded_files:
-            return
-
-        logger.debug(f"Auto-store called with {len(uploaded_files)} file(s):")
-        for f in uploaded_files:
-            logger.debug(f"   - {f['filename']} ({f['content_type']})")
-
-        try:
-            from workspace import (
-                WordManager,
-                ExcelManager,
-                PowerPointManager,
-                ImageManager
-            )
-
-            file_type_configs = [
-                {'extensions': ['.docx'],  'manager_class': WordManager,        'document_type': 'word'},
-                {'extensions': ['.xlsx'],  'manager_class': ExcelManager,       'document_type': 'excel'},
-                {'extensions': ['.pptx'],  'manager_class': PowerPointManager,  'document_type': 'powerpoint'},
-                {'extensions': ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'],
-                 'manager_class': ImageManager, 'document_type': 'image'},
-            ]
-
-            # Step 1: Always save to S3 (no Code Interpreter required)
-            known_extensions = {ext for c in file_type_configs for ext in c['extensions']}
-            for config in file_type_configs:
-                filtered = [
-                    f for f in uploaded_files
-                    if any(f['filename'].lower().endswith(ext) for ext in config['extensions'])
-                ]
-                if not filtered:
-                    continue
-                manager = config['manager_class'](self.user_id, self.session_id)
-                for file_info in filtered:
-                    try:
-                        manager.save_to_s3(
-                            file_info['filename'],
-                            file_info['bytes'],
-                            metadata={'auto_stored': 'true'}
-                        )
-                        logger.debug(f"Saved to S3: {file_info['filename']}")
-                    except Exception as e:
-                        logger.error(f"Failed to save {file_info['filename']} to S3: {e}")
-
-            # Fallback: save unrecognised file types (zip, code files, etc.) under documents/.../raw/
-            from workspace.base_manager import BaseDocumentManager
-            for file_info in uploaded_files:
-                fname = file_info['filename'].lower()
-                if not any(fname.endswith(ext) for ext in known_extensions):
-                    try:
-                        mgr = BaseDocumentManager(self.user_id, self.session_id, document_type='raw')
-                        mgr.save_to_s3(
-                            file_info['filename'],
-                            file_info['bytes'],
-                            metadata={'auto_stored': 'true'}
-                        )
-                        logger.debug(f"Saved to S3 (raw): {file_info['filename']}")
-                    except Exception as e:
-                        logger.error(f"Failed to save {file_info['filename']} to S3: {e}")
-
-            # Step 2: Optionally sync to Code Interpreter if configured
-            code_interpreter_id = self._get_code_interpreter_id()
-            if code_interpreter_id:
-                from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-                region = os.getenv('AWS_REGION', 'us-west-2')
-                code_interpreter = CodeInterpreter(region)
-                code_interpreter.start(identifier=code_interpreter_id)
-                try:
-                    for config in file_type_configs:
-                        self._store_files_by_type(
-                            uploaded_files,
-                            code_interpreter,
-                            config['extensions'],
-                            config['manager_class'],
-                            config['document_type']
-                        )
-                finally:
-                    code_interpreter.stop()
-
-        except Exception as e:
-            logger.error(f"Failed to auto-store files: {e}")
+        """Store uploaded files to S3 workspace and optionally to Code Interpreter."""
+        from agent.processor.file_processor import auto_store_files
+        auto_store_files(uploaded_files, self.user_id, self.session_id)
 
     def _build_prompt(self, message: str, files: Optional[List] = None):
         """
@@ -612,9 +483,6 @@ class ChatAgent(BaseAgent):
         # If no files, return simple text message
         if not files or len(files) == 0:
             return message, []
-
-        # Check if using AgentCore Memory (cloud mode)
-        is_cloud_mode = os.environ.get('MEMORY_ID') is not None and AGENTCORE_MEMORY_AVAILABLE
 
         # Build ContentBlock list for multimodal input
         content_blocks = []
@@ -674,15 +542,13 @@ class ChatAgent(BaseAgent):
                 logger.debug(f"PowerPoint presentation uploaded: {sanitized_full_name} (will be stored in workspace)")
 
             elif filename.endswith((".docx", ".xlsx")):
-                # Word/Excel documents - use workspace in cloud mode
-                if is_cloud_mode:
+                # Word/Excel: send as ContentBlock if within Bedrock's 4.5 MB limit, else workspace-only
+                if len(file_bytes) > 4_500_000:
                     workspace_only_files.append(sanitized_full_name)
-                    logger.debug(f"[Cloud Mode] {sanitized_full_name} stored in workspace")
+                    logger.warning(f"File too large for ContentBlock ({len(file_bytes)} bytes), storing to workspace only: {sanitized_full_name}")
                 else:
-                    # Local mode - can send as document ContentBlock
                     doc_format = self._get_document_format(filename)
                     name_without_ext = sanitized_full_name.rsplit('.', 1)[0] if '.' in sanitized_full_name else sanitized_full_name
-
                     content_blocks.append({
                         "document": {
                             "format": doc_format,
@@ -717,53 +583,62 @@ class ChatAgent(BaseAgent):
         if sanitized_filenames:
             # Categorize files
             pptx_files = [fn for fn in sanitized_filenames if fn.endswith('.pptx')]
-            docx_files = [fn for fn in workspace_only_files if fn.endswith('.docx')]
-            xlsx_files = [fn for fn in workspace_only_files if fn.endswith('.xlsx')]
             attached_files = [fn for fn in sanitized_filenames if fn not in workspace_only_files]
+
+            # docx/xlsx sent as ContentBlocks
+            docx_attached = [fn for fn in attached_files if fn.endswith('.docx')]
+            xlsx_attached = [fn for fn in attached_files if fn.endswith('.xlsx')]
+            other_attached = [fn for fn in attached_files if not fn.endswith(('.docx', '.xlsx'))]
+
+            # docx/xlsx too large for ContentBlock — workspace only
+            docx_workspace = [fn for fn in workspace_only_files if fn.endswith('.docx')]
+            xlsx_workspace = [fn for fn in workspace_only_files if fn.endswith('.xlsx')]
 
             file_hints_lines = []
 
-            # Add files sent as ContentBlocks
-            if attached_files:
+            # Add non-office files sent as ContentBlocks (images, PDFs, etc.)
+            if other_attached:
                 file_hints_lines.append("Attached files:")
-                file_hints_lines.extend([f"- {fn}" for fn in attached_files])
+                file_hints_lines.extend([f"- {fn}" for fn in other_attached])
 
-            # Add workspace-only files with tool hints
-            if docx_files:
+            # Word documents: attached as ContentBlock AND saved to workspace
+            if docx_attached:
                 if file_hints_lines:
                     file_hints_lines.append("")
-                word_tools_enabled = self.enabled_tools and 'word_document_tools' in self.enabled_tools
+                file_hints_lines.append("Word documents (attached and saved to workspace):")
+                for fn in docx_attached:
+                    file_hints_lines.append(f"- {fn} (also saved to workspace)")
+
+            # Excel spreadsheets: attached as ContentBlock AND saved to workspace
+            if xlsx_attached:
+                if file_hints_lines:
+                    file_hints_lines.append("")
+                file_hints_lines.append("Excel spreadsheets (attached and saved to workspace):")
+                for fn in xlsx_attached:
+                    file_hints_lines.append(f"- {fn} (also saved to workspace)")
+
+            # Word documents too large for ContentBlock — workspace only
+            if docx_workspace:
+                if file_hints_lines:
+                    file_hints_lines.append("")
                 file_hints_lines.append("Word documents in workspace:")
-                for fn in docx_files:
-                    name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
-                    if word_tools_enabled:
-                        file_hints_lines.append(f"- {fn} (use read_word_document('{name_without_ext}') to view content)")
-                    else:
-                        file_hints_lines.append(f"- {fn}")
+                for fn in docx_workspace:
+                    file_hints_lines.append(f"- {fn}")
 
-            if xlsx_files:
+            # Excel spreadsheets too large for ContentBlock — workspace only
+            if xlsx_workspace:
                 if file_hints_lines:
                     file_hints_lines.append("")
-                excel_tools_enabled = self.enabled_tools and 'excel_spreadsheet_tools' in self.enabled_tools
                 file_hints_lines.append("Excel spreadsheets in workspace:")
-                for fn in xlsx_files:
-                    name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
-                    if excel_tools_enabled:
-                        file_hints_lines.append(f"- {fn} (use read_excel_spreadsheet('{name_without_ext}') to view content)")
-                    else:
-                        file_hints_lines.append(f"- {fn}")
+                for fn in xlsx_workspace:
+                    file_hints_lines.append(f"- {fn}")
 
             if pptx_files:
                 if file_hints_lines:
                     file_hints_lines.append("")
-                ppt_tools_enabled = self.enabled_tools and 'powerpoint_presentation_tools' in self.enabled_tools
                 file_hints_lines.append("PowerPoint presentations in workspace:")
                 for fn in pptx_files:
-                    name_without_ext = fn.rsplit('.', 1)[0] if '.' in fn else fn
-                    if ppt_tools_enabled:
-                        file_hints_lines.append(f"- {fn} (use analyze_presentation('{name_without_ext}', verbose=False) to view content)")
-                    else:
-                        file_hints_lines.append(f"- {fn}")
+                    file_hints_lines.append(f"- {fn}")
 
             file_hints = "\n".join(file_hints_lines)
             text_block_content = f"{text_block_content}\n\n<uploaded_files>\n{file_hints}\n</uploaded_files>"

@@ -13,36 +13,10 @@ from typing import Dict, Any, Optional
 from builtin_tools.lib.tool_response import build_success_response, build_image_response
 from datetime import datetime, timezone
 import logging
-import os
 
 logger = logging.getLogger(__name__)
 
 
-def _get_code_interpreter_id() -> Optional[str]:
-    """Get Custom Code Interpreter ID from environment or Parameter Store"""
-    # 1. Check environment variable (set by AgentCore Runtime)
-    code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
-    if code_interpreter_id:
-        logger.info(f"Found CODE_INTERPRETER_ID in environment: {code_interpreter_id}")
-        return code_interpreter_id
-
-    # 2. Try Parameter Store (for local development or alternative configuration)
-    try:
-        import boto3
-        project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
-        environment = os.getenv('ENVIRONMENT', 'dev')
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
-
-        logger.info(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
-        ssm = boto3.client('ssm', region_name=region)
-        response = ssm.get_parameter(Name=param_name)
-        code_interpreter_id = response['Parameter']['Value']
-        logger.info(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
-        return code_interpreter_id
-    except Exception as e:
-        logger.warning(f"Custom Code Interpreter ID not found in Parameter Store: {e}")
-        return None
 
 
 def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
@@ -78,7 +52,7 @@ def _execute_code_interpreter(
     Returns:
         ToolResult dict with content and status
     """
-    from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+    from builtin_tools.code_interpreter_tool import get_ci_session
     from workspace import ImageManager
 
     # Validate filename extension
@@ -94,28 +68,19 @@ def _execute_code_interpreter(
     try:
         logger.info(f"[{tool_name}] Generating output via Code Interpreter: {output_filename}")
 
-        # 1. Get Custom Code Interpreter ID
-        code_interpreter_id = _get_code_interpreter_id()
-
-        if not code_interpreter_id:
+        # Get shared CI session
+        code_interpreter = get_ci_session(tool_context)
+        if code_interpreter is None:
             return {
                 "content": [{
-                    "text": """Custom Code Interpreter ID not found.
+                    "text": """Code Interpreter not configured.
 
-Code Interpreter tools require Custom Code Interpreter.
 Please deploy AgentCore Runtime Stack to create Custom Code Interpreter."""
                 }],
                 "status": "error"
             }
 
-        # 2. Initialize Code Interpreter with Custom resource
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        code_interpreter = CodeInterpreter(region)
-
-        logger.info(f"Starting Custom Code Interpreter (ID: {code_interpreter_id})")
-        code_interpreter.start(identifier=code_interpreter_id)
-
-        logger.info(f"Code Interpreter started - executing code for {output_filename}")
+        logger.info(f"Using shared CI session for {output_filename}")
 
         # 3. Execute Python code
         response = code_interpreter.invoke("executeCode", {
@@ -135,7 +100,6 @@ Please deploy AgentCore Runtime Stack to create Custom Code Interpreter."""
             if result.get("isError", False):
                 error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
                 logger.error(f"Code execution failed: {error_msg[:200]}")
-                code_interpreter.stop()
 
                 return {
                     "content": [{
@@ -161,7 +125,6 @@ Please fix the error and try again."""
 
         if not execution_success:
             logger.warning("Code Interpreter: No result returned")
-            code_interpreter.stop()
             return {
                 "content": [{
                     "text": """No result from Bedrock Code Interpreter
@@ -208,7 +171,6 @@ Please try again or simplify your code."""
 
         except Exception as e:
             logger.error(f"Failed to download output file: {str(e)}")
-            code_interpreter.stop()
 
             # List available files for debugging
             available_files = []
@@ -238,9 +200,6 @@ Please try again or simplify your code."""
                 }],
                 "status": "error"
             }
-
-        finally:
-            code_interpreter.stop()
 
         # 6. Get workspace summary
         user_id, session_id = _get_user_session_ids(tool_context)

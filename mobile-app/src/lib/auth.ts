@@ -144,7 +144,8 @@ export async function getCurrentAuthUser(): Promise<AuthUserInfo | null> {
  */
 export function generateSessionId(userId: string): string {
   const prefix = userId.slice(0, 8).replace(/[^a-zA-Z0-9]/g, 'x');
-  const ts = Date.now().toString(36);
-  const rand = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
-  return `${prefix}_${ts}_${rand}`.slice(0, 52);
+  const buf = new Uint8Array(16)
+  crypto.getRandomValues(buf)
+  const rand = Array.from(buf).map(b => b.toString(16).padStart(2, '0')).join('')
+  return `${prefix}_${rand}`.slice(0, 52);
 }

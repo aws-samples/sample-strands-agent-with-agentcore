@@ -27,7 +27,9 @@ const WORKING_PHRASES = [
 
 /** Pick a random engaging phrase for generic tool activity. */
 function pickWorkingPhrase(): string {
-  return WORKING_PHRASES[Math.floor(Math.random() * WORKING_PHRASES.length)]
+  const buf = new Uint8Array(1)
+  crypto.getRandomValues(buf)
+  return WORKING_PHRASES[buf[0] % WORKING_PHRASES.length]
 }
 
 /** Return a user-friendly thinking message for a tool name. */

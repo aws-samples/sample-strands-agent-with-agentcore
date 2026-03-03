@@ -1,40 +1,75 @@
 """General-purpose Code Interpreter tools using AWS Bedrock AgentCore Code Interpreter.
 
-Provides 3 tools wrapping AgentCoreCodeInterpreter:
+Provides 4 tools wrapping CodeInterpreter (bedrock_agentcore):
   - execute_code:    Run Python/JS/TS code
   - execute_command: Run shell commands
   - file_operations: Read/write/list/remove files in the sandbox
+  - ci_push_to_workspace: Save sandbox files to S3
 
-Session state persists across calls within the same user session.
-The SKILL.md provides detailed guidance on available libraries and patterns.
+All tools share a single persistent CI session per user/session — files and
+variables persist across tool calls. Word, Excel, and other document tools
+use the same session via get_ci_session().
+
+Session ID is cached in agent.state so it survives across turns without
+creating new sessions. If a session times out (15 min idle), a new one is
+created automatically and workspace files are re-synced.
 """
 
 from strands import tool, ToolContext
 from skill import register_skill
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 import json
 import logging
 import os
 
 logger = logging.getLogger(__name__)
 
-# Module-level interpreter cache: session_key → (AgentCoreCodeInterpreter, session_name)
-_interpreters: Dict[str, Any] = {}
+# In-process CI client cache: session_key → CodeInterpreter
+# This avoids re-creating CodeInterpreter objects within the same process.
+# The actual session_id is stored in agent.state for cross-turn persistence.
+_ci_clients: Dict[str, Any] = {}
+
+# Tracks which S3 keys have been synced to each CI session to avoid re-downloading.
+# Key: session_key (user_id-session_id), Value: set of S3 object keys already loaded.
+_synced_s3_keys: Dict[str, set] = {}
+
+# agent.state keys for CI session persistence
+_STATE_CI_SESSION_ID = "ci_session_id"
+_STATE_CI_IDENTIFIER = "ci_identifier"
+
+# Session timeout in seconds (1 hour; max is 28800 = 8 hours)
+_SESSION_TIMEOUT_SECONDS = 3600
+
+
+def invalidate_session(user_id: str, session_id: str) -> None:
+    """Remove cached CI client so next tool call creates a fresh session.
+
+    Called by file_processor.auto_store_files() after uploading new files,
+    so the next tool call will re-create the session and preload workspace.
+    """
+    session_key = f"{user_id}-{session_id}"
+    if session_key in _ci_clients:
+        try:
+            _ci_clients[session_key].stop()
+        except Exception:
+            pass
+        del _ci_clients[session_key]
+        logger.info(f"Invalidated CI client cache: {session_key}")
+    _synced_s3_keys.pop(session_key, None)
+
 
 
 def _get_code_interpreter_id() -> Optional[str]:
-    """Get Custom Code Interpreter ID from environment or Parameter Store."""
-    code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
-    if code_interpreter_id:
-        return code_interpreter_id
-
+    """Get Code Interpreter ID from environment or Parameter Store."""
+    ci_id = os.getenv('CODE_INTERPRETER_ID')
+    if ci_id:
+        return ci_id
     try:
         import boto3
         project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
         environment = os.getenv('ENVIRONMENT', 'dev')
         region = os.getenv('AWS_REGION', 'us-west-2')
         param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
-
         ssm = boto3.client('ssm', region_name=region)
         response = ssm.get_parameter(Name=param_name)
         return response['Parameter']['Value']
@@ -43,90 +78,303 @@ def _get_code_interpreter_id() -> Optional[str]:
         return None
 
 
-def _get_session_key(tool_context: ToolContext) -> str:
-    """Build a session key from ToolContext for interpreter reuse."""
+def _is_session_alive(ci: Any, identifier: str, ci_session_id: str) -> bool:
+    """Check if a CI session is still READY (not timed out)."""
+    try:
+        response = ci.get_session(interpreter_id=identifier, session_id=ci_session_id)
+        status = response.get("status", "UNKNOWN")
+        logger.debug(f"CI session {ci_session_id} status: {status}")
+        return status == "READY"
+    except Exception as e:
+        logger.warning(f"CI session health check failed: {e}")
+        return False
+
+
+def get_ci_session(tool_context: ToolContext) -> Optional[Any]:
+    """Get or create a shared CodeInterpreter session for all tools.
+
+    Session lifecycle:
+    1. Check in-process cache (_ci_clients) for existing client
+    2. Check agent.state for stored session_id (cross-turn persistence)
+    3. Verify session is still READY via get_session() API
+    4. If expired/missing, create new session and preload workspace files
+    5. Store new session_id in agent.state
+
+    All tools (execute_code, word, excel, powerpoint, etc.) call this to get
+    the same persistent sandbox. Never call .start() or .stop() on the result.
+
+    Args:
+        tool_context: Strands ToolContext (provides agent.state + invocation_state)
+
+    Returns:
+        CodeInterpreter instance, or None if CODE_INTERPRETER_ID not configured.
+    """
+    from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+
     invocation_state = tool_context.invocation_state
     user_id = invocation_state.get('user_id', 'default_user')
     session_id = invocation_state.get('session_id', 'default_session')
-    return f"{user_id}-{session_id}"
+    session_key = f"{user_id}-{session_id}"
+    region = os.getenv('AWS_REGION', 'us-west-2')
+
+    # Step 1: Try in-process cache (fast path — same process, same turn or consecutive turns)
+    ci = _ci_clients.get(session_key)
+    if ci is not None:
+        # Verify the cached client's session is still alive
+        stored_id = ci.session_id
+        stored_identifier = ci.identifier
+        if stored_id and stored_identifier and _is_session_alive(ci, stored_identifier, stored_id):
+            _sync_new_workspace_files(ci, user_id, session_id)
+            return ci
+        # Session expired — remove stale cache
+        logger.info(f"Cached CI session expired: {session_key}")
+        del _ci_clients[session_key]
+
+    # Step 2: Try reattaching from agent.state (cross-turn persistence)
+    agent_state = tool_context.agent.state
+    stored_session_id = agent_state.get(_STATE_CI_SESSION_ID)
+    stored_identifier = agent_state.get(_STATE_CI_IDENTIFIER)
+
+    if stored_session_id and stored_identifier:
+        ci = CodeInterpreter(region)
+        ci.identifier = stored_identifier
+        ci.session_id = stored_session_id
+        if _is_session_alive(ci, stored_identifier, stored_session_id):
+            logger.info(f"Reattached to existing CI session: {stored_session_id}")
+            _ci_clients[session_key] = ci
+            _sync_new_workspace_files(ci, user_id, session_id)
+            return ci
+        logger.info(f"Stored CI session expired ({stored_session_id}), creating new one")
+
+    # Step 3: Create a new session
+    identifier = stored_identifier or _get_code_interpreter_id()
+    if not identifier:
+        return None
+
+    ci = CodeInterpreter(region)
+    ci.start(identifier=identifier, session_timeout_seconds=_SESSION_TIMEOUT_SECONDS)
+    logger.info(f"Created new CI session: {ci.session_id} (identifier: {identifier}, timeout: {_SESSION_TIMEOUT_SECONDS}s)")
+
+    # Store in agent.state for cross-turn persistence
+    agent_state.set(_STATE_CI_SESSION_ID, ci.session_id)
+    agent_state.set(_STATE_CI_IDENTIFIER, identifier)
+
+    # Cache in-process
+    _ci_clients[session_key] = ci
+
+    # Preload workspace files into the new sandbox
+    _preload_workspace_files(ci, user_id, session_id)
+
+    return ci
 
 
-def _get_interpreter(tool_context: ToolContext):
-    """Get or create an AgentCoreCodeInterpreter for the current session.
+def _get_ci_from_context(tool_context: ToolContext) -> Optional[Any]:
+    """Get CI session using ToolContext (convenience wrapper)."""
+    return get_ci_session(tool_context)
 
-    Reuses interpreters across tool calls within the same user session.
-    Creates a session with a custom Code Interpreter identifier if configured.
+
+def _parse_stream(response: dict) -> tuple:
+    """Parse invoke() streaming response.
 
     Returns:
-        tuple: (interpreter, session_name) or (None, None)
+        (stdout: str, stderr: str, has_error: bool)
     """
-    from strands_tools.code_interpreter import AgentCoreCodeInterpreter
-    from strands_tools.code_interpreter.agent_core_code_interpreter import (
-        BedrockAgentCoreCodeInterpreterClient,
-        SessionInfo,
+    stdout_parts = []
+    stderr = ""
+    has_error = False
+    for event in response.get("stream", []):
+        result = event.get("result", {})
+        if result.get("isError", False):
+            has_error = True
+            stderr = result.get("structuredContent", {}).get("stderr", "Unknown error")
+        stdout = result.get("structuredContent", {}).get("stdout", "")
+        if stdout:
+            stdout_parts.append(stdout)
+    return "".join(stdout_parts), stderr, has_error
+
+
+def _get_workspace_s3_prefixes(user_id: str, session_id: str) -> List[str]:
+    """Return S3 prefixes for all workspace document types."""
+    return [
+        f"documents/{user_id}/{session_id}/zip/",
+        f"documents/{user_id}/{session_id}/word/",
+        f"documents/{user_id}/{session_id}/excel/",
+        f"documents/{user_id}/{session_id}/powerpoint/",
+        f"documents/{user_id}/{session_id}/image/",
+        f"documents/{user_id}/{session_id}/code-output/",
+        f"documents/{user_id}/{session_id}/raw/",
+    ]
+
+
+def _upload_s3_file_to_ci(ci: Any, s3_client: Any, bucket: str, s3_key: str) -> None:
+    """Download a single file from S3 and write it into the CI sandbox."""
+    import base64
+
+    filename = s3_key.split('/')[-1]
+    if not filename:
+        return
+    data = s3_client.get_object(Bucket=bucket, Key=s3_key)['Body'].read()
+    b64 = base64.b64encode(data).decode('utf-8')
+    code = (
+        f"import base64\n"
+        f"with open('{filename}', 'wb') as _f:\n"
+        f"    _f.write(base64.b64decode('{b64}'))\n"
+        f"print('Loaded: {filename}')\n"
     )
-
-    session_key = _get_session_key(tool_context)
-
-    if session_key not in _interpreters:
-        identifier = _get_code_interpreter_id()
-        if not identifier:
-            return None, None
-
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        interpreter = AgentCoreCodeInterpreter(region=region)
-
-        # Create a session with the custom identifier
-        client = BedrockAgentCoreCodeInterpreterClient(region=region)
-        client.start(identifier=identifier, name=session_key)
-
-        interpreter._sessions[session_key] = SessionInfo(
-            session_id=client.session_id,
-            description=f"Code interpreter session: {session_key}",
-            client=client,
-        )
-
-        _interpreters[session_key] = (interpreter, session_key)
-        logger.info(f"Created CodeInterpreter for session: {session_key} (identifier: {identifier})")
-
-    return _interpreters[session_key]
+    ci.invoke("executeCode", {
+        "code": code,
+        "language": "python",
+        "clearContext": False,
+    })
 
 
-def _extract_text(result: Dict[str, Any]) -> str:
-    """Extract text content from a tool result dict."""
-    content = result.get("content", [])
-    parts = []
-    for item in content:
-        if isinstance(item, dict):
-            text = item.get("text", "")
-            if text:
-                parts.append(text)
-        elif isinstance(item, str):
-            parts.append(item)
-    return "\n".join(parts) if parts else json.dumps(result)
+def _preload_workspace_files(ci: Any, user_id: str, session_id: str) -> None:
+    """Load all workspace files from S3 into a newly created CI sandbox."""
+    import boto3
+
+    session_key = f"{user_id}-{session_id}"
+    _synced_s3_keys[session_key] = set()
+
+    try:
+        from workspace.config import get_workspace_bucket
+        bucket = get_workspace_bucket()
+        s3 = boto3.client('s3', region_name=os.getenv('AWS_REGION', 'us-west-2'))
+
+        for prefix in _get_workspace_s3_prefixes(user_id, session_id):
+            response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+            for obj in response.get('Contents', []):
+                s3_key = obj['Key']
+                try:
+                    _upload_s3_file_to_ci(ci, s3, bucket, s3_key)
+                    _synced_s3_keys[session_key].add(s3_key)
+                    logger.info(f"Preloaded into CI sandbox: {s3_key.split('/')[-1]}")
+                except Exception as e:
+                    logger.warning(f"Failed to preload {s3_key}: {e}")
+
+    except Exception as e:
+        logger.warning(f"_preload_workspace_files failed: {e}")
+
+
+def _sync_new_workspace_files(ci: Any, user_id: str, session_id: str) -> None:
+    """Sync only new S3 files into an existing CI session (delta sync)."""
+    import boto3
+
+    session_key = f"{user_id}-{session_id}"
+    synced = _synced_s3_keys.get(session_key)
+    if synced is None:
+        # No tracking info — skip rather than re-downloading everything
+        _synced_s3_keys[session_key] = set()
+        synced = _synced_s3_keys[session_key]
+
+    try:
+        from workspace.config import get_workspace_bucket
+        bucket = get_workspace_bucket()
+        s3 = boto3.client('s3', region_name=os.getenv('AWS_REGION', 'us-west-2'))
+
+        new_count = 0
+        for prefix in _get_workspace_s3_prefixes(user_id, session_id):
+            response = s3.list_objects_v2(Bucket=bucket, Prefix=prefix)
+            for obj in response.get('Contents', []):
+                s3_key = obj['Key']
+                if s3_key in synced:
+                    continue
+                try:
+                    _upload_s3_file_to_ci(ci, s3, bucket, s3_key)
+                    synced.add(s3_key)
+                    new_count += 1
+                    logger.info(f"Delta-synced to CI sandbox: {s3_key.split('/')[-1]}")
+                except Exception as e:
+                    logger.warning(f"Failed to delta-sync {s3_key}: {e}")
+
+        if new_count:
+            logger.info(f"Delta sync complete: {new_count} new file(s) synced to CI")
+
+    except Exception as e:
+        logger.warning(f"_sync_new_workspace_files failed: {e}")
+
+
+def _resolve_doc_type(filename: str) -> str:
+    """Determine workspace document type from file extension."""
+    ext = filename.lower().rsplit('.', 1)[-1] if '.' in filename else ''
+    if ext == 'docx':
+        return 'word'
+    if ext == 'xlsx':
+        return 'excel'
+    if ext == 'pptx':
+        return 'powerpoint'
+    if ext in ('png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'pdf'):
+        return 'image'
+    return 'code-output'
 
 
 def _save_to_workspace(tool_context: ToolContext, filename: str, file_bytes: bytes) -> Optional[dict]:
-    """Save a generated file to the code-interpreter workspace (S3)."""
+    """Save a generated file to the workspace (S3) under the correct documents/ prefix.
+
+    Routes files based on extension:
+      .docx → word/  |  .xlsx → excel/  |  .pptx → powerpoint/
+      images/pdf → image/  |  everything else → code-output/
+    """
     try:
-        import boto3
-        from workspace.config import get_workspace_bucket
+        from workspace import WordManager, ExcelManager, PowerPointManager, ImageManager
+        from workspace.base_manager import BaseDocumentManager
 
         invocation_state = tool_context.invocation_state
         user_id = invocation_state.get('user_id', 'default_user')
         session_id = invocation_state.get('session_id', 'default_session')
 
-        bucket = get_workspace_bucket()
-        s3_key = f"code-interpreter-workspace/{user_id}/{session_id}/{filename}"
+        doc_type = _resolve_doc_type(filename)
+        manager_map = {
+            'word': lambda: WordManager(user_id, session_id),
+            'excel': lambda: ExcelManager(user_id, session_id),
+            'powerpoint': lambda: PowerPointManager(user_id, session_id),
+            'image': lambda: ImageManager(user_id, session_id),
+        }
+        if doc_type in manager_map:
+            manager = manager_map[doc_type]()
+        else:
+            manager = BaseDocumentManager(user_id, session_id, document_type='code-output')
 
-        boto3.client('s3').put_object(
-            Bucket=bucket,
-            Key=s3_key,
-            Body=file_bytes,
-            Metadata={'source': 'code_interpreter_tool'},
+        s3_info = manager.save_to_s3(
+            filename,
+            file_bytes,
+            metadata={'source': 'code_interpreter_tool'},
         )
-        logger.info(f"Saved to workspace: s3://{bucket}/{s3_key}")
-        return {'s3_key': s3_key, 'bucket': bucket}
+        logger.info(f"Saved to workspace: {s3_info['s3_key']} (type={doc_type})")
+
+        # Save artifact to agent.state for Canvas display
+        try:
+            from datetime import datetime, timezone
+            artifact_id = f"ci-{filename.rsplit('.', 1)[0]}"
+            artifacts = tool_context.agent.state.get("artifacts") or {}
+            artifacts[artifact_id] = {
+                "id": artifact_id,
+                "type": doc_type,
+                "title": filename,
+                "content": s3_info.get('s3_url', s3_info['s3_key']),
+                "tool_name": "execute_code",
+                "metadata": {
+                    "filename": filename,
+                    "s3_key": s3_info['s3_key'],
+                    "size_kb": f"{len(file_bytes) / 1024:.1f}",
+                    "doc_type": doc_type,
+                },
+                "created_at": artifacts.get(artifact_id, {}).get(
+                    "created_at", datetime.now(timezone.utc).isoformat()
+                ),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            tool_context.agent.state.set("artifacts", artifacts)
+
+            session_manager = tool_context.invocation_state.get("session_manager")
+            if not session_manager and hasattr(tool_context.agent, "session_manager"):
+                session_manager = tool_context.agent.session_manager
+            if session_manager:
+                session_manager.sync_agent(tool_context.agent)
+                logger.info(f"Saved CI artifact: {artifact_id}")
+        except Exception as e:
+            logger.warning(f"Failed to save CI artifact to agent.state: {e}")
+
+        return {'s3_key': s3_info['s3_key'], 'doc_type': doc_type, 'bucket': manager.bucket}
     except Exception as e:
         logger.warning(f"Could not save to workspace: {e}")
         return None
@@ -157,74 +405,46 @@ def execute_code(
     Returns:
         Execution stdout, or file confirmation if output_filename is set.
     """
-    from strands_tools.code_interpreter.models import ExecuteCodeAction, LanguageType
-
-    interpreter, session_name = _get_interpreter(tool_context)
-    if interpreter is None:
+    ci = _get_ci_from_context(tool_context)
+    if ci is None:
         return json.dumps({
             "error": "Code Interpreter not available. Deploy AgentCore Runtime Stack.",
             "status": "error",
         })
 
-    # Map language string to enum
-    lang_map = {
-        "python": LanguageType.PYTHON,
-        "javascript": LanguageType.JAVASCRIPT,
-        "typescript": LanguageType.TYPESCRIPT,
-    }
-    lang_enum = lang_map.get(language.lower(), LanguageType.PYTHON)
-
     try:
-        action = ExecuteCodeAction(
-            type="executeCode",
-            session_name=session_name,
-            code=code,
-            language=lang_enum,
-            clear_context=False,
-        )
-        result = interpreter.execute_code(action)
-        output = _extract_text(result)
+        response = ci.invoke("executeCode", {
+            "code": code,
+            "language": language,
+            "clearContext": False
+        })
+        stdout, stderr, has_error = _parse_stream(response)
 
-        if result.get("status") == "error":
+        if has_error:
             return json.dumps({
-                "error": output,
+                "error": stderr,
                 "code_snippet": code[:300],
                 "status": "error",
             })
 
-        # If no output file requested, return stdout
         if not output_filename:
-            return output or "(no output)"
+            return stdout or "(no output)"
 
-        # Download output file via file_operations read
-        from strands_tools.code_interpreter.models import ReadFilesAction
-        read_action = ReadFilesAction(
-            type="readFiles",
-            session_name=session_name,
-            paths=[output_filename],
-        )
-        read_result = interpreter.read_files(read_action)
-
-        # Try to extract binary content for workspace save
-        file_saved = False
-        read_content = read_result.get("content", [])
-        for item in read_content:
-            if isinstance(item, dict):
-                blob = None
-                if "data" in item:
-                    blob = item["data"]
-                elif "resource" in item and "blob" in item.get("resource", {}):
-                    blob = item["resource"]["blob"]
+        # Download output file
+        download_response = ci.invoke("readFiles", {"paths": [output_filename]})
+        for event in download_response.get("stream", []):
+            result = event.get("result", {})
+            for item in result.get("content", []):
+                if not isinstance(item, dict):
+                    continue
+                blob = item.get("data") or item.get("resource", {}).get("blob")
                 if blob:
-                    s3_info = _save_to_workspace(tool_context, output_filename, blob)
-                    file_saved = True
+                    _save_to_workspace(tool_context, output_filename, blob)
                     size_kb = len(blob) / 1024
-
                     summary = f"Code executed. File saved: {output_filename} ({size_kb:.1f} KB)"
-                    if output:
-                        summary += f"\n\nstdout:\n{output[:500]}"
+                    if stdout:
+                        summary += f"\n\nstdout:\n{stdout[:500]}"
 
-                    # Return image inline if applicable
                     lower_name = output_filename.lower()
                     if lower_name.endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp')):
                         return json.dumps({
@@ -237,15 +457,13 @@ def execute_code(
                             ],
                             "status": "success",
                         })
-
                     return summary
 
-        if not file_saved:
-            return json.dumps({
-                "warning": f"Code executed but could not download '{output_filename}'.",
-                "stdout": output[:500] if output else "(none)",
-                "status": "partial",
-            })
+        return json.dumps({
+            "warning": f"Code executed but could not download '{output_filename}'.",
+            "stdout": stdout[:500] if stdout else "(none)",
+            "status": "partial",
+        })
 
     except Exception as e:
         logger.error(f"execute_code error: {e}")
@@ -272,23 +490,19 @@ def execute_command(
     Returns:
         Command stdout/stderr output.
     """
-    from strands_tools.code_interpreter.models import ExecuteCommandAction
-
-    interpreter, session_name = _get_interpreter(tool_context)
-    if interpreter is None:
+    ci = _get_ci_from_context(tool_context)
+    if ci is None:
         return json.dumps({
             "error": "Code Interpreter not available. Deploy AgentCore Runtime Stack.",
             "status": "error",
         })
 
     try:
-        action = ExecuteCommandAction(
-            type="executeCommand",
-            session_name=session_name,
-            command=command,
-        )
-        result = interpreter.execute_command(action)
-        return _extract_text(result)
+        response = ci.invoke("executeCommand", {"command": command})
+        stdout, stderr, has_error = _parse_stream(response)
+        if has_error:
+            return json.dumps({"error": stderr, "status": "error"})
+        return stdout or "(no output)"
 
     except Exception as e:
         logger.error(f"execute_command error: {e}")
@@ -313,23 +527,15 @@ def file_operations(
         paths: File paths (required for read/remove/list).
               - read:   ["file1.txt", "file2.csv"]
               - remove: ["old_file.txt"]
-              - list:   ["." ] or ["/path/to/dir"]  (single path)
+              - list:   ["."] or ["/path/to/dir"]  (single path)
         content: File content entries (required for write).
                 Each entry: {"path": "output.txt", "text": "file content here"}
 
     Returns:
         Operation result (file content, file list, or confirmation).
     """
-    from strands_tools.code_interpreter.models import (
-        ReadFilesAction,
-        WriteFilesAction,
-        ListFilesAction,
-        RemoveFilesAction,
-        FileContent,
-    )
-
-    interpreter, session_name = _get_interpreter(tool_context)
-    if interpreter is None:
+    ci = _get_ci_from_context(tool_context)
+    if ci is None:
         return json.dumps({
             "error": "Code Interpreter not available. Deploy AgentCore Runtime Stack.",
             "status": "error",
@@ -339,33 +545,66 @@ def file_operations(
         if operation == "read":
             if not paths:
                 return json.dumps({"error": "paths required for read operation", "status": "error"})
-            action = ReadFilesAction(type="readFiles", session_name=session_name, paths=paths)
-            result = interpreter.read_files(action)
-            return _extract_text(result)
+            download_response = ci.invoke("readFiles", {"paths": paths})
+            parts = []
+            for event in download_response.get("stream", []):
+                result = event.get("result", {})
+                for item in result.get("content", []):
+                    if not isinstance(item, dict):
+                        continue
+                    text = item.get("text", "")
+                    if text:
+                        parts.append(text)
+            return "\n".join(parts) if parts else "(empty)"
 
         elif operation == "write":
             if not content:
                 return json.dumps({"error": "content required for write operation", "status": "error"})
-            file_contents = [
-                FileContent(path=entry["path"], text=entry["text"])
-                for entry in content
-            ]
-            action = WriteFilesAction(type="writeFiles", session_name=session_name, content=file_contents)
-            result = interpreter.write_files(action)
-            return _extract_text(result)
+            results = []
+            for entry in content:
+                path = entry["path"]
+                text = entry["text"].replace("'", "\\'")
+                code = f"with open('{path}', 'w') as _f:\n    _f.write('{text}')\nprint('Written: {path}')\n"
+                response = ci.invoke("executeCode", {"code": code, "language": "python", "clearContext": False})
+                stdout, stderr, has_error = _parse_stream(response)
+                if has_error:
+                    results.append(f"Error writing {path}: {stderr}")
+                else:
+                    results.append(stdout or f"Written: {path}")
+            return "\n".join(results)
 
         elif operation == "list":
-            list_path = paths[0] if paths else "."
-            action = ListFilesAction(type="listFiles", session_name=session_name, path=list_path)
-            result = interpreter.list_files(action)
-            return _extract_text(result)
+            list_path = (paths[0] if paths else ".").replace("'", "\\'")
+            code = (
+                "import os, json\n"
+                f"_p = '{list_path}'\n"
+                "_entries = []\n"
+                "for _n in sorted(os.listdir(_p)):\n"
+                "    _full = os.path.join(_p, _n)\n"
+                "    _entries.append({'name': _n, 'type': 'directory' if os.path.isdir(_full) else 'file', 'size': 0 if os.path.isdir(_full) else os.path.getsize(_full)})\n"
+                "print(json.dumps(_entries, indent=2))\n"
+            )
+            response = ci.invoke("executeCode", {"code": code, "language": "python", "clearContext": False})
+            stdout, stderr, has_error = _parse_stream(response)
+            if has_error:
+                return json.dumps({"error": stderr, "status": "error"})
+            return stdout or "[]"
 
         elif operation == "remove":
             if not paths:
                 return json.dumps({"error": "paths required for remove operation", "status": "error"})
-            action = RemoveFilesAction(type="removeFiles", session_name=session_name, paths=paths)
-            result = interpreter.remove_files(action)
-            return _extract_text(result)
+            escaped = json.dumps(paths)
+            code = (
+                f"import os\n"
+                f"for _p in {escaped}:\n"
+                f"    os.remove(_p)\n"
+                f"    print(f'Removed: {{_p}}')\n"
+            )
+            response = ci.invoke("executeCode", {"code": code, "language": "python", "clearContext": False})
+            stdout, stderr, has_error = _parse_stream(response)
+            if has_error:
+                return json.dumps({"error": stderr, "status": "error"})
+            return stdout or "Done"
 
         else:
             return json.dumps({
@@ -376,53 +615,6 @@ def file_operations(
     except Exception as e:
         logger.error(f"file_operations ({operation}) error: {e}")
         return json.dumps({"error": str(e), "status": "error"})
-
-
-# -----------------------------------------------------------------------
-# Helpers for workspace ↔ sandbox sync
-# -----------------------------------------------------------------------
-
-_TEXT_EXTENSIONS = {
-    '.txt', '.py', '.js', '.ts', '.json', '.csv', '.md',
-    '.html', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg',
-    '.sh', '.r', '.sql', '.log',
-}
-
-
-def _is_text_file(filename: str) -> bool:
-    return os.path.splitext(filename)[1].lower() in _TEXT_EXTENSIONS
-
-
-def _ws_path_to_s3_key(user_id: str, session_id: str, ws_path: str) -> str:
-    """Map logical workspace path to S3 key (mirrors workspace.py logic)."""
-    ws_path = ws_path.lstrip('/')
-    if ws_path.startswith('code-interpreter'):
-        suffix = ws_path[len('code-interpreter'):].lstrip('/')
-        return f"code-interpreter-workspace/{user_id}/{session_id}/{suffix}"
-    if ws_path.startswith('code-agent'):
-        suffix = ws_path[len('code-agent'):].lstrip('/')
-        return f"code-agent-workspace/{user_id}/{session_id}/{suffix}"
-    if ws_path.startswith('documents'):
-        suffix = ws_path[len('documents'):].lstrip('/')
-        return f"documents/{user_id}/{session_id}/{suffix}"
-    return f"documents/{user_id}/{session_id}/{ws_path}"
-
-
-def _extract_file_list(result: dict) -> list:
-    """Parse a listFiles result into a list of file path strings."""
-    text = _extract_text(result).strip()
-    if not text:
-        return []
-    try:
-        data = json.loads(text)
-        if isinstance(data, list):
-            return [str(f) for f in data]
-        if isinstance(data, dict) and 'files' in data:
-            return [str(f) for f in data['files']]
-    except Exception:
-        pass
-    # Fallback: newline-separated filenames
-    return [ln.strip() for ln in text.splitlines() if ln.strip() and ln.strip() not in ('.', '..')]
 
 
 # -----------------------------------------------------------------------
@@ -446,45 +638,45 @@ def ci_push_to_workspace(
     Returns:
         JSON with the list of saved files and their workspace paths.
     """
-    from strands_tools.code_interpreter.models import ReadFilesAction, ListFilesAction
-
-    interpreter, session_name = _get_interpreter(tool_context)
-    if interpreter is None:
+    ci = _get_ci_from_context(tool_context)
+    if ci is None:
         return json.dumps({"error": "Code Interpreter not available.", "status": "error"})
 
     try:
         # Discover files if no paths given
         if not paths:
-            list_action = ListFilesAction(type="listFiles", session_name=session_name, path=".")
-            list_result = interpreter.list_files(list_action)
-            paths = _extract_file_list(list_result)
+            code = "import os, json; print(json.dumps([f for f in os.listdir('.') if os.path.isfile(f)]))\n"
+            response = ci.invoke("executeCode", {"code": code, "language": "python", "clearContext": False})
+            stdout, _, _ = _parse_stream(response)
+            try:
+                paths = json.loads(stdout.strip()) if stdout.strip() else []
+            except Exception:
+                paths = []
             if not paths:
                 return json.dumps({"files_saved": [], "count": 0, "status": "ok"})
 
         saved = []
         for path in paths:
             try:
-                read_action = ReadFilesAction(
-                    type="readFiles", session_name=session_name, paths=[path]
-                )
-                read_result = interpreter.read_files(read_action)
-
+                download_response = ci.invoke("readFiles", {"paths": [path]})
                 filename = os.path.basename(path)
-                for item in read_result.get("content", []):
-                    if not isinstance(item, dict):
-                        continue
-                    # Binary content
-                    blob = item.get("data") or item.get("resource", {}).get("blob")
-                    if blob:
-                        _save_to_workspace(tool_context, filename, blob)
-                        saved.append(f"code-interpreter/{filename}")
-                        break
-                    # Text content
-                    text = item.get("text", "")
-                    if text:
-                        _save_to_workspace(tool_context, filename, text.encode("utf-8"))
-                        saved.append(f"code-interpreter/{filename}")
-                        break
+                for event in download_response.get("stream", []):
+                    result = event.get("result", {})
+                    for item in result.get("content", []):
+                        if not isinstance(item, dict):
+                            continue
+                        blob = item.get("data") or item.get("resource", {}).get("blob")
+                        if blob:
+                            info = _save_to_workspace(tool_context, filename, blob)
+                            doc_type = info.get('doc_type', 'code-output') if info else 'code-output'
+                            saved.append(f"{doc_type}/{filename}")
+                            break
+                        text = item.get("text", "")
+                        if text:
+                            info = _save_to_workspace(tool_context, filename, text.encode("utf-8"))
+                            doc_type = info.get('doc_type', 'code-output') if info else 'code-output'
+                            saved.append(f"{doc_type}/{filename}")
+                            break
             except Exception as e:
                 logger.warning(f"ci_push: could not save '{path}': {e}")
 
@@ -495,95 +687,8 @@ def ci_push_to_workspace(
         return json.dumps({"error": str(e), "status": "error"})
 
 
-# -----------------------------------------------------------------------
-# Tool 5: ci_pull_from_workspace
-# -----------------------------------------------------------------------
-
-@tool(context=True)
-def ci_pull_from_workspace(
-    workspace_paths: list,
-    tool_context: ToolContext = None,
-) -> str:
-    """Load files from the shared workspace (S3) into the CI sandbox.
-
-    Use this to make data files, scripts, or documents available inside
-    the sandbox before running code that needs them.
-
-    Args:
-        workspace_paths: Logical workspace paths to upload into the sandbox.
-                         e.g. ["code-interpreter/data.csv",
-                               "documents/excel/sales.xlsx"]
-
-    Returns:
-        JSON with the list of files uploaded to the sandbox.
-    """
-    import base64
-    import boto3
-    from workspace.config import get_workspace_bucket
-    from strands_tools.code_interpreter.models import (
-        WriteFilesAction, FileContent, ExecuteCodeAction, LanguageType,
-    )
-
-    interpreter, session_name = _get_interpreter(tool_context)
-    if interpreter is None:
-        return json.dumps({"error": "Code Interpreter not available.", "status": "error"})
-
-    try:
-        invocation_state = tool_context.invocation_state
-        user_id = invocation_state.get("user_id", "default_user")
-        session_id = invocation_state.get("session_id", "default_session")
-
-        bucket = get_workspace_bucket()
-        s3 = boto3.client("s3")
-
-        text_entries = []   # FileContent list for batch write
-        uploaded = []
-
-        for ws_path in workspace_paths:
-            s3_key = _ws_path_to_s3_key(user_id, session_id, ws_path)
-            filename = os.path.basename(ws_path)
-            try:
-                data = s3.get_object(Bucket=bucket, Key=s3_key)["Body"].read()
-            except Exception as e:
-                logger.warning(f"ci_pull: could not read '{ws_path}' from S3: {e}")
-                continue
-
-            if _is_text_file(filename):
-                text_entries.append(FileContent(path=filename, text=data.decode("utf-8", errors="replace")))
-                uploaded.append(filename)
-            else:
-                # Binary: write via a base64-decode Python script
-                b64 = base64.b64encode(data).decode("utf-8")
-                decode_script = (
-                    f"import base64\n"
-                    f"with open('{filename}', 'wb') as _f:\n"
-                    f"    _f.write(base64.b64decode('{b64}'))\n"
-                    f"print('Written: {filename}')\n"
-                )
-                action = ExecuteCodeAction(
-                    type="executeCode",
-                    session_name=session_name,
-                    code=decode_script,
-                    language=LanguageType.PYTHON,
-                    clear_context=False,
-                )
-                interpreter.execute_code(action)
-                uploaded.append(filename)
-
-        # Batch-write all text files
-        if text_entries:
-            action = WriteFilesAction(type="writeFiles", session_name=session_name, content=text_entries)
-            interpreter.write_files(action)
-
-        return json.dumps({"files_uploaded": uploaded, "count": len(uploaded), "status": "ok"})
-
-    except Exception as e:
-        logger.error(f"ci_pull_from_workspace error: {e}")
-        return json.dumps({"error": str(e), "status": "error"})
-
-
 # --- Skill registration ---
 register_skill("code-interpreter", tools=[
     execute_code, execute_command, file_operations,
-    ci_push_to_workspace, ci_pull_from_workspace,
+    ci_push_to_workspace,
 ])

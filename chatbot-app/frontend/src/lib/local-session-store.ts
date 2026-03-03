@@ -443,6 +443,56 @@ export function clearSessionMessages(userId: string, sessionId: string): void {
 }
 
 /**
+ * Truncate conversation messages from a given unix ms timestamp (inclusive).
+ * Deletes message_*.json files whose created_at >= fromTimestampMs.
+ */
+export function truncateSessionMessages(userId: string, sessionId: string, fromTimestampMs: number): number {
+  if (!validateUserId(userId) || !validateSessionId(sessionId)) {
+    console.error(`[LocalSessionStore] Invalid userId or sessionId format`)
+    throw new Error('Invalid userId or sessionId format')
+  }
+  const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '')
+
+  const agentcoreSessionsDir = path.resolve(process.cwd(), '..', 'agentcore', 'sessions')
+  const sessionDir = path.resolve(agentcoreSessionsDir, `session_${sanitizedSessionId}`)
+
+  if (!sessionDir.startsWith(agentcoreSessionsDir + path.sep)) {
+    throw new Error('Invalid session path')
+  }
+  if (!fs.existsSync(sessionDir)) {
+    return 0
+  }
+
+  let deleted = 0
+  for (const agentId of ['default', 'voice']) {
+    if (!validateAgentId(agentId)) continue
+    const messagesDir = path.resolve(sessionDir, 'agents', `agent_${agentId}`, 'messages')
+    if (!messagesDir.startsWith(agentcoreSessionsDir + path.sep)) continue
+    if (!fs.existsSync(messagesDir)) continue
+
+    const files = fs.readdirSync(messagesDir).filter(f => /^message_\d+\.json$/.test(f))
+    for (const file of files) {
+      const filePath = path.resolve(messagesDir, file)
+      if (!filePath.startsWith(agentcoreSessionsDir + path.sep)) continue
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8')
+        const data = JSON.parse(content)
+        const createdAtMs = data.created_at ? new Date(data.created_at).getTime() : 0
+        if (createdAtMs >= fromTimestampMs) {
+          fs.unlinkSync(filePath)
+          deleted++
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  }
+
+  console.log(`[LocalSessionStore] Truncated ${deleted} message files from ${fromTimestampMs} for session ${sessionId}`)
+  return deleted
+}
+
+/**
  * Get artifacts for a session from agent state
  */
 export function getSessionArtifacts(sessionId: string): any[] {

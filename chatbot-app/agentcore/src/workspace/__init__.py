@@ -68,6 +68,7 @@ from .managers import (
     ExcelManager,
     PowerPointManager,
     ImageManager,
+    ZipManager,
     # Backward compatibility aliases
     WordDocumentManager,
     ExcelDocumentManager,
@@ -88,6 +89,7 @@ __all__ = [
     'ExcelManager',
     'PowerPointManager',
     'ImageManager',
+    'ZipManager',
 
     # Legacy naming (backward compatibility)
     'WordDocumentManager',

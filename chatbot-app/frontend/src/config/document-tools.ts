@@ -11,7 +11,7 @@
  * constant for runtime efficiency (no JSON parsing needed).
  */
 
-export type DocumentType = 'word' | 'excel' | 'powerpoint' | 'diagram'
+export type DocumentType = 'word' | 'excel' | 'powerpoint' | 'diagram' | 'code-output' | 'image'
 
 /**
  * Maps tool names to document types.
@@ -51,6 +51,13 @@ export const TOOL_TO_DOC_TYPE: Record<string, DocumentType> = {
   // Diagram tools (from diagram_tool)
   'generate_chart': 'diagram',
   'create_visual_design': 'diagram',
+
+  // Code Interpreter tools (from code_interpreter_tool)
+  'execute_code': 'code-output',
+  'ci_push_to_workspace': 'code-output',
+
+  // Browser tools (screenshots saved as images)
+  'browser_save_screenshot': 'image',
 }
 
 /**
@@ -62,6 +69,8 @@ export const DOC_TYPE_TO_TOOL_TYPE: Record<DocumentType, string> = {
   'excel': 'excel_spreadsheet',
   'powerpoint': 'powerpoint_presentation',
   'diagram': 'diagram',
+  'code-output': 'code_output',
+  'image': 'image',
 }
 
 /**
@@ -73,6 +82,8 @@ export const TOOL_TYPE_TO_DOC_TYPE: Record<string, DocumentType> = {
   'excel_spreadsheet': 'excel',
   'powerpoint_presentation': 'powerpoint',
   'diagram': 'diagram',
+  'code_output': 'code-output',
+  'image': 'image',
 }
 
 /**
