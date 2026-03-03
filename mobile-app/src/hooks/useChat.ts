@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from 'react'
-import { v4 as uuidv4 } from 'uuid'
 import type { ImagePickerAsset } from 'expo-image-picker'
 import { useStreamEvents } from './useStreamEvents'
 import { useChatStream } from './useChatStream'
@@ -223,7 +222,7 @@ export function useChat({ sessionId, modelId, onTitleUpdated }: UseChatOptions) 
 
       // Insert user message immediately
       const userMsg: Message = {
-        ...makeEmptyMessage(uuidv4(), 'user'),
+        ...makeEmptyMessage(crypto.randomUUID(), 'user'),
         text: text.trim(),
         images: images?.map(a => ({ type: 'url' as const, url: a.uri, title: a.fileName ?? undefined })),
         uploadedFiles: documents?.map(d => ({ name: d.name, type: d.mimeType })),
@@ -397,7 +396,7 @@ export function useChat({ sessionId, modelId, onTitleUpdated }: UseChatOptions) 
           }
 
           return {
-            ...makeEmptyMessage(m.id || uuidv4(), m.role === 'user' ? 'user' : 'assistant'),
+            ...makeEmptyMessage(m.id || crypto.randomUUID(), m.role === 'user' ? 'user' : 'assistant'),
             text,
             toolExecutions,
             ...(historyFiles.length > 0 && { uploadedFiles: historyFiles }),
