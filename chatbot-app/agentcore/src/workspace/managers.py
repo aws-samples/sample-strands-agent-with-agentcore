@@ -248,6 +248,24 @@ class ImageManager(BaseDocumentManager):
         return "\n".join(lines)
 
 
+class ZipManager(BaseDocumentManager):
+    """Document manager for ZIP archive files (.zip)"""
+
+    def __init__(self, user_id: str, session_id: str):
+        super().__init__(user_id, session_id, document_type='zip')
+        logger.info("ZipManager initialized")
+
+    def format_file_list(self, documents: List[Dict[str, Any]]) -> str:
+        if not documents:
+            return "**Workspace**: Empty (no zip archives yet)"
+
+        lines = [f"**Workspace** ({len(documents)} archive{'s' if len(documents) > 1 else ''}):"]
+        for doc in sorted(documents, key=lambda x: x['last_modified'], reverse=True):
+            modified_date = doc['last_modified'].split('T')[0]
+            lines.append(f"  - **{doc['filename']}** ({doc['size_kb']}) - Modified: {modified_date}")
+        return "\n".join(lines)
+
+
 # Backward compatibility aliases
 WordDocumentManager = WordManager
 ExcelDocumentManager = ExcelManager

@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { ChevronDown, ChevronUp, Copy, Check, Mic, Sparkles } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check, Mic, Sparkles, Scissors, Trash2, X } from 'lucide-react'
 import { Message } from '@/types/chat'
 import { Markdown } from '@/components/ui/Markdown'
 import { ToolExecutionContainer } from './ToolExecutionContainer'
@@ -56,6 +56,7 @@ const ArtifactNotification = ({ title, wordCount }: { title: string; wordCount: 
 interface ChatMessageProps {
   message: Message
   sessionId?: string
+  onTruncate?: () => void
 }
 
 const MAX_LINES = 5
@@ -102,8 +103,9 @@ const CollapsibleUserMessage = ({ text }: { text: string }) => {
   )
 }
 
-export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId }) => {
+export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId, onTruncate }) => {
   const [copied, setCopied] = useState(false)
+  const [pendingTruncate, setPendingTruncate] = useState(false)
 
   const handleCopy = useCallback(async () => {
     await navigator.clipboard.writeText(message.text)
@@ -133,6 +135,35 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId })
               </div>
             )}
             <div className="flex items-center gap-2">
+              {onTruncate && message.rawTimestamp && (
+                pendingTruncate ? (
+                  <div className="flex items-center gap-1 rounded-lg border border-destructive/30 bg-background p-0.5 shadow-sm">
+                    <button
+                      onClick={() => { onTruncate(); setPendingTruncate(false) }}
+                      className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 transition-colors"
+                      title="Confirm delete"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <div className="w-px h-4 bg-border" />
+                    <button
+                      onClick={() => setPendingTruncate(false)}
+                      className="p-1.5 rounded-md text-muted-foreground hover:bg-muted transition-colors"
+                      title="Cancel"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setPendingTruncate(true)}
+                    className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"
+                    title="Delete from here"
+                  >
+                    <Scissors className="w-4 h-4" />
+                  </button>
+                )
+              )}
               <button
                 onClick={handleCopy}
                 className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground"

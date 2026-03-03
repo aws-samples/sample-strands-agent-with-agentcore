@@ -215,25 +215,20 @@ def auto_store_files(
     session_id: str,
 ) -> None:
     """
-    Automatically store all uploaded files to S3 workspace.
+    Store uploaded files to S3 workspace (always) and Code Interpreter (if configured).
 
-    This method handles Word documents, Excel spreadsheets, PowerPoint presentations,
-    and images in a single Code Interpreter session for better performance.
-
-    Architecture: S3 as Single Source of Truth
-    - All uploaded files -> S3 workspace (persistent storage)
-    - When tools execute -> Load from S3 to Code Interpreter (on-demand)
-    - This enables multi-turn file usage and consistent file management
+    S3 is the single source of truth — all workspace tools (word, excel, etc.) read
+    from S3. Code Interpreter sync is optional and only happens when CODE_INTERPRETER_ID
+    is available.
 
     Args:
-        uploaded_files: List of uploaded file info dicts with 'filename' and 'bytes'
+        uploaded_files: List of dicts with 'filename', 'bytes', 'content_type'
         user_id: User identifier
         session_id: Session identifier
     """
     if not uploaded_files:
         return
 
-    # Debug: log what files we're processing
     logger.debug(f"Auto-store called with {len(uploaded_files)} file(s):")
     for f in uploaded_files:
         logger.debug(f"   - {f['filename']} ({f.get('content_type', 'unknown')})")
@@ -243,59 +238,45 @@ def auto_store_files(
             WordManager,
             ExcelManager,
             PowerPointManager,
-            ImageManager
+            ImageManager,
+            ZipManager,
         )
-        from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+        from workspace.base_manager import BaseDocumentManager
 
-        # Get Code Interpreter ID
-        code_interpreter_id = get_code_interpreter_id()
-        if not code_interpreter_id:
-            logger.warning("Cannot auto-store files: CODE_INTERPRETER_ID not configured")
-            return
-
-        # Configuration for file types - all stored to S3 workspace for persistence
         file_type_configs = [
-            {
-                'extensions': OFFICE_EXTENSIONS['word'],
-                'manager_class': WordManager,
-                'document_type': 'Word document'
-            },
-            {
-                'extensions': OFFICE_EXTENSIONS['excel'],
-                'manager_class': ExcelManager,
-                'document_type': 'Excel spreadsheet'
-            },
-            {
-                'extensions': OFFICE_EXTENSIONS['powerpoint'],
-                'manager_class': PowerPointManager,
-                'document_type': 'PowerPoint presentation'
-            },
-            {
-                'extensions': list(IMAGE_EXTENSIONS),
-                'manager_class': ImageManager,
-                'document_type': 'image'
-            }
+            {'extensions': OFFICE_EXTENSIONS['word'],        'manager_class': WordManager},
+            {'extensions': OFFICE_EXTENSIONS['excel'],       'manager_class': ExcelManager},
+            {'extensions': OFFICE_EXTENSIONS['powerpoint'],  'manager_class': PowerPointManager},
+            {'extensions': ['.zip'],                          'manager_class': ZipManager},
+            {'extensions': list(IMAGE_EXTENSIONS),            'manager_class': ImageManager},
         ]
+        known_extensions = {ext for c in file_type_configs for ext in c['extensions']}
 
-        # Start Code Interpreter (single session for all file types)
-        region = os.getenv(EnvVars.AWS_REGION, DEFAULT_AWS_REGION)
-        code_interpreter = CodeInterpreter(region)
-        code_interpreter.start(identifier=code_interpreter_id)
+        # Step 1: Always save to S3 (no CI required)
+        for config in file_type_configs:
+            filtered = [
+                f for f in uploaded_files
+                if any(f['filename'].lower().endswith(ext) for ext in config['extensions'])
+            ]
+            if not filtered:
+                continue
+            manager = config['manager_class'](user_id, session_id)
+            for file_info in filtered:
+                try:
+                    manager.save_to_s3(file_info['filename'], file_info['bytes'], metadata={'auto_stored': 'true'})
+                    logger.debug(f"Saved to S3: {file_info['filename']}")
+                except Exception as e:
+                    logger.error(f"Failed to save {file_info['filename']} to S3: {e}")
 
-        try:
-            # Process each file type
-            for config in file_type_configs:
-                store_files_by_type(
-                    uploaded_files,
-                    code_interpreter,
-                    config['extensions'],
-                    config['manager_class'],
-                    config['document_type'],
-                    user_id,
-                    session_id,
-                )
-        finally:
-            code_interpreter.stop()
+        # Fallback: unknown types → raw namespace
+        for file_info in uploaded_files:
+            if not any(file_info['filename'].lower().endswith(ext) for ext in known_extensions):
+                try:
+                    mgr = BaseDocumentManager(user_id, session_id, document_type='raw')
+                    mgr.save_to_s3(file_info['filename'], file_info['bytes'], metadata={'auto_stored': 'true'})
+                    logger.debug(f"Saved to S3 (raw): {file_info['filename']}")
+                except Exception as e:
+                    logger.error(f"Failed to save {file_info['filename']} to S3: {e}")
 
     except Exception as e:
         logger.error(f"Failed to auto-store files: {e}")

@@ -24,7 +24,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
   // Start with a temporary local ID; upgrade once the Cognito user is available
   const [activeSessionId, setActiveSessionId] = useState<string>(
-    () => `tmp_${Date.now().toString(36)}`,
+    () => `tmp_${crypto.randomUUID().replace(/-/g, '').slice(0, 12)}`,
   )
 
   // Track whether we've already assigned the user-scoped session ID so we

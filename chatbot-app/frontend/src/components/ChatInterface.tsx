@@ -176,6 +176,7 @@ export function ChatInterface() {
     stopGeneration,
     newChat,
     compactSession,
+    truncateFromMessage,
     toggleTool,
     setExclusiveTools,
     sessionId,
@@ -1301,7 +1302,12 @@ export function ChatInterface() {
                 <div className={`mx-auto w-full max-w-4xl px-4 min-w-0`}>
                   {group.type === "user" ? (
                     group.messages.map((message) => (
-                      <ChatMessage key={message.id} message={message} sessionId={stableSessionId} />
+                      <ChatMessage
+                        key={message.id}
+                        message={message}
+                        sessionId={stableSessionId}
+                        onTruncate={message.rawTimestamp ? () => truncateFromMessage(message) : undefined}
+                      />
                     ))
                   ) : (
                     <>

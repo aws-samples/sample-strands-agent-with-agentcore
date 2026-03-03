@@ -64,6 +64,8 @@ export interface Message {
     agentsUsed: string[]
     sharedContext?: Record<string, any>
   }
+  // Raw unix ms timestamp (for truncation)
+  rawTimestamp?: number
   // Voice mode marker
   isVoiceMessage?: boolean
   // Artifact reference (for composer workflow results)

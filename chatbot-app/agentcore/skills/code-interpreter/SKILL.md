@@ -13,7 +13,6 @@ A general-purpose code execution environment powered by AWS Bedrock AgentCore Co
 - **execute_command(command)**: Execute shell commands.
 - **file_operations(operation, paths, content)**: Read, write, list, or remove files in the sandbox.
 - **ci_push_to_workspace(paths)**: Save sandbox files to the shared workspace (S3). Omit `paths` to save all files in the sandbox root.
-- **ci_pull_from_workspace(workspace_paths)**: Load files from the shared workspace into the sandbox before execution.
 
 ## Tool Parameters
 
@@ -154,15 +153,9 @@ All files go to the `code-interpreter/` namespace — a flat, session-isolated s
 { "tool": "execute_code", "output_filename": "chart.png", "code": "..." }
 ```
 
-**Workspace → Sandbox (load inputs):**
+**Uploaded files (auto-preloaded):**
 
-```json
-// Load data files before execution
-{
-  "tool": "ci_pull_from_workspace",
-  "workspace_paths": ["code-interpreter/data.csv", "documents/excel/sales.xlsx"]
-}
-```
+Files uploaded by the user (e.g. ZIP archives) are automatically available in the sandbox — no manual loading needed. Just use them directly in `execute_code`.
 
 **Read saved files via workspace skill:**
 ```

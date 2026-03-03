@@ -18,7 +18,6 @@ import logging
 from typing import Dict, Any, Optional
 from strands import tool, ToolContext
 from skill import register_skill
-from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from workspace import WordManager
 from builtin_tools.lib.tool_response import build_success_response, build_image_response
 
@@ -101,33 +100,6 @@ def _sanitize_document_name_for_bedrock(filename: str) -> str:
         logger.info(f"Sanitized document name for Bedrock: '{filename}' → '{name}'")
 
     return name
-
-
-def _get_code_interpreter_id() -> Optional[str]:
-    """Get Custom Code Interpreter ID from environment or Parameter Store"""
-    # 1. Check environment variable (set by AgentCore Runtime)
-    code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
-    if code_interpreter_id:
-        logger.info(f"Found CODE_INTERPRETER_ID in environment: {code_interpreter_id}")
-        return code_interpreter_id
-
-    # 2. Try Parameter Store (for local development or alternative configuration)
-    try:
-        import boto3
-        project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
-        environment = os.getenv('ENVIRONMENT', 'dev')
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
-
-        logger.info(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
-        ssm = boto3.client('ssm', region_name=region)
-        response = ssm.get_parameter(Name=param_name)
-        code_interpreter_id = response['Parameter']['Value']
-        logger.info(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
-        return code_interpreter_id
-    except Exception as e:
-        logger.warning(f"Custom Code Interpreter ID not found in Parameter Store: {e}")
-        return None
 
 
 def _get_user_session_ids(tool_context: ToolContext) -> tuple[str, str]:
@@ -351,9 +323,10 @@ doc.add_paragraph('Summary text...')
         # Initialize document manager
         doc_manager = WordManager(user_id, session_id)
 
-        # Get Code Interpreter
-        code_interpreter_id = _get_code_interpreter_id()
-        if not code_interpreter_id:
+        # Get shared CI client (persistent across calls — never stop it here)
+        from builtin_tools.code_interpreter_tool import get_ci_session
+        code_interpreter = get_ci_session(tool_context)
+        if code_interpreter is None:
             return {
                 "content": [{
                     "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
@@ -361,21 +334,16 @@ doc.add_paragraph('Summary text...')
                 "status": "error"
             }
 
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        code_interpreter = CodeInterpreter(region)
-        code_interpreter.start(identifier=code_interpreter_id)
+        # Load all workspace images from S3 to Code Interpreter
+        loaded_images = doc_manager.load_workspace_images_to_ci(code_interpreter)
+        if loaded_images:
+            logger.info(f"Loaded {len(loaded_images)} image(s) from workspace: {loaded_images}")
 
-        try:
-            # Load all workspace images from S3 to Code Interpreter
-            loaded_images = doc_manager.load_workspace_images_to_ci(code_interpreter)
-            if loaded_images:
-                logger.info(f"Loaded {len(loaded_images)} image(s) from workspace: {loaded_images}")
+        # Get Code Interpreter path for file (filename only, no subdirectory)
+        ci_path = doc_manager.get_ci_path(document_filename)
 
-            # Get Code Interpreter path for file (filename only, no subdirectory)
-            ci_path = doc_manager.get_ci_path(document_filename)
-
-            # Build document creation code
-            creation_code = f"""
+        # Build document creation code
+        creation_code = f"""
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -391,78 +359,74 @@ doc.save('{ci_path}')
 print(f"Document created: {ci_path}")
 """
 
-            # Execute creation
-            response = code_interpreter.invoke("executeCode", {
-                "code": creation_code,
-                "language": "python",
-                "clearContext": False
-            })
+        # Execute creation
+        response = code_interpreter.invoke("executeCode", {
+            "code": creation_code,
+            "language": "python",
+            "clearContext": False
+        })
 
-            # Capture stdout and check for errors
-            stdout_output = ""
-            for event in response.get("stream", []):
-                result = event.get("result", {})
-                if result.get("isError", False):
-                    error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
-                    logger.error(f"Creation failed: {error_msg[:500]}")
-                    code_interpreter.stop()
-                    return {
-                        "content": [{
-                            "text": f"**Failed to create document**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your python-docx code for syntax errors or incorrect API usage."
-                        }],
-                        "status": "error"
-                    }
-                # Capture stdout
-                stdout = result.get("structuredContent", {}).get("stdout", "")
-                if stdout:
-                    stdout_output += stdout
+        # Capture stdout and check for errors
+        stdout_output = ""
+        for event in response.get("stream", []):
+            result = event.get("result", {})
+            if result.get("isError", False):
+                error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
+                logger.error(f"Creation failed: {error_msg[:500]}")
+                return {
+                    "content": [{
+                        "text": f"**Failed to create document**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your python-docx code for syntax errors or incorrect API usage."
+                    }],
+                    "status": "error"
+                }
+            # Capture stdout
+            stdout = result.get("structuredContent", {}).get("stdout", "")
+            if stdout:
+                stdout_output += stdout
 
-            logger.info("Document creation completed")
+        logger.info("Document creation completed")
 
-            # Download from Code Interpreter
-            file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, document_filename)
+        # Download from Code Interpreter
+        file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, document_filename)
 
-            # Save to S3 for persistence
-            s3_info = doc_manager.save_to_s3(
-                document_filename,
-                file_bytes,
-                metadata={'source': 'python_code_creation'}
-            )
+        # Save to S3 for persistence
+        s3_info = doc_manager.save_to_s3(
+            document_filename,
+            file_bytes,
+            metadata={'source': 'python_code_creation'}
+        )
 
-            # Save as artifact for Canvas display
-            _save_word_artifact(
-                tool_context=tool_context,
-                filename=document_filename,
-                s3_url=s3_info['s3_url'],
-                size_kb=s3_info['size_kb'],
-                tool_name='create_word_document',
-                user_id=user_id,
-                session_id=session_id
-            )
+        # Save as artifact for Canvas display
+        _save_word_artifact(
+            tool_context=tool_context,
+            filename=document_filename,
+            s3_url=s3_info['s3_url'],
+            size_kb=s3_info['size_kb'],
+            tool_name='create_word_document',
+            user_id=user_id,
+            session_id=session_id
+        )
 
-            # Get current workspace list
-            workspace_docs = doc_manager.list_s3_documents()
-            other_files_count = len([d for d in workspace_docs if d['filename'] != document_filename])
+        # Get current workspace list
+        workspace_docs = doc_manager.list_s3_documents()
+        other_files_count = len([d for d in workspace_docs if d['filename'] != document_filename])
 
-            message = f"""**Document created successfully**
+        message = f"""**Document created successfully**
 
 **File**: {document_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} document{'s' if other_files_count != 1 else ''}"""
 
-            # Include stdout output if any
-            if stdout_output.strip():
-                message += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+        # Include stdout output if any
+        if stdout_output.strip():
+            message += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
 
-            # Return success message
-            return build_success_response(message, {
-                "filename": document_filename,
-                "tool_type": "word_document",
-                "user_id": user_id,
-                "session_id": session_id
-            })
-
-        finally:
-            code_interpreter.stop()
+        # Return success message
+        return build_success_response(message, {
+            "filename": document_filename,
+            "tool_type": "word_document",
+            "user_id": user_id,
+            "session_id": session_id
+        })
 
     except Exception as e:
         logger.error(f"create_word_document failed: {e}")
@@ -640,9 +604,10 @@ if len(doc.paragraphs) > 0:
         # Initialize document manager
         doc_manager = WordManager(user_id, session_id)
 
-        # Get Code Interpreter
-        code_interpreter_id = _get_code_interpreter_id()
-        if not code_interpreter_id:
+        # Get shared CI client (persistent across calls — never stop it here)
+        from builtin_tools.code_interpreter_tool import get_ci_session
+        code_interpreter = get_ci_session(tool_context)
+        if code_interpreter is None:
             return {
                 "content": [{
                     "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
@@ -650,24 +615,19 @@ if len(doc.paragraphs) > 0:
                 "status": "error"
             }
 
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        code_interpreter = CodeInterpreter(region)
-        code_interpreter.start(identifier=code_interpreter_id)
+        # Load all workspace images from S3 to Code Interpreter
+        loaded_images = doc_manager.load_workspace_images_to_ci(code_interpreter)
+        if loaded_images:
+            logger.info(f"Loaded {len(loaded_images)} image(s) from workspace: {loaded_images}")
 
-        try:
-            # Load all workspace images from S3 to Code Interpreter
-            loaded_images = doc_manager.load_workspace_images_to_ci(code_interpreter)
-            if loaded_images:
-                logger.info(f"Loaded {len(loaded_images)} image(s) from workspace: {loaded_images}")
+        # Ensure source file is in Code Interpreter (load from S3 if needed)
+        source_ci_path = doc_manager.ensure_file_in_ci(code_interpreter, source_filename)
 
-            # Ensure source file is in Code Interpreter (load from S3 if needed)
-            source_ci_path = doc_manager.ensure_file_in_ci(code_interpreter, source_filename)
+        # Generate output path
+        output_ci_path = doc_manager.get_ci_path(output_filename)
 
-            # Generate output path
-            output_ci_path = doc_manager.get_ci_path(output_filename)
-
-            # Build modification code
-            modification_code = f"""
+        # Build modification code
+        modification_code = f"""
 from docx import Document
 from docx.shared import Pt, RGBColor, Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -683,84 +643,80 @@ doc.save('{output_ci_path}')
 print(f"Document modified and saved: {output_ci_path}")
 """
 
-            # Execute modification
-            response = code_interpreter.invoke("executeCode", {
-                "code": modification_code,
-                "language": "python",
-                "clearContext": False
-            })
+        # Execute modification
+        response = code_interpreter.invoke("executeCode", {
+            "code": modification_code,
+            "language": "python",
+            "clearContext": False
+        })
 
-            # Capture stdout and check for errors
-            stdout_output = ""
-            for event in response.get("stream", []):
-                result = event.get("result", {})
-                if result.get("isError", False):
-                    error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
-                    logger.error(f"Modification failed: {error_msg[:500]}")
-                    code_interpreter.stop()
-                    return {
-                        "content": [{
-                            "text": f"**Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your python-docx code for syntax errors or incorrect API usage."
-                        }],
-                        "status": "error"
-                    }
-                # Capture stdout
-                stdout = result.get("structuredContent", {}).get("stdout", "")
-                if stdout:
-                    stdout_output += stdout
-
-            logger.info("Document modification completed")
-
-            # Download modified document from Code Interpreter
-            file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, output_filename)
-
-            # Save to S3 with output filename
-            s3_info = doc_manager.save_to_s3(
-                output_filename,
-                file_bytes,
-                metadata={
-                    'source': 'modification',
-                    'source_filename': source_filename,
-                    'modified_at': 'timestamp'
+        # Capture stdout and check for errors
+        stdout_output = ""
+        for event in response.get("stream", []):
+            result = event.get("result", {})
+            if result.get("isError", False):
+                error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
+                logger.error(f"Modification failed: {error_msg[:500]}")
+                return {
+                    "content": [{
+                        "text": f"**Modification failed**\n\n```\n{error_msg[:1000]}\n```\n\nTip:Check your python-docx code for syntax errors or incorrect API usage."
+                    }],
+                    "status": "error"
                 }
-            )
+            # Capture stdout
+            stdout = result.get("structuredContent", {}).get("stdout", "")
+            if stdout:
+                stdout_output += stdout
 
-            # Save as artifact for Canvas display
-            _save_word_artifact(
-                tool_context=tool_context,
-                filename=output_filename,
-                s3_url=s3_info['s3_url'],
-                size_kb=s3_info['size_kb'],
-                tool_name='modify_word_document',
-                user_id=user_id,
-                session_id=session_id
-            )
+        logger.info("Document modification completed")
 
-            # Get current workspace list
-            workspace_docs = doc_manager.list_s3_documents()
-            other_files_count = len([d for d in workspace_docs if d['filename'] != output_filename])
+        # Download modified document from Code Interpreter
+        file_bytes = doc_manager.download_from_code_interpreter(code_interpreter, output_filename)
 
-            # Build success message
-            message = f"""**Document modified successfully**
+        # Save to S3 with output filename
+        s3_info = doc_manager.save_to_s3(
+            output_filename,
+            file_bytes,
+            metadata={
+                'source': 'modification',
+                'source_filename': source_filename,
+                'modified_at': 'timestamp'
+            }
+        )
+
+        # Save as artifact for Canvas display
+        _save_word_artifact(
+            tool_context=tool_context,
+            filename=output_filename,
+            s3_url=s3_info['s3_url'],
+            size_kb=s3_info['size_kb'],
+            tool_name='modify_word_document',
+            user_id=user_id,
+            session_id=session_id
+        )
+
+        # Get current workspace list
+        workspace_docs = doc_manager.list_s3_documents()
+        other_files_count = len([d for d in workspace_docs if d['filename'] != output_filename])
+
+        # Build success message
+        message = f"""**Document modified successfully**
 
 **Source**: {source_filename}
 **Saved as**: {output_filename} ({s3_info['size_kb']})
 **Other files in workspace**: {other_files_count} document{'s' if other_files_count != 1 else ''}"""
 
-            # Include stdout output if any
-            if stdout_output.strip():
-                message += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
+        # Include stdout output if any
+        if stdout_output.strip():
+            message += f"\n\n**Output:**\n```\n{stdout_output.strip()}\n```"
 
-            # Return success message with metadata for download button
-            return build_success_response(message, {
-                "filename": output_filename,
-                "tool_type": "word_document",
-                "user_id": user_id,
-                "session_id": session_id
-            })
-
-        finally:
-            code_interpreter.stop()
+        # Return success message with metadata for download button
+        return build_success_response(message, {
+            "filename": output_filename,
+            "tool_type": "word_document",
+            "user_id": user_id,
+            "session_id": session_id
+        })
 
     except FileNotFoundError as e:
         logger.error(f"Document not found: {e}")
@@ -937,19 +893,16 @@ def read_word_document(
         if not doc_info:
             raise FileNotFoundError(f"Document not found: {document_filename}")
 
-        # Get Code Interpreter
-        code_interpreter_id = _get_code_interpreter_id()
-        if not code_interpreter_id:
+        # Get shared CI session
+        from builtin_tools.code_interpreter_tool import get_ci_session
+        code_interpreter = get_ci_session(tool_context)
+        if code_interpreter is None:
             return {
                 "content": [{
                     "text": "**Code Interpreter not configured**\n\nCODE_INTERPRETER_ID not found in environment or Parameter Store."
                 }],
                 "status": "error"
             }
-
-        region = os.getenv('AWS_REGION', 'us-west-2')
-        code_interpreter = CodeInterpreter(region)
-        code_interpreter.start(identifier=code_interpreter_id)
 
         try:
             # Upload document to Code Interpreter
@@ -1012,7 +965,6 @@ print(json.dumps(result, ensure_ascii=False))
                 if result.get("isError", False):
                     error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
                     logger.error(f"Extraction failed: {error_msg[:500]}")
-                    code_interpreter.stop()
                     return {
                         "content": [{
                             "text": f"**Failed to read document**\n\n```\n{error_msg[:1000]}\n```"
@@ -1072,8 +1024,6 @@ print(json.dumps(result, ensure_ascii=False))
             if len(output_text) > max_chars:
                 output_text = output_text[:max_chars] + f"\n\n... (truncated, total {len(output_text)} characters)"
 
-            code_interpreter.stop()
-
             return build_success_response(output_text, {
                 "filename": document_filename,
                 "s3_key": doc_manager.get_s3_key(document_filename),
@@ -1085,8 +1035,8 @@ print(json.dumps(result, ensure_ascii=False))
             })
 
         except Exception as e:
-            code_interpreter.stop()
-            raise e
+            logger.error(f"CI execution error in read_word_document: {e}")
+            raise
 
     except FileNotFoundError as e:
         logger.error(f"Document not found: {e}")

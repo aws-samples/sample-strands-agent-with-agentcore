@@ -11,6 +11,7 @@ import { apiGet, apiPost } from '@/lib/api-client'
 
 import { WorkspaceDocument } from './useStreamEvents'
 import { ExtractedDataInfo } from './useCanvasHandlers'
+import { DocumentType } from '@/config/document-tools'
 
 interface UseChatProps {
   onSessionCreated?: () => void
@@ -44,6 +45,7 @@ interface UseChatReturn {
   stopGeneration: () => void
   newChat: () => Promise<void>
   compactSession: () => Promise<void>
+  truncateFromMessage: (message: Message) => Promise<void>
   toggleTool: (toolId: string) => Promise<void>
   setExclusiveTools: (toolIds: string[]) => void
   refreshTools: () => Promise<void>
@@ -213,6 +215,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const startPollingRef = useRef<((sessionId: string) => void) | null>(null)
   const stopPollingRef = useRef<(() => void) | null>(null)
 
+  // Track doc types from user file uploads so workspace is refreshed at RUN_FINISHED
+  const uploadedDocTypesRef = useRef<Set<DocumentType>>(new Set())
+
   // ==================== STREAM EVENTS HOOK ====================
   const { handleStreamEvent, resetStreamingState } = useStreamEvents({
     sessionState,
@@ -233,7 +238,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     onDiagramCreated: props?.onDiagramCreated,
     onBrowserSessionDetected: props?.onBrowserSessionDetected,
     onExtractedDataCreated: props?.onExtractedDataCreated,
-    onExcalidrawCreated: props?.onExcalidrawCreated
+    onExcalidrawCreated: props?.onExcalidrawCreated,
+    uploadedDocTypesRef
   })
 
   // ==================== CHAT API HOOK ====================
@@ -242,6 +248,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     toggleTool: apiToggleTool,
     newChat: apiNewChat,
     compactSession: apiCompactSession,
+    truncateSession: apiTruncateSession,
     summarizeForCompact: apiSummarizeForCompact,
     listSessionEvents: apiListSessionEvents,
     sendMessage: apiSendMessage,
@@ -703,11 +710,13 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const sendMessage = useCallback(async (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => {
     if (!text.trim() && (!files || files.length === 0)) return
 
+    const now = Date.now()
     const userMessage: Message = {
-      id: String(Date.now()),
+      id: String(now),
       text,
       sender: 'user',
       timestamp: new Date().toLocaleTimeString(),
+      rawTimestamp: now,
       ...(files && files.length > 0 ? {
         uploadedFiles: files.map(file => ({
           name: file.name,
@@ -739,6 +748,23 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       researchProgress: undefined
     }))
     currentToolExecutionsRef.current = []
+
+    // Track uploaded file types for workspace refresh at RUN_FINISHED
+    uploadedDocTypesRef.current.clear()
+    if (files && files.length > 0) {
+      for (const file of files) {
+        const mime = file.type || ''
+        if (mime.startsWith('image/')) {
+          uploadedDocTypesRef.current.add('image')
+        } else if (mime.includes('wordprocessingml') || mime === 'application/msword') {
+          uploadedDocTypesRef.current.add('word')
+        } else if (mime.includes('spreadsheetml') || mime === 'application/vnd.ms-excel') {
+          uploadedDocTypesRef.current.add('excel')
+        } else if (mime.includes('presentationml') || mime === 'application/vnd.ms-powerpoint') {
+          uploadedDocTypesRef.current.add('powerpoint')
+        }
+      }
+    }
 
     const messageToSend = text.trim() || (files && files.length > 0 ? "Please analyze the uploaded file(s)." : "")
 
@@ -851,6 +877,41 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
     }
   }, [sessionId, messages, apiSummarizeForCompact, apiListSessionEvents, apiCompactSession, setUIState, sendMessage, loadSessionWithPreferences])
+
+  // Truncate chat history from a specific user message (inclusive) onward
+  const truncateFromMessage = useCallback(async (message: Message): Promise<void> => {
+    const currentSessionId = sessionId
+    if (!currentSessionId) return
+
+    // History messages have their eventId as message.id (non-numeric string).
+    // Newly sent messages in the current session have String(Date.now()) as id (numeric).
+    const isHistoryMessage = isNaN(Number(message.id))
+    const params = isHistoryMessage
+      ? { fromEventId: message.id }
+      : { fromTimestamp: message.rawTimestamp }
+
+    if (!isHistoryMessage && !message.rawTimestamp) {
+      console.warn('[truncate] Missing rawTimestamp for non-history message, aborting')
+      return
+    }
+
+    console.log(`[truncate] Truncating from message ${message.id}`, params)
+
+    // Optimistically remove the message and everything after it from the UI
+    setMessages(prev => {
+      const idx = prev.findIndex(m => m.id === message.id)
+      return idx >= 0 ? prev.slice(0, idx) : prev
+    })
+
+    try {
+      await apiTruncateSession(params)
+      console.log('[truncate] Backend truncation complete')
+    } catch (error) {
+      console.error('[truncate] Error truncating session:', error)
+      await loadSessionWithPreferences(currentSessionId)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, apiTruncateSession, setMessages, loadSessionWithPreferences])
 
   // On session load, check if there is a pending compact to resume (survives browser refresh)
   useEffect(() => {
@@ -1197,6 +1258,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     stopGeneration,
     newChat,
     compactSession,
+    truncateFromMessage,
     toggleTool,
     setExclusiveTools,
     refreshTools,

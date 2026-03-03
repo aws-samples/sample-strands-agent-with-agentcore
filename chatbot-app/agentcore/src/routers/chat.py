@@ -417,6 +417,7 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
                                 image_content_parts.append({
                                     "mediaType": mime_type,
                                     "data": data,
+                                    "name": filename or "",
                                 })
                             else:
                                 doc_content_parts.append({
@@ -485,6 +486,44 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         # Parse message for special cases (HITL interrupt response, compose confirmation)
         message_content, special_params = _parse_message(message, request_type)
 
+        # Save uploaded files (images + documents) to S3 workspace
+        if image_content_parts or doc_content_parts:
+            import base64 as _base64_store
+            uploaded_files_for_storage = []
+            for idx, img in enumerate(image_content_parts):
+                try:
+                    mime = img.get('mediaType', 'image/png')
+                    ext = mime.split('/')[-1] if '/' in mime else 'png'
+                    if ext == 'jpeg':
+                        ext = 'jpg'
+                    fname = img.get('name') or ''
+                    if not fname:
+                        fname = f"uploaded_image_{idx+1}.{ext}"
+                    elif '.' not in fname:
+                        fname = f"{fname}.{ext}"
+                    uploaded_files_for_storage.append({
+                        'filename': fname,
+                        'bytes': _base64_store.b64decode(img.get('data', '')),
+                        'content_type': mime,
+                    })
+                except Exception:
+                    pass
+            for doc in doc_content_parts:
+                try:
+                    uploaded_files_for_storage.append({
+                        'filename': doc.get('name', 'document'),
+                        'bytes': _base64_store.b64decode(doc.get('data', '')),
+                        'content_type': doc.get('mediaType', 'application/octet-stream'),
+                    })
+                except Exception:
+                    pass
+            if uploaded_files_for_storage:
+                try:
+                    from agent.processor.file_processor import auto_store_files
+                    auto_store_files(uploaded_files_for_storage, user_id, session_id)
+                except Exception as e:
+                    logger.warning(f"[AG-UI] Failed to store uploaded files to workspace: {e}")
+
         # Build multimodal message when inline image/document parts were found
         agui_message = message_content
         if not isinstance(message_content, list) and (image_content_parts or doc_content_parts):
@@ -499,16 +538,19 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
                     fmt = "jpeg"
                 raw_bytes = _base64.b64decode(img["data"])
                 content_list.append({"image": {"format": fmt, "source": {"bytes": raw_bytes}}})
+            fmt_map = {"vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+                       "vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+                       "vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
+                       "msword": "doc", "plain": "txt", "html": "html"}
+            _BEDROCK_DOC_MAX_BYTES = 4_500_000
             for doc in doc_content_parts:
                 mime = doc["mediaType"]
                 fmt = mime.split("/")[-1] if "/" in mime else "pdf"
-                # Normalize common MIME subtypes to Bedrock-accepted format names
-                fmt_map = {"vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
-                           "vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
-                           "vnd.openxmlformats-officedocument.presentationml.presentation": "pptx",
-                           "msword": "doc", "plain": "txt", "html": "html"}
                 fmt = fmt_map.get(fmt, fmt)
                 raw_bytes = _base64.b64decode(doc["data"])
+                if len(raw_bytes) > _BEDROCK_DOC_MAX_BYTES:
+                    logger.warning(f"[AG-UI] Document too large for ContentBlock ({len(raw_bytes)} bytes), skipping: {doc.get('name', 'document')}")
+                    continue
                 name = doc.get("name", "document")
                 name_without_ext = name.rsplit(".", 1)[0] if "." in name else name
                 content_list.append({"document": {"format": fmt, "name": name_without_ext, "source": {"bytes": raw_bytes}}})

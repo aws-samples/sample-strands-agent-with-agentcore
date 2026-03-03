@@ -265,9 +265,9 @@ const components: Partial<Components> = {
 };
 
 const getRemarkPlugins = (preserveLineBreaks?: boolean) => {
-  const plugins = [remarkGfm];
+  const plugins: any[] = [[remarkGfm, { singleTilde: false }]];
   if (preserveLineBreaks) {
-    plugins.push(remarkBreaks as any);
+    plugins.push(remarkBreaks);
   }
   return plugins;
 };

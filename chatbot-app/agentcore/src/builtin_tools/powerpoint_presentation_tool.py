@@ -14,13 +14,11 @@ from typing import Dict, Any
 
 from strands import tool, ToolContext
 from skill import register_skill
-from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
 from workspace import PowerPointManager
 
 from .lib.ppt_utils import (
     validate_presentation_name,
     sanitize_presentation_name,
-    get_code_interpreter_id,
     get_user_session_ids,
     save_ppt_artifact,
     get_file_compatibility_error,
@@ -35,7 +33,6 @@ logger = logging.getLogger(__name__)
 # Backward compatibility aliases
 _validate_presentation_name = validate_presentation_name
 _sanitize_presentation_name_for_bedrock = sanitize_presentation_name
-_get_code_interpreter_id = get_code_interpreter_id
 _get_user_session_ids = get_user_session_ids
 _save_ppt_artifact = save_ppt_artifact
 _get_file_compatibility_error_response = get_file_compatibility_error
@@ -733,22 +730,16 @@ def create_presentation(
         except FileNotFoundError:
             pass
 
-        code_interpreter_id = _get_code_interpreter_id()
-        if not code_interpreter_id:
+        from builtin_tools.code_interpreter_tool import get_ci_session
+        ci = get_ci_session(tool_context)
+        if ci is None:
             return {"content": [{"text": "**Code Interpreter not configured**"}], "status": "error"}
 
-        region = os.getenv("AWS_REGION", "us-west-2")
-        ci = CodeInterpreter(region)
-        ci.start(identifier=code_interpreter_id)
+        # Upload workspace images so slide code can reference them by filename
+        ppt_manager.load_workspace_images_to_ci(ci)
 
-        try:
-            # Upload workspace images so slide code can reference them by filename
-            ppt_manager.load_workspace_images_to_ci(ci)
-
-            effective_slides = slides or []
-            output_bytes = run_pptxgenjs(effective_slides, output_filename, ci)
-        finally:
-            ci.stop()
+        effective_slides = slides or []
+        output_bytes = run_pptxgenjs(effective_slides, output_filename, ci)
 
         total_slides = len(effective_slides)
         success_msg = (

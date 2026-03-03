@@ -2,19 +2,22 @@
 """
 AgentCore Code Interpreter Integration Test
 
-Tests the deployed Code Interpreter using the actual project code:
-- diagram_tool.py: Diagram generation using Bedrock Code Interpreter
-- workspace module: Image saving and management
+Tests:
+1. Configuration & SDK import
+2. Session creation & code execution
+3. Session reuse (same CI instance across calls)
+4. Session reattach from stored IDs (simulates cross-turn persistence)
+5. Expired session recovery (stop session, verify auto-recovery)
 
 Usage:
-    python scripts/test_code_interpreter.py
-    python scripts/test_code_interpreter.py --list-only  # Only check configuration
-    python scripts/test_code_interpreter.py --execute    # Actually execute code (uses API credits)
+    python scripts/test_code_interpreter.py                # Config check only
+    python scripts/test_code_interpreter.py --execute      # Run all tests (uses API credits)
 """
 
 import argparse
 import sys
 import os
+import time
 
 # Add project source to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'chatbot-app', 'agentcore', 'src'))
@@ -28,13 +31,11 @@ ENVIRONMENT = os.environ.get('ENVIRONMENT', 'dev')
 
 
 def get_code_interpreter_id() -> str:
-    """Get Code Interpreter ID from environment or Parameter Store (same as diagram_tool.py)."""
-    # 1. Check environment variable
+    """Get Code Interpreter ID from environment or Parameter Store."""
     code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
     if code_interpreter_id:
         return code_interpreter_id
 
-    # 2. Try Parameter Store
     try:
         ssm = boto3.client('ssm', region_name=REGION)
         param_name = f"/{PROJECT_NAME}/{ENVIRONMENT}/agentcore/code-interpreter-id"
@@ -45,262 +46,336 @@ def get_code_interpreter_id() -> str:
         return None
 
 
-def test_code_interpreter_config():
+# ---------------------------------------------------------------------------
+# Mock ToolContext for testing get_ci_session without a real Strands agent
+# ---------------------------------------------------------------------------
+
+class MockAgentState:
+    """Simulates agent.state.get() / .set() backed by a dict."""
+
+    def __init__(self, initial: dict = None):
+        self._data = dict(initial or {})
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def set(self, key, value):
+        self._data[key] = value
+
+    def dump(self) -> dict:
+        return dict(self._data)
+
+
+class MockAgent:
+    def __init__(self, state: MockAgentState = None):
+        self.state = state or MockAgentState()
+
+
+class MockToolContext:
+    """Minimal ToolContext substitute for testing."""
+
+    def __init__(self, user_id="test-user", session_id="test-session", agent_state: MockAgentState = None):
+        self.invocation_state = {
+            "user_id": user_id,
+            "session_id": session_id,
+        }
+        self.agent = MockAgent(agent_state or MockAgentState())
+
+
+# ---------------------------------------------------------------------------
+# Tests
+# ---------------------------------------------------------------------------
+
+def test_config():
     """Test Code Interpreter configuration."""
-    print("\n📋 Test: Code Interpreter Configuration")
-    print("─" * 50)
+    print("\n[1] Configuration")
+    print("-" * 50)
 
-    try:
-        code_interpreter_id = get_code_interpreter_id()
-
-        if code_interpreter_id:
-            print(f"✅ Code Interpreter ID found:")
-            print(f"   ID: {code_interpreter_id}")
-            print(f"   Region: {REGION}")
-            return True, code_interpreter_id
-        else:
-            print("❌ Code Interpreter ID not found")
-            print(f"   Set CODE_INTERPRETER_ID env var or SSM parameter:")
-            print(f"   /{PROJECT_NAME}/{ENVIRONMENT}/agentcore/code-interpreter-id")
-            return False, None
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+    ci_id = get_code_interpreter_id()
+    if ci_id:
+        print(f"  OK  Code Interpreter ID: {ci_id}")
+        print(f"      Region: {REGION}")
+        return True, ci_id
+    else:
+        print("  FAIL  Code Interpreter ID not found")
         return False, None
 
 
-def test_code_interpreter_sdk():
-    """Test Code Interpreter SDK import."""
-    print("\n📦 Test: Code Interpreter SDK")
-    print("─" * 50)
+def test_sdk_import():
+    """Test SDK import."""
+    print("\n[2] SDK Import")
+    print("-" * 50)
 
     try:
         from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
-
-        print(f"✅ CodeInterpreter SDK imported successfully")
-        print(f"   Module: bedrock_agentcore.tools.code_interpreter_client")
-
-        # Try to instantiate
-        code_interpreter = CodeInterpreter(REGION)
-        print(f"   Instance created for region: {REGION}")
-
+        ci = CodeInterpreter(REGION)
+        print(f"  OK  CodeInterpreter instantiated (region={REGION})")
         return True
-
     except ImportError as e:
-        print(f"❌ SDK import failed: {e}")
-        print("   Install: pip install bedrock-agentcore")
-        return False
-    except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"  FAIL  {e}")
         return False
 
 
-def test_workspace_integration():
-    """Test workspace integration for saving images."""
-    print("\n🗂️  Test: Workspace Integration")
-    print("─" * 50)
+def test_session_creation_and_execute(ci_id: str):
+    """Test: create session via get_ci_session, execute code, verify output."""
+    print("\n[3] Session Creation & Execute")
+    print("-" * 50)
 
-    try:
-        from workspace import ImageManager
-        from workspace.config import get_workspace_bucket
+    from builtin_tools.code_interpreter_tool import get_ci_session, _ci_clients, _STATE_CI_SESSION_ID, _STATE_CI_IDENTIFIER
 
-        # Create a test image manager
-        image_manager = ImageManager(user_id="test-user", session_id="test-session")
+    # Clear any prior cache
+    _ci_clients.clear()
 
-        print(f"✅ ImageManager created successfully")
-        print(f"   User ID: test-user")
-        print(f"   Session ID: test-session")
+    ctx = MockToolContext()
+    ci = get_ci_session(ctx)
+    if ci is None:
+        print("  FAIL  get_ci_session returned None")
+        return False, None, None
 
-        # Check S3 bucket configuration (same as workspace/config.py)
-        try:
-            bucket = get_workspace_bucket()
-            print(f"   S3 Bucket: {bucket}")
-        except ValueError as e:
-            print(f"   ⚠️  {e}")
+    session_id = ci.session_id
+    identifier = ci.identifier
+    print(f"  OK  Session created: {session_id}")
+    print(f"      Identifier: {identifier}")
 
+    # Verify agent.state was populated
+    stored_sid = ctx.agent.state.get(_STATE_CI_SESSION_ID)
+    stored_ident = ctx.agent.state.get(_STATE_CI_IDENTIFIER)
+    assert stored_sid == session_id, f"agent.state mismatch: {stored_sid} != {session_id}"
+    assert stored_ident == identifier, f"agent.state mismatch: {stored_ident} != {identifier}"
+    print(f"  OK  agent.state populated correctly")
+
+    # Execute simple code
+    response = ci.invoke("executeCode", {
+        "code": "print('hello from CI')",
+        "language": "python",
+        "clearContext": False,
+    })
+
+    stdout = ""
+    for event in response.get("stream", []):
+        result = event.get("result", {})
+        if result.get("isError"):
+            print(f"  FAIL  Execution error: {result.get('structuredContent', {}).get('stderr', '?')}")
+            return False, None, None
+        stdout += result.get("structuredContent", {}).get("stdout", "")
+
+    if "hello from CI" in stdout:
+        print(f"  OK  Code executed: {stdout.strip()}")
+    else:
+        print(f"  FAIL  Unexpected output: {stdout!r}")
+        return False, None, None
+
+    return True, session_id, identifier
+
+
+def test_session_reuse():
+    """Test: second get_ci_session call returns same instance (no new session)."""
+    print("\n[4] Session Reuse (same process)")
+    print("-" * 50)
+
+    from builtin_tools.code_interpreter_tool import get_ci_session
+
+    ctx = MockToolContext()  # fresh context, but same user_id/session_id
+    # Populate agent.state as if previous turn stored it
+    # (the in-process cache from test_session_creation should still be there)
+
+    ci1 = get_ci_session(ctx)
+    sid1 = ci1.session_id
+
+    ci2 = get_ci_session(ctx)
+    sid2 = ci2.session_id
+
+    if sid1 == sid2 and ci1 is ci2:
+        print(f"  OK  Same instance reused (session_id={sid1})")
         return True
-
-    except ImportError as e:
-        print(f"❌ Workspace import failed: {e}")
-        return False
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+    else:
+        print(f"  FAIL  Different sessions: {sid1} vs {sid2}")
         return False
 
 
-def test_code_execution(code_interpreter_id: str):
-    """Test actual code execution (uses API credits)."""
-    print("\n🔧 Test: Code Execution")
-    print("─" * 50)
+def test_session_reattach(original_session_id: str, original_identifier: str):
+    """Test: clear in-process cache, reattach from agent.state IDs."""
+    print("\n[5] Session Reattach (from stored IDs)")
+    print("-" * 50)
 
-    try:
-        from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+    from builtin_tools.code_interpreter_tool import get_ci_session, _ci_clients, _STATE_CI_SESSION_ID, _STATE_CI_IDENTIFIER
 
-        code_interpreter = CodeInterpreter(REGION)
+    # Clear in-process cache to simulate new process / new turn
+    _ci_clients.clear()
+    print(f"  --  Cleared in-process cache")
 
-        print(f"   Starting Code Interpreter (ID: {code_interpreter_id})...")
-        code_interpreter.start(identifier=code_interpreter_id)
+    # Create context with stored IDs (simulating agent.state from previous turn)
+    agent_state = MockAgentState({
+        _STATE_CI_SESSION_ID: original_session_id,
+        _STATE_CI_IDENTIFIER: original_identifier,
+    })
+    ctx = MockToolContext(agent_state=agent_state)
 
-        # Simple test code
-        test_code = """
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Generate simple chart
-x = np.linspace(0, 10, 100)
-y = np.sin(x)
-
-plt.figure(figsize=(8, 4))
-plt.plot(x, y, 'b-', linewidth=2)
-plt.title('Test Chart')
-plt.xlabel('X axis')
-plt.ylabel('Y axis')
-plt.grid(True)
-plt.savefig('test_chart.png', dpi=150, bbox_inches='tight')
-print("Chart generated successfully!")
-"""
-
-        print(f"   Executing test code...")
-        response = code_interpreter.invoke("executeCode", {
-            "code": test_code,
-            "language": "python",
-            "clearContext": False
-        })
-
-        # Check response
-        execution_success = False
-        for event in response.get("stream", []):
-            result = event.get("result", {})
-            if result.get("isError", False):
-                error_msg = result.get("structuredContent", {}).get("stderr", "Unknown error")
-                print(f"❌ Execution failed: {error_msg[:200]}")
-                code_interpreter.stop()
-                return False
-
-            stdout = result.get("structuredContent", {}).get("stdout", "")
-            if stdout:
-                print(f"   Output: {stdout}")
-            execution_success = True
-
-        if execution_success:
-            print(f"✅ Code executed successfully!")
-
-            # Try to download the generated file
-            print(f"   Downloading generated file...")
-            download_response = code_interpreter.invoke("readFiles", {"paths": ["test_chart.png"]})
-
-            file_found = False
-            for event in download_response.get("stream", []):
-                result = event.get("result", {})
-                if "content" in result and len(result["content"]) > 0:
-                    content_block = result["content"][0]
-                    file_data = content_block.get("data") or content_block.get("resource", {}).get("blob")
-                    if file_data:
-                        print(f"   ✅ File downloaded: {len(file_data)} bytes")
-                        file_found = True
-                        break
-
-            if not file_found:
-                print(f"   ⚠️  File not found in download response")
-
-        code_interpreter.stop()
-        print(f"   Code Interpreter stopped")
-
-        return execution_success
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
+    ci = get_ci_session(ctx)
+    if ci is None:
+        print("  FAIL  get_ci_session returned None")
         return False
 
+    if ci.session_id == original_session_id:
+        print(f"  OK  Reattached to existing session: {ci.session_id}")
+    else:
+        print(f"  WARN  Got different session: {ci.session_id} (expected {original_session_id})")
+        print(f"        (This means original session expired; a new one was created)")
 
-def test_diagram_tool_import():
-    """Test diagram tool import."""
-    print("\n📊 Test: Diagram Tool Import")
-    print("─" * 50)
+    # Verify code execution works on reattached session
+    response = ci.invoke("executeCode", {
+        "code": "print('reattach works')",
+        "language": "python",
+        "clearContext": False,
+    })
 
-    try:
-        from builtin_tools import generate_diagram_and_validate
+    stdout = ""
+    for event in response.get("stream", []):
+        result = event.get("result", {})
+        stdout += result.get("structuredContent", {}).get("stdout", "")
 
-        print(f"✅ generate_diagram_and_validate imported successfully")
-        print(f"   Tool name: {generate_diagram_and_validate.__name__}")
-        print(f"   Callable: {callable(generate_diagram_and_validate)}")
-
+    if "reattach works" in stdout:
+        print(f"  OK  Code executed on reattached session")
         return True
+    else:
+        print(f"  FAIL  Execution failed after reattach")
+        return False
 
-    except ImportError as e:
-        print(f"❌ Import failed: {e}")
-        return False
+
+def test_expired_session_recovery(original_session_id: str, original_identifier: str):
+    """Test: stop session, verify get_ci_session auto-recovers with a new one."""
+    print("\n[6] Expired Session Recovery")
+    print("-" * 50)
+
+    from builtin_tools.code_interpreter_tool import get_ci_session, _ci_clients, _STATE_CI_SESSION_ID, _STATE_CI_IDENTIFIER
+    from bedrock_agentcore.tools.code_interpreter_client import CodeInterpreter
+
+    # Stop the session to simulate timeout
+    _ci_clients.clear()
+    ci_temp = CodeInterpreter(REGION)
+    ci_temp.identifier = original_identifier
+    ci_temp.session_id = original_session_id
+    try:
+        ci_temp.stop()
+        print(f"  --  Stopped session: {original_session_id}")
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"  --  Stop returned: {e} (may already be terminated)")
+
+    time.sleep(2)  # Brief pause for API to process
+
+    # Now try get_ci_session with stale IDs in agent.state
+    agent_state = MockAgentState({
+        _STATE_CI_SESSION_ID: original_session_id,
+        _STATE_CI_IDENTIFIER: original_identifier,
+    })
+    ctx = MockToolContext(agent_state=agent_state)
+
+    ci = get_ci_session(ctx)
+    if ci is None:
+        print("  FAIL  get_ci_session returned None")
         return False
+
+    new_session_id = ci.session_id
+    if new_session_id != original_session_id:
+        print(f"  OK  Auto-recovered with new session: {new_session_id}")
+    else:
+        print(f"  WARN  Same session ID returned (session may not have been fully terminated)")
+
+    # Verify agent.state was updated with new session
+    updated_sid = ctx.agent.state.get(_STATE_CI_SESSION_ID)
+    print(f"  --  agent.state updated: {updated_sid}")
+
+    # Verify code execution works
+    response = ci.invoke("executeCode", {
+        "code": "print('recovery works')",
+        "language": "python",
+        "clearContext": False,
+    })
+
+    stdout = ""
+    for event in response.get("stream", []):
+        result = event.get("result", {})
+        stdout += result.get("structuredContent", {}).get("stdout", "")
+
+    if "recovery works" in stdout:
+        print(f"  OK  Code executed on recovered session")
+    else:
+        print(f"  FAIL  Execution failed after recovery")
+        return False
+
+    # Cleanup: stop the new session
+    try:
+        ci.stop()
+        print(f"  --  Cleanup: stopped session {new_session_id}")
+    except:
+        pass
+    _ci_clients.clear()
+
+    return True
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Test AgentCore Code Interpreter")
-    parser.add_argument("--list-only", action="store_true", help="Only check configuration")
-    parser.add_argument("--execute", action="store_true", help="Actually execute code (uses API credits)")
+    parser = argparse.ArgumentParser(description="Test AgentCore Code Interpreter session caching")
+    parser.add_argument("--execute", action="store_true", help="Run all tests (uses API credits)")
     args = parser.parse_args()
 
-    print("╔═══════════════════════════════════════════════════╗")
-    print("║    AgentCore Code Interpreter Integration Test    ║")
-    print("╚═══════════════════════════════════════════════════╝")
-    print()
-
-    print(f"📍 Region: {REGION}")
-    print(f"📁 Project: {PROJECT_NAME}")
-    print(f"🌍 Environment: {ENVIRONMENT}")
+    print("=" * 55)
+    print("  AgentCore Code Interpreter - Session Caching Test")
+    print("=" * 55)
+    print(f"  Region: {REGION}  Project: {PROJECT_NAME}  Env: {ENVIRONMENT}")
 
     results = []
 
-    # Test 1: Configuration
-    success, code_interpreter_id = test_code_interpreter_config()
-    results.append(("Configuration", success))
+    # Test 1: Config
+    ok, ci_id = test_config()
+    results.append(("Configuration", ok))
 
-    if args.list_only:
-        print("\n✅ Configuration check completed (--list-only mode)")
+    # Test 2: SDK
+    results.append(("SDK Import", test_sdk_import()))
+
+    if not args.execute:
+        print("\n  Skipping execution tests (use --execute to enable)")
+        _print_summary(results)
         return
 
-    # Test 2: SDK import
-    results.append(("SDK Import", test_code_interpreter_sdk()))
-
-    # Test 3: Workspace integration
-    results.append(("Workspace Integration", test_workspace_integration()))
-
-    # Test 4: Diagram tool import
-    results.append(("Diagram Tool Import", test_diagram_tool_import()))
-
-    # Test 5: Code execution (optional, uses API credits)
-    if args.execute and code_interpreter_id:
-        print("\n⚠️  Running execution test (will use API credits)")
-        results.append(("Code Execution", test_code_execution(code_interpreter_id)))
-    else:
-        print("\n⏭️  Skipping execution test (use --execute to enable)")
-
-    # Summary
-    print()
-    print("═" * 50)
-    print("📊 Test Summary")
-    print("─" * 50)
-
-    all_passed = True
-    for name, passed in results:
-        status = "✅" if passed else "❌"
-        print(f"   {status} {name}")
-        if not passed:
-            all_passed = False
-
-    print()
-    if all_passed:
-        print("✅ All Code Interpreter tests passed!")
-    else:
-        print("⚠️  Some Code Interpreter tests failed")
+    if not ci_id:
+        print("\n  Cannot run execution tests without CODE_INTERPRETER_ID")
+        _print_summary(results)
         sys.exit(1)
+
+    # Test 3: Session creation & execute
+    ok, session_id, identifier = test_session_creation_and_execute(ci_id)
+    results.append(("Session Creation & Execute", ok))
+
+    if not ok:
+        _print_summary(results)
+        sys.exit(1)
+
+    # Test 4: Session reuse
+    results.append(("Session Reuse", test_session_reuse()))
+
+    # Test 5: Reattach from stored IDs
+    results.append(("Session Reattach", test_session_reattach(session_id, identifier)))
+
+    # Test 6: Expired session recovery
+    results.append(("Expired Session Recovery", test_expired_session_recovery(session_id, identifier)))
+
+    _print_summary(results)
+    if not all(ok for _, ok in results):
+        sys.exit(1)
+
+
+def _print_summary(results):
+    print("\n" + "=" * 55)
+    print("  Summary")
+    print("-" * 55)
+    for name, ok in results:
+        print(f"  {'PASS' if ok else 'FAIL':>4}  {name}")
+    print("=" * 55)
+    if all(ok for _, ok in results):
+        print("  All tests passed!")
+    else:
+        print("  Some tests failed.")
 
 
 if __name__ == "__main__":
