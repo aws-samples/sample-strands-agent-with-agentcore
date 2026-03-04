@@ -189,6 +189,10 @@ async def invocations(http_request: Request):
     action = state.get("action")
     thread_id = body.get("thread_id", "")
 
+    # Debug: log incoming action for stop signal troubleshooting
+    if action:
+        logger.info(f"[Invocation] action={action}, thread_id={thread_id}, state_keys={list(state.keys())}")
+
     # Warmup
     if action == "warmup":
         user_id = state.get("user_id", "anonymous")

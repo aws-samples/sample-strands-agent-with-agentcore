@@ -171,37 +171,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     initBackend()
   }, [])
 
-  // ==================== LEGACY EVENT HANDLER ====================
-  const handleLegacyEvent = useCallback((data: any) => {
-    switch (data.type) {
-      case 'init':
-      case 'thinking':
-        setUIState(prev => ({ ...prev, isTyping: true }))
-        break
-      case 'complete':
-        setUIState(prev => ({ ...prev, isTyping: false }))
-        if (data.message) {
-          setMessages(prev => [...prev, {
-            id: String(Date.now()),
-            text: data.message,
-            sender: 'bot',
-            timestamp: new Date().toLocaleTimeString(),
-            images: data.images || []
-          }])
-        }
-        break
-      case 'error':
-        setUIState(prev => ({ ...prev, isTyping: false }))
-        setMessages(prev => [...prev, {
-          id: String(Date.now()),
-          text: data.message || 'An error occurred',
-          sender: 'bot',
-          timestamp: new Date().toLocaleTimeString()
-        }])
-        break
-    }
-  }, [])
-
   // ==================== SESSION CREATED CALLBACK ====================
   const handleSessionCreated = useCallback(() => {
     if (typeof (window as any).__refreshSessionList === 'function') {
@@ -264,7 +233,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     availableTools,
     setAvailableTools,
     handleStreamEvent,
-    handleLegacyEvent,
     gatewayToolIds,
     sessionId,
     setSessionId,

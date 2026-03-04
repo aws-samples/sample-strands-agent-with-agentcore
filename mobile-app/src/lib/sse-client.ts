@@ -95,10 +95,7 @@ export function connectSSEStream(opts: SSEClientOptions): SSEClientHandle {
       let lineBuffer = '';
 
       xhr.open('POST', `${API_BASE_URL}${path}`);
-      // Skip Content-Type for FormData — XHR sets the correct multipart boundary automatically
-      if (!(body instanceof FormData)) {
-        xhr.setRequestHeader('Content-Type', 'application/json');
-      }
+      xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.setRequestHeader('Accept', 'text/event-stream');
       if (token) {
         xhr.setRequestHeader('Authorization', `Bearer ${token}`);
@@ -169,7 +166,7 @@ export function connectSSEStream(opts: SSEClientOptions): SSEClientHandle {
         reject(new Error(`SSE ${path} → network error`));
       };
 
-      xhr.send(body instanceof FormData ? body : JSON.stringify(body));
+      xhr.send(JSON.stringify(body));
     });
   }
 

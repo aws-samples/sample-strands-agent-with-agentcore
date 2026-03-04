@@ -136,116 +136,41 @@ export const maxDuration = 1800 // 30 minutes for long-running agent tasks (self
 
 export async function POST(request: NextRequest) {
   try {
-    // Check if request is FormData (file upload) or JSON (text only)
-    const contentType = request.headers.get('content-type') || ''
-    const isFormData = contentType.includes('multipart/form-data')
+    // Parse JSON as AG-UI RunAgentInput: { threadId, runId, messages, tools, state }
+    const body = await request.json()
 
-    let message: string
-    let model_id: string | undefined
-    let temperature: number | undefined
-    let enabled_tools: string[] | undefined
-    let files: File[] | undefined
-    let request_type: string | undefined
-    let selected_artifact_id: string | undefined
-    let system_prompt: string | undefined
-    let threadIdFromBody: string | undefined
-    let runIdFromBody: string | undefined
-    // Holds the original messages array from AG-UI JSON body (may contain multimodal content)
-    let aguiMessages: Array<{ id?: string; role?: string; content?: unknown }> | undefined
+    const threadIdFromBody: string | undefined = body.threadId
+    const runIdFromBody: string | undefined = body.runId
+    const aguiMessages: Array<{ id?: string; role?: string; content?: unknown }> = body.messages ?? []
 
-    if (isFormData) {
-      // Parse FormData for file uploads
-      const formData = await request.formData()
-      message = formData.get('message') as string
-      model_id = formData.get('model_id') as string | undefined
-      const temperatureStr = formData.get('temperature') as string | null
-      if (temperatureStr) {
-        temperature = parseFloat(temperatureStr)
-      }
+    // Per-request config lives in body.state (replaces former top-level fields)
+    const state = body.state ?? {}
+    let model_id: string | undefined = state.model_id
+    let temperature: number | undefined = state.temperature
+    let request_type: string | undefined = state.request_type
+    let enabled_tools: string[] | undefined = state.enabled_tools
+    let selected_artifact_id: string | undefined = state.selected_artifact_id
+    let system_prompt: string | undefined = state.system_prompt
 
-      const enabledToolsJson = formData.get('enabled_tools') as string | null
-      if (enabledToolsJson) {
-        enabled_tools = JSON.parse(enabledToolsJson)
-      }
-
-      request_type = formData.get('request_type') as string | undefined
-      system_prompt = formData.get('system_prompt') as string | undefined
-
-      // Extract and convert files to AgentCore format
-      const uploadedFiles: File[] = []
-      for (const [key, value] of formData.entries()) {
-        if (key === 'files' && value instanceof File) {
-          uploadedFiles.push(value)
-        }
-      }
-
-      // Convert File objects to AgentCore format (with image resize if needed)
-      if (uploadedFiles.length > 0) {
-        files = await Promise.all(
-          uploadedFiles.map(async (file) => {
-            const arrayBuffer = await file.arrayBuffer()
-            let buffer = Buffer.from(arrayBuffer)
-            const contentType = file.type || 'application/octet-stream'
-
-            // Resize image if it exceeds 5MB
-            const { buffer: processedBuffer, resized } = await resizeImageIfNeeded(
-              buffer,
-              contentType,
-              file.name
-            )
-
-            if (resized) {
-              buffer = processedBuffer
-            }
-
-            const base64 = buffer.toString('base64')
-
-            return {
-              filename: file.name,
-              content_type: contentType,
-              bytes: base64
-            } as any // Type assertion to avoid AgentCore File type conflict
-          })
-        )
-        console.log(`[BFF] Converted ${files.length} file(s) to AgentCore format`)
-      }
-    } else {
-      // Parse JSON as AG-UI RunAgentInput: { threadId, runId, messages, tools, state }
-      const body = await request.json()
-
-      threadIdFromBody = body.threadId
-      runIdFromBody = body.runId
-      aguiMessages = body.messages ?? []
-
-      // Per-request config lives in body.state (replaces former top-level fields)
-      const state = body.state ?? {}
-      model_id = state.model_id
-      temperature = state.temperature
-      request_type = state.request_type
-      enabled_tools = state.enabled_tools
-      selected_artifact_id = state.selected_artifact_id
-      system_prompt = state.system_prompt
-
-      // If enabled_tools is not in state, fall back to extracting names from AG-UI body.tools
-      if (!enabled_tools && Array.isArray(body.tools)) {
-        enabled_tools = body.tools.map((t: { name: string }) => t.name)
-      }
-
-      // Extract user message from the last element of body.messages.
-      // content may be a string (text-only) or an InputContentPart[] (multimodal).
-      const bodyMessages: Array<{ id?: string; role?: string; content?: unknown }> = body.messages ?? []
-      const lastMsg = bodyMessages[bodyMessages.length - 1]
-      const lastContent = lastMsg?.content
-      if (Array.isArray(lastContent)) {
-        const textPart = lastContent.find((p: any) => p.type === 'text')
-        message = (textPart as any)?.text ?? ''
-      } else {
-        message = (lastContent as string) ?? ''
-      }
+    // If enabled_tools is not in state, fall back to extracting names from AG-UI body.tools
+    if (!enabled_tools && Array.isArray(body.tools)) {
+      enabled_tools = body.tools.map((t: { name: string }) => t.name)
     }
 
-    // Message is required unless it's an AG-UI JSON request with attached files (images/docs only).
-    if (!message && (isFormData || !threadIdFromBody)) {
+    // Extract user message from the last element of body.messages.
+    // content may be a string (text-only) or an InputContentPart[] (multimodal).
+    let message: string
+    const lastMsg = aguiMessages[aguiMessages.length - 1]
+    const lastContent = lastMsg?.content
+    if (Array.isArray(lastContent)) {
+      const textPart = lastContent.find((p: any) => p.type === 'text')
+      message = (textPart as any)?.text ?? ''
+    } else {
+      message = (lastContent as string) ?? ''
+    }
+
+    // Message is required unless the request contains multimodal content (images/docs only).
+    if (!message && !threadIdFromBody) {
       return new Response(
         JSON.stringify({ error: 'Message is required' }),
         { status: 400, headers: { 'Content-Type': 'application/json' } }
@@ -528,13 +453,12 @@ export async function POST(request: NextRequest) {
           }
 
           // Process inline images in AG-UI messages (resize if needed)
-          if (threadIdFromBody && aguiMessages && aguiMessages.length > 0) {
+          if (aguiMessages.length > 0) {
             await processAguiMessagesImages(aguiMessages)
           }
 
           // Build AG-UI body with server-side config enriched into state
           const enrichedState: Record<string, any> = {
-            ...((aguiMessages ? {} : {}) as Record<string, any>),
             user_id: userId,
             model_id: modelConfig.model_id,
             temperature: modelConfig.temperature,
@@ -549,34 +473,10 @@ export async function POST(request: NextRequest) {
           // enabled_tools as AG-UI tools array
           const aguiTools = enabledToolsList.map(id => ({ name: id, description: '' }))
 
-          // Build messages: use AG-UI messages if available, otherwise construct from text + files
-          let finalMessages: any[]
-          if (aguiMessages && aguiMessages.length > 0) {
-            finalMessages = aguiMessages
-          } else {
-            // FormData path: construct AG-UI messages with binary content parts
-            const contentParts: any[] = [{ type: 'text', text: message }]
-            if (files && files.length > 0) {
-              for (const f of files as any[]) {
-                contentParts.push({
-                  type: 'binary',
-                  mime_type: f.content_type,
-                  data: f.bytes,
-                  filename: f.filename,
-                })
-              }
-            }
-            finalMessages = [{
-              id: crypto.randomUUID(),
-              role: 'user',
-              content: contentParts,
-            }]
-          }
-
           const aguiBody = {
             thread_id: sessionId,
             run_id: runIdFromBody || crypto.randomUUID(),
-            messages: finalMessages,
+            messages: aguiMessages,
             tools: aguiTools,
             context: [],
             state: enrichedState,

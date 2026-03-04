@@ -881,7 +881,8 @@ async function sendResponse(event, status, data, reason) {
         actions: [
           'dynamodb:GetItem',
           'dynamodb:Query',
-          'dynamodb:UpdateItem',  // Required for clearing stop signal
+          'dynamodb:UpdateItem',
+          'dynamodb:DeleteItem',  // Required for clearing stop signal
         ],
         resources: [
           `arn:aws:dynamodb:${this.region}:${this.account}:table/${projectName}-users-v2`,
@@ -929,6 +930,8 @@ async function sendResponse(event, status, data, reason) {
         NOVA_ACT_REGION: 'us-east-1',
         CODE_INTERPRETER_ID: codeInterpreter.attrCodeInterpreterId,
         DOCUMENT_BUCKET: documentBucket.bucketName,
+        // DynamoDB table for out-of-band stop signal polling
+        DYNAMODB_USERS_TABLE: `${projectName}-users-v2`,
         // OpenTelemetry observability configuration
         AGENT_OBSERVABILITY_ENABLED: 'true',
         OTEL_PYTHON_DISTRO: 'aws_distro',

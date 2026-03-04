@@ -1,9 +1,6 @@
 import { useCallback, useRef, useState, useEffect } from 'react'
 import { Message, Tool, ToolExecution } from '@/types/chat'
 import { AGUIStreamEvent, ChatUIState, AGUI_EVENT_TYPES } from '@/types/events'
-import { HttpAgent } from '@ag-ui/client'
-import type { RunAgentInput } from '@ag-ui/client'
-import { EventType } from '@ag-ui/core'
 import { getApiUrl } from '@/config/environment'
 import logger from '@/utils/logger'
 import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth'
@@ -165,7 +162,6 @@ interface UseChatAPIProps {
   availableTools: Tool[]  // Added: need current tools state
   setAvailableTools: React.Dispatch<React.SetStateAction<Tool[]>>
   handleStreamEvent: (event: AGUIStreamEvent) => void
-  handleLegacyEvent: (data: any) => void
   onSessionCreated?: () => void  // Callback when new session is created
   gatewayToolIds?: string[]  // Gateway tool IDs from frontend
   sessionId: string | null
@@ -189,6 +185,7 @@ interface UseChatAPIReturn {
   newChat: () => Promise<boolean>
   sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[], requestType?: string) => Promise<void>
   cleanup: () => void
+  sendStopSignal: () => Promise<void>
   isLoadingTools: boolean
   loadSession: (sessionId: string) => Promise<{ preferences: SessionPreferences | null; messages: Message[] }>
 }
@@ -200,7 +197,6 @@ export const useChatAPI = ({
   availableTools,
   setAvailableTools,
   handleStreamEvent,
-  handleLegacyEvent,
   onSessionCreated,
   gatewayToolIds = [],
   sessionId,
@@ -595,9 +591,10 @@ export const useChatAPI = ({
       const RETRYABLE_STATUSES = [502, 503, 504]
       const MAX_RETRIES = 2
 
-      if (files && files.length > 0) {
+      {
         // ---------------------------------------------------------------
-        // AG-UI multimodal path — files converted to base64 inline
+        // Unified AG-UI path — all messages (text-only and multimodal)
+        // use fetch + ReadableStream for consistent SSE handling.
         // ---------------------------------------------------------------
         const localAbortController = new AbortController()
         const readerHolder = { current: null as ReadableStreamDefaultReader<Uint8Array> | null }
@@ -608,22 +605,23 @@ export const useChatAPI = ({
           }
         }
 
-        // Convert files to base64 and build AG-UI InputContentPart array
-        // AG-UI only supports 'text' and 'binary' content types
+        // Build AG-UI content: text + optional file attachments
         type ContentPart =
           | { type: 'text'; text: string }
           | { type: 'binary'; mimeType: string; data: string; filename: string }
 
         const contentParts: ContentPart[] = [{ type: 'text', text: messageToSend }]
-        for (const file of files) {
-          const arrayBuffer = await file.arrayBuffer()
-          const base64 = btoa(new Uint8Array(arrayBuffer).reduce((d, b) => d + String.fromCharCode(b), ''))
-          contentParts.push({
-            type: 'binary',
-            mimeType: file.type || 'application/octet-stream',
-            data: base64,
-            filename: file.name,
-          })
+        if (files && files.length > 0) {
+          for (const file of files) {
+            const arrayBuffer = await file.arrayBuffer()
+            const base64 = btoa(new Uint8Array(arrayBuffer).reduce((d, b) => d + String.fromCharCode(b), ''))
+            contentParts.push({
+              type: 'binary',
+              mimeType: file.type || 'application/octet-stream',
+              data: base64,
+              filename: file.name,
+            })
+          }
         }
 
         const threadId = sessionIdRef.current ?? crypto.randomUUID()
@@ -790,9 +788,6 @@ export const useChatAPI = ({
 
                 if (eventData.type && (AGUI_EVENT_TYPES as readonly string[]).includes(eventData.type)) {
                   handleStreamEvent(eventData as AGUIStreamEvent)
-                } else {
-                  // Handle legacy/unknown event types
-                  handleLegacyEvent(eventData)
                 }
               } catch (error) {
                 logger.error('Error processing SSE event:', error)
@@ -817,104 +812,6 @@ export const useChatAPI = ({
           logger.info(`New session created: ${responseSessionId || sessionId}`)
           // Refresh session list to show new session
           onSessionCreated?.()
-        }
-
-        onSuccess?.()
-      } else {
-        // ---------------------------------------------------------------
-        // JSON path — text-only messages use AG-UI RunAgentInput + HttpAgent
-        // ---------------------------------------------------------------
-        const runInput: RunAgentInput = {
-          threadId: sessionIdRef.current ?? crypto.randomUUID(),
-          runId: crypto.randomUUID(),
-          messages: [{ id: crypto.randomUUID(), role: 'user' as const, content: messageToSend }],
-          tools: allEnabledToolIds.map(id => ({ name: id, description: '' })),
-          context: [],
-          state: {
-            model_id: currentModelId,
-            temperature: currentTemperature,
-            ...(requestType && { request_type: requestType }),
-            ...(systemPrompt && { system_prompt: systemPrompt }),
-            ...(selectedArtifactId && { selected_artifact_id: selectedArtifactId })
-          }
-        }
-
-        const apiUrl = getApiUrl('stream/chat')
-        const streamHeaders: Record<string, string> = {
-          'Content-Type': 'application/json',
-          ...authHeaders,
-          ...(currentSessionId && { 'X-Session-ID': currentSessionId })
-        }
-
-        // Capture the session ID this stream belongs to.
-        const streamSessionId = sessionIdRef.current
-
-        // Retry on transient errors (502, 503, 504) with exponential backoff.
-        // HTTP errors from HttpAgent surface as Error objects with a `.status` property.
-        let lastHttpStatus = 0
-        let streamAborted = false
-        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-          if (attempt > 0) {
-            const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 4000)
-            const delay = Math.floor(baseDelay * (0.5 + Math.random() * 0.5)) // jitter to avoid thundering herd
-            logger.info(`[useChatAPI] Retrying after ${lastHttpStatus} (attempt ${attempt}/${MAX_RETRIES}, wait ${delay}ms)`)
-            await new Promise(resolve => setTimeout(resolve, delay))
-            if (streamAborted) break
-          }
-
-          let shouldRetry = false
-
-          await new Promise<void>((resolve, reject) => {
-            const agent = new HttpAgent({ url: apiUrl, headers: streamHeaders })
-            const sub = agent.run(runInput).subscribe({
-              next: (event) => {
-                if (sessionIdRef.current !== streamSessionId) return
-
-                // Extract execution metadata for reconnection
-                if (event.type === EventType.CUSTOM) {
-                  const customEvent = event as any
-                  if (customEvent.name === 'execution_meta') {
-                    const execId = customEvent.value?.executionId
-                    if (execId) {
-                      reconnect.onStreamStart(execId)
-                      logger.info(`[useChatAPI] Execution started: ${execId}`)
-                    }
-                    return  // Don't dispatch metadata to UI
-                  }
-                  logger.info('[useChatAPI] Received custom event:', event)
-                }
-                handleStreamEvent(event as AGUIStreamEvent)
-              },
-              error: (err) => {
-                const status = (err as any)?.status
-                if (RETRYABLE_STATUSES.includes(status) && !streamAborted && attempt < MAX_RETRIES) {
-                  lastHttpStatus = status
-                  shouldRetry = true
-                  resolve()
-                } else {
-                  reject(err)
-                }
-              },
-              complete: () => resolve()
-            })
-            abortRef.current = {
-              unsubscribe: () => {
-                streamAborted = true
-                sub.unsubscribe()
-                resolve()
-              }
-            }
-          })
-
-          if (!shouldRetry) break
-        }
-
-        setUIState(prev => ({ ...prev, isConnected: true }))
-
-        // Skip post-stream callbacks if user switched sessions during streaming
-        if (sessionIdRef.current !== streamSessionId) {
-          logger.info(`[useChatAPI] Stream finished for stale session ${streamSessionId}, skipping callbacks`)
-          return
         }
 
         reconnect.reset()  // Clear persisted cursor on normal stream completion
@@ -986,7 +883,7 @@ export const useChatAPI = ({
 
       onError?.(errorMessage)
     }
-  }, [handleStreamEvent, handleLegacyEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature, reconnect])
+  }, [handleStreamEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature, reconnect])
   // sessionId removed from dependency array - using sessionIdRef.current instead
 
   /**
@@ -1405,8 +1302,28 @@ export const useChatAPI = ({
     abortRef.current?.unsubscribe()
   }, [])
 
-  const sendStopSignal = useCallback(() => {
+  const sendStopSignal = useCallback(async () => {
+    // 1. Abort client-side SSE subscription immediately
     abortRef.current?.unsubscribe()
+
+    // 2. Send stop signal to backend so the agent can gracefully interrupt
+    const currentSessionId = sessionIdRef.current
+    if (!currentSessionId) return
+
+    try {
+      const authHeaders = await getAuthHeaders()
+      await fetch(getApiUrl('stream/stop'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({ sessionId: currentSessionId }),
+      })
+      logger.debug('Stop signal sent to backend')
+    } catch (error) {
+      logger.error('Failed to send stop signal:', error)
+    }
   }, [])
 
   return {

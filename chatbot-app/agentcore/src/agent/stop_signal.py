@@ -29,11 +29,17 @@ logger = logging.getLogger(__name__)
 
 
 class StopSignalProvider(ABC):
-    """Abstract base class for stop signal providers"""
+    """Abstract base class for stop signal providers.
+
+    Two-phase stop protocol (cloud mode):
+      Phase 1: BFF writes stop signal → Main Agent detects and handles
+      Phase 2: Main Agent escalates → Code Agent detects and handles
+    Local mode uses a simple boolean flag (no phases).
+    """
 
     @abstractmethod
     def is_stop_requested(self, user_id: str, session_id: str) -> bool:
-        """Check if stop has been requested for this session"""
+        """Check if stop has been requested for this session (phase 1)"""
         pass
 
     @abstractmethod
@@ -45,6 +51,92 @@ class StopSignalProvider(ABC):
     def clear_stop_signal(self, user_id: str, session_id: str) -> None:
         """Clear stop signal after processing"""
         pass
+
+    def escalate_to_code_agent(self, user_id: str, session_id: str) -> None:
+        """Escalate stop signal from phase 1 to phase 2 (for Code Agent).
+
+        Default implementation is a no-op (local mode doesn't need phases).
+        DynamoDB provider overrides this to update the phase attribute.
+        """
+        pass
+
+
+class DynamoDBStopSignalProvider(StopSignalProvider):
+    """
+    Cloud deployment: DynamoDB-based out-of-band stop signal.
+    Bypasses AgentCore Runtime's single-request-per-session limitation
+    by writing/reading stop flags directly to DynamoDB.
+    """
+
+    def __init__(self, table_name: str):
+        import boto3
+        self._table_name = table_name
+        region = os.environ.get("AWS_REGION", "us-west-2")
+        self._client = boto3.client("dynamodb", region_name=region)
+
+    def _get_key(self, user_id: str, session_id: str) -> dict:
+        return {
+            "userId": {"S": f"STOP#{user_id}"},
+            "sk": {"S": f"SESSION#{session_id}"},
+        }
+
+    def is_stop_requested(self, user_id: str, session_id: str) -> bool:
+        """Check for phase 1 stop signal (Main Agent only)."""
+        try:
+            resp = self._client.get_item(
+                TableName=self._table_name,
+                Key=self._get_key(user_id, session_id),
+                ProjectionExpression="phase",
+            )
+            item = resp.get("Item")
+            if not item:
+                return False
+            phase = int(item.get("phase", {}).get("N", "0"))
+            if phase == 1:
+                logger.info(f"[StopSignal] Phase 1 stop detected for {user_id}:{session_id}")
+                return True
+            return False
+        except Exception as e:
+            logger.warning(f"[StopSignal] DynamoDB check failed: {e}")
+            return False
+
+    def request_stop(self, user_id: str, session_id: str) -> None:
+        import time
+        try:
+            self._client.put_item(
+                TableName=self._table_name,
+                Item={
+                    **self._get_key(user_id, session_id),
+                    "phase": {"N": "1"},
+                    "ttl": {"N": str(int(time.time()) + 300)},
+                },
+            )
+            logger.info(f"[StopSignal] Phase 1 stop set for {user_id}:{session_id}")
+        except Exception as e:
+            logger.warning(f"[StopSignal] DynamoDB put failed: {e}")
+
+    def escalate_to_code_agent(self, user_id: str, session_id: str) -> None:
+        """Update stop signal from phase 1 → phase 2 (Code Agent can now detect it)."""
+        try:
+            self._client.update_item(
+                TableName=self._table_name,
+                Key=self._get_key(user_id, session_id),
+                UpdateExpression="SET phase = :p",
+                ExpressionAttributeValues={":p": {"N": "2"}},
+            )
+            logger.info(f"[StopSignal] Escalated to phase 2 for {user_id}:{session_id}")
+        except Exception as e:
+            logger.warning(f"[StopSignal] Phase escalation failed: {e}")
+
+    def clear_stop_signal(self, user_id: str, session_id: str) -> None:
+        try:
+            self._client.delete_item(
+                TableName=self._table_name,
+                Key=self._get_key(user_id, session_id),
+            )
+            logger.info(f"[StopSignal] Stop signal cleared for {user_id}:{session_id}")
+        except Exception as e:
+            logger.warning(f"[StopSignal] DynamoDB delete failed: {e}")
 
 
 class LocalStopSignalProvider(StopSignalProvider):
@@ -95,22 +187,23 @@ _provider_lock = threading.Lock()
 
 def get_stop_signal_provider() -> StopSignalProvider:
     """
-    Factory function to get the appropriate StopSignalProvider
+    Factory function to get the appropriate StopSignalProvider.
 
     Returns:
-        LocalStopSignalProvider (in-memory) for both local and cloud deployments.
-
-    Note:
-        We always use in-memory provider because:
-        1. AgentCore Runtime guarantees session affinity (same session → same container)
-        2. Stop requests come through /invocations (same container as streaming)
-        3. In-memory is instant (no DynamoDB polling delay or cost)
+        DynamoDBStopSignalProvider when DYNAMODB_USERS_TABLE is set (cloud mode).
+        LocalStopSignalProvider (in-memory) otherwise (local mode).
     """
     global _provider_instance
 
     if _provider_instance is None:
         with _provider_lock:
             if _provider_instance is None:
-                _provider_instance = LocalStopSignalProvider()
+                table_name = os.environ.get("DYNAMODB_USERS_TABLE")
+                if table_name:
+                    logger.info(f"[StopSignal] Using DynamoDB provider (table={table_name})")
+                    _provider_instance = DynamoDBStopSignalProvider(table_name)
+                else:
+                    logger.info("[StopSignal] Using local in-memory provider")
+                    _provider_instance = LocalStopSignalProvider()
 
     return _provider_instance

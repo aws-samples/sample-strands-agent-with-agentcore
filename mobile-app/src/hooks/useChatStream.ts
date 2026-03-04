@@ -17,7 +17,7 @@ export interface UseChatStreamOptions {
 
 /**
  * Manages the lifecycle of a single SSE streaming connection to the BFF.
- * Supports both JSON (text-only) and FormData (with images) request paths.
+ * Supports JSON AG-UI request format (text-only and multimodal).
  */
 export function useChatStream({
   sessionId,

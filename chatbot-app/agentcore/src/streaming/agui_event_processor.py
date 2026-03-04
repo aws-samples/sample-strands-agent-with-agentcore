@@ -5,7 +5,7 @@ import logging
 from typing import AsyncGenerator, Dict, Any
 from .agui_event_formatter import AGUIStreamEventFormatter
 from .event_formatter import StreamEventFormatter
-from agent.stop_signal import get_stop_signal_provider
+from agent.stop_signal import get_stop_signal_provider, DynamoDBStopSignalProvider
 
 # OpenTelemetry imports
 from opentelemetry import trace, baggage, context
@@ -116,32 +116,55 @@ class AGUIStreamEventProcessor:
             logger.warning(f"[StopSignal] Error: {e}")
             return False
 
-    def _clear_stop_signal(self) -> None:
-        """Clear stop signal after processing"""
+    def _clear_stop_signal(self, keep_for_remote_agent: bool = False) -> None:
+        """Handle stop signal cleanup with two-phase protocol.
+
+        Args:
+            keep_for_remote_agent: If True, escalate to phase 2 and keep the
+                DynamoDB item so a remote agent (Code Agent) can detect it.
+                If False, escalate then immediately delete (no remote agent running).
+        """
         if not self.current_user_id or not self.current_session_id:
             return
 
         try:
-            self.stop_signal_provider.clear_stop_signal(
+            self.stop_signal_provider.escalate_to_code_agent(
                 self.current_user_id,
                 self.current_session_id
             )
         except Exception as e:
-            logger.warning(f"[StopSignal] Error clearing stop signal: {e}")
+            logger.warning(f"[StopSignal] Error escalating stop signal: {e}")
+
+        # DynamoDB mode + remote agent running: keep phase 2 item for Code Agent
+        # All other cases: clear immediately (local mode always, DynamoDB when no remote agent)
+        is_dynamo = isinstance(self.stop_signal_provider, DynamoDBStopSignalProvider)
+        if not (keep_for_remote_agent and is_dynamo):
+            try:
+                self.stop_signal_provider.clear_stop_signal(
+                    self.current_user_id,
+                    self.current_session_id
+                )
+            except Exception as e:
+                logger.warning(f"[StopSignal] Error clearing stop signal: {e}")
 
     def _save_partial_response(self, agent, session_id: str) -> bool:
         """Save partial response when stream is interrupted.
 
-        IMPORTANT: Do NOT save partial response if tool_use has already been emitted.
+        Two cases:
+        1. tool_use NOT started: save accumulated text as assistant message with [interrupted] marker.
+        2. tool_use started (e.g., A2A tool running): inject a synthetic tool_result into
+           Strands conversation history with partial progress context so the next turn
+           knows what was done before the interruption.
+
+        IMPORTANT for case 1: Do NOT save partial response if tool_use has already been emitted.
         When tool_use is emitted, Strands SDK saves the assistant message (with text + toolUse).
         If we save partial response here, it creates a DUPLICATE assistant message,
         which breaks the tool_use/tool_result pairing and causes ValidationException.
         """
-        # Skip if tool_use was started - Strands SDK already saved the assistant message
         if self.tool_use_started:
-            logger.debug(f"[Partial Response] Skipping save - tool_use already emitted")
-            self.partial_response_text = ""
-            return False
+            # Tool was running when stop was requested.
+            # Try to inject partial progress as tool_result so next turn has context.
+            return self._inject_interrupted_tool_result(agent)
 
         if not self.partial_response_text.strip():
             return False
@@ -162,6 +185,92 @@ class AGUIStreamEventProcessor:
             return True
         except Exception as e:
             logger.error(f"Failed to save partial response: {e}")
+            return False
+
+    def _inject_interrupted_tool_result(self, agent) -> bool:
+        """Inject a meaningful tool_result for the interrupted tool into Strands history.
+
+        When an A2A tool (e.g., code agent) is running and the user hits stop,
+        the tool's async generator is abandoned before it yields its final result.
+        This leaves an orphaned toolUse in the conversation history.
+
+        Strands SDK auto-fills "Tool was interrupted." on the next call, but that
+        loses all context about what the agent actually did. Instead, we build a
+        tool_result from the partial progress saved in invocation_state by the tool.
+        """
+        # Find orphaned toolUse IDs from the last assistant message
+        if not agent.messages:
+            return False
+
+        last_msg = agent.messages[-1]
+        if last_msg.get("role") != "assistant":
+            return False
+
+        tool_use_ids = [
+            content["toolUse"]["toolUseId"]
+            for content in last_msg.get("content", [])
+            if "toolUse" in content
+        ]
+        if not tool_use_ids:
+            return False
+
+        # Build progress summary from invocation_state (set by A2A tool during streaming)
+        progress = {}
+        if hasattr(self, 'invocation_state') and self.invocation_state:
+            progress = self.invocation_state.get("_a2a_partial_progress", {})
+
+        if progress and progress.get("steps"):
+            steps = progress["steps"]
+            files_changed = progress.get("files_changed", [])
+            todos = progress.get("todos", [])
+
+            # Build a concise but informative summary
+            summary_parts = [f"[Task interrupted by user after {len(steps)} steps]"]
+            summary_parts.append(f"Task: {progress.get('task', 'unknown')[:200]}")
+
+            # Last few steps for context
+            recent_steps = steps[-5:]  # last 5 steps
+            if recent_steps:
+                summary_parts.append("Recent steps:")
+                for step in recent_steps:
+                    summary_parts.append(f"  - {step[:150]}")
+
+            if files_changed:
+                summary_parts.append(f"Files changed: {', '.join(files_changed[:10])}")
+
+            if todos:
+                done = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "completed")
+                summary_parts.append(f"Todos: {done}/{len(todos)} completed")
+
+            summary_text = "\n".join(summary_parts)
+        else:
+            summary_text = "[Task interrupted by user. No progress details available.]"
+
+        # Inject tool_result message into Strands conversation history
+        tool_result_content = [
+            {
+                "toolResult": {
+                    "toolUseId": tool_use_id,
+                    "status": "error",
+                    "content": [{"text": summary_text}],
+                }
+            }
+            for tool_use_id in tool_use_ids
+        ]
+        tool_result_message = {"role": "user", "content": tool_result_content}
+
+        try:
+            agent.messages.append(tool_result_message)
+            # Sync to session manager if available
+            session_mgr = getattr(agent, 'session_manager', None) or getattr(agent, '_session_manager', None)
+            if session_mgr and hasattr(session_mgr, 'append_message'):
+                session_mgr.append_message(tool_result_message, agent)
+                if hasattr(session_mgr, 'flush'):
+                    session_mgr.flush()
+            logger.info(f"[Partial Response] Injected interrupted tool_result with {len(progress.get('steps', []))} steps context")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to inject interrupted tool_result: {e}")
             return False
 
     def _get_last_pending_tool_id(self) -> str:
@@ -351,6 +460,11 @@ class AGUIStreamEventProcessor:
                         # Timeout — drain skill queue and loop back to check bridge
                         async for sse in self._drain_skill_queue(session_id):
                             yield sse
+                        # Check stop signal during elicitation polling
+                        if self._check_stop_signal():
+                            logger.info(f"[StopSignal] Stopping stream during elicitation polling for session {session_id}")
+                            self._clear_stop_signal(keep_for_remote_agent=True)
+                            raise StopRequestedException("Stop requested by user")
                         continue
 
                     try:
@@ -371,6 +485,11 @@ class AGUIStreamEventProcessor:
                         # Timeout — drain skill queue and loop back
                         async for sse in self._drain_skill_queue(session_id):
                             yield sse
+                        # Check stop signal during tool execution (e.g. while code agent runs)
+                        if self._check_stop_signal():
+                            logger.info(f"[StopSignal] Stopping stream during tool execution for session {session_id}")
+                            self._clear_stop_signal(keep_for_remote_agent=True)
+                            raise StopRequestedException("Stop requested by user")
                         continue
                     try:
                         event = next_event_task.result()
