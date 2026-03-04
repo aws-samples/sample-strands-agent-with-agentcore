@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../../src'))
 from agent.stop_signal import (
     StopSignalProvider,
     LocalStopSignalProvider,
+    DynamoDBStopSignalProvider,
     get_stop_signal_provider,
 )
 
@@ -76,6 +77,14 @@ class TestLocalStopSignalProvider:
         assert provider.is_stop_requested("user_1", "session_2") is False
         assert provider.is_stop_requested("user_2", "session_1") is False
 
+    def test_escalate_is_noop(self, provider):
+        """Test that escalate_to_code_agent is a no-op for local provider."""
+        provider.request_stop("user_1", "session_1")
+        # escalate should not raise or change state
+        provider.escalate_to_code_agent("user_1", "session_1")
+        # Signal should still be active (not cleared by escalate)
+        assert provider.is_stop_requested("user_1", "session_1") is True
+
     def test_thread_safety_request_stop(self, provider):
         """Test thread safety of request_stop."""
         results = []
@@ -114,6 +123,125 @@ class TestLocalStopSignalProvider:
 
 
 # ============================================================
+# DynamoDBStopSignalProvider Tests
+# ============================================================
+
+class TestDynamoDBStopSignalProvider:
+    """Tests for DynamoDBStopSignalProvider with two-phase stop protocol."""
+
+    @pytest.fixture
+    def provider_and_client(self):
+        """Create a DynamoDBStopSignalProvider with mocked boto3 client."""
+        mock_client = MagicMock()
+        with patch("boto3.client", return_value=mock_client):
+            provider = DynamoDBStopSignalProvider("test-table")
+        return provider, mock_client
+
+    def test_is_stop_requested_phase1(self, provider_and_client):
+        """Test is_stop_requested returns True only for phase 1."""
+        provider, mock_client = provider_and_client
+        mock_client.get_item.return_value = {
+            "Item": {"phase": {"N": "1"}}
+        }
+        assert provider.is_stop_requested("user1", "sess1") is True
+        mock_client.get_item.assert_called_once_with(
+            TableName="test-table",
+            Key={"userId": {"S": "STOP#user1"}, "sk": {"S": "SESSION#sess1"}},
+            ProjectionExpression="phase",
+        )
+
+    def test_is_stop_requested_phase2_ignored(self, provider_and_client):
+        """Test is_stop_requested returns False for phase 2 (Code Agent only)."""
+        provider, mock_client = provider_and_client
+        mock_client.get_item.return_value = {
+            "Item": {"phase": {"N": "2"}}
+        }
+        assert provider.is_stop_requested("user1", "sess1") is False
+
+    def test_is_stop_requested_not_found(self, provider_and_client):
+        """Test is_stop_requested returns False when item missing."""
+        provider, mock_client = provider_and_client
+        mock_client.get_item.return_value = {}
+        assert provider.is_stop_requested("user1", "sess1") is False
+
+    def test_is_stop_requested_error(self, provider_and_client):
+        """Test is_stop_requested returns False on DynamoDB error."""
+        provider, mock_client = provider_and_client
+        mock_client.get_item.side_effect = Exception("DynamoDB timeout")
+        assert provider.is_stop_requested("user1", "sess1") is False
+
+    def test_request_stop_writes_phase1(self, provider_and_client):
+        """Test request_stop writes item with phase=1 and TTL."""
+        provider, mock_client = provider_and_client
+        provider.request_stop("user1", "sess1")
+        mock_client.put_item.assert_called_once()
+        call_args = mock_client.put_item.call_args
+        item = call_args[1]["Item"]
+        assert item["userId"]["S"] == "STOP#user1"
+        assert item["sk"]["S"] == "SESSION#sess1"
+        assert item["phase"]["N"] == "1"
+        assert "ttl" in item
+
+    def test_escalate_to_code_agent(self, provider_and_client):
+        """Test escalate_to_code_agent updates phase to 2."""
+        provider, mock_client = provider_and_client
+        provider.escalate_to_code_agent("user1", "sess1")
+        mock_client.update_item.assert_called_once_with(
+            TableName="test-table",
+            Key={"userId": {"S": "STOP#user1"}, "sk": {"S": "SESSION#sess1"}},
+            UpdateExpression="SET phase = :p",
+            ExpressionAttributeValues={":p": {"N": "2"}},
+        )
+
+    def test_escalate_to_code_agent_error(self, provider_and_client):
+        """Test escalate_to_code_agent handles errors gracefully."""
+        provider, mock_client = provider_and_client
+        mock_client.update_item.side_effect = Exception("DynamoDB error")
+        # Should not raise
+        provider.escalate_to_code_agent("user1", "sess1")
+
+    def test_clear_stop_signal(self, provider_and_client):
+        """Test clear_stop_signal deletes the item."""
+        provider, mock_client = provider_and_client
+        provider.clear_stop_signal("user1", "sess1")
+        mock_client.delete_item.assert_called_once_with(
+            TableName="test-table",
+            Key={"userId": {"S": "STOP#user1"}, "sk": {"S": "SESSION#sess1"}},
+        )
+
+    def test_clear_stop_signal_error(self, provider_and_client):
+        """Test clear_stop_signal handles errors gracefully."""
+        provider, mock_client = provider_and_client
+        mock_client.delete_item.side_effect = Exception("DynamoDB error")
+        # Should not raise
+        provider.clear_stop_signal("user1", "sess1")
+
+    def test_two_phase_lifecycle(self, provider_and_client):
+        """Test complete two-phase stop signal lifecycle."""
+        provider, mock_client = provider_and_client
+
+        # Phase 1: BFF writes stop signal
+        provider.request_stop("user1", "sess1")
+        assert mock_client.put_item.call_args[1]["Item"]["phase"]["N"] == "1"
+
+        # Main Agent detects phase 1
+        mock_client.get_item.return_value = {"Item": {"phase": {"N": "1"}}}
+        assert provider.is_stop_requested("user1", "sess1") is True
+
+        # Main Agent escalates to phase 2
+        provider.escalate_to_code_agent("user1", "sess1")
+        mock_client.update_item.assert_called_once()
+
+        # Main Agent no longer sees stop (phase is now 2)
+        mock_client.get_item.return_value = {"Item": {"phase": {"N": "2"}}}
+        assert provider.is_stop_requested("user1", "sess1") is False
+
+        # Code Agent cleans up
+        provider.clear_stop_signal("user1", "sess1")
+        mock_client.delete_item.assert_called_once()
+
+
+# ============================================================
 # Factory Function Tests
 # ============================================================
 
@@ -130,11 +258,21 @@ class TestGetStopSignalProvider:
         import agent.stop_signal as module
         module._provider_instance = None
 
-    def test_returns_local_provider(self):
-        """Test factory returns LocalStopSignalProvider"""
+    def test_returns_local_provider_when_no_env(self):
+        """Test factory returns LocalStopSignalProvider when DYNAMODB_USERS_TABLE not set."""
         LocalStopSignalProvider._instance = None
-        provider = get_stop_signal_provider()
+        with patch.dict(os.environ, {}, clear=False):
+            # Ensure DYNAMODB_USERS_TABLE is not set
+            os.environ.pop("DYNAMODB_USERS_TABLE", None)
+            provider = get_stop_signal_provider()
         assert isinstance(provider, LocalStopSignalProvider)
+
+    def test_returns_dynamodb_provider_when_env_set(self):
+        """Test factory returns DynamoDBStopSignalProvider when DYNAMODB_USERS_TABLE is set."""
+        with patch.dict(os.environ, {"DYNAMODB_USERS_TABLE": "my-table", "AWS_REGION": "us-west-2"}), \
+             patch("boto3.client"):
+            provider = get_stop_signal_provider()
+        assert isinstance(provider, DynamoDBStopSignalProvider)
 
     def test_provider_singleton(self):
         """Test factory returns same instance on subsequent calls."""

@@ -140,6 +140,18 @@ export class CodeAgentRuntimeStack extends cdk.Stack {
       })
     )
 
+    // DynamoDB: Read and clear stop signal (phase 2 of two-phase stop protocol)
+    executionRole.addToPolicy(
+      new iam.PolicyStatement({
+        sid: 'DynamoDBStopSignalAccess',
+        effect: iam.Effect.ALLOW,
+        actions: ['dynamodb:GetItem', 'dynamodb:DeleteItem'],
+        resources: [
+          `arn:aws:dynamodb:${this.region}:${this.account}:table/${projectName}-users-v2`,
+        ],
+      })
+    )
+
     // Import document bucket name from main AgentCore Runtime stack export
     const documentBucketName = cdk.Fn.importValue(`${projectName}-document-bucket`)
 
@@ -420,6 +432,8 @@ async function sendResponse(event, status, data, reason) {
         OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: 'boto,botocore',
         // S3 bucket for syncing workspace output after each task
         DOCUMENT_BUCKET: documentBucketName,
+        // DynamoDB table for out-of-band stop signal polling
+        DYNAMODB_USERS_TABLE: `${projectName}-users-v2`,
         // Forces CloudFormation to detect a change on every deploy,
         // so the Runtime pulls the latest image from ECR each time.
         BUILD_TIMESTAMP: new Date().toISOString(),

@@ -104,12 +104,6 @@ export type AGUIStreamEvent =
   | ToolCallResultEvent
   | CustomEvent;
 
-/** @deprecated Use AGUIStreamEvent instead */
-export type StreamEvent = AGUIStreamEvent;
-
-/** @deprecated Use AGUIEventType instead */
-export type StreamEventType = AGUIEventType;
-
 // Swarm mode types
 
 export type SwarmState = 'idle' | 'running' | 'completed' | 'failed';

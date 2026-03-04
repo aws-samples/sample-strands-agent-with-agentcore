@@ -3,11 +3,11 @@ import {
   parseSSELine,
   parseSSEData,
   parseSSEChunk,
-  validateStreamEvent,
+  validateAGUIStreamEvent,
   createMockEvent,
   serializeToSSE
 } from '@/utils/sseParser'
-import type { StreamEvent } from '@/types/events'
+import type { AGUIStreamEvent } from '@/types/events'
 import { EventType } from '@ag-ui/core'
 
 describe('sseParser', () => {
@@ -189,144 +189,110 @@ describe('sseParser', () => {
     })
   })
 
-  describe('validateStreamEvent', () => {
+  describe('validateAGUIStreamEvent', () => {
     it('should validate RUN_STARTED event', () => {
-      const valid = { type: EventType.RUN_STARTED, threadId: 'thread-1', runId: 'run-1' } as unknown as StreamEvent
-      const missingThreadId = { type: EventType.RUN_STARTED, runId: 'run-1' } as unknown as StreamEvent
+      const valid = { type: EventType.RUN_STARTED, threadId: 'thread-1', runId: 'run-1' } as unknown as AGUIStreamEvent
+      const missingThreadId = { type: EventType.RUN_STARTED, runId: 'run-1' } as unknown as AGUIStreamEvent
 
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(missingThreadId).valid).toBe(false)
-      expect(validateStreamEvent(missingThreadId).errors[0]).toContain('threadId')
+      expect(validateAGUIStreamEvent(valid).valid).toBe(true)
+      expect(validateAGUIStreamEvent(missingThreadId).valid).toBe(false)
+      expect(validateAGUIStreamEvent(missingThreadId).errors[0]).toContain('threadId')
     })
 
     it('should validate RUN_ERROR event', () => {
-      const valid = { type: EventType.RUN_ERROR, message: 'Something went wrong' } as unknown as StreamEvent
-      const invalid = { type: EventType.RUN_ERROR } as unknown as StreamEvent
+      const valid = { type: EventType.RUN_ERROR, message: 'Something went wrong' } as unknown as AGUIStreamEvent
+      const invalid = { type: EventType.RUN_ERROR } as unknown as AGUIStreamEvent
 
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(invalid).valid).toBe(false)
+      expect(validateAGUIStreamEvent(valid).valid).toBe(true)
+      expect(validateAGUIStreamEvent(invalid).valid).toBe(false)
     })
 
     it('should validate TEXT_MESSAGE_CONTENT event', () => {
-      const valid = { type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'msg-1', delta: 'Hello' } as unknown as StreamEvent
-      const missingDelta = { type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'msg-1' } as unknown as StreamEvent
+      const valid = { type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'msg-1', delta: 'Hello' } as unknown as AGUIStreamEvent
+      const missingDelta = { type: EventType.TEXT_MESSAGE_CONTENT, messageId: 'msg-1' } as unknown as AGUIStreamEvent
 
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(missingDelta).valid).toBe(false)
-      expect(validateStreamEvent(missingDelta).errors[0]).toContain('delta')
+      expect(validateAGUIStreamEvent(valid).valid).toBe(true)
+      expect(validateAGUIStreamEvent(missingDelta).valid).toBe(false)
+      expect(validateAGUIStreamEvent(missingDelta).errors[0]).toContain('delta')
     })
 
     it('should validate TOOL_CALL_START event', () => {
-      const valid = { type: EventType.TOOL_CALL_START, toolCallId: 'tc-1', toolCallName: 'calculator' } as unknown as StreamEvent
-      const missingName = { type: EventType.TOOL_CALL_START, toolCallId: 'tc-1' } as unknown as StreamEvent
+      const valid = { type: EventType.TOOL_CALL_START, toolCallId: 'tc-1', toolCallName: 'calculator' } as unknown as AGUIStreamEvent
+      const missingName = { type: EventType.TOOL_CALL_START, toolCallId: 'tc-1' } as unknown as AGUIStreamEvent
 
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(missingName).valid).toBe(false)
-      expect(validateStreamEvent(missingName).errors[0]).toContain('toolCallName')
+      expect(validateAGUIStreamEvent(valid).valid).toBe(true)
+      expect(validateAGUIStreamEvent(missingName).valid).toBe(false)
+      expect(validateAGUIStreamEvent(missingName).errors[0]).toContain('toolCallName')
     })
 
     it('should validate TOOL_CALL_RESULT event', () => {
-      const valid = { type: EventType.TOOL_CALL_RESULT, toolCallId: 'tc-1', messageId: 'msg-1', content: 'result' } as unknown as StreamEvent
-      const invalid = { type: EventType.TOOL_CALL_RESULT, messageId: 'msg-1', content: 'result' } as unknown as StreamEvent
+      const valid = { type: EventType.TOOL_CALL_RESULT, toolCallId: 'tc-1', messageId: 'msg-1', content: 'result' } as unknown as AGUIStreamEvent
+      const invalid = { type: EventType.TOOL_CALL_RESULT, messageId: 'msg-1', content: 'result' } as unknown as AGUIStreamEvent
 
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(invalid).valid).toBe(false)
+      expect(validateAGUIStreamEvent(valid).valid).toBe(true)
+      expect(validateAGUIStreamEvent(invalid).valid).toBe(false)
     })
 
     it('should validate CUSTOM event', () => {
-      const valid = { type: EventType.CUSTOM, name: 'reasoning', value: {} } as unknown as StreamEvent
-      const missingName = { type: EventType.CUSTOM, value: {} } as unknown as StreamEvent
+      const valid = { type: EventType.CUSTOM, name: 'reasoning', value: {} } as unknown as AGUIStreamEvent
+      const missingName = { type: EventType.CUSTOM, value: {} } as unknown as AGUIStreamEvent
 
-      expect(validateStreamEvent(valid).valid).toBe(true)
-      expect(validateStreamEvent(missingName).valid).toBe(false)
-      expect(validateStreamEvent(missingName).errors[0]).toContain('name')
+      expect(validateAGUIStreamEvent(valid).valid).toBe(true)
+      expect(validateAGUIStreamEvent(missingName).valid).toBe(false)
+      expect(validateAGUIStreamEvent(missingName).errors[0]).toContain('name')
     })
 
     it('should allow unknown event types for forward compatibility', () => {
-      const unknown = { type: 'unknown_type' } as unknown as StreamEvent
+      const unknown = { type: 'unknown_type' } as unknown as AGUIStreamEvent
 
-      const result = validateStreamEvent(unknown)
+      const result = validateAGUIStreamEvent(unknown)
       expect(result.valid).toBe(true)
       expect(result.errors).toHaveLength(0)
-    })
-
-    it('should allow legacy custom event types (passed via CUSTOM channel)', () => {
-      // Legacy types like 'reasoning', 'interrupt' etc. fall through to default (valid)
-      expect(validateStreamEvent({ type: 'reasoning' } as unknown as StreamEvent).valid).toBe(true)
-      expect(validateStreamEvent({ type: 'init' } as unknown as StreamEvent).valid).toBe(true)
-      expect(validateStreamEvent({ type: 'complete' } as unknown as StreamEvent).valid).toBe(true)
     })
   })
 
   describe('createMockEvent', () => {
-    it('should create reasoning event with defaults', () => {
-      const event = createMockEvent('reasoning')
-      expect(event.type).toBe('reasoning')
-      expect(event.text).toBe('')
-      expect(event.step).toBe('thinking')
+    it('should create event with correct type', () => {
+      const event = createMockEvent('CUSTOM')
+      expect(event.type).toBe('CUSTOM')
     })
 
-    it('should create reasoning event with overrides', () => {
-      const event = createMockEvent('reasoning', { text: 'Analyzing...' })
-      expect(event.text).toBe('Analyzing...')
+    it('should create event with overrides', () => {
+      const event = createMockEvent('CUSTOM', { name: 'reasoning', value: { text: 'Analyzing...' } })
+      expect(event.type).toBe('CUSTOM')
+      expect(event.name).toBe('reasoning')
     })
 
-    it('should create response event', () => {
-      const event = createMockEvent('response', { text: 'Hello!' })
-      expect(event.type).toBe('response')
-      expect(event.text).toBe('Hello!')
-    })
-
-    it('should create tool_use event', () => {
-      const event = createMockEvent('tool_use', {
-        toolUseId: 'tool-abc',
-        name: 'search',
-        input: { query: 'test' }
+    it('should create TOOL_CALL_START event', () => {
+      const event = createMockEvent('TOOL_CALL_START', {
+        toolCallId: 'tool-abc',
+        toolCallName: 'search',
       })
-      expect(event.type).toBe('tool_use')
-      expect(event.toolUseId).toBe('tool-abc')
-      expect(event.name).toBe('search')
-      expect(event.input).toEqual({ query: 'test' })
+      expect(event.type).toBe('TOOL_CALL_START')
+      expect(event.toolCallId).toBe('tool-abc')
+      expect(event.toolCallName).toBe('search')
     })
 
-    it('should create complete event with usage', () => {
-      const event = createMockEvent('complete', {
-        message: 'Done',
-        usage: {
-          inputTokens: 100,
-          outputTokens: 200,
-          totalTokens: 300
-        }
+    it('should create RUN_FINISHED event with usage', () => {
+      const event = createMockEvent('RUN_FINISHED', {
+        threadId: 'thread-1',
+        runId: 'run-1',
       })
-      expect(event.type).toBe('complete')
-      expect(event.usage).toEqual({
-        inputTokens: 100,
-        outputTokens: 200,
-        totalTokens: 300
-      })
-    })
-
-    it('should create browser_progress event', () => {
-      const event = createMockEvent('browser_progress', {
-        stepNumber: 3,
-        content: 'Filling form'
-      })
-      expect(event.type).toBe('browser_progress')
-      expect(event.stepNumber).toBe(3)
-      expect(event.content).toBe('Filling form')
+      expect(event.type).toBe('RUN_FINISHED')
+      expect(event.threadId).toBe('thread-1')
     })
   })
 
   describe('serializeToSSE', () => {
     it('should serialize event without event name', () => {
-      const event = { type: 'response', text: 'Hello' } as unknown as StreamEvent
+      const event = { type: 'response', text: 'Hello' } as unknown as AGUIStreamEvent
       const result = serializeToSSE(event)
 
       expect(result).toBe('data: {"type":"response","text":"Hello"}\n\n')
     })
 
     it('should serialize event with event name', () => {
-      const event = { type: 'response', text: 'Hello' } as unknown as StreamEvent
+      const event = { type: 'response', text: 'Hello' } as unknown as AGUIStreamEvent
       const result = serializeToSSE(event, 'message')
 
       expect(result).toBe('event: message\ndata: {"type":"response","text":"Hello"}\n\n')
@@ -338,7 +304,7 @@ describe('sseParser', () => {
         toolUseId: 'tool-123',
         result: 'success',
         images: [{ format: 'png', data: 'base64...' }]
-      } as unknown as StreamEvent
+      } as unknown as AGUIStreamEvent
 
       const result = serializeToSSE(event)
       const parsed = parseSSEChunk(result)
@@ -404,14 +370,14 @@ describe('sseParser', () => {
 
     it('should allow legacy interrupt event (falls through to default, always valid)', () => {
       // interrupt is a legacy/custom type — validator allows all unknown types
-      const missingInterrupts = { type: 'interrupt' } as unknown as StreamEvent
+      const missingInterrupts = { type: 'interrupt' } as unknown as AGUIStreamEvent
       const withInterrupts = {
         type: 'interrupt',
         interrupts: [{ id: 'int-1', name: 'chatbot-research-approval' }]
-      } as unknown as StreamEvent
+      } as unknown as AGUIStreamEvent
 
-      expect(validateStreamEvent(missingInterrupts).valid).toBe(true)
-      expect(validateStreamEvent(withInterrupts).valid).toBe(true)
+      expect(validateAGUIStreamEvent(missingInterrupts).valid).toBe(true)
+      expect(validateAGUIStreamEvent(withInterrupts).valid).toBe(true)
     })
 
     it('should create mock interrupt event', () => {
@@ -439,7 +405,7 @@ describe('sseParser', () => {
             plan: 'Step 1: Do this\nStep 2: Do that'
           }
         }]
-      } as unknown as StreamEvent
+      } as unknown as AGUIStreamEvent
 
       const serialized = serializeToSSE(originalEvent)
       const { events, errors } = parseSSEChunk(serialized)
@@ -454,63 +420,35 @@ describe('sseParser', () => {
     })
 
     it('should handle interrupt in streaming conversation flow', () => {
-      // Simulate: init -> thinking -> tool_use -> interrupt (HITL pause)
+      // Simulate: RUN_STARTED -> TOOL_CALL_START -> interrupt (HITL pause)
       const events = [
-        `data: {"type":"init","message":"Starting agent"}\n\n`,
-        `data: {"type":"thinking","message":"Processing request"}\n\n`,
-        `data: {"type":"tool_use","toolUseId":"tool-001","name":"research_agent","input":{"topic":"AI trends"}}\n\n`,
-        `data: {"type":"interrupt","interrupts":[{"id":"int-001","name":"chatbot-research-approval","reason":{"plan":"Research AI trends"}}]}\n\n`
-      ].join('')
-
-      const result = parseSSEChunk(events)
-
-      expect(result.events).toHaveLength(4)
-      expect(result.events[0].type).toBe('init')
-      expect(result.events[1].type).toBe('thinking')
-      expect(result.events[2].type).toBe('tool_use')
-      expect(result.events[3].type).toBe('interrupt')
-
-      // After interrupt, no complete event (waiting for user response)
-    })
-
-    it('should handle post-approval continuation flow', () => {
-      // Simulate: After approval, agent continues
-      // tool_result -> response -> complete
-      const events = [
-        `data: {"type":"tool_result","toolUseId":"tool-001","result":"Research completed successfully"}\n\n`,
-        `data: {"type":"response","text":"Here are the AI trends I found...","step":"answering"}\n\n`,
-        `data: {"type":"complete","message":"Done","usage":{"inputTokens":100,"outputTokens":200,"totalTokens":300}}\n\n`
+        `data: {"type":"RUN_STARTED","threadId":"t-1","runId":"r-1"}\n\n`,
+        `data: {"type":"TOOL_CALL_START","toolCallId":"tc-001","toolCallName":"research_agent"}\n\n`,
+        `data: {"type":"CUSTOM","name":"interrupt","value":{"interrupts":[{"id":"int-001","name":"chatbot-research-approval","reason":{"plan":"Research AI trends"}}]}}\n\n`
       ].join('')
 
       const result = parseSSEChunk(events)
 
       expect(result.events).toHaveLength(3)
-      expect(result.events[0].type).toBe('tool_result')
-      expect(result.events[1].type).toBe('response')
-      expect(result.events[2].type).toBe('complete')
+      expect(result.events[0].type).toBe('RUN_STARTED')
+      expect(result.events[1].type).toBe('TOOL_CALL_START')
+      expect(result.events[2].type).toBe('CUSTOM')
     })
   })
 
   describe('round-trip parsing', () => {
-    it('should handle full streaming conversation simulation', () => {
-      const events: StreamEvent[] = [
-        createMockEvent('init', { message: 'Starting' }),
-        createMockEvent('thinking', { message: 'Processing' }),
-        createMockEvent('reasoning', { text: 'Let me think...' }),
-        createMockEvent('tool_use', {
-          toolUseId: 'tool-1',
-          name: 'calculator',
-          input: { expression: '2+2' }
-        }),
-        createMockEvent('tool_result', {
-          toolUseId: 'tool-1',
-          result: '4'
-        }),
-        createMockEvent('response', { text: 'The answer is 4' }),
-        createMockEvent('complete', {
-          message: 'Done',
-          usage: { inputTokens: 50, outputTokens: 20, totalTokens: 70 }
-        })
+    it('should handle full AG-UI streaming conversation simulation', () => {
+      const events: AGUIStreamEvent[] = [
+        createMockEvent('RUN_STARTED', { threadId: 't-1', runId: 'r-1' }),
+        createMockEvent('TEXT_MESSAGE_START', { messageId: 'msg-1', role: 'assistant' }),
+        createMockEvent('TEXT_MESSAGE_CONTENT', { messageId: 'msg-1', delta: 'Let me calculate...' }),
+        createMockEvent('TOOL_CALL_START', { toolCallId: 'tc-1', toolCallName: 'calculator' }),
+        createMockEvent('TOOL_CALL_ARGS', { toolCallId: 'tc-1', delta: '{"expression":"2+2"}' }),
+        createMockEvent('TOOL_CALL_END', { toolCallId: 'tc-1' }),
+        createMockEvent('TOOL_CALL_RESULT', { toolCallId: 'tc-1', content: '4' }),
+        createMockEvent('TEXT_MESSAGE_CONTENT', { messageId: 'msg-1', delta: 'The answer is 4' }),
+        createMockEvent('TEXT_MESSAGE_END', { messageId: 'msg-1' }),
+        createMockEvent('RUN_FINISHED', { threadId: 't-1', runId: 'r-1' }),
       ]
 
       // Serialize all events

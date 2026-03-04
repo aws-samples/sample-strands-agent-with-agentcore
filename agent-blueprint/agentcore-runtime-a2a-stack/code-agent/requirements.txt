@@ -5,7 +5,7 @@ fastapi==0.116.1
 uvicorn[standard]==0.35.0
 
 # Claude Agent SDK
-claude-agent-sdk>=0.0.9
+claude-agent-sdk>=0.1.45
 
 # AWS & Bedrock
 boto3>=1.40.1

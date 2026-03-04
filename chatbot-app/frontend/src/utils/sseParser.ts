@@ -3,7 +3,7 @@
  * Extracted for testability from streaming hooks
  */
 
-import type { StreamEvent } from '@/types/events'
+import type { AGUIStreamEvent } from '@/types/events'
 import { EventType } from '@ag-ui/core'
 
 /**
@@ -41,10 +41,10 @@ export function parseSSELine(line: string): SSELine {
 }
 
 /**
- * Parse SSE data into a StreamEvent
+ * Parse SSE data into a AGUIStreamEvent
  * Returns null if parsing fails
  */
-export function parseSSEData(data: string): StreamEvent | null {
+export function parseSSEData(data: string): AGUIStreamEvent | null {
   if (!data) {
     return null
   }
@@ -57,7 +57,7 @@ export function parseSSEData(data: string): StreamEvent | null {
       return null
     }
 
-    return parsed as StreamEvent
+    return parsed as AGUIStreamEvent
   } catch (e) {
     return null
   }
@@ -68,12 +68,12 @@ export function parseSSEData(data: string): StreamEvent | null {
  * Handles the SSE protocol where events are separated by double newlines
  */
 export interface ParsedSSEChunk {
-  events: StreamEvent[]
+  events: AGUIStreamEvent[]
   errors: string[]
 }
 
 export function parseSSEChunk(chunk: string): ParsedSSEChunk {
-  const events: StreamEvent[] = []
+  const events: AGUIStreamEvent[] = []
   const errors: string[] = []
 
   // Split by double newlines to get individual SSE messages
@@ -117,9 +117,9 @@ export function parseSSEChunk(chunk: string): ParsedSSEChunk {
 }
 
 /**
- * Validate a StreamEvent has required fields based on its type
+ * Validate a AGUIStreamEvent has required fields based on its type
  */
-export function validateStreamEvent(event: StreamEvent): { valid: boolean; errors: string[] } {
+export function validateAGUIStreamEvent(event: AGUIStreamEvent): { valid: boolean; errors: string[] } {
   const errors: string[] = []
 
   switch (event.type) {
@@ -196,37 +196,19 @@ export function validateStreamEvent(event: StreamEvent): { valid: boolean; error
 }
 
 /**
- * Create a mock StreamEvent for testing purposes.
- * Accepts both AG-UI EventType enum values and legacy string type names
- * (e.g. 'reasoning', 'response') used in existing tests.
+ * Create a mock AGUIStreamEvent for testing purposes.
  */
 export function createMockEvent(
   type: string,
   overrides: Record<string, any> = {}
 ): any {
-  const defaults: Record<string, any> = {
-    reasoning: { type: 'reasoning', text: '', step: 'thinking' },
-    response: { type: 'response', text: '', step: 'answering' },
-    tool_use: { type: 'tool_use', toolUseId: '', name: '', input: {} },
-    tool_result: { type: 'tool_result', toolUseId: '', result: '' },
-    init: { type: 'init', message: '' },
-    thinking: { type: 'thinking', message: '' },
-    complete: { type: 'complete', message: '' },
-    error: { type: 'error', message: '' },
-    interrupt: { type: 'interrupt', interrupts: [] },
-    progress: { type: 'progress' },
-    metadata: { type: 'metadata' },
-    browser_progress: { type: 'browser_progress', content: '', stepNumber: 0 },
-    research_progress: { type: 'research_progress', content: '', stepNumber: 0 }
-  }
-
-  return { ...(defaults[type] ?? { type }), ...overrides }
+  return { type, ...overrides }
 }
 
 /**
- * Serialize a StreamEvent to SSE format
+ * Serialize a AGUIStreamEvent to SSE format
  */
-export function serializeToSSE(event: StreamEvent, eventName?: string): string {
+export function serializeToSSE(event: AGUIStreamEvent, eventName?: string): string {
   const lines: string[] = []
 
   if (eventName) {

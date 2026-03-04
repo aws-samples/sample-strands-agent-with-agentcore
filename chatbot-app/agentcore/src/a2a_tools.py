@@ -309,6 +309,8 @@ async def send_a2a_message(
         )
 
 
+        current_task_id = None   # A2A task id captured from first streaming event
+        completed = False        # Set True only on successful completion
         response_text = ""
         code_result_meta = None    # Structured result metadata from code agent
         browser_session_arn = None  # For browser-use agent live view
@@ -337,6 +339,10 @@ async def send_a2a_message(
                 elif isinstance(event, tuple) and len(event) == 2:
                     # (Task, UpdateEvent) tuple - streaming mode
                     task, update_event = event
+
+                    # Capture task id for cancel propagation
+                    if current_task_id is None and hasattr(task, 'id'):
+                        current_task_id = task.id
 
                     # Extract task status
                     task_status = task.status if hasattr(task, 'status') else task
@@ -660,6 +666,7 @@ async def send_a2a_message(
             }
 
         # Yield final result
+        completed = True
         logger.debug(f"Final A2A response: {len(response_text)} chars")
         yield {
             "status": "success",
@@ -685,6 +692,13 @@ async def send_a2a_message(
                 "text": f"Error: {str(e)}"
             }]
         }
+    finally:
+        if not completed and current_task_id and client:
+            try:
+                await client.cancel_task(current_task_id)
+                logger.info(f"[A2A] Cancelled task {current_task_id} on {agent_id}")
+            except Exception as e:
+                logger.warning(f"[A2A] Failed to cancel task {current_task_id} on {agent_id}: {e}")
 
 
 # ============================================================
@@ -784,8 +798,36 @@ def create_a2a_tool(agent_id: str):
                 "compact_session": compact_session,
             }
 
+            # Track partial progress in invocation_state so that if stop signal
+            # interrupts this tool, the event processor can inject a meaningful
+            # tool_result with progress context into Strands conversation history.
+            progress = {
+                "agent": agent_id,
+                "task": task[:500],
+                "steps": [],
+                "files_changed": [],
+                "todos": [],
+                "status": "running",
+            }
+            if tool_context:
+                tool_context.invocation_state["_a2a_partial_progress"] = progress
+
             async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata):
+                # Update partial progress from streamed events
+                if isinstance(event, dict) and tool_context:
+                    event_type = event.get("type")
+                    if event_type == "code_step":
+                        progress["steps"].append(event.get("content", ""))
+                    elif event_type == "code_result_meta":
+                        progress["files_changed"] = event.get("files_changed", [])
+                        progress["todos"] = event.get("todos", [])
+                        progress["status"] = event.get("status", "completed")
+
                 yield event
+
+            # Clear progress on normal completion (no longer partial)
+            if tool_context:
+                tool_context.invocation_state.pop("_a2a_partial_progress", None)
 
         tool_impl.__name__ = correct_name
         tool_impl.__doc__ = agent_description

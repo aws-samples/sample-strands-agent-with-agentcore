@@ -11,10 +11,12 @@ For local testing:
     uvicorn src.main:app --port 9000 --reload
 """
 
+import asyncio
 import json
 import logging
 import os
 import re
+import time
 import uuid
 import zipfile
 from pathlib import Path
@@ -30,7 +32,7 @@ from a2a.types import AgentCard, AgentCapabilities, AgentSkill, Part, TextPart
 
 import uvicorn
 from claude_agent_sdk import (
-    query,
+    ClaudeSDKClient,
     ClaudeAgentOptions,
     AssistantMessage,
     SystemMessage,
@@ -115,9 +117,76 @@ TOOL_STATUS_MAP = {
     "WebFetch":  "Fetching URL",
 }
 
+# DynamoDB stop signal (out-of-band, cloud mode only)
+_DYNAMODB_USERS_TABLE = os.environ.get("DYNAMODB_USERS_TABLE")
+_dynamodb_client = None
+
+
+def _check_dynamodb_stop(user_id: str, session_id: str) -> bool:
+    """Check DynamoDB for phase 2 stop signal (escalated by Main Agent).
+
+    Two-phase protocol:
+      Phase 1: Written by BFF → only Main Agent detects
+      Phase 2: Escalated by Main Agent → Code Agent detects (this function)
+    Returns False if table not configured or phase != 2.
+    """
+    if not _DYNAMODB_USERS_TABLE:
+        return False
+    global _dynamodb_client
+    if _dynamodb_client is None:
+        import boto3
+        _dynamodb_client = boto3.client("dynamodb", region_name=AWS_REGION)
+    try:
+        resp = _dynamodb_client.get_item(
+            TableName=_DYNAMODB_USERS_TABLE,
+            Key={
+                "userId": {"S": f"STOP#{user_id}"},
+                "sk": {"S": f"SESSION#{session_id}"},
+            },
+            ProjectionExpression="phase",
+        )
+        item = resp.get("Item")
+        if not item:
+            return False
+        phase = int(item.get("phase", {}).get("N", "0"))
+        return phase == 2
+    except Exception as e:
+        logger.warning(f"[StopSignal] DynamoDB check failed: {e}")
+        return False
+
+
+def _clear_dynamodb_stop(user_id: str, session_id: str) -> None:
+    """Delete the stop signal item from DynamoDB after Code Agent handles it."""
+    if not _DYNAMODB_USERS_TABLE or not _dynamodb_client:
+        return
+    try:
+        _dynamodb_client.delete_item(
+            TableName=_DYNAMODB_USERS_TABLE,
+            Key={
+                "userId": {"S": f"STOP#{user_id}"},
+                "sk": {"S": f"SESSION#{session_id}"},
+            },
+        )
+        logger.info(f"[StopSignal] Cleared stop signal for {user_id}:{session_id}")
+    except Exception as e:
+        logger.warning(f"[StopSignal] DynamoDB delete failed: {e}")
+
+
 # In-memory map: "{user_id}-{session_id}" → claude_agent_sdk session_id
 # Allows resuming the same Claude Agent session across multiple A2A calls
 _sdk_sessions: dict = {}
+
+# In-memory map: "{user_id}-{session_id}" → ClaudeSDKClient instance
+# Keeps the Claude Code subprocess alive across A2A task calls (warm start)
+_sdk_clients: dict[str, ClaudeSDKClient] = {}
+
+# In-memory map: a2a task_id → asyncio.Event
+# Set by cancel() to signal execute() to stop consuming messages gracefully
+_cancel_events: dict[str, asyncio.Event] = {}
+
+# In-memory map: a2a task_id → sdk_key ("{user_id}-{session_id}")
+# Used by cancel() to find the client instance for interrupt()
+_task_to_sdk_key: dict[str, str] = {}
 
 
 
@@ -377,25 +446,107 @@ def build_task_with_files(task_text: str, file_descriptions: List[str]) -> str:
 
 
 # ============================================================
+# Client Lifecycle Helpers
+# ============================================================
+
+def _build_client_options(
+    sdk_session_id: Optional[str] = None,
+    workspace: Optional[Path] = None,
+    max_turns: int = 100,
+) -> ClaudeAgentOptions:
+    """Build ClaudeAgentOptions with common settings."""
+    return ClaudeAgentOptions(
+        allowed_tools=ALLOWED_TOOLS,
+        resume=sdk_session_id,
+        permission_mode="bypassPermissions",
+        cwd=str(workspace) if workspace else None,
+        system_prompt={"type": "preset", "preset": "claude_code"},
+        setting_sources=["user", "project"],
+        max_turns=max_turns,
+    )
+
+
+async def _get_or_create_client(
+    sdk_key: str,
+    options: ClaudeAgentOptions,
+) -> ClaudeSDKClient:
+    """Get an existing connected client or create a new one.
+
+    The client keeps the Claude Code subprocess alive across A2A task calls,
+    enabling warm starts and graceful interrupt via client.interrupt().
+    """
+    existing = _sdk_clients.get(sdk_key)
+    if existing and existing._query is not None:
+        logger.info(f"[Client] Reusing existing client for {sdk_key}")
+        return existing
+
+    # Discard stale client if any
+    if existing:
+        logger.info(f"[Client] Discarding disconnected client for {sdk_key}")
+        try:
+            await existing.disconnect()
+        except Exception:
+            pass
+        _sdk_clients.pop(sdk_key, None)
+
+    # Create and connect new client
+    client = ClaudeSDKClient(options=options)
+    await client.connect()
+    _sdk_clients[sdk_key] = client
+    logger.info(f"[Client] Created new client for {sdk_key}")
+    return client
+
+
+async def _disconnect_client(sdk_key: str) -> None:
+    """Disconnect and remove a cached client."""
+    client = _sdk_clients.pop(sdk_key, None)
+    if client:
+        try:
+            await client.disconnect()
+            logger.info(f"[Client] Disconnected client for {sdk_key}")
+        except Exception as e:
+            logger.warning(f"[Client] Disconnect failed for {sdk_key}: {e}")
+
+
+# ============================================================
 # A2A Executor
 # ============================================================
 
 class ClaudeCodeExecutor(AgentExecutor):
     """
-    A2A Executor that wraps Claude Agent SDK.
+    A2A Executor that wraps Claude Agent SDK in streaming mode.
 
-    Each incoming A2A task is executed by claude_agent_sdk.query().
+    Uses ClaudeSDKClient for long-lived subprocess connections. This enables:
+    - Graceful interrupt via client.interrupt() instead of SIGTERM
+    - Session continuity: the subprocess stays alive across A2A task calls
+    - Warm starts: no subprocess restart between tasks in the same session
+
     Tool usage events are streamed back as intermediate A2A artifacts.
     The final result is emitted as the "code_result" artifact.
-
-    Session continuity: the SDK session_id (captured from the init message)
-    is stored and reused on subsequent calls with the same user+session pair,
-    so Claude retains context (files read, edits made, etc.) across turns.
     """
 
     async def execute(self, context: RequestContext, event_queue: EventQueue) -> None:
         updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+        cancel_event = asyncio.Event()
+        _cancel_events[context.task_id] = cancel_event
+        try:
+            await self._execute_impl(context, event_queue, updater, cancel_event)
+        except asyncio.CancelledError:
+            # Safety net: framework calls producer_task.cancel() after cancel().
+            # S3 sync should already be done in _execute_impl's finally block.
+            logger.info(f"[ClaudeCodeExecutor] Task {context.task_id} CancelledError (fallback)")
+            raise
+        finally:
+            _cancel_events.pop(context.task_id, None)
+            _task_to_sdk_key.pop(context.task_id, None)
 
+    async def _execute_impl(
+        self,
+        context: RequestContext,
+        event_queue: EventQueue,
+        updater: TaskUpdater,
+        cancel_event: asyncio.Event,
+    ) -> None:
         # --- Extract task text ---
         task_text = _extract_text(context)
         if not task_text:
@@ -437,11 +588,13 @@ class ClaudeCodeExecutor(AgentExecutor):
 
         # --- Session management ---
         sdk_key = f"{user_id}-{session_id}"
+        _task_to_sdk_key[context.task_id] = sdk_key
         reset_session = metadata.get("reset_session", False)
         compact_session = metadata.get("compact_session", False)
 
         if reset_session:
-            # Clear in-memory session and wipe S3 conversation data (keep workspace files)
+            # Disconnect existing client + clear S3 conversation data (keep workspace files)
+            await _disconnect_client(sdk_key)
             _sdk_sessions.pop(sdk_key, None)
             _clear_session_history(user_id, session_id)
             sdk_session_id = None
@@ -472,55 +625,70 @@ class ClaudeCodeExecutor(AgentExecutor):
         files_changed: set = set()   # paths written/edited during this task
         last_todos: list = []        # most recent TodoWrite state
 
+        # --- Get or create streaming client ---
+        options = _build_client_options(sdk_session_id, workspace)
+        try:
+            client = await _get_or_create_client(sdk_key, options)
+        except CLINotFoundError as e:
+            logger.exception("[ClaudeCodeExecutor] Claude CLI not found — check container setup")
+            await updater.add_artifact(
+                [Part(root=TextPart(text=f"Error: Claude CLI not found. Check container setup. ({e})"))],
+                name="error"
+            )
+            await updater.failed()
+            return
+
         # --- Compact conversation history before running the task (if requested) ---
-        # Sends /compact as a standalone prompt — the SDK summarises prior turns
-        # into a fresh context while preserving the session_id for resume.
         if compact_session and sdk_session_id:
             logger.info(f"[ClaudeCodeExecutor] Compacting conversation history…")
             try:
-                compact_options = ClaudeAgentOptions(
-                    allowed_tools=ALLOWED_TOOLS,
-                    resume=sdk_session_id,
-                    permission_mode="bypassPermissions",
-                    cwd=str(workspace),
-                    system_prompt={"type": "preset", "preset": "claude_code"},
-                    setting_sources=["user", "project"],
-                    max_turns=1,
-                )
-                async for msg in query(prompt="/compact", options=compact_options):
-                    # Keep sdk_session_id up-to-date after compaction
+                await client.query(prompt="/compact")
+                async for msg in client.receive_response():
                     if isinstance(msg, SystemMessage) and msg.subtype == "init":
                         new_sid = msg.data.get("session_id")
                         if new_sid:
                             sdk_session_id = new_sid
                             _sdk_sessions[sdk_key] = new_sid
                     elif isinstance(msg, ResultMessage):
-                        new_sid = msg.session_id
-                        if new_sid:
-                            sdk_session_id = new_sid
-                            _sdk_sessions[sdk_key] = new_sid
+                        if msg.session_id:
+                            sdk_session_id = msg.session_id
+                            _sdk_sessions[sdk_key] = msg.session_id
                 logger.info(f"[ClaudeCodeExecutor] Compaction done — session: {sdk_session_id}")
             except Exception as e:
-                # Compaction failure is non-fatal; proceed with the original session
                 logger.warning(f"[ClaudeCodeExecutor] Compaction failed (proceeding anyway): {e}")
 
+        # --- Execute main query ---
+        last_stop_check = time.monotonic()
         try:
-            options = ClaudeAgentOptions(
-                allowed_tools=ALLOWED_TOOLS,
-                resume=sdk_session_id,        # None on first call → new session
-                permission_mode="bypassPermissions",  # No interactive prompts in server mode
-                cwd=str(workspace),
-                system_prompt={"type": "preset", "preset": "claude_code"},
-                setting_sources=["user", "project"],
-                max_turns=100,
-            )
+            await client.query(prompt=task_text)
 
-            async for message in query(prompt=task_text, options=options):
+            async for message in client.receive_messages():
+                # Check cancel event — graceful exit on interrupt
+                if cancel_event.is_set():
+                    logger.info(f"[ClaudeCodeExecutor] Cancel event detected, exiting message loop")
+                    break
+
+                # Poll DynamoDB for phase 2 stop signal (1-second interval)
+                now = time.monotonic()
+                if now - last_stop_check >= 1.0:
+                    last_stop_check = now
+                    if _check_dynamodb_stop(user_id, session_id):
+                        logger.info(f"[ClaudeCodeExecutor] Phase 2 stop signal detected")
+                        cancel_event.set()
+                        if client._query:
+                            try:
+                                await client.interrupt()
+                                logger.info(f"[ClaudeCodeExecutor] Interrupt sent via phase 2 stop")
+                            except Exception as e:
+                                logger.warning(f"[ClaudeCodeExecutor] interrupt() failed: {e}")
+                        _clear_dynamodb_stop(user_id, session_id)
+                        break
 
                 # Capture SDK session_id from init event (for future resume)
                 if isinstance(message, SystemMessage) and message.subtype == "init":
                     new_sid = message.data.get("session_id")
                     if new_sid and new_sid != sdk_session_id:
+                        sdk_session_id = new_sid
                         _sdk_sessions[sdk_key] = new_sid
                         logger.info(f"[ClaudeCodeExecutor] SDK session stored: {new_sid}")
 
@@ -539,8 +707,6 @@ class ClaudeCodeExecutor(AgentExecutor):
                             tool_name = block.name
 
                             if tool_name == "TodoWrite":
-                                # Emit current todo state as a streaming artifact.
-                                # Each call replaces the full list — receiver takes the latest.
                                 todo_counter += 1
                                 todos = block.input.get("todos", [])
                                 last_todos = todos
@@ -551,7 +717,6 @@ class ClaudeCodeExecutor(AgentExecutor):
                                 done = sum(1 for t in todos if t.get("status") == "completed")
                                 logger.info(f"[ClaudeCodeExecutor] Todos: {done}/{len(todos)} completed")
                             else:
-                                # Track files modified by Write / Edit
                                 if tool_name in ("Write", "Edit"):
                                     fp = block.input.get("file_path", "")
                                     if fp:
@@ -572,17 +737,12 @@ class ClaudeCodeExecutor(AgentExecutor):
                         _sdk_sessions[sdk_key] = message.session_id
                         logger.info(f"[ClaudeCodeExecutor] SDK session stored: {message.session_id}")
                     logger.info(f"[ClaudeCodeExecutor] Done: {str(final_result)}")
+                    break  # Turn complete
 
-        except CLINotFoundError as e:
-            logger.exception("[ClaudeCodeExecutor] Claude CLI not found — check container setup")
-            await updater.add_artifact(
-                [Part(root=TextPart(text=f"Error: Claude CLI not found. Check container setup. ({e})"))],
-                name="error"
-            )
-            await updater.failed()
-            return
         except (CLIConnectionError, CLIJSONDecodeError) as e:
             logger.exception("[ClaudeCodeExecutor] CLI communication error")
+            # Client is broken — discard and let next call recreate with resume=
+            await _disconnect_client(sdk_key)
             await updater.add_artifact(
                 [Part(root=TextPart(text=f"Error: CLI communication failed. ({e})"))],
                 name="error"
@@ -591,6 +751,7 @@ class ClaudeCodeExecutor(AgentExecutor):
             return
         except ProcessError as e:
             logger.exception("[ClaudeCodeExecutor] CLI process error (exit code: %s)", e.exit_code)
+            await _disconnect_client(sdk_key)
             await updater.add_artifact(
                 [Part(root=TextPart(text=f"Error: {str(e)}"))],
                 name="error"
@@ -599,6 +760,7 @@ class ClaudeCodeExecutor(AgentExecutor):
             return
         except Exception as e:
             logger.exception("[ClaudeCodeExecutor] Unexpected execution error")
+            await _disconnect_client(sdk_key)
             await updater.add_artifact(
                 [Part(root=TextPart(text=f"Error: {str(e)}"))],
                 name="error"
@@ -606,14 +768,11 @@ class ClaudeCodeExecutor(AgentExecutor):
             await updater.failed()
             return
 
-        # Emit final result as a structured JSON payload.
-        # - summary: the agent's text response (used by the orchestrator LLM)
-        # - files_changed: paths written/edited during this task
-        # - todos: final TodoWrite state (empty list if agent didn't use todos)
-        # - steps: total tool-use steps executed
+        # --- Emit final result (both on success and cancel) ---
+        was_cancelled = cancel_event.is_set()
         result_payload = {
-            "status": "completed",
-            "summary": str(final_result) if final_result else "",
+            "status": "cancelled" if was_cancelled else "completed",
+            "summary": str(final_result) if final_result else ("(interrupted)" if was_cancelled else ""),
             "files_changed": sorted(files_changed),
             "todos": last_todos,
             "steps": step_counter,
@@ -623,13 +782,48 @@ class ClaudeCodeExecutor(AgentExecutor):
             name="code_result"
         )
 
-        # --- Sync workspace + Claude session to S3 for cold-start recovery ---
+        # --- Always sync to S3 — critical for cancel case (session continuity) ---
         sync_session(user_id, session_id, workspace, _sdk_sessions.get(sdk_key))
 
-        await updater.complete()
+        if was_cancelled:
+            await updater.cancel()
+        else:
+            await updater.complete()
 
     async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
-        raise NotImplementedError("Cancel not supported")
+        """Gracefully cancel a running task using interrupt instead of SIGTERM.
+
+        Flow:
+        1. Set cancel_event so execute() loop exits cleanly
+        2. Send interrupt() to Claude Code subprocess (like pressing ESC)
+        3. Report cancel status to A2A framework
+
+        The subprocess stays alive — next query() reuses the same client.
+        """
+        logger.info(f"[ClaudeCodeExecutor] Cancel requested for task {context.task_id}")
+
+        # 1. Signal the execute() message loop to stop
+        cancel_event = _cancel_events.get(context.task_id)
+        if cancel_event:
+            cancel_event.set()
+
+        # 2. Send graceful interrupt to Claude Code (not SIGTERM)
+        sdk_key = _task_to_sdk_key.get(context.task_id)
+        if sdk_key:
+            client = _sdk_clients.get(sdk_key)
+            if client and client._query:
+                try:
+                    await client.interrupt()
+                    logger.info(f"[ClaudeCodeExecutor] Interrupt sent to client {sdk_key}")
+                except Exception as e:
+                    logger.warning(f"[ClaudeCodeExecutor] interrupt() failed: {e}")
+
+        # 3. Report cancel to A2A framework
+        updater = TaskUpdater(event_queue, context.task_id, context.context_id)
+        try:
+            await updater.cancel()
+        except Exception as e:
+            logger.warning(f"[ClaudeCodeExecutor] updater.cancel() failed: {e}")
 
 
 # ============================================================

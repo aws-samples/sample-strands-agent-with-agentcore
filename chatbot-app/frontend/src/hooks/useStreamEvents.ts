@@ -2,7 +2,7 @@ import { useCallback, useRef, startTransition, useEffect } from 'react'
 import { flushSync } from 'react-dom'
 import { EventType, type TextMessageStartEvent, type TextMessageContentEvent, type TextMessageEndEvent, type ToolCallStartEvent, type ToolCallArgsEvent, type ToolCallEndEvent, type ToolCallResultEvent, type RunFinishedEvent, type RunErrorEvent, type CustomEvent } from '@ag-ui/core'
 import { Message, ToolExecution } from '@/types/chat'
-import { StreamEvent, ChatSessionState, ChatUIState, WorkspaceFile, SWARM_AGENT_DISPLAY_NAMES, SwarmAgentStep, TokenUsage } from '@/types/events'
+import { AGUIStreamEvent, ChatSessionState, ChatUIState, WorkspaceFile, SWARM_AGENT_DISPLAY_NAMES, SwarmAgentStep, TokenUsage } from '@/types/events'
 import { useMetadataTracking } from './useMetadataTracking'
 import { useTextBuffer } from './useTextBuffer'
 import { A2A_TOOLS_REQUIRING_POLLING, isA2ATool, getAgentStatusForTool } from './usePolling'
@@ -1146,6 +1146,9 @@ export const useStreamEvents = ({
     const activeExec = currentToolExecutionsRef.current.find(
       t => isCodeAgentExec(t) && !t.isComplete
     )
+    if (!activeExec) {
+      console.warn('[useStreamEvents] code_step: no active code agent exec found for codeSteps persistence')
+    }
     if (activeExec) {
       const updatedSteps = [...(activeExec.codeSteps || []), step]
       const updatedExecutions = currentToolExecutionsRef.current.map(t =>
@@ -1165,10 +1168,14 @@ export const useStreamEvents = ({
 
   const handleCodeTodoUpdateEvent = useCallback((event: CustomEvent) => {
     const ev = (event as any).value
-    const activeExec = currentToolExecutionsRef.current.find(
+    const allExecs = currentToolExecutionsRef.current
+    const activeExec = allExecs.find(
       t => isCodeAgentExec(t) && !t.isComplete
     )
-    if (!activeExec) return
+    if (!activeExec) {
+      console.warn('[useStreamEvents] code_todo_update: no active code agent exec found, skipping')
+      return
+    }
 
     const todos = ev.todos || []
     const updatedExecutions = currentToolExecutionsRef.current.map(t =>
@@ -1495,11 +1502,11 @@ export const useStreamEvents = ({
     }))
   }, [setSessionState, setMessages, textBuffer])
 
-  const handleStreamEvent = useCallback((event: StreamEvent) => {
+  const handleStreamEvent = useCallback((event: AGUIStreamEvent) => {
     try {
       // Event deduplication for SSE reconnection
       // Use "eventId:type" as key because multiple event types can share the same SSE event id
-      const eventId = (event as any).eventId as number | undefined
+      const eventId = (event as any)._eventId as number | undefined
       if (eventId && eventId > 0) {
         const dedupKey = `${eventId}:${event.type}`
         if (processedEventIdsRef.current.has(dedupKey)) {
