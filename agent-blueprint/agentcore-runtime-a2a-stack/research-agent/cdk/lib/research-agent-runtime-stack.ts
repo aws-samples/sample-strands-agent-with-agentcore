@@ -42,7 +42,8 @@ export class ResearchAgentRuntimeStack extends cdk.Stack {
         )
       : new ecr.Repository(this, 'ResearchAgentRepository', {
           repositoryName: `${projectName}-research-agent`,
-          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+          emptyOnDelete: true,
           imageScanOnPush: true,
           lifecycleRules: [
             {
@@ -51,6 +52,16 @@ export class ResearchAgentRuntimeStack extends cdk.Stack {
             },
           ],
         })
+
+    // Artifact bucket name — shared with AgentRuntimeStack
+    // Read from SSM if available (handles both old 'chatbot-docs' and new 'chatbot-artifact' buckets)
+    const artifactBucketSsmValue = ssm.StringParameter.valueFromLookup(
+      this,
+      `/${projectName}/${environment}/agentcore/artifact-bucket`
+    )
+    const artifactBucketName = artifactBucketSsmValue.startsWith('dummy-value-for-')
+      ? `${projectName}-artifact-${this.account}-${this.region}`
+      : artifactBucketSsmValue
 
     // ============================================================
     // Step 2: IAM Execution Role for AgentCore Runtime
@@ -155,7 +166,7 @@ export class ResearchAgentRuntimeStack extends cdk.Stack {
       })
     )
 
-    // S3 Access for Source and Chart Storage
+    // S3 Access for Source and Artifact Storage
     executionRole.addToPolicy(
       new iam.PolicyStatement({
         sid: 'S3BucketAccess',
@@ -164,8 +175,8 @@ export class ResearchAgentRuntimeStack extends cdk.Stack {
         resources: [
           `arn:aws:s3:::${projectName}-research-src-${this.account}-${this.region}`,
           `arn:aws:s3:::${projectName}-research-src-${this.account}-${this.region}/*`,
-          `arn:aws:s3:::${projectName}-research-charts-${this.account}-${this.region}`,
-          `arn:aws:s3:::${projectName}-research-charts-${this.account}-${this.region}/*`,
+          `arn:aws:s3:::${artifactBucketName}`,
+          `arn:aws:s3:::${artifactBucketName}/*`,
         ],
       })
     )
@@ -181,29 +192,6 @@ export class ResearchAgentRuntimeStack extends cdk.Stack {
         {
           expiration: cdk.Duration.days(7),
           id: 'DeleteOldSources',
-        },
-      ],
-    })
-
-    // Chart Storage Bucket for Research Agent
-    const chartBucket = new s3.Bucket(this, 'ResearchChartStorageBucket', {
-      bucketName: `${projectName}-research-charts-${this.account}-${this.region}`,
-      removalPolicy: cdk.RemovalPolicy.RETAIN,
-      versioned: false,
-      publicReadAccess: false,  // Presigned URLs work without public access
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,  // Block public access, use presigned URLs
-      lifecycleRules: [
-        {
-          expiration: cdk.Duration.days(90),
-          id: 'DeleteOldCharts',
-        },
-      ],
-      cors: [
-        {
-          allowedMethods: [s3.HttpMethods.GET],
-          allowedOrigins: ['*'],
-          allowedHeaders: ['*'],
-          maxAge: 3600,
         },
       ],
     })
@@ -503,7 +491,7 @@ async function sendResponse(event, status, data, reason) {
         ENVIRONMENT: environment,
         AWS_DEFAULT_REGION: this.region,
         AWS_REGION: this.region,
-        CHART_STORAGE_BUCKET: chartBucket.bucketName,
+        ARTIFACT_BUCKET: artifactBucketName,
         // Workaround for OTEL botocore instrumentation bug (fixed in next ADOT release)
         // See: https://sim.amazon.com/issues/apm-telegen-2758
         OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: 'boto,botocore',

@@ -52,14 +52,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Get document bucket
-    let documentBucket = process.env.DOCUMENT_BUCKET
+    let documentBucket = process.env.ARTIFACT_BUCKET
 
     if (!documentBucket) {
       try {
         const ssmClient = new SSMClient({ region })
         const projectName = process.env.PROJECT_NAME || 'strands-agent-chatbot'
         const environment = process.env.ENVIRONMENT || 'dev'
-        const paramName = `/${projectName}/${environment}/agentcore/document-bucket`
+        const paramName = `/${projectName}/${environment}/agentcore/artifact-bucket`
 
         const paramResponse = await ssmClient.send(
           new GetParameterCommand({ Name: paramName })

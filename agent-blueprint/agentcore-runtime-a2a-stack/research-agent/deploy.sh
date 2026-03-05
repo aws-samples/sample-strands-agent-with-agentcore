@@ -117,7 +117,37 @@ echo ""
 # Deploy CDK stack
 log_step "Deploying Research Agent A2A Runtime Stack..."
 echo ""
-npx cdk deploy --require-approval never
+if ! npx cdk deploy --require-approval never 2>&1 | tee /tmp/cdk-deploy-output.txt; then
+    if grep -q "research-charts\|already exists" /tmp/cdk-deploy-output.txt; then
+        echo ""
+        echo "========================================"
+        log_warn "Legacy S3 bucket conflict detected (ResearchChartStorageBucket)."
+        echo ""
+        echo -e "  The old ${YELLOW}research-charts${NC} bucket conflicts with the new"
+        echo -e "  consolidated artifact bucket layout."
+        echo ""
+        read -p "  Automatically destroy and redeploy? [y/N]: " AUTO_FIX
+        echo ""
+
+        if [[ "$AUTO_FIX" =~ ^[Yy]$ ]]; then
+            log_step "Destroying ResearchAgentRuntimeStack..."
+            npx cdk destroy --force --all --region $AWS_REGION
+            log_info "Stack destroyed."
+            echo ""
+
+            log_step "Redeploying Research Agent A2A Runtime Stack..."
+            echo ""
+            npx cdk deploy --require-approval never
+        else
+            log_error "Deployment aborted. Run destroy manually then redeploy."
+            exit 1
+        fi
+    else
+        echo ""
+        log_error "Deployment failed. See output above for details."
+        exit 1
+    fi
+fi
 
 # Get stack outputs
 log_step "Retrieving stack outputs..."

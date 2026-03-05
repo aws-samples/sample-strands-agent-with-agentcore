@@ -10,14 +10,14 @@ const s3Client = new S3Client({ region })
 let _bucketCache: string | null = null
 
 async function getDocumentBucket(): Promise<string> {
-  if (process.env.DOCUMENT_BUCKET) return process.env.DOCUMENT_BUCKET
+  if (process.env.ARTIFACT_BUCKET) return process.env.ARTIFACT_BUCKET
   if (_bucketCache) return _bucketCache
 
   const ssmClient = new SSMClient({ region })
   const projectName = process.env.PROJECT_NAME || 'strands-agent-chatbot'
   const environment = process.env.ENVIRONMENT || 'dev'
   const response = await ssmClient.send(
-    new GetParameterCommand({ Name: `/${projectName}/${environment}/agentcore/document-bucket` })
+    new GetParameterCommand({ Name: `/${projectName}/${environment}/agentcore/artifact-bucket` })
   )
   const bucket = response.Parameter?.Value
   if (!bucket) throw new Error('Document bucket not configured')

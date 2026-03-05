@@ -46,63 +46,39 @@ class TokenResult:
 
 # ── Callback URL Loading ─────────────────────────────────────────────────
 
-OAUTH_CALLBACK_PATH = "/oauth-complete"
 
-
-def get_oauth_callback_url(
-    env_var: str = "OAUTH2_CALLBACK_URL",
-    ssm_param_suffix: str = "frontend-url",
-) -> str:
-    """Load OAuth callback URL from environment or SSM.
+def get_oauth_callback_url() -> str:
+    """Load OAuth callback URL from SSM Parameter Store.
 
     After user completes consent, AgentCore redirects to this URL
     with a session_id query parameter. The frontend must then call
     CompleteResourceTokenAuth to finalize the token exchange.
 
-    Resolution order:
-    1. Environment variable (full URL with path)
-    2. SSM parameter + /oauth-complete path
-
-    Args:
-        env_var: Environment variable name for callback URL
-        ssm_param_suffix: SSM parameter suffix (appended to /{project}/{env}/)
+    The SSM parameter /{project}/{env}/mcp/oauth2-callback-url is managed
+    by ChatbotStack and updated automatically on each deployment.
 
     Returns:
-        str: Full callback URL with /oauth-complete path
+        str: Full callback URL (includes /oauth-complete path)
 
     Raises:
         RuntimeError: If callback URL cannot be resolved
     """
-    # Check environment variable first
-    env_url = os.environ.get(env_var)
-    if env_url:
-        logger.info(f"[OAuth] Callback URL from environment: {env_url}")
-        return env_url
-
-    # Try SSM Parameter Store
     project_name = os.environ.get("PROJECT_NAME", "strands-agent-chatbot")
     environment = os.environ.get("ENVIRONMENT", "dev")
     region = os.environ.get("AWS_REGION", "us-west-2")
-    ssm_param = f"/{project_name}/{environment}/{ssm_param_suffix}"
+    ssm_param = f"/{project_name}/{environment}/mcp/oauth2-callback-url"
 
     try:
         ssm = boto3.client("ssm", region_name=region)
         response = ssm.get_parameter(Name=ssm_param)
-        base_url = response["Parameter"]["Value"].rstrip("/")
-
-        # Append /oauth-complete path if not already present
-        if not base_url.endswith(OAUTH_CALLBACK_PATH):
-            callback_url = f"{base_url}{OAUTH_CALLBACK_PATH}"
-        else:
-            callback_url = base_url
-
+        callback_url = response["Parameter"]["Value"].rstrip("/")
         logger.info(f"[OAuth] Callback URL from SSM: {callback_url}")
         return callback_url
     except Exception as e:
         logger.error(f"[OAuth] Failed to load callback URL from SSM ({ssm_param}): {e}")
         raise RuntimeError(
             f"OAuth callback URL not configured. "
-            f"Set {env_var} environment variable or configure SSM parameter {ssm_param}."
+            f"Configure SSM parameter {ssm_param} by deploying ChatbotStack."
         ) from e
 
 
@@ -129,33 +105,18 @@ class OAuthHelper:
     Attributes:
         provider_name: OAuth credential provider name registered in AgentCore
         scopes: List of OAuth scopes to request
-        callback_url: OAuth callback URL for redirects
     """
 
     def __init__(
         self,
         provider_name: str,
         scopes: List[str],
-        callback_url: Optional[str] = None,
         region: Optional[str] = None,
     ):
-        """Initialize OAuth helper.
-
-        Args:
-            provider_name: OAuth credential provider name (e.g., "google-oauth-provider")
-            scopes: List of OAuth scopes to request
-            callback_url: OAuth callback URL (loaded from env/SSM if not provided)
-            region: AWS region (defaults to AWS_REGION env var or us-west-2)
-        """
         self.provider_name = provider_name
         self.scopes = scopes
         self.region = region or os.environ.get("AWS_REGION", "us-west-2")
-
-        # Load callback URL if not provided
-        if callback_url:
-            self.callback_url = callback_url
-        else:
-            self.callback_url = get_oauth_callback_url()
+        self.callback_url = get_oauth_callback_url()
 
         # Create IdentityClient once (boto3 client creation is expensive)
         self._identity_client = IdentityClient(self.region)

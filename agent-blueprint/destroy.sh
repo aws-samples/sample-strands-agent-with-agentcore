@@ -253,6 +253,21 @@ destroy_mcp_servers() {
         cd ../..
     fi
 
+    # AgentCore Runtime MCP Stack (3LO OAuth MCP Runtime)
+    if [ -d "agentcore-runtime-mcp-stack/cdk" ]; then
+        log_step "Destroying AgentCore Runtime MCP Stack (3LO)..."
+        cd agentcore-runtime-mcp-stack/cdk
+
+        if [ ! -d "node_modules" ]; then
+            log_step "Installing CDK dependencies..."
+            npm install --silent
+        fi
+
+        npx cdk destroy --force --all --region $AWS_REGION || log_warn "Mcp3loRuntimeStack destroy failed (may need manual cleanup)"
+
+        cd ../..
+    fi
+
     log_info "MCP Servers destroyed!"
     echo ""
 }

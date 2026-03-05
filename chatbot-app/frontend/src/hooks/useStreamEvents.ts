@@ -441,24 +441,20 @@ export const useStreamEvents = ({
   }, [toolInputAccumulatorRef, currentToolExecutionsRef, setSessionState, setMessages])
 
   const handleToolCallResultEvent = useCallback((event: ToolCallResultEvent) => {
-    const ev = event as any
-
-    // AG-UI ToolCallResultEvent wraps the payload inside .content as a JSON string:
-    // content = '{"result":"...", "metadata":{...}, "images":[...], "status":"success"}'
+    // AG-UI: content is a JSON string: '{"result":"...","metadata":{...},"images":[...],"status":"..."}'
     let parsedContent: any = {}
     try {
       if (event.content) {
         parsedContent = JSON.parse(event.content)
       }
     } catch {
-      // non-JSON content: treat as plain text result
       parsedContent = { result: event.content }
     }
 
-    const toolOutput   = parsedContent.result   ?? ev.output   ?? ''
-    const toolMetadata = parsedContent.metadata  ?? ev.metadata
-    const toolImages   = parsedContent.images    ?? ev.images   ?? []
-    const toolStatus   = parsedContent.status    ?? ev.status
+    const toolOutput   = parsedContent.result   ?? ''
+    const toolMetadata = parsedContent.metadata
+    const toolImages   = parsedContent.images    ?? []
+    const toolStatus   = parsedContent.status
 
     // Find the tool name from current executions
     const toolExecution = currentToolExecutionsRef.current.find(tool => tool.id === event.toolCallId)
@@ -569,37 +565,6 @@ export const useStreamEvents = ({
         onBrowserSessionDetected(browserSession.sessionId, browserSession.browserId || '')
       }
 
-      // Save to sessionStorage and DynamoDB (only on first set)
-      const currentSessionId = sessionStorage.getItem('chat-session-id')
-      if (currentSessionId) {
-        sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
-
-        ;(async () => {
-          const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
-          try {
-            const session = await fetchAuthSession()
-            const token = session.tokens?.idToken?.toString()
-            if (token) {
-              authHeaders['Authorization'] = `Bearer ${token}`
-            }
-          } catch (error) {
-            // No auth session available - continue without auth header
-          }
-
-          fetch('/api/session/update-browser-session', {
-            method: 'POST',
-            headers: authHeaders,
-            body: JSON.stringify({
-              sessionId: currentSessionId,
-              browserSession
-            })
-          }).catch(() => {
-            // Failed to save browserSession to DynamoDB - non-critical
-          })
-        })().catch(() => {
-          // Non-critical: browser session save failed
-        })
-      }
     }
 
     // Update state - A2A tools use high-priority updates so the artifact
@@ -788,7 +753,7 @@ export const useStreamEvents = ({
             onPptDocumentsCreated(pptDocumentsForArtifact)
           }
         } catch (error) {
-          // Failed to fetch workspace files - non-critical, will use backend-provided documents
+          console.error('[RUN_FINISHED] Workspace API failed:', error)
         }
       }
 
@@ -1606,33 +1571,13 @@ export const useStreamEvents = ({
             case 'metadata': {
               const ev = (customEvent as any).value
               if (ev?.browserSessionId) {
-                const metadata = ev
                 setSessionState(prev => {
-                  if (prev.browserSession) {
-                    return prev
-                  }
-
-                  const browserSession = {
-                    sessionId: metadata.browserSessionId,
-                    browserId: metadata.browserId || null
-                  }
-
-                  // Notify parent about browser session detection (for Canvas integration)
-                  if (onBrowserSessionDetected && browserSession.sessionId) {
-                    onBrowserSessionDetected(browserSession.sessionId, browserSession.browserId || '')
-                  }
-
-                  // Save to sessionStorage (only on first set)
-                  const currentSessionId = sessionStorage.getItem('chat-session-id')
-                  if (currentSessionId) {
-                    sessionStorage.setItem(`browser-session-${currentSessionId}`, JSON.stringify(browserSession))
-                  }
-
-                  return {
-                    ...prev,
-                    browserSession
-                  } as ChatSessionState
+                  if (prev.browserSession) return prev
+                  return { ...prev, browserSession: { sessionId: ev.browserSessionId, browserId: ev.browserId || null } } as ChatSessionState
                 })
+                if (!sessionState.browserSession && onBrowserSessionDetected) {
+                  onBrowserSessionDetected(ev.browserSessionId, ev.browserId || '')
+                }
               }
               break
             }

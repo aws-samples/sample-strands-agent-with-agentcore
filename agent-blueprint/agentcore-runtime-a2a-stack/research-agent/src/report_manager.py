@@ -206,10 +206,10 @@ class ReportManager:
         logger.info(f"Chart saved locally: {chart_path} ({len(image_bytes)} bytes)")
 
         # Upload to S3 (REQUIRED - no fallback)
-        s3_bucket = os.getenv('CHART_STORAGE_BUCKET')
+        s3_bucket = os.getenv('ARTIFACT_BUCKET')
 
         if not s3_bucket:
-            raise ValueError("CHART_STORAGE_BUCKET environment variable is not set. S3 upload is required for chart storage.")
+            raise ValueError("ARTIFACT_BUCKET environment variable is not set. S3 upload is required for chart storage.")
 
         s3_client = get_s3_client()
         if not s3_client:

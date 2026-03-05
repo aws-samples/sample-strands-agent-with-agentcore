@@ -47,6 +47,9 @@ export class CognitoAuthStack extends cdk.Stack {
         custom: false,
         adminUserPassword: false,
       },
+      idTokenValidity: cdk.Duration.hours(8),
+      accessTokenValidity: cdk.Duration.hours(8),
+      refreshTokenValidity: cdk.Duration.days(30),
       oAuth: {
         flows: {
           authorizationCodeGrant: true,

@@ -51,7 +51,8 @@ export class Mcp3loRuntimeStack extends cdk.Stack {
         )
       : new ecr.Repository(this, 'Mcp3loRepository', {
           repositoryName: `${projectName}-mcp-3lo-server`,
-          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+          emptyOnDelete: true,
           imageScanOnPush: true,
           lifecycleRules: [
             {

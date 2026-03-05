@@ -143,23 +143,6 @@ export function ChatInterface() {
 
     addArtifact(browserArtifact)
 
-    // Also save to sessionStorage for persistence across page reloads
-    const currentSessionId = sessionStorage.getItem('chat-session-id')
-    if (currentSessionId) {
-      const artifactsKey = `artifacts-${currentSessionId}`
-      const stored = sessionStorage.getItem(artifactsKey)
-      const existingArtifacts = stored ? JSON.parse(stored) : []
-
-      // Check if browser artifact already exists
-      const existingIndex = existingArtifacts.findIndex((a: any) => a.id === artifactId)
-      if (existingIndex >= 0) {
-        existingArtifacts[existingIndex] = browserArtifact
-      } else {
-        existingArtifacts.push(browserArtifact)
-      }
-      sessionStorage.setItem(artifactsKey, JSON.stringify(existingArtifacts))
-    }
-
     // Set browser artifact ID and open canvas
     setBrowserArtifactId(artifactId)
     openCanvas()
@@ -278,7 +261,7 @@ export function ChatInterface() {
     refreshArtifacts,
     reloadFromStorage,
     justUpdated: artifactJustUpdated,
-  } = useArtifacts(groupedMessages, sessionId)
+  } = useArtifacts(sessionId)
 
   // Keep reloadFromStorage ref in sync for the onSessionLoaded callback
   useEffect(() => {
@@ -357,15 +340,6 @@ export function ChatInterface() {
         title: artifact.title,
         wordCount: artifact.metadata?.word_count
       })
-
-      // Also save to sessionStorage for persistence across reloads
-      if (sessionId) {
-        const artifactsKey = `artifacts-${sessionId}`
-        const stored = sessionStorage.getItem(artifactsKey)
-        const artifacts = stored ? JSON.parse(stored) : []
-        artifacts.push(artifact)
-        sessionStorage.setItem(artifactsKey, JSON.stringify(artifacts))
-      }
 
       // Auto-open the new artifact
       openArtifactBase(artifact.id)
@@ -451,15 +425,6 @@ export function ChatInterface() {
   const removeBrowserArtifact = useCallback((artifactId: string) => {
     removeArtifact(artifactId)
     setBrowserArtifactId(null)
-    const currentSessionId = sessionStorage.getItem('chat-session-id')
-    if (currentSessionId) {
-      const artifactsKey = `artifacts-${currentSessionId}`
-      const stored = sessionStorage.getItem(artifactsKey)
-      if (stored) {
-        const remaining = JSON.parse(stored).filter((a: any) => a.id !== artifactId)
-        sessionStorage.setItem(artifactsKey, JSON.stringify(remaining))
-      }
-    }
   }, [removeArtifact])
 
   // Browser Canvas callbacks - handle connection errors and validation failures
@@ -486,10 +451,9 @@ export function ChatInterface() {
     if (existingBrowserArtifact && !browserArtifactId) {
       console.log('[ChatInterface] Found browser artifact, validating session...')
 
-      // Get browserSession info from artifact metadata or sessionStorage
       const metadata = existingBrowserArtifact.metadata
-      const browserSessionId = metadata?.browserSessionId || browserSession?.sessionId
-      const browserId = metadata?.browserId || browserSession?.browserId
+      const browserSessionId = metadata?.browserSessionId
+      const browserId = metadata?.browserId
 
       if (!browserSessionId) {
         // No session info - remove invalid artifact
@@ -518,14 +482,6 @@ export function ChatInterface() {
             // Session is invalid - remove artifact
             console.log('[ChatInterface] Browser session invalid, removing artifact')
             removeArtifact(existingBrowserArtifact.id)
-
-            // Also remove from sessionStorage
-            const artifactsKey = `artifacts-${sessionId}`
-            const stored = sessionStorage.getItem(artifactsKey)
-            if (stored) {
-              const artifacts = JSON.parse(stored).filter((a: any) => a.id !== existingBrowserArtifact.id)
-              sessionStorage.setItem(artifactsKey, JSON.stringify(artifacts))
-            }
           }
         } catch (error) {
           console.warn('[ChatInterface] Failed to validate browser session:', error)
@@ -785,29 +741,6 @@ export function ChatInterface() {
           timestamp: new Date().toISOString(),
           sessionId: sessionId || undefined,
         })
-
-        // Update sessionStorage for persistence
-        if (sessionId) {
-          const artifactsKey = `artifacts-${sessionId}`
-          const stored = sessionStorage.getItem(artifactsKey)
-          const existingArtifacts = stored ? JSON.parse(stored) : []
-          const newArtifact = {
-            id: targetArtifactId,
-            type: 'research',
-            title: title,
-            content: content,
-            metadata: { description: '' },
-            created_at: new Date().toISOString(),
-          }
-          // Check if artifact already exists
-          const existingIndex = existingArtifacts.findIndex((a: any) => a.id === targetArtifactId)
-          if (existingIndex >= 0) {
-            existingArtifacts[existingIndex] = newArtifact
-          } else {
-            existingArtifacts.push(newArtifact)
-          }
-          sessionStorage.setItem(artifactsKey, JSON.stringify(existingArtifacts))
-        }
 
         // Open the artifact in Canvas and clean up research state
         setResearchArtifactId(null)
@@ -1529,13 +1462,17 @@ export function ChatInterface() {
           onCancel: handleResearchCancel,
           sessionId: sessionId || undefined,
         } : undefined}
-        browserState={browserArtifactId && browserSession?.sessionId ? {
-          sessionId: browserSession.sessionId,
-          browserId: browserSession.browserId || '',
-          isActive: true,
-          onConnectionError: handleBrowserConnectionError,
-          onValidationFailed: handleBrowserValidationFailed,
-        } : undefined}
+        browserState={(() => {
+          const bArtifact = browserArtifactId ? artifacts.find(a => a.id === browserArtifactId) : null
+          const bSessionId = bArtifact?.metadata?.browserSessionId
+          return bSessionId ? {
+            sessionId: bSessionId,
+            browserId: bArtifact?.metadata?.browserId || '',
+            isActive: true,
+            onConnectionError: handleBrowserConnectionError,
+            onValidationFailed: handleBrowserValidationFailed,
+          } : undefined
+        })()}
         sessionId={sessionId || undefined}
       />
     </>

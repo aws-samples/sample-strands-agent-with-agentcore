@@ -6,6 +6,7 @@ import { useStreamEvents } from './useStreamEvents'
 import { useChatAPI, SessionPreferences } from './useChatAPI'
 import { usePolling, hasOngoingA2ATools, A2A_TOOLS_REQUIRING_POLLING } from './usePolling'
 import { getApiUrl } from '@/config/environment'
+import { generateSessionId } from '@/config/session'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { apiGet, apiPost } from '@/lib/api-client'
 
@@ -49,7 +50,7 @@ interface UseChatReturn {
   toggleTool: (toolId: string) => Promise<void>
   setExclusiveTools: (toolIds: string[]) => void
   refreshTools: () => Promise<void>
-  sessionId: string | null
+  sessionId: string
   isLoadingMessages: boolean
   isCompacting: boolean
   loadSession: (sessionId: string) => Promise<void>
@@ -103,7 +104,14 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000')
   const [availableTools, setAvailableTools] = useState<Tool[]>([])
   const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [sessionId, setSessionId] = useState<string>(() => {
+    if (typeof window === 'undefined') return generateSessionId()
+    const saved = sessionStorage.getItem('chat-session-id')
+    if (saved) return saved
+    const newId = generateSessionId()
+    sessionStorage.setItem('chat-session-id', newId)
+    return newId
+  })
   const [swarmEnabled, setSwarmEnabled] = useState(false)
   const [skillsEnabled, setSkillsEnabled] = useState(true)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
@@ -430,62 +438,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   }, [])
 
-  // Restore browserSession from DynamoDB when chat session loads
+  // Clear browserSession when switching sessions (streaming-only state, derived from artifact metadata on restore)
   useEffect(() => {
-    if (!sessionId) return
-
-    async function loadBrowserSession() {
-      try {
-        // Try sessionStorage cache first
-        const cachedBrowserSession = sessionStorage.getItem(`browser-session-${sessionId}`)
-        if (cachedBrowserSession) {
-          const browserSession = JSON.parse(cachedBrowserSession)
-          console.log('[useChat] Restoring browser session from cache:', browserSession)
-          setSessionState(prev => ({ ...prev, browserSession }))
-          return
-        }
-
-        // Get auth headers
-        const authHeaders: Record<string, string> = {}
-        try {
-          const session = await fetchAuthSession()
-          const token = session.tokens?.idToken?.toString()
-          if (token) {
-            authHeaders['Authorization'] = `Bearer ${token}`
-          } else {
-            console.log('[useChat] No auth token available, skipping browser session restore')
-            return
-          }
-        } catch {
-          console.log('[useChat] No auth session available, skipping browser session restore')
-          return
-        }
-
-        const response = await fetch(`/api/session/${sessionId}`, { headers: authHeaders })
-
-        if (response.status === 404) {
-          // 404 is expected for new sessions - session metadata is created on first message
-          setSessionState(prev => ({ ...prev, browserSession: null }))
-          return
-        }
-
-        if (response.ok) {
-          const data = await response.json()
-          if (data.success && data.session?.metadata?.browserSession) {
-            const browserSession = data.session.metadata.browserSession
-            console.warn('[useChat] Restored browser session from DynamoDB')
-            setSessionState(prev => ({ ...prev, browserSession }))
-            sessionStorage.setItem(`browser-session-${sessionId}`, JSON.stringify(browserSession))
-          } else {
-            setSessionState(prev => ({ ...prev, browserSession: null }))
-          }
-        }
-      } catch (e) {
-        console.warn('[useChat] Could not load browser session:', e)
-      }
-    }
-
-    loadBrowserSession()
+    setSessionState(prev => ({ ...prev, browserSession: null }))
   }, [sessionId])
 
   // ==================== OAUTH COMPLETION LISTENER ====================
@@ -505,7 +460,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              sessionId: event.data.sessionId || sessionId,
+              sessionId: sessionId,
               elicitationId: sessionState.pendingOAuth?.elicitationId,
             }),
           })
@@ -607,8 +562,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [loadTools])
 
   const newChat = useCallback(async () => {
-    const oldSessionId = sessionId
-
     // Invalidate current session
     currentSessionIdRef.current = `temp_${Date.now()}`
     stopPolling()
@@ -638,11 +591,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         return updated
       }))
       sessionEnabledToolsRef.current = []
-      if (oldSessionId) {
-        sessionStorage.removeItem(`browser-session-${oldSessionId}`)
-      }
     }
-  }, [apiNewChat, sessionId, stopPolling, setAvailableTools])
+  }, [apiNewChat, stopPolling, setAvailableTools])
 
   const respondToInterrupt = useCallback(async (interruptId: string, response: string) => {
     if (!sessionState.interrupt) return

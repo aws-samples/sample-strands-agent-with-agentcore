@@ -49,7 +49,8 @@ export class AgentRuntimeStack extends cdk.Stack {
         )
       : new ecr.Repository(this, 'AgentCoreRepository', {
           repositoryName: `${projectName}-agent-core`,
-          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+          emptyOnDelete: true,
           imageScanOnPush: true,
           lifecycleRules: [
             {
@@ -319,43 +320,57 @@ export class AgentRuntimeStack extends cdk.Stack {
     })
 
     // ============================================================
-    // Document Storage Bucket (Word, PowerPoint, Excel, PDF)
+    // Artifact Storage Bucket (documents, charts, workspace files)
+    // USE_EXISTING_BUCKET=true: import existing bucket from SSM (non-breaking redeploy)
+    // USE_EXISTING_BUCKET=false: create new bucket named chatbot-artifact
     // ============================================================
-    const documentBucket = new s3.Bucket(this, 'DocumentBucket', {
-      bucketName: `${projectName}-docs-${this.account}-${this.region}`,
-      removalPolicy: cdk.RemovalPolicy.RETAIN, // Retain user documents on stack deletion
-      autoDeleteObjects: false,
-      versioned: true, // Enable versioning for document history
-      encryption: s3.BucketEncryption.S3_MANAGED,
-      lifecycleRules: [
-        {
-          id: 'DeleteOldVersions',
-          noncurrentVersionExpiration: cdk.Duration.days(90), // Keep old versions for 90 days
-        },
-        {
-          id: 'TransitionToIA',
-          transitions: [
+    const useExistingBucket = process.env.USE_EXISTING_BUCKET === 'true'
+    // valueFromLookup returns 'dummy-value-for-<param>' on first synth before context lookup.
+    // Fall back to a valid placeholder so CDK bucket name validation passes; real value used after lookup.
+    const _artifactBucketLookup = ssm.StringParameter.valueFromLookup(
+      this,
+      `/${projectName}/${environment}/agentcore/artifact-bucket`
+    )
+    const _artifactBucketName = _artifactBucketLookup.startsWith('dummy-value-for-')
+      ? `${projectName}-artifact-placeholder`
+      : _artifactBucketLookup
+    const documentBucket: s3.IBucket = useExistingBucket
+      ? s3.Bucket.fromBucketName(
+          this,
+          'DocumentBucket',
+          _artifactBucketName
+        )
+      : new s3.Bucket(this, 'DocumentBucket', {
+          bucketName: `${projectName}-artifact-${this.account}-${this.region}`,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+          autoDeleteObjects: true,
+          versioned: false,
+          encryption: s3.BucketEncryption.S3_MANAGED,
+          lifecycleRules: [
             {
-              storageClass: s3.StorageClass.INFREQUENT_ACCESS,
-              transitionAfter: cdk.Duration.days(30), // Move to IA after 30 days
+              id: 'TransitionToIA',
+              transitions: [
+                {
+                  storageClass: s3.StorageClass.INFREQUENT_ACCESS,
+                  transitionAfter: cdk.Duration.days(30),
+                },
+              ],
             },
           ],
-        },
-      ],
-      cors: [
-        {
-          allowedMethods: [
-            s3.HttpMethods.GET,
-            s3.HttpMethods.PUT,
-            s3.HttpMethods.DELETE,
+          cors: [
+            {
+              allowedMethods: [
+                s3.HttpMethods.GET,
+                s3.HttpMethods.PUT,
+                s3.HttpMethods.DELETE,
+              ],
+              allowedOrigins: ['*'],
+              allowedHeaders: ['*'],
+              maxAge: 3000,
+            },
           ],
-          allowedOrigins: ['*'], // TODO: Restrict to frontend domain in production
-          allowedHeaders: ['*'],
-          maxAge: 3000,
-        },
-      ],
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-    })
+          blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+        })
 
     // Grant Runtime execution role permissions for document bucket
     executionRole.addToPolicy(
@@ -788,28 +803,27 @@ async function sendResponse(event, status, data, reason) {
     })
 
     // Create Memory with short-term and long-term strategies using L1 construct (CfnMemory)
+    // Always keep CfnMemory in the template to prevent CloudFormation from deleting it on redeploy
     const memoryName = projectName.replace(/-/g, '_') + '_memory'
+
     const memory = new agentcore.CfnMemory(this, 'AgentCoreMemory', {
       name: memoryName,
       description: 'Long-term memory for user preferences, conversation context, and semantic facts',
       memoryExecutionRoleArn: memoryExecutionRole.roleArn,
-      eventExpiryDuration: 90, // Short-term memory retention in days (7-365 days)
+      eventExpiryDuration: 90,
       memoryStrategies: [
-        // User Preference Extraction: Captures user preferences like coding style, language preference, etc.
         {
           userPreferenceMemoryStrategy: {
             name: 'user_preference_extraction',
             description: 'Extracts and stores user preferences from conversations',
           },
         },
-        // Semantic Fact Extraction: Captures semantic facts and learned information
         {
           semanticMemoryStrategy: {
             name: 'semantic_fact_extraction',
             description: 'Extracts semantic facts and learned information from conversations',
           },
         },
-        // Conversation Summary: Creates summaries of conversations for context optimization
         {
           summaryMemoryStrategy: {
             name: 'conversation_summary',
@@ -818,6 +832,9 @@ async function sendResponse(event, status, data, reason) {
         },
       ],
     })
+    this.memory = memory
+    const memoryArn = memory.attrMemoryArn
+    this.memoryArn = memoryArn
 
     // Grant Runtime execution role permissions to use Memory
     executionRole.addToPolicy(
@@ -836,25 +853,20 @@ async function sendResponse(event, status, data, reason) {
           'bedrock-agentcore:ListActors',
           'bedrock-agentcore:ListSessions',
         ],
-        resources: [memory.attrMemoryArn],
+        resources: [memoryArn],
       })
     )
 
-    // Store the memory reference
-    this.memory = memory
-    this.memoryArn = memory.attrMemoryArn
-
-    // Store memory configuration in Parameter Store for Runtime
     new ssm.StringParameter(this, 'MemoryArnParameter', {
       parameterName: `/${projectName}/${environment}/agentcore/memory-arn`,
-      stringValue: memory.attrMemoryArn,
+      stringValue: memoryArn,
       description: 'AgentCore Memory ARN for user preference storage',
       tier: ssm.ParameterTier.STANDARD,
     })
 
     new ssm.StringParameter(this, 'MemoryIdParameter', {
       parameterName: `/${projectName}/${environment}/agentcore/memory-id`,
-      stringValue: memory.attrMemoryId,
+      stringValue: cdk.Fn.select(1, cdk.Fn.split('/', memoryArn)),
       description: 'AgentCore Memory ID for user preference storage',
       tier: ssm.ParameterTier.STANDARD,
     })
@@ -922,14 +934,14 @@ async function sendResponse(event, status, data, reason) {
         AWS_REGION: this.region,
         PROJECT_NAME: projectName,
         ENVIRONMENT: environment,
-        MEMORY_ARN: memory.attrMemoryArn,
+        MEMORY_ARN: memoryArn,
         MEMORY_ID: memory.attrMemoryId,
         BROWSER_ID: browser.attrBrowserId,
         BROWSER_NAME: browserCustomName,
         NOVA_ACT_WORKFLOW_DEFINITION_NAME: novaActWorkflowDefinitionName,
         NOVA_ACT_REGION: 'us-east-1',
         CODE_INTERPRETER_ID: codeInterpreter.attrCodeInterpreterId,
-        DOCUMENT_BUCKET: documentBucket.bucketName,
+        ARTIFACT_BUCKET: documentBucket.bucketName,
         // DynamoDB table for out-of-band stop signal polling
         DYNAMODB_USERS_TABLE: `${projectName}-users-v2`,
         // OpenTelemetry observability configuration
@@ -1002,7 +1014,7 @@ async function sendResponse(event, status, data, reason) {
     })
 
     new cdk.CfnOutput(this, 'MemoryArn', {
-      value: memory.attrMemoryArn,
+      value: memoryArn,
       description: 'AgentCore Memory ARN for user preference storage',
       exportName: `${projectName}-agent-core-memory-arn`,
     })
@@ -1014,7 +1026,7 @@ async function sendResponse(event, status, data, reason) {
     })
 
     new cdk.CfnOutput(this, 'MemoryName', {
-      value: memory.name,
+      value: memory.name ?? memoryName,
       description: 'AgentCore Memory Name',
     })
 
@@ -1030,16 +1042,26 @@ async function sendResponse(event, status, data, reason) {
       exportName: `${projectName}-code-interpreter-arn`,
     })
 
-    new cdk.CfnOutput(this, 'DocumentBucketName', {
+    // Store artifact bucket name in SSM for cross-stack reference and USE_EXISTING_BUCKET
+    if (!useExistingBucket) {
+      new ssm.StringParameter(this, 'ArtifactBucketParameter', {
+        parameterName: `/${projectName}/${environment}/agentcore/artifact-bucket`,
+        stringValue: documentBucket.bucketName,
+        description: 'Artifact bucket name for USE_EXISTING_BUCKET redeploy',
+        tier: ssm.ParameterTier.STANDARD,
+      })
+    }
+
+    new cdk.CfnOutput(this, 'ArtifactBucketName', {
       value: documentBucket.bucketName,
-      description: 'S3 bucket for document storage (Word, PowerPoint, Excel, PDF)',
-      exportName: `${projectName}-document-bucket`,
+      description: 'S3 bucket for artifact storage (documents, charts, workspace files)',
+      exportName: `${projectName}-artifact-bucket`,
     })
 
-    new cdk.CfnOutput(this, 'DocumentBucketArn', {
+    new cdk.CfnOutput(this, 'ArtifactBucketArn', {
       value: documentBucket.bucketArn,
-      description: 'S3 bucket ARN for document storage',
-      exportName: `${projectName}-document-bucket-arn`,
+      description: 'S3 bucket ARN for artifact storage',
+      exportName: `${projectName}-artifact-bucket-arn`,
     })
 
     new cdk.CfnOutput(this, 'NovaActWorkflowDefinitionName', {

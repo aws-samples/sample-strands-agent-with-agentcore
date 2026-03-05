@@ -222,6 +222,19 @@ PYEOF
         export USE_EXISTING_ECR=false
     fi
 
+    # Check if artifact bucket already exists (USE_EXISTING_BUCKET)
+    EXISTING_BUCKET=$(aws ssm get-parameter \
+        --name "/${PROJECT_NAME:-strands-agent-chatbot}/${ENVIRONMENT:-dev}/agentcore/artifact-bucket" \
+        --region $AWS_REGION \
+        --query 'Parameter.Value' --output text 2>/dev/null || echo "")
+    if [ -n "$EXISTING_BUCKET" ] && aws s3api head-bucket --bucket "$EXISTING_BUCKET" --region $AWS_REGION &>/dev/null; then
+        log_info "Artifact bucket already exists ($EXISTING_BUCKET), importing..."
+        export USE_EXISTING_BUCKET=true
+    else
+        log_info "Creating new artifact bucket..."
+        export USE_EXISTING_BUCKET=false
+    fi
+
     # Deploy infrastructure
     log_step "Deploying CDK infrastructure..."
     npx cdk deploy --require-approval never

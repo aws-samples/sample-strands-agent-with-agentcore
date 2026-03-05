@@ -6,6 +6,7 @@ Skill infrastructure tools for progressive disclosure.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 from datetime import timedelta

@@ -103,34 +103,6 @@ else
 fi
 echo ""
 
-# ── Frontend URL for OAuth callback ────────────────────────────
-# Try to get frontend URL from CloudFormation exports or environment
-if [ -z "$FRONTEND_URL" ]; then
-    FRONTEND_URL=$(aws cloudformation list-exports --region $AWS_REGION \
-        --query "Exports[?Name=='ChatbotDeploymentStack-DistributionUrl'].Value" \
-        --output text 2>/dev/null || echo "")
-fi
-
-if [ -n "$FRONTEND_URL" ]; then
-    # Ensure URL has https:// prefix and /oauth-complete path
-    if [[ ! "$FRONTEND_URL" =~ ^https?:// ]]; then
-        FRONTEND_URL="https://${FRONTEND_URL}"
-    fi
-    OAUTH_CALLBACK_URL="${FRONTEND_URL}/oauth-complete"
-
-    log_step "Storing frontend URL for OAuth callback..."
-    aws ssm put-parameter \
-        --name "/${PROJECT_NAME}/${ENVIRONMENT}/frontend-url" \
-        --value "$OAUTH_CALLBACK_URL" \
-        --type String \
-        --overwrite \
-        --region "$AWS_REGION" > /dev/null 2>&1
-    log_info "Frontend URL: $OAUTH_CALLBACK_URL"
-else
-    log_warn "Frontend URL not found. Set FRONTEND_URL env var or deploy ChatbotDeploymentStack first."
-    log_warn "3LO OAuth callback will not work without frontend URL."
-fi
-echo ""
 
 # ── 2. CDK Build & Deploy ─────────────────────────────────────
 cd cdk

@@ -9,8 +9,7 @@ interface OfficeViewerProps {
 }
 
 /**
- * Office document viewer using Microsoft Office Online
- * Embeds documents via Office Online viewer iframe
+ * Office document viewer using Microsoft Office Online.
  */
 export function OfficeViewer({ s3Url, filename }: OfficeViewerProps) {
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
@@ -23,46 +22,36 @@ export function OfficeViewer({ s3Url, filename }: OfficeViewerProps) {
       setError(null)
 
       try {
-        console.log('[OfficeViewer] Loading document:', s3Url)
-
-        // Validate S3 URL format
         if (!s3Url || !s3Url.startsWith('s3://')) {
           throw new Error(`Invalid S3 URL format: ${s3Url}`)
         }
 
-        // Check if running locally
-        const isLocal = typeof window !== 'undefined' &&
-          (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+        const ext = s3Url.split('.').pop()?.toLowerCase()
+        let docUrl: string
 
-        let documentUrl: string
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
 
-        if (isLocal) {
-          // Local: Use presigned URL directly (S3 URL is publicly accessible)
+        if (ext === 'xlsx' || isLocal) {
+          // Excel or local dev: presigned URL (Office Online can't reach localhost)
           const response = await fetch('/api/s3/presigned-url', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ s3Key: s3Url })
           })
-
           if (!response.ok) {
             const errorData = await response.json().catch(() => ({}))
             throw new Error(errorData.error || 'Failed to generate presigned URL')
           }
-
           const { url } = await response.json()
-          documentUrl = url
+          docUrl = url
         } else {
-          // Cloud: Use proxy URL (our app URL is publicly accessible)
-          const proxyPath = `/api/s3/proxy?key=${encodeURIComponent(s3Url)}`
-          documentUrl = `${window.location.origin}${proxyPath}`
+          // Word/PPT in production: proxy avoids X-Amz-* param issues
+          docUrl = `${window.location.origin}/api/s3/proxy?key=${encodeURIComponent(s3Url)}`
         }
 
         // Build Office Online viewer URL
-        const encodedUrl = encodeURIComponent(documentUrl)
-        const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodedUrl}`
+        const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(docUrl)}`
         setViewerUrl(officeViewerUrl)
-
-        console.log('[OfficeViewer] Viewer URL ready, isLocal:', isLocal)
       } catch (err) {
         console.error('[OfficeViewer] Error:', err)
         setError(err instanceof Error ? err.message : 'Failed to load document')

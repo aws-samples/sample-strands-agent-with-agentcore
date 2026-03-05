@@ -1,181 +1,95 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Artifact } from '@/types/artifact'
-import { Message } from '@/types/chat'
 
 /**
- * Grouped message type (matches useChat return type)
+ * Convert backend artifact format to frontend Artifact.
  */
-type GroupedMessage = {
-  type: 'user' | 'assistant_turn'
-  messages: Message[]
-  id: string
+function toFrontendArtifact(item: any, sessionId: string): Artifact {
+  let timestamp = item.timestamp || item.created_at
+  if (timestamp) {
+    try {
+      const date = new Date(timestamp)
+      timestamp = !isNaN(date.getTime()) ? date.toISOString() : new Date().toISOString()
+    } catch {
+      timestamp = new Date().toISOString()
+    }
+  } else {
+    timestamp = new Date().toISOString()
+  }
+
+  return {
+    id: item.id,
+    type: item.type,
+    title: item.title,
+    content: item.content,
+    description: item.metadata?.description || item.description || '',
+    toolName: item.tool_name || item.toolName,
+    timestamp,
+    sessionId,
+    metadata: item.metadata,
+  }
 }
 
 /**
- * Custom hook for managing artifacts extracted from chat messages
- * Automatically extracts research results, documents, images, etc.
+ * Read artifacts from sessionStorage for the given session.
+ */
+function readStorageArtifacts(sessionId: string): Artifact[] {
+  const stored = sessionStorage.getItem(`artifacts-${sessionId}`)
+  if (!stored) return []
+  try {
+    const data = JSON.parse(stored)
+    if (!Array.isArray(data)) return []
+    return data.map((item: any) => toFrontendArtifact(item, sessionId))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * Custom hook for managing artifacts loaded from agent state (backend).
+ * Artifacts are stored in agent.state by tools and persisted via session manager.
+ *
+ * Single source of truth: React state (artifacts).
+ * sessionStorage is kept in sync via useEffect for persistence across reloads.
  */
 export function useArtifacts(
-  groupedMessages: GroupedMessage[],
-  sessionId: string | null
+  sessionId: string
 ) {
   const [artifacts, setArtifacts] = useState<Artifact[]>([])
   const [selectedArtifactId, setSelectedArtifactId] = useState<string | null>(null)
   const [isCanvasOpen, setIsCanvasOpen] = useState<boolean>(false)
   const [loadedFromBackend, setLoadedFromBackend] = useState<boolean>(false)
-  const [justUpdated, setJustUpdated] = useState<boolean>(false)  // Flash effect trigger
+  const [justUpdated, setJustUpdated] = useState<boolean>(false)
 
-  // Track previous sessionId to only reset on actual session change
-  const prevSessionIdRef = useRef<string | null>(null)
+  // Tracks which sessionId the current artifacts state belongs to (guards auto-sync)
+  const loadedSessionIdRef = useRef<string | null>(null)
 
-  // Reset artifacts and loaded flag only when switching to a DIFFERENT session
+  // Reset on session switch
   useEffect(() => {
-    // Skip if sessionId hasn't actually changed (prevents unnecessary resets)
-    if (prevSessionIdRef.current === sessionId) {
-      return
-    }
-
-    // Only clear if switching from one valid session to another
-    if (prevSessionIdRef.current && sessionId && prevSessionIdRef.current !== sessionId) {
-      setArtifacts([])
-      setSelectedArtifactId(null)
-      setLoadedFromBackend(false)
-    }
-
-    prevSessionIdRef.current = sessionId
+    loadedSessionIdRef.current = null
+    setArtifacts([])
+    setSelectedArtifactId(null)
+    setLoadedFromBackend(false)
   }, [sessionId])
 
-  // Load artifacts from sessionStorage (populated by history API)
+  // Load artifacts from sessionStorage on session init (populated by history API)
   useEffect(() => {
-    // Skip if no valid sessionId or already loaded
-    if (!sessionId || sessionId === 'undefined' || loadedFromBackend) {
-      return
+    if (loadedFromBackend) return
+
+    const loaded = readStorageArtifacts(sessionId)
+    if (loaded.length > 0) {
+      setArtifacts(loaded)
     }
-
-    // Artifacts are loaded by history API and stored in sessionStorage
-    const artifactsKey = `artifacts-${sessionId}`
-    const storedArtifacts = sessionStorage.getItem(artifactsKey)
-
-    if (storedArtifacts) {
-      try {
-        const data = JSON.parse(storedArtifacts)
-
-        // Convert backend artifact format to frontend format
-        const backendArtifacts = data.map((item: any) => {
-          // Handle timestamp - could be created_at or timestamp field
-          let timestamp = item.timestamp || item.created_at
-          if (timestamp) {
-            try {
-              const date = new Date(timestamp)
-              if (!isNaN(date.getTime())) {
-                timestamp = date.toISOString()
-              } else {
-                timestamp = new Date().toISOString()
-              }
-            } catch {
-              timestamp = new Date().toISOString()
-            }
-          } else {
-            timestamp = new Date().toISOString()
-          }
-
-          return {
-            id: item.id,
-            type: item.type,
-            title: item.title,
-            content: item.content,
-            description: item.metadata?.description || item.description || '',
-            toolName: item.tool_name,
-            timestamp,
-            sessionId: sessionId,
-            metadata: item.metadata,
-          }
-        })
-
-        setArtifacts(backendArtifacts)
-      } catch (error) {
-        console.error('[useArtifacts] Failed to parse artifacts:', error)
-      }
-    }
-
+    loadedSessionIdRef.current = sessionId
     setLoadedFromBackend(true)
   }, [sessionId, loadedFromBackend])
 
-  // Extract artifacts from messages (merges with backend artifacts)
+  // Auto-sync to sessionStorage; guard against stale session writes
   useEffect(() => {
-    // Skip if backend artifacts haven't loaded yet
-    if (!loadedFromBackend) {
-      return
-    }
-
-    const messageArtifacts: Artifact[] = []
-
-    groupedMessages.forEach((group) => {
-      if (group.type === 'assistant_turn') {
-        group.messages.forEach((message) => {
-          if (message.toolExecutions) {
-            message.toolExecutions.forEach((execution) => {
-              // Research artifacts are created manually in ChatInterface when complete
-              // No automatic extraction needed here
-
-              // Reconstruct Excalidraw artifacts from tool results on session load
-              const isExcalidrawTool = execution.toolName === 'create_excalidraw_diagram' ||
-                (execution.toolName === 'skill_executor' && execution.toolInput?.tool_name === 'create_excalidraw_diagram')
-
-              if (isExcalidrawTool && execution.isComplete && execution.toolResult) {
-                try {
-                  let result = JSON.parse(execution.toolResult)
-                  if (execution.toolName === 'skill_executor' && result.result) {
-                    result = typeof result.result === 'string' ? JSON.parse(result.result) : result.result
-                  }
-                  if (result.success && result.excalidraw_data) {
-                    const artifactId = `excalidraw-${execution.id}`
-                    const rawTs = message.timestamp
-                    const safeTimestamp = rawTs && !isNaN(new Date(rawTs).getTime())
-                      ? new Date(rawTs).toISOString()
-                      : new Date().toISOString()
-                    messageArtifacts.push({
-                      id: artifactId,
-                      type: 'excalidraw',
-                      title: result.excalidraw_data.title || 'Diagram',
-                      content: result.excalidraw_data,
-                      timestamp: safeTimestamp,
-                    })
-                  }
-                } catch {
-                  // Invalid JSON, skip
-                }
-              }
-            })
-          }
-        })
-      }
-    })
-
-    // Merge: Keep backend artifacts and add new message artifacts
-    // Only update state if there are actual changes
-    if (messageArtifacts.length > 0) {
-      setArtifacts(prev => {
-        let hasChanges = false
-        const merged = [...prev]
-
-        messageArtifacts.forEach(newArtifact => {
-          const existingIndex = merged.findIndex(a => a.id === newArtifact.id)
-          if (existingIndex >= 0) {
-            // Update existing
-            merged[existingIndex] = newArtifact
-            hasChanges = true
-          } else {
-            // Add new
-            merged.push(newArtifact)
-            hasChanges = true
-          }
-        })
-
-        return hasChanges ? merged : prev
-      })
-    }
-  }, [groupedMessages, sessionId, loadedFromBackend])
+    if (!loadedFromBackend) return
+    if (loadedSessionIdRef.current !== sessionId) return
+    sessionStorage.setItem(`artifacts-${sessionId}`, JSON.stringify(artifacts))
+  }, [sessionId, loadedFromBackend, artifacts])
 
   const toggleCanvas = useCallback(() => {
     setIsCanvasOpen(prev => !prev)
@@ -192,59 +106,37 @@ export function useArtifacts(
 
   const closeCanvas = useCallback(() => {
     setIsCanvasOpen(false)
-    setSelectedArtifactId(null)  // Clear selection when panel closes
+    setSelectedArtifactId(null)
   }, [])
 
-  /**
-   * Manually add an artifact
-   * Used by Composer, Research, Browser, etc.
-   */
   const addArtifact = useCallback((artifact: Artifact) => {
     setArtifacts(prev => {
-      // Check if artifact already exists (by ID)
       const existingIndex = prev.findIndex(a => a.id === artifact.id)
       if (existingIndex >= 0) {
-        // Update existing artifact
-        const updated = [...prev]
-        updated[existingIndex] = artifact
-        return updated
+        return prev.map((a, i) => i === existingIndex ? artifact : a)
       }
-      // Add new artifact
       return [...prev, artifact]
     })
   }, [])
 
-  /**
-   * Remove an artifact by ID
-   */
   const removeArtifact = useCallback((artifactId: string) => {
     setArtifacts(prev => prev.filter(a => a.id !== artifactId))
-    // If removing currently selected artifact, clear selection
     if (selectedArtifactId === artifactId) {
       setSelectedArtifactId(null)
     }
   }, [selectedArtifactId])
 
-  /**
-   * Update an existing artifact
-   * Used when agent updates an artifact via update_artifact tool
-   */
   const updateArtifact = useCallback((artifactId: string, updates: Partial<Artifact>) => {
-    setArtifacts(prev => prev.map(a => {
-      if (a.id === artifactId) {
-        return { ...a, ...updates }
-      }
-      return a
-    }))
+    setArtifacts(prev => prev.map(a =>
+      a.id === artifactId ? { ...a, ...updates } : a
+    ))
   }, [])
 
   /**
-   * Refresh artifacts from history API
-   * Called when artifact is updated via update_artifact tool
-   * Returns the refreshed artifacts array for immediate use
+   * Refresh artifacts from history API.
+   * Returns the refreshed artifacts array for immediate use.
    */
   const refreshArtifacts = useCallback(async (options?: { skipFlashEffect?: boolean }): Promise<Artifact[]> => {
-    if (!sessionId) return []
 
     try {
       const response = await fetch(`/api/conversation/history?session_id=${sessionId}`)
@@ -252,29 +144,15 @@ export function useArtifacts(
         const data = await response.json()
         const artifactsData = data.artifacts || []
         if (Array.isArray(artifactsData) && artifactsData.length > 0) {
-          const backendArtifacts: Artifact[] = artifactsData.map((item: any) => ({
-            id: item.id,
-            type: item.type,
-            title: item.title,
-            content: item.content,
-            description: item.metadata?.description || '',
-            toolName: item.tool_name,
-            timestamp: new Date(item.created_at || Date.now()).toISOString(),
-            sessionId: sessionId,
-            metadata: item.metadata,
-          }))
-          setArtifacts(backendArtifacts)
+          const converted = artifactsData.map((item: any) => toFrontendArtifact(item, sessionId))
+          loadedSessionIdRef.current = sessionId
+          setArtifacts(converted)
 
-          // Trigger flash effect (skip for research completion to avoid re-render)
           if (!options?.skipFlashEffect) {
             setJustUpdated(true)
             setTimeout(() => setJustUpdated(false), 1500)
           }
-
-          // Also update sessionStorage
-          sessionStorage.setItem(`artifacts-${sessionId}`, JSON.stringify(artifactsData))
-
-          return backendArtifacts
+          return converted
         }
       }
     } catch (error) {
@@ -285,56 +163,12 @@ export function useArtifacts(
 
   /**
    * Re-read artifacts from sessionStorage.
-   * Called after loadSession completes to handle the case where
-   * the initial useEffect ran before sessionStorage was populated.
+   * Called after loadSession populates sessionStorage.
    */
   const reloadFromStorage = useCallback(() => {
-    if (!sessionId) return
-
-    const artifactsKey = `artifacts-${sessionId}`
-    const storedArtifacts = sessionStorage.getItem(artifactsKey)
-
-    if (storedArtifacts) {
-      try {
-        const data = JSON.parse(storedArtifacts)
-        if (Array.isArray(data) && data.length > 0) {
-          const backendArtifacts = data.map((item: any) => {
-            let timestamp = item.timestamp || item.created_at
-            if (timestamp) {
-              try {
-                const date = new Date(timestamp)
-                if (!isNaN(date.getTime())) {
-                  timestamp = date.toISOString()
-                } else {
-                  timestamp = new Date().toISOString()
-                }
-              } catch {
-                timestamp = new Date().toISOString()
-              }
-            } else {
-              timestamp = new Date().toISOString()
-            }
-
-            return {
-              id: item.id,
-              type: item.type,
-              title: item.title,
-              content: item.content,
-              description: item.metadata?.description || item.description || '',
-              toolName: item.tool_name,
-              timestamp,
-              sessionId: sessionId,
-              metadata: item.metadata,
-            }
-          })
-
-          setArtifacts(backendArtifacts)
-        }
-      } catch (error) {
-        console.error('[useArtifacts] Failed to reload artifacts from storage:', error)
-      }
-    }
-
+    const loaded = readStorageArtifacts(sessionId)
+    loadedSessionIdRef.current = sessionId
+    setArtifacts(loaded)  // always sync — clears stale state when storage was removed
     setLoadedFromBackend(true)
   }, [sessionId])
 
@@ -352,6 +186,6 @@ export function useArtifacts(
     updateArtifact,
     refreshArtifacts,
     reloadFromStorage,
-    justUpdated,  // For flash effect on update
+    justUpdated,
   }
 }

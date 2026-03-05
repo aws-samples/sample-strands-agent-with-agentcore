@@ -164,8 +164,8 @@ interface UseChatAPIProps {
   handleStreamEvent: (event: AGUIStreamEvent) => void
   onSessionCreated?: () => void  // Callback when new session is created
   gatewayToolIds?: string[]  // Gateway tool IDs from frontend
-  sessionId: string | null
-  setSessionId: React.Dispatch<React.SetStateAction<string | null>>
+  sessionId: string
+  setSessionId: React.Dispatch<React.SetStateAction<string>>
   currentModelId: string  // Per-session model ID from useChat state
   currentTemperature: number  // Per-session temperature from useChat state
 }
@@ -1010,12 +1010,13 @@ export const useChatAPI = ({
         logger.info(`Session preferences loaded: model=${sessionPreferences.lastModel}, tools=${sessionPreferences.enabledTools?.length || 0}`)
       }
 
-      // Extract artifacts (if present)
+      // Store artifacts in sessionStorage for useArtifacts to pick up
       const artifacts = data.artifacts || []
       if (artifacts.length > 0) {
         logger.info(`[loadSession] Loaded ${artifacts.length} artifacts from history API`)
-        // Store artifacts in sessionStorage for useArtifacts to pick up
         sessionStorage.setItem(`artifacts-${newSessionId}`, JSON.stringify(artifacts))
+      } else {
+        sessionStorage.removeItem(`artifacts-${newSessionId}`)
       }
 
       // Build tool maps for toolUse/toolResult matching

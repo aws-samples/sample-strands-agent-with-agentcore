@@ -256,42 +256,7 @@ if [ "$FORCE_REBUILD" = true ]; then
 fi
 
 # ============================================================================
-# Step 5: Upload Lambda Sources to S3
-# ============================================================================
-
-echo "📤 Step 5: Uploading Lambda sources to S3..."
-echo ""
-
-# Get AWS account ID
-AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || echo "")
-LAMBDA_BUCKET="${PROJECT_NAME}-gateway-lambdas-${AWS_ACCOUNT_ID}-${AWS_REGION}"
-
-# Check if bucket exists, create if not
-if ! aws s3 ls "s3://${LAMBDA_BUCKET}" > /dev/null 2>&1; then
-    echo "   Creating S3 bucket: ${LAMBDA_BUCKET}"
-    aws s3 mb "s3://${LAMBDA_BUCKET}" --region "$AWS_REGION" 2>/dev/null || true
-fi
-
-# Upload all Lambda sources
-LAMBDA_FUNCTIONS_DIR="$PROJECT_ROOT/lambda-functions"
-for func in tavily wikipedia arxiv google-search google-maps finance weather; do
-    if [ -d "$LAMBDA_FUNCTIONS_DIR/$func" ]; then
-        echo "   Uploading $func..."
-        aws s3 sync "$LAMBDA_FUNCTIONS_DIR/$func/" "s3://${LAMBDA_BUCKET}/source/$func/" \
-            --exclude "__pycache__/*" \
-            --exclude "*.pyc" \
-            --exclude ".DS_Store" \
-            --exclude "build/*" \
-            --exclude "*.zip" \
-            --delete \
-            --quiet
-    fi
-done
-echo "   ✅ All Lambda sources uploaded"
-echo ""
-
-# ============================================================================
-# Step 6: Deploy to AWS (CodeBuild will build Lambda packages automatically)
+# Step 5: Deploy to AWS (CDK handles bucket creation and source upload)
 # ============================================================================
 
 echo "☁️  Step 6: Deploying to AWS..."

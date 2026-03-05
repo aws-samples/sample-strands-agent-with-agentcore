@@ -148,7 +148,8 @@ export class ChatbotStack extends cdk.Stack {
         )
       : new ecr.Repository(this, 'ChatbotFrontendRepository', {
           repositoryName: 'chatbot-frontend',
-          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+          emptyOnDelete: true,
           imageScanOnPush: true,
           lifecycleRules: [
             {
@@ -593,6 +594,19 @@ async function sendResponse(event, status, data, reason) {
       })
     );
 
+    // Secrets Manager access for AgentCore Identity 3LO token storage
+    // CompleteResourceTokenAuth internally uses Secrets Manager to store OAuth tokens
+    frontendTaskDefinition.addToTaskRolePolicy(
+      new iam.PolicyStatement({
+        sid: 'AgentCoreIdentitySecretsAccess',
+        effect: iam.Effect.ALLOW,
+        actions: ['secretsmanager:GetSecretValue'],
+        resources: [
+          `arn:aws:secretsmanager:${this.region}:${this.account}:secret:bedrock-agentcore-*`,
+        ]
+      })
+    );
+
     // Add Parameter Store permissions to fetch AgentCore Runtime ARN, MCP Gateway URL
     frontendTaskDefinition.addToTaskRolePolicy(
       new iam.PolicyStatement({
@@ -727,8 +741,8 @@ async function sendResponse(event, status, data, reason) {
           's3:ListBucket'
         ],
         resources: [
-          `arn:aws:s3:::${projectName}-docs-${this.account}-${this.region}`,
-          `arn:aws:s3:::${projectName}-docs-${this.account}-${this.region}/*`
+          `arn:aws:s3:::${projectName}-artifact-${this.account}-${this.region}`,
+          `arn:aws:s3:::${projectName}-artifact-${this.account}-${this.region}/*`
         ]
       })
     );
@@ -762,7 +776,7 @@ async function sendResponse(event, status, data, reason) {
       // DynamoDB Tables
       DYNAMODB_USERS_TABLE: usersTable.tableName,
       DYNAMODB_SESSIONS_TABLE: sessionsTable.tableName,
-      DOCUMENT_BUCKET: `${projectName}-docs-${this.account}-${this.region}`,
+      ARTIFACT_BUCKET: `${projectName}-artifact-${this.account}-${this.region}`,
     };
 
     // Add AgentCore Memory ID from SSM Parameter Store (for conversation history)
@@ -979,7 +993,14 @@ async function sendResponse(event, status, data, reason) {
             AllowedOAuthFlows: ['code'],
             AllowedOAuthFlowsUserPoolClient: true,
             AllowedOAuthScopes: ['openid', 'email', 'profile'],
-            GenerateSecret: true,
+            IdTokenValidity: 8,
+            AccessTokenValidity: 8,
+            RefreshTokenValidity: 30,
+            TokenValidityUnits: {
+              IdToken: 'hours',
+              AccessToken: 'hours',
+              RefreshToken: 'days',
+            },
           },
           physicalResourceId: cr.PhysicalResourceId.of('cognito-client-update'),
         },
@@ -998,7 +1019,14 @@ async function sendResponse(event, status, data, reason) {
             AllowedOAuthFlows: ['code'],
             AllowedOAuthFlowsUserPoolClient: true,
             AllowedOAuthScopes: ['openid', 'email', 'profile'],
-            GenerateSecret: true,
+            IdTokenValidity: 8,
+            AccessTokenValidity: 8,
+            RefreshTokenValidity: 30,
+            TokenValidityUnits: {
+              IdToken: 'hours',
+              AccessToken: 'hours',
+              RefreshToken: 'days',
+            },
           },
           physicalResourceId: cr.PhysicalResourceId.of('cognito-client-update'),
         },
@@ -1011,10 +1039,47 @@ async function sendResponse(event, status, data, reason) {
       updateCognitoClient.node.addDependency(distribution);
     }
 
+    // Update oauth2-callback-url SSM parameter with the new CloudFront URL
+    // This ensures MCP OAuth redirect works correctly after each chatbot redeployment
+    const updateOauthCallbackUrl = new cr.AwsCustomResource(this, 'UpdateOauthCallbackUrl', {
+      onCreate: {
+        service: 'SSM',
+        action: 'putParameter',
+        parameters: {
+          Name: `/${projectName}/${environment}/mcp/oauth2-callback-url`,
+          Value: `https://${distribution.distributionDomainName}/oauth-complete`,
+          Type: 'String',
+          Overwrite: true,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of('oauth-callback-url-update'),
+      },
+      onUpdate: {
+        service: 'SSM',
+        action: 'putParameter',
+        parameters: {
+          Name: `/${projectName}/${environment}/mcp/oauth2-callback-url`,
+          Value: `https://${distribution.distributionDomainName}/oauth-complete`,
+          Type: 'String',
+          Overwrite: true,
+        },
+        physicalResourceId: cr.PhysicalResourceId.of('oauth-callback-url-update'),
+      },
+      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
+        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
+      }),
+    });
+    updateOauthCallbackUrl.node.addDependency(distribution);
+
     // Outputs
     new cdk.CfnOutput(this, 'ApplicationUrl', {
       value: `https://${distribution.distributionDomainName}`,
       description: 'Application URL via CloudFront (HTTPS)',
+    });
+
+    new cdk.CfnOutput(this, 'DistributionUrl', {
+      value: `https://${distribution.distributionDomainName}`,
+      description: 'CloudFront distribution URL (used by MCP 3LO OAuth callback)',
+      exportName: `${this.stackName}-DistributionUrl`,
     });
 
     new cdk.CfnOutput(this, 'BackendApiUrl', {

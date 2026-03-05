@@ -42,7 +42,8 @@ export class BrowserUseAgentRuntimeStack extends cdk.Stack {
         )
       : new ecr.Repository(this, 'BrowserUseAgentRepository', {
           repositoryName: `${projectName}-browser-use-agent`,
-          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+          emptyOnDelete: true,
           imageScanOnPush: true,
           lifecycleRules: [
             {

@@ -44,7 +44,8 @@ export class CodeAgentRuntimeStack extends cdk.Stack {
         )
       : new ecr.Repository(this, 'CodeAgentRepository', {
           repositoryName: `${projectName}-code-agent`,
-          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          removalPolicy: cdk.RemovalPolicy.DESTROY,
+          emptyOnDelete: true,
           imageScanOnPush: true,
           lifecycleRules: [{ description: 'Keep last 10 images', maxImageCount: 10 }],
         })
@@ -152,8 +153,14 @@ export class CodeAgentRuntimeStack extends cdk.Stack {
       })
     )
 
-    // Import document bucket name from main AgentCore Runtime stack export
-    const documentBucketName = cdk.Fn.importValue(`${projectName}-document-bucket`)
+    // Read artifact bucket name from SSM (same pattern as research-agent)
+    const artifactBucketSsmValue = ssm.StringParameter.valueFromLookup(
+      this,
+      `/${projectName}/${environment}/agentcore/artifact-bucket`
+    )
+    const documentBucketName = artifactBucketSsmValue.startsWith('dummy-value-for-')
+      ? `${projectName}-artifact-${this.account}-${this.region}`
+      : artifactBucketSsmValue
 
     // ============================================================
     // Step 3: S3 Bucket for CodeBuild Source

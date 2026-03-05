@@ -42,7 +42,7 @@ workspace/
 ## Storage Structure
 
 ```
-S3: DOCUMENT_BUCKET
+S3: ARTIFACT_BUCKET
 └── documents/
     └── {user_id}/
         └── {session_id}/

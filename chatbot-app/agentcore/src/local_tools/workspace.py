@@ -4,7 +4,7 @@ Path conventions (userId/sessionId are injected automatically from context):
   code-agent/<file>           →  code-agent-workspace/{userId}/{sessionId}/<file>
   documents/<type>/<file>     →  documents/{userId}/{sessionId}/<type>/<file>
 
-Both namespaces share the same DOCUMENT_BUCKET.
+Both namespaces share the same ARTIFACT_BUCKET.
 """
 
 import base64
