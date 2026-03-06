@@ -6,7 +6,6 @@ import { ScrollArea } from '@/components/ui/scroll-area'
 import { X, FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal, Monitor, Database, Layers } from 'lucide-react'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import { Artifact } from '@/types/artifact'
-import { ComposeArtifact } from './ComposeArtifact'
 import { ResearchArtifact } from './ResearchArtifact'
 import { BrowserLiveView } from './BrowserLiveView'
 import { OfficeViewer, isOfficeFileUrl, getFilenameFromS3Url } from './OfficeViewer'
@@ -30,7 +29,6 @@ interface CanvasProps {
   selectedArtifactId: string | null
   onSelectArtifact: (id: string) => void
   onUpdateArtifact?: (artifactId: string, updates: Partial<Artifact>) => void
-  composeState?: any // Live composer state
   researchState?: any // Live research state
   browserState?: BrowserState // Live browser state
   justUpdated?: boolean // Flash effect trigger when artifact is updated
@@ -52,8 +50,6 @@ const getArtifactIcon = (type: string) => {
       return <ImageIcon className="h-4 w-4" />
     case 'code':
       return <Code className="h-4 w-4" />
-    case 'compose':
-      return <Sparkles className="h-4 w-4" />
     case 'browser':
       return <Monitor className="h-4 w-4" />
     case 'extracted_data':
@@ -90,7 +86,6 @@ const getArtifactTypeLabel = (type: string) => {
     case 'browser': return 'Browser'
     case 'extracted_data': return 'Extracted Data'
     case 'excalidraw': return 'Diagram'
-    case 'compose': return 'Compose'
     default: return 'Artifact'
   }
 }
@@ -114,7 +109,6 @@ export function Canvas({
   selectedArtifactId,
   onSelectArtifact,
   onUpdateArtifact,
-  composeState,
   researchState,
   browserState,
   justUpdated = false,
@@ -123,23 +117,18 @@ export function Canvas({
   const selectedArtifact = artifacts.find(a => a.id === selectedArtifactId)
   const previewContentRef = useRef<HTMLDivElement>(null)
 
-  // Filter out in-progress compose artifacts from the list
-  // Research artifacts are only added when complete, so no filtering needed
-  const displayArtifacts = artifacts.filter(a => a.type !== 'compose')
+  const displayArtifacts = artifacts
 
-  // Handle close - if outline/plan confirmation is showing, treat as cancel
+  // Handle close - if plan confirmation is showing, treat as cancel
   const handleClose = useCallback(() => {
-    if (composeState?.showOutlineConfirm && composeState?.onCancel) {
-      // Compose outline confirmation is showing, treat close as cancel
-      composeState.onCancel()
-    } else if (researchState?.showPlanConfirm && researchState?.onCancel) {
+    if (researchState?.showPlanConfirm && researchState?.onCancel) {
       // Research plan confirmation is showing, treat close as cancel
       researchState.onCancel()
     } else {
       // Normal close
       onClose()
     }
-  }, [composeState, researchState, onClose])
+  }, [researchState, onClose])
 
   // Download artifact as Markdown
   const handleDownloadMarkdown = () => {
@@ -305,13 +294,10 @@ export function Canvas({
       <div className="flex-1 min-h-0 flex flex-col">
         {/* Preview Area */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-          {/* Priority: selectedArtifact first, then live states (research/compose/browser) */}
+          {/* Priority: selectedArtifact first, then live states (research/browser) */}
           {selectedArtifact ? (
             // User selected an artifact - show it
-            selectedArtifact.type === 'compose' && composeState ? (
-              // Compose artifact selected - show live compose state
-              <ComposeArtifact {...composeState} />
-            ) : selectedArtifact.type === 'browser' && browserState ? (
+            selectedArtifact.type === 'browser' && browserState ? (
               // Browser artifact selected - show live browser view
               <BrowserLiveView
                 sessionId={browserState.sessionId}
@@ -432,9 +418,6 @@ export function Canvas({
           ) : researchState ? (
             // No artifact selected, show live research state
             <ResearchArtifact {...researchState} />
-          ) : composeState ? (
-            // No artifact selected, show live compose state
-            <ComposeArtifact {...composeState} />
           ) : browserState ? (
             // No artifact selected, show live browser view
             <BrowserLiveView

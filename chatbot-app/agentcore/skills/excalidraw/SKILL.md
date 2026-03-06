@@ -20,6 +20,22 @@ Use `create_excalidraw_diagram` when the user wants to visualize **structure, fl
 | Mind map or concept map | Market share breakdown |
 | Shapes, boxes, arrows, labels | Any x/y or segment/value data |
 
+## Diagram Type
+
+Choose based on user intent. For Swimlane, Class, Sequence, ER, and DFD diagrams, read [diagram-patterns.md](diagram-patterns.md) before generating.
+
+| Intent | Type | Pattern |
+|--------|------|---------|
+| Process steps, workflow, decisions | Flowchart | Rectangles + diamonds + arrows (see Example) |
+| System components, dependencies | Architecture | Zone rectangles + boxes + arrows |
+| Concept hierarchy, brainstorming | Mind Map | Center node + radial branch arrows |
+| Entity connections, associations | Relationship | Boxes + labeled arrows |
+| Cross-functional workflow, actor responsibilities | Swimlane | [diagram-patterns.md](diagram-patterns.md) |
+| OOP class structure, inheritance | Class Diagram | [diagram-patterns.md](diagram-patterns.md) |
+| Object interactions over time | Sequence Diagram | [diagram-patterns.md](diagram-patterns.md) |
+| Database entities and relationships | ER Diagram | [diagram-patterns.md](diagram-patterns.md) |
+| Data transformation, data movement | DFD | [diagram-patterns.md](diagram-patterns.md) |
+
 ## Available Tools
 
 - **create_excalidraw_diagram(elements, title, background_color)**: Generate a diagram from Excalidraw element JSON

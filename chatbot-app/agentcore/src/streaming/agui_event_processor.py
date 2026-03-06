@@ -3,8 +3,7 @@ import os
 import time
 import logging
 from typing import AsyncGenerator, Dict, Any
-from .agui_event_formatter import AGUIStreamEventFormatter
-from .event_formatter import StreamEventFormatter
+from .agui_event_formatter import AGUIStreamEventFormatter, extract_final_result_data
 from agent.stop_signal import get_stop_signal_provider, DynamoDBStopSignalProvider
 
 # OpenTelemetry imports
@@ -532,6 +531,19 @@ class AGUIStreamEventProcessor:
                         if hasattr(final_result, 'interrupts') and final_result.interrupts:
                             logger.info(f"[Interrupt] Detected {len(final_result.interrupts)} interrupt(s), sending to frontend")
 
+                            # Flush session buffer BEFORE yielding interrupt event.
+                            # LocalSessionBuffer batches writes; if not flushed here, the
+                            # assistant:{toolUse} message stays in memory only. When the
+                            # interrupt response creates a new agent and loads the session,
+                            # it would find an incomplete history and cause ValidationException.
+                            session_mgr = getattr(agent, 'session_manager', None) or getattr(agent, '_session_manager', None)
+                            if session_mgr and hasattr(session_mgr, 'flush'):
+                                try:
+                                    session_mgr.flush()
+                                    logger.info(f"[Interrupt] Flushed session buffer before interrupt event")
+                                except Exception as e:
+                                    logger.error(f"[Interrupt] Failed to flush session buffer: {e}")
+
                             # Serialize Interrupt objects to dicts
                             interrupts_data = [
                                 {
@@ -542,20 +554,18 @@ class AGUIStreamEventProcessor:
                                 for interrupt in final_result.interrupts
                             ]
 
-                            # Send interrupt event to frontend
                             interrupt_event = self.formatter.format_event("interrupt", interrupts=interrupts_data)
-                            logger.info(f"[Interrupt] Created interrupt event: {interrupt_event[:200]}")
+                            logger.info(f"[Interrupt] Sending interrupt event to frontend")
                             yield interrupt_event
-                            # FIX: Don't return here! Let the stream continue so agent's finally block runs
-                            # This ensures AfterInvocationEvent fires and interrupt state gets saved
-                            logger.info("[Interrupt] Continuing stream to allow agent cleanup")
+                            # Prevent finally block from injecting synthetic toolResult
+                            stream_completed_normally = True
                             continue
                         else:
                             logger.warning("[Interrupt] stop_reason is interrupt but no interrupts attribute!")
                     else:
                         logger.info(f"[Interrupt] Not an interrupt event (stop_reason={getattr(final_result, 'stop_reason', 'NONE')})")
 
-                    images, result_text = StreamEventFormatter.extract_final_result_data(final_result)
+                    images, result_text = extract_final_result_data(final_result)
                     logger.debug(f"[Final Result] Extracted data - has images: {bool(images)}, text length: {len(result_text) if result_text else 0}")
 
                     # Extract token usage from Strands SDK metrics
@@ -870,6 +880,36 @@ class AGUIStreamEventProcessor:
             logger.error(f"Stream error: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
+
+            # Diagnostic logging for Bedrock ValidationException (toolResult/toolUse mismatch)
+            err_str = str(e)
+            if agent and ("ValidationException" in err_str or "toolResult" in err_str or "toolUse" in err_str
+                          or "ValidationException" in type(e).__name__):
+                try:
+                    if hasattr(agent, 'messages') and agent.messages:
+                        msg_summary = []
+                        for i, msg in enumerate(agent.messages):
+                            role = msg.get('role', '?')
+                            content_types = []
+                            for c in msg.get('content', []):
+                                if isinstance(c, dict):
+                                    content_types.append(list(c.keys())[0] if c else '{}')
+                                else:
+                                    content_types.append(str(type(c).__name__))
+                            msg_summary.append(f"  [{i}] role={role} content={content_types}")
+                        logger.error(f"[DIAG] agent.messages at error ({len(agent.messages)} msgs):\n" + "\n".join(msg_summary))
+                    if hasattr(agent, '_interrupt_state'):
+                        istate = agent._interrupt_state
+                        logger.error(f"[DIAG] interrupt_state: activated={istate.activated}, interrupts={list(istate.interrupts.keys()) if hasattr(istate, 'interrupts') else '?'}")
+                    if hasattr(agent, '_session_manager') and agent._session_manager:
+                        sm = agent._session_manager
+                        # _latest_agent_message is on base_manager for LocalSessionBuffer
+                        base_sm = getattr(sm, 'base_manager', sm)
+                        latest = getattr(base_sm, '_latest_agent_message', {})
+                        latest_info = {k: (v.message_id if v else None) for k, v in latest.items()}
+                        logger.error(f"[DIAG] session_manager._latest_agent_message ids={latest_info}")
+                except Exception as diag_err:
+                    logger.error(f"[DIAG] Failed to collect diagnostics: {diag_err}")
 
             # Check if there's a pending tool that needs an error result
             # This allows the agent to self-recover from errors

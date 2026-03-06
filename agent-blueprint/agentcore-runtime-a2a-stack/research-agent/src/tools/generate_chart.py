@@ -231,6 +231,11 @@ def generate_chart_tool(
                         "message": f"Chart file '{filename}' not found. Make sure your code saves to '{filename}'."
                     })
 
+                # Decode base64 if Code Interpreter returned a string
+                if isinstance(file_content, str):
+                    import base64
+                    file_content = base64.b64decode(file_content)
+
                 # Save chart to workspace and S3
                 save_result = manager.save_chart(chart_id, file_content)
                 chart_path = save_result['local_path']

@@ -10,7 +10,6 @@ from typing import Optional, List
 from agents.base import BaseAgent
 from agents.chat_agent import ChatAgent
 from agents.swarm_agent import SwarmAgent
-from agents.workflow_agent import WorkflowAgent
 from agents.skill_chat_agent import SkillChatAgent
 # VoiceAgent imported conditionally in create_agent
 
@@ -35,7 +34,7 @@ def create_agent(
     Create appropriate agent based on request type
 
     Args:
-        request_type: Type of request - "normal", "swarm", "compose", "voice"
+        request_type: Type of request - "normal", "swarm", "skill", "voice"
         session_id: Session identifier
         user_id: User identifier (defaults to session_id)
         enabled_tools: List of tool IDs to enable
@@ -47,7 +46,7 @@ def create_agent(
         **kwargs: Additional agent-specific parameters
 
     Returns:
-        BaseAgent instance (ChatAgent, SwarmAgent, WorkflowAgent, or VoiceAgent)
+        BaseAgent instance (ChatAgent, SwarmAgent, SkillChatAgent, or VoiceAgent)
 
     Raises:
         ValueError: If request_type is not recognized
@@ -58,9 +57,6 @@ def create_agent(
 
         # Multi-agent swarm
         agent = create_agent("swarm", session_id, user_id)
-
-        # Document composition workflow
-        agent = create_agent("compose", session_id, user_id)
 
         # Voice conversation
         agent = create_agent("voice", session_id, user_id)
@@ -102,15 +98,6 @@ def create_agent(
             auth_token=auth_token,
         )
 
-    elif request_type == "compose":
-        return WorkflowAgent(
-            session_id=session_id,
-            user_id=user_id,
-            workflow_type="compose",
-            model_id=model_id,
-            temperature=temperature,
-        )
-
     elif request_type == "skill":
         return SkillChatAgent(
             session_id=session_id,
@@ -141,7 +128,7 @@ def create_agent(
     else:
         raise ValueError(
             f"Unknown request_type: {request_type}. "
-            f"Valid types: normal, swarm, compose, skill, voice"
+            f"Valid types: normal, swarm, skill, voice"
         )
 
 
@@ -158,7 +145,6 @@ def get_agent_type_description(request_type: str) -> str:
     descriptions = {
         "normal": "Text-based conversation with streaming",
         "swarm": "Multi-agent orchestration with specialist agents",
-        "compose": "Document composition workflow",
         "skill": "Progressive skill disclosure with skill_dispatcher/executor",
         "voice": "Bidirectional audio streaming (Nova Sonic)",
     }

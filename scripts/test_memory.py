@@ -450,9 +450,9 @@ def test_local_session_buffer():
     print("─" * 50)
 
     try:
-        from agent.local_session_buffer import LocalSessionBuffer, encode_bytes_for_json
+        from strands.types.session import SessionMessage, encode_bytes_values
 
-        # Test encode_bytes_for_json
+        # Test SDK's encode_bytes_values (used by SessionMessage.to_dict())
         test_data = {
             "text": "hello",
             "bytes": b"binary data",
@@ -461,14 +461,14 @@ def test_local_session_buffer():
             }
         }
 
-        encoded = encode_bytes_for_json(test_data)
+        encoded = encode_bytes_values(test_data)
 
         assert encoded["text"] == "hello"
         assert encoded["bytes"]["__bytes_encoded__"] == True
         assert "data" in encoded["bytes"]
         assert encoded["nested"]["more_bytes"]["__bytes_encoded__"] == True
 
-        print(f"✅ encode_bytes_for_json works correctly")
+        print(f"✅ SDK encode_bytes_values works correctly")
         print(f"   Original bytes encoded to base64 with __bytes_encoded__ marker")
 
         return True

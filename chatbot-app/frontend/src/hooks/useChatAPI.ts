@@ -629,7 +629,7 @@ export const useChatAPI = ({
           threadId,
           runId: crypto.randomUUID(),
           messages: [{ id: crypto.randomUUID(), role: 'user', content: contentParts }],
-          tools: allEnabledToolIds.map(id => ({ name: id, description: '' })),
+          tools: allEnabledToolIds.map(id => ({ name: id, description: '', parameters: {} })),
           context: [],
           state: {
             model_id: currentModelId,

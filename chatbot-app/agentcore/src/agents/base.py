@@ -11,8 +11,8 @@ Provides unified interface and shared logic:
 
 import logging
 import os
-from abc import ABC, abstractmethod
-from typing import AsyncGenerator, List, Optional, Dict, Any
+from abc import ABC
+from typing import List, Optional, Dict, Any
 
 from agent.tool_filter import filter_tools
 from agent.factory import create_session_manager
@@ -134,29 +134,6 @@ class BaseAgent(ABC):
             compaction_enabled=self.compaction_enabled
         )
 
-    @abstractmethod
-    async def stream_async(
-        self,
-        message: str,
-        **kwargs
-    ) -> AsyncGenerator[str, None]:
-        """
-        Stream agent response
-
-        Each agent type implements this differently:
-        - ChatAgent: SSE text streaming
-        - VoiceAgent: WebSocket bidirectional audio
-        - SwarmAgent: Multi-agent orchestration streaming
-        - WorkflowAgent: Multi-task workflow streaming
-
-        Args:
-            message: User message or command
-            **kwargs: Agent-specific parameters
-
-        Yields:
-            SSE-formatted strings or agent-specific events
-        """
-        pass
 
     def __del__(self):
         """Cleanup gateway client connection"""

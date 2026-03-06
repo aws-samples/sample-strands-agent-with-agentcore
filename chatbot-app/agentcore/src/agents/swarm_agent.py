@@ -5,7 +5,7 @@ flattened into standard tool_use/tool_result/response events so the frontend
 handles them identically to a single agent.
 
 Unlike ChatAgent, SwarmAgent:
-- Does NOT use session_manager for agent state (to avoid SDK bugs)
+- Does NOT use session_manager for agent state
 - Does NOT filter tools by user preference (each agent has fixed tools)
 - DOES save conversation history to unified storage for cross-mode sharing
 """
@@ -16,7 +16,6 @@ import asyncio
 import json
 import copy
 from typing import Dict, List, Optional, AsyncGenerator, Any
-from pathlib import Path
 
 from strands import Agent
 from strands.models import BedrockModel
@@ -33,6 +32,233 @@ from agent.config.swarm_config import (
 from agent.tool_filter import filter_tools
 
 logger = logging.getLogger(__name__)
+
+
+class SwarmStreamAdapter:
+    """Adapter that makes Swarm streaming compatible with AGUIStreamEventProcessor.
+
+    Translates multiagent SDK events into standard Strands Agent event format
+    so the AG-UI processor can handle swarm execution uniformly.
+
+    Event mapping:
+        multiagent_node_stream (inner event) → standard Agent events
+        multiagent_node_stop → token usage accumulation
+        multiagent_result → final {"result": ...} event
+    """
+
+    def __init__(self, swarm_agent: 'SwarmAgent'):
+        self.swarm_agent = swarm_agent
+        # Expose session_manager for _save_partial_response() compatibility
+        self.session_manager = swarm_agent.session_manager
+        # Agent state placeholder (swarm doesn't use agent.state directly)
+        self.state = {}
+
+    async def stream_async(self, message, **kwargs):
+        """Yield events compatible with AGUIStreamEventProcessor.
+
+        Unwraps multiagent events from swarm.stream_async() into the same
+        dict format that Strands Agent.stream_async() produces.
+        """
+        invocation_state = kwargs.get('invocation_state', {})
+        swarm = self.swarm_agent
+
+        user_query = message if isinstance(message, str) else str(message)
+        logger.info(f"[SwarmAdapter] Starting for session {swarm.session_id}: {user_query[:50]}...")
+
+        # Inject conversation history into coordinator
+        history_messages = swarm.message_store.get_history_messages()
+        coordinator_node = swarm.swarm.nodes.get("coordinator")
+        if history_messages and coordinator_node:
+            coordinator_node.executor.messages = history_messages
+            coordinator_node._initial_messages = copy.deepcopy(history_messages)
+            logger.info(f"[SwarmAdapter] Injected {len(history_messages)} history messages")
+
+        # Merge invocation_state with swarm-specific state
+        merged_state = {
+            **invocation_state,
+            'user_id': swarm.user_id,
+            'session_id': swarm.session_id,
+            'model_id': swarm.model_id,
+            'api_keys': swarm.api_keys,
+            'auth_token': swarm.auth_token,
+        }
+
+        yield {"init_event_loop": True}
+
+        # Tracking state
+        node_history: List[str] = []
+        current_node_id: Optional[str] = None
+        node_text_accumulator: Dict[str, str] = {}
+        content_blocks: List[Dict] = []
+        responder_current_text: str = ""
+        pending_tools: Dict[str, Dict] = {}
+        handoff_tool_ids: set = set()
+        sent_tool_ids: set = set()
+        total_usage = {"inputTokens": 0, "outputTokens": 0, "totalTokens": 0}
+
+        try:
+            async for event in swarm.swarm.stream_async(user_query, invocation_state=merged_state):
+                event_type = event.get("type")
+
+                if event_type == "multiagent_node_start":
+                    current_node_id = event.get("node_id")
+                    node_history.append(current_node_id)
+                    logger.debug(f"[SwarmAdapter] Node started: {current_node_id}")
+
+                elif event_type == "multiagent_node_stream":
+                    inner = event.get("event", {})
+                    node_id = event.get("node_id", current_node_id)
+
+                    # Reasoning text (responder only)
+                    if "reasoningText" in inner:
+                        if node_id == "responder" and inner["reasoningText"]:
+                            yield {"reasoning": True, "reasoningText": inner["reasoningText"]}
+
+                    # Text streaming
+                    elif "data" in inner:
+                        text_data = inner["data"]
+                        if node_id not in node_text_accumulator:
+                            node_text_accumulator[node_id] = ""
+                        node_text_accumulator[node_id] += text_data
+
+                        if node_id == "responder":
+                            responder_current_text += text_data
+                            yield {"data": text_data}
+
+                    # Tool use (skip handoff_to_agent)
+                    elif inner.get("type") == "tool_use_stream":
+                        current_tool = inner.get("current_tool_use", {})
+                        tool_id = current_tool.get("toolUseId")
+                        tool_name = current_tool.get("name", "")
+
+                        if not current_tool or not tool_id or tool_id in handoff_tool_ids:
+                            pass
+                        elif tool_name == "handoff_to_agent":
+                            handoff_tool_ids.add(tool_id)
+                        else:
+                            if tool_id not in sent_tool_ids:
+                                sent_tool_ids.add(tool_id)
+                                if node_id == "responder" and responder_current_text.strip():
+                                    content_blocks.append({"text": responder_current_text})
+                                    responder_current_text = ""
+                                pending_tools[tool_id] = {
+                                    "toolUse": {"toolUseId": tool_id, "name": tool_name, "input": current_tool.get("input", {})}
+                                }
+                            yield {"current_tool_use": current_tool}
+
+                    # Browser session detection
+                    elif inner.get("tool_stream_event"):
+                        yield {"tool_stream_event": inner["tool_stream_event"]}
+
+                    # Tool result (skip handoff results)
+                    elif "message" in inner:
+                        msg = inner.get("message", {})
+                        if msg.get("role") == "user" and msg.get("content"):
+                            # Check if this contains handoff results to filter out
+                            filtered_content = []
+                            for cb in msg["content"]:
+                                if isinstance(cb, dict) and "toolResult" in cb:
+                                    tool_use_id = cb["toolResult"].get("toolUseId")
+                                    if tool_use_id and tool_use_id in handoff_tool_ids:
+                                        continue
+                                    # Track content blocks for session save
+                                    if tool_use_id and tool_use_id in pending_tools:
+                                        content_blocks.append(pending_tools.pop(tool_use_id))
+                                        content_blocks.append(cb)
+                                        sent_tool_ids.discard(tool_use_id)
+                                filtered_content.append(cb)
+
+                            if filtered_content:
+                                yield {"message": {"role": msg["role"], "content": filtered_content}}
+
+                    # Metadata (token usage per chunk)
+                    elif "metadata" in inner:
+                        yield {"event": {"metadata": inner["metadata"]}}
+
+                elif event_type == "multiagent_node_stop":
+                    node_id = event.get("node_id")
+                    node_result = event.get("node_result", {})
+                    usage = None
+                    if hasattr(node_result, "accumulated_usage"):
+                        usage = node_result.accumulated_usage
+                    elif isinstance(node_result, dict):
+                        usage = node_result.get("accumulated_usage")
+                    if usage:
+                        total_usage["inputTokens"] += usage.get("inputTokens", 0)
+                        total_usage["outputTokens"] += usage.get("outputTokens", 0)
+                        total_usage["totalTokens"] += usage.get("totalTokens", 0)
+
+                elif event_type == "multiagent_handoff":
+                    from_nodes = event.get("from_node_ids", [])
+                    to_nodes = event.get("to_node_ids", [])
+                    logger.info(f"[SwarmAdapter] Handoff: {from_nodes[0] if from_nodes else '?'} → {to_nodes[0] if to_nodes else '?'}")
+
+                elif event_type == "multiagent_result":
+                    # Handle non-responder final text
+                    final_text = None
+                    if node_history:
+                        last_node = node_history[-1]
+                        if last_node != "responder":
+                            accumulated = node_text_accumulator.get(last_node, "")
+                            if accumulated.strip():
+                                final_text = accumulated
+
+                    if responder_current_text.strip():
+                        content_blocks.append({"text": responder_current_text})
+                    if not content_blocks and final_text:
+                        content_blocks.append({"text": final_text})
+
+                    # Stream non-responder final text
+                    if final_text and not responder_current_text.strip():
+                        yield {"data": final_text}
+
+                    # Save to session storage
+                    if content_blocks:
+                        swarm.message_store.save_turn(
+                            user_message=user_query,
+                            content_blocks=content_blocks,
+                            swarm_state=None,
+                        )
+
+                    # Collect and persist artifacts
+                    all_artifacts = {}
+                    for node_name, swarm_node in swarm.swarm.nodes.items():
+                        agent_artifacts = swarm_node.executor.state.get("artifacts")
+                        if agent_artifacts:
+                            all_artifacts.update(agent_artifacts)
+                    if all_artifacts:
+                        swarm.message_store.save_artifacts(all_artifacts)
+
+                    # Yield final result (compatible with agui_processor's "result" handler)
+                    yield {"result": _SwarmFinalResult(
+                        total_usage=total_usage,
+                        node_history=node_history,
+                    )}
+                    logger.info(f"[SwarmAdapter] Complete: {len(node_history)} nodes, usage={total_usage}")
+
+        except Exception as e:
+            logger.error(f"[SwarmAdapter] Error: {e}", exc_info=True)
+            raise
+
+
+class _SwarmFinalResult:
+    """Minimal result object compatible with AGUIStreamEventProcessor's final result handler."""
+
+    def __init__(self, total_usage: dict, node_history: list):
+        self.stop_reason = "end_turn"
+        self.metrics = _SwarmMetrics(total_usage)
+        self.message = {"content": []}
+        self.node_history = node_history
+
+    def __str__(self):
+        return f"SwarmResult(nodes={len(self.node_history)}, usage={self.metrics.accumulated_usage})"
+
+
+class _SwarmMetrics:
+    def __init__(self, usage: dict):
+        self.accumulated_usage = {k: v for k, v in usage.items() if v > 0} or {
+            "inputTokens": 0, "outputTokens": 0, "totalTokens": 0
+        }
 
 
 class SwarmAgent(BaseAgent):
@@ -91,6 +317,9 @@ class SwarmAgent(BaseAgent):
 
         # Message store for unified storage (same format as normal agent)
         self.message_store = self._create_message_store()
+
+        # AG-UI compatible adapter — exposes stream_async() with Strands Agent event format
+        self.agent = SwarmStreamAdapter(self)
 
         logger.debug(
             f"[SwarmAgent] Initialized: session={session_id}, "

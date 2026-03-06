@@ -15,6 +15,8 @@ import sys
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'src'))
 
+FACTORY_PATH = "agent.session.swarm_message_store.create_session_manager"
+
 
 class TestBuildMessagesToSave:
     """Test _build_messages_to_save method - core message formatting logic."""
@@ -23,13 +25,15 @@ class TestBuildMessagesToSave:
         """Create a SwarmMessageStore instance for testing without real session manager."""
         from agent.session.swarm_message_store import SwarmMessageStore
 
-        with patch.object(SwarmMessageStore, '_create_session_manager', return_value=Mock()):
-            with patch.object(SwarmMessageStore, '_get_next_message_index', return_value=0):
-                store = SwarmMessageStore(
-                    session_id="test-session",
-                    user_id="test-user",
-                    memory_id=None
-                )
+        mock_manager = Mock()
+        mock_manager.session_repository = Mock()
+        mock_manager.session_repository.list_messages.side_effect = Exception("not found")
+
+        with patch(FACTORY_PATH, return_value=mock_manager):
+            store = SwarmMessageStore(
+                session_id="test-session",
+                user_id="test-user",
+            )
         return store
 
     def test_user_message_only(self):
@@ -178,13 +182,15 @@ class TestBuildSwarmContext:
         """Create a SwarmMessageStore instance for testing."""
         from agent.session.swarm_message_store import SwarmMessageStore
 
-        with patch.object(SwarmMessageStore, '_create_session_manager', return_value=Mock()):
-            with patch.object(SwarmMessageStore, '_get_next_message_index', return_value=0):
-                store = SwarmMessageStore(
-                    session_id="test-session",
-                    user_id="test-user",
-                    memory_id=None
-                )
+        mock_manager = Mock()
+        mock_manager.session_repository = Mock()
+        mock_manager.session_repository.list_messages.side_effect = Exception("not found")
+
+        with patch(FACTORY_PATH, return_value=mock_manager):
+            store = SwarmMessageStore(
+                session_id="test-session",
+                user_id="test-user",
+            )
         return store
 
     def test_filters_coordinator_and_responder_from_agents_used(self):
@@ -300,15 +306,13 @@ class TestMessageIndexTracking:
         mock_repo = Mock()
         mock_repo.list_messages.side_effect = Exception("Session not found")
 
-        with patch.object(SwarmMessageStore, '_create_session_manager') as mock_create:
-            mock_manager = Mock()
-            mock_manager.session_repository = mock_repo
-            mock_create.return_value = mock_manager
+        mock_manager = Mock()
+        mock_manager.session_repository = mock_repo
 
+        with patch(FACTORY_PATH, return_value=mock_manager):
             store = SwarmMessageStore(
                 session_id="new-session",
                 user_id="test-user",
-                memory_id=None
             )
 
         assert store._message_index == 0
@@ -320,15 +324,13 @@ class TestMessageIndexTracking:
         mock_repo = Mock()
         mock_repo.list_messages.return_value = [Mock(), Mock(), Mock()]  # 3 existing messages
 
-        with patch.object(SwarmMessageStore, '_create_session_manager') as mock_create:
-            mock_manager = Mock()
-            mock_manager.session_repository = mock_repo
-            mock_create.return_value = mock_manager
+        mock_manager = Mock()
+        mock_manager.session_repository = mock_repo
 
+        with patch(FACTORY_PATH, return_value=mock_manager):
             store = SwarmMessageStore(
                 session_id="existing-session",
                 user_id="test-user",
-                memory_id=None
             )
 
         assert store._message_index == 3

@@ -605,100 +605,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
                     return True
         return False
 
-    def _repair_tool_mismatch(self, messages: List[Dict]) -> List[Dict]:
-        """Strip unmatched toolResult/toolUse blocks to prevent Bedrock ValidationException."""
-        repaired = copy.deepcopy(messages)
-        total_repairs = 0
-
-        # Pass 1: remove toolResult blocks with no matching toolUse in the preceding assistant message.
-        for i, msg in enumerate(repaired):
-            if msg.get('role') != 'user':
-                continue
-            content = msg.get('content', [])
-            if not isinstance(content, list):
-                continue
-
-            valid_tool_use_ids: List[str] = []
-            if i > 0 and repaired[i - 1].get('role') == 'assistant':
-                prev_content = repaired[i - 1].get('content', [])
-                if isinstance(prev_content, list):
-                    valid_tool_use_ids = [
-                        block['toolUse']['toolUseId']
-                        for block in prev_content
-                        if isinstance(block, dict) and 'toolUse' in block
-                    ]
-
-            seen_ids: set = set()
-            new_content = []
-            removed = 0
-            for block in content:
-                if isinstance(block, dict) and 'toolResult' in block:
-                    tid = block['toolResult']['toolUseId']
-                    if tid in valid_tool_use_ids and tid not in seen_ids:
-                        seen_ids.add(tid)
-                        new_content.append(block)
-                    else:
-                        removed += 1
-                else:
-                    new_content.append(block)
-
-            if removed:
-                msg['content'] = new_content
-                total_repairs += removed
-                logger.warning(f"[ToolRepair] Removed {removed} unmatched toolResult(s) from user message at index {i}")
-
-        # Pass 2: remove toolUse blocks with no matching toolResult in the following user message.
-        # Reverse iteration so pop() doesn't shift unvisited indices.
-        for i in range(len(repaired) - 1, -1, -1):
-            msg = repaired[i]
-            if msg.get('role') != 'assistant':
-                continue
-            content = msg.get('content', [])
-            if not isinstance(content, list):
-                continue
-
-            tool_use_ids = [
-                block['toolUse']['toolUseId']
-                for block in content
-                if isinstance(block, dict) and 'toolUse' in block
-            ]
-            if not tool_use_ids:
-                continue
-
-            next_idx = i + 1
-            matched_ids: set = set()
-            if next_idx < len(repaired) and repaired[next_idx].get('role') == 'user':
-                next_content = repaired[next_idx].get('content', [])
-                if isinstance(next_content, list):
-                    matched_ids = {
-                        block['toolResult']['toolUseId']
-                        for block in next_content
-                        if isinstance(block, dict) and 'toolResult' in block
-                    }
-
-            orphaned_ids = [tid for tid in tool_use_ids if tid not in matched_ids]
-            if not orphaned_ids:
-                continue
-
-            orphaned_set = set(orphaned_ids)
-            new_content = [
-                block for block in content
-                if not (isinstance(block, dict) and 'toolUse' in block
-                        and block['toolUse']['toolUseId'] in orphaned_set)
-            ]
-            total_repairs += len(orphaned_ids)
-
-            if new_content:
-                msg['content'] = new_content
-                logger.warning(f"[ToolRepair] Removed {len(orphaned_ids)} unmatched toolUse(s) from assistant message at index {i}")
-            else:
-                repaired.pop(i)
-                logger.warning(f"[ToolRepair] Removed empty assistant message at index {i}")
-
-        if total_repairs > 0:
-            logger.warning(f"[ToolRepair] Repaired {total_repairs} toolUse/toolResult mismatch(es) in history")
-
-        return repaired
 
     def initialize(self, agent: "Agent", **kwargs: Any) -> None:
         """
@@ -794,7 +700,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
                 self._valid_cutoff_message_ids = []
                 self._all_messages_for_summary = []
                 messages_to_process = [sm.to_message() for sm in all_session_messages]
-                messages_to_process = self._repair_tool_mismatch(messages_to_process)
                 original_message_count = len(messages_to_process)
                 agent.messages = prepend_messages + messages_to_process
 
@@ -824,7 +729,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
                 session_messages = all_session_messages[effective_offset:] if effective_offset > 0 else all_session_messages
                 messages_to_process = [sm.to_message() for sm in session_messages]
-                messages_to_process = self._repair_tool_mismatch(messages_to_process)
                 original_message_count = len(messages_to_process)
 
                 if checkpoint > 0 and effective_offset >= checkpoint:

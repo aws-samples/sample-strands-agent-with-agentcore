@@ -306,26 +306,10 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     }
   }, [])
 
-  // Callback for Excalidraw diagram creation - updates existing artifact or creates new
+  // Callback for Excalidraw diagram creation - always creates a new artifact
   const handleExcalidrawCreated = useCallback((data: ExcalidrawDiagramData, toolUseId: string) => {
-    if (!openArtifactRef.current) return
+    if (!addArtifactRef.current || !openArtifactRef.current) return
 
-    // If an excalidraw artifact already exists, update it in place (single canvas model)
-    const existing = artifactsRef.current.find(a => a.type === 'excalidraw')
-    if (existing && updateArtifactRef.current) {
-      updateArtifactRef.current(existing.id, {
-        content: data,
-        title: data.title || existing.title,
-        timestamp: new Date().toISOString(),
-      })
-      setTimeout(() => {
-        openArtifactRef.current!(existing.id)
-      }, 100)
-      return
-    }
-
-    // No existing excalidraw artifact — create new
-    if (!addArtifactRef.current) return
     const artifactId = `excalidraw-${toolUseId}`
     addArtifactRef.current({
       id: artifactId,

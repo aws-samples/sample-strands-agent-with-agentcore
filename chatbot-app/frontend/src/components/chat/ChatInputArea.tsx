@@ -29,10 +29,6 @@ interface ChatInputAreaProps {
   isCanvasOpen: boolean
   availableTools: Tool[]
   sessionId: string | null
-  composerState: {
-    isComposing: boolean
-    showOutlineConfirm: boolean
-  }
   currentModelId?: string
   onModelChange?: (modelId: string) => void
   onSendMessage: (text: string, files: File[]) => Promise<void>
@@ -44,7 +40,6 @@ interface ChatInputAreaProps {
   onToggleSkills: () => void
   onConnectVoice: () => Promise<void>
   onDisconnectVoice: () => void
-  onOpenComposeWizard: (rect: DOMRect) => void
   onExportConversation: () => void
   onNewChat: () => Promise<void>
   onCompact: () => void
@@ -72,7 +67,6 @@ export function ChatInputArea({
   isCanvasOpen,
   availableTools,
   sessionId,
-  composerState,
   currentModelId,
   onModelChange,
   onSendMessage,
@@ -84,7 +78,6 @@ export function ChatInputArea({
   onToggleSkills,
   onConnectVoice,
   onDisconnectVoice,
-  onOpenComposeWizard,
   onExportConversation,
   onNewChat,
   onCompact,
@@ -150,11 +143,6 @@ export function ChatInputArea({
     setInputMessage('')
 
     switch (command.name) {
-      case '/compose':
-        if (textareaRef.current) {
-          onOpenComposeWizard(textareaRef.current.getBoundingClientRect())
-        }
-        break
       case '/export':
         onExportConversation()
         break
@@ -165,7 +153,7 @@ export function ChatInputArea({
         onCompact()
         break
     }
-  }, [onOpenComposeWizard, onExportConversation, onNewChat, onCompact, setInputMessage])
+  }, [onExportConversation, onNewChat, onCompact, setInputMessage])
 
   const handleToolSuggestionSelect = useCallback((tool: Tool) => {
     const trimmed = inputMessage.trim()
@@ -312,7 +300,7 @@ export function ChatInputArea({
       if (isTouchDevice) return
 
       e.preventDefault()
-      if (agentStatus === 'idle' && !composerState.isComposing && (inputMessage.trim() || selectedFiles.length > 0)) {
+      if (agentStatus === 'idle' && (inputMessage.trim() || selectedFiles.length > 0)) {
         onSendMessage(inputMessage, selectedFiles)
         setInputMessage('')
         setSelectedFiles([])
@@ -426,16 +414,12 @@ export function ChatInputArea({
                 onCompositionStart={() => { isComposingRef.current = true }}
                 onCompositionEnd={() => { isComposingRef.current = false }}
                 placeholder={
-                  composerState.showOutlineConfirm
-                    ? "Please review the outline in the Canvas"
-                    : composerState.isComposing
-                    ? "Document is being composed..."
-                    : isVoiceActive
+                  isVoiceActive
                     ? "Voice mode active - click mic to stop"
                     : "Ask me anything..."
                 }
                 className="flex-1 min-h-[52px] max-h-36 border-0 focus:ring-0 resize-none py-2 px-1 leading-relaxed overflow-y-auto bg-transparent transition-all duration-200 placeholder:text-muted-foreground/60"
-                disabled={agentStatus !== 'idle' || composerState.showOutlineConfirm || composerState.isComposing}
+                disabled={agentStatus !== 'idle'}
                 rows={1}
               />
               <div className="flex items-center gap-1.5 pb-1.5">
@@ -449,15 +433,11 @@ export function ChatInputArea({
                           variant="ghost"
                           size="sm"
                           onClick={async () => {
-                            if (composerState.showOutlineConfirm) return
                             if (!isVoiceActive) await onConnectVoice()
                             else onDisconnectVoice()
                           }}
-                          disabled={composerState.showOutlineConfirm}
                           className={`h-9 w-9 p-0 rounded-xl transition-all duration-200 ${
-                            composerState.showOutlineConfirm
-                              ? 'opacity-40 cursor-not-allowed'
-                              : agentStatus === 'voice_listening'
+                            agentStatus === 'voice_listening'
                               ? 'bg-red-500 hover:bg-red-600 text-white'
                               : agentStatus === 'voice_speaking'
                               ? 'bg-green-500 hover:bg-green-600 text-white'
@@ -514,12 +494,12 @@ export function ChatInputArea({
                     type="button"
                     onClick={async (e) => {
                       e.preventDefault()
-                      if (agentStatus !== 'idle' || composerState.showOutlineConfirm || composerState.isComposing || (!inputMessage.trim() && selectedFiles.length === 0)) return
+                      if (agentStatus !== 'idle' || (!inputMessage.trim() && selectedFiles.length === 0)) return
                       await onSendMessage(inputMessage, selectedFiles)
                       setInputMessage('')
                       setSelectedFiles([])
                     }}
-                    disabled={agentStatus !== 'idle' || composerState.showOutlineConfirm || composerState.isComposing || (!inputMessage.trim() && selectedFiles.length === 0)}
+                    disabled={agentStatus !== 'idle' || (!inputMessage.trim() && selectedFiles.length === 0)}
                     size="sm"
                     className="h-9 w-9 p-0 gradient-primary hover:opacity-90 text-primary-foreground rounded-xl transition-all duration-200 disabled:opacity-40"
                   >
@@ -541,7 +521,7 @@ export function ChatInputArea({
                       variant="ghost"
                       size="sm"
                       onClick={() => document.getElementById("file-upload")?.click()}
-                      disabled={isVoiceActive || composerState.showOutlineConfirm}
+                      disabled={isVoiceActive}
                       className="h-9 w-9 p-0 hover:bg-muted-foreground/10 transition-all duration-200 disabled:opacity-40 text-muted-foreground"
                     >
                       <Upload className="w-4 h-4" />
@@ -559,11 +539,11 @@ export function ChatInputArea({
                       variant="ghost"
                       size="sm"
                       onClick={onToggleResearch}
-                      disabled={isVoiceActive || composerState.showOutlineConfirm}
+                      disabled={isVoiceActive}
                       className={`h-9 w-9 p-0 transition-all duration-200 ${
                         isResearchEnabled
                           ? 'bg-blue-500/15 hover:bg-blue-500/25 text-blue-500'
-                          : (isVoiceActive || composerState.showOutlineConfirm)
+                          : isVoiceActive
                           ? 'opacity-40 cursor-not-allowed'
                           : 'hover:bg-muted-foreground/10 text-muted-foreground'
                       }`}
@@ -579,7 +559,7 @@ export function ChatInputArea({
                 <ToolsDropdown
                   availableTools={availableTools}
                   onToggleTool={handleToolToggle}
-                  disabled={isVoiceActive || composerState.showOutlineConfirm}
+                  disabled={isVoiceActive}
                   autoEnabled={swarmEnabled}
                   onToggleAuto={onToggleSwarm}
                 />
@@ -591,11 +571,11 @@ export function ChatInputArea({
                       variant="ghost"
                       size="sm"
                       onClick={onToggleSkills}
-                      disabled={isVoiceActive || composerState.showOutlineConfirm}
+                      disabled={isVoiceActive}
                       className={`h-9 w-9 p-0 transition-all duration-200 ${
                         isSkillsEnabled
                           ? 'bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-500'
-                          : (isVoiceActive || composerState.showOutlineConfirm)
+                          : isVoiceActive
                           ? 'opacity-40 cursor-not-allowed'
                           : 'hover:bg-muted-foreground/10 text-muted-foreground'
                       }`}

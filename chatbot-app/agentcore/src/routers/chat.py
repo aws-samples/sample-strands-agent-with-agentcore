@@ -193,35 +193,10 @@ async def invocations(http_request: Request):
     if action:
         logger.info(f"[Invocation] action={action}, thread_id={thread_id}, state_keys={list(state.keys())}")
 
-    # Warmup
+    # Warmup — triggers container cold start, Python modules load (TOOL_REGISTRY, etc.)
     if action == "warmup":
         user_id = state.get("user_id", "anonymous")
         logger.info(f"[Warmup] Container warmed - session={thread_id}, user={user_id}")
-
-        # Pre-cache memory strategy IDs to speed up first real request
-        memory_id = os.environ.get('MEMORY_ID')
-        if memory_id:
-            try:
-                from agent.agent import _cached_strategy_ids
-                if _cached_strategy_ids is None:
-                    import boto3
-                    import agent.agent as agent_module
-                    aws_region = os.environ.get('AWS_REGION', 'us-west-2')
-                    gmcp = boto3.client('bedrock-agentcore-control', region_name=aws_region)
-                    response = gmcp.get_memory(memoryId=memory_id)
-                    memory = response['memory']
-                    strategies = memory.get('strategies', memory.get('memoryStrategies', []))
-
-                    strategy_map = {
-                        s.get('type', s.get('memoryStrategyType', '')): s.get('strategyId', s.get('memoryStrategyId', ''))
-                        for s in strategies
-                        if s.get('type', s.get('memoryStrategyType', '')) and s.get('strategyId', s.get('memoryStrategyId', ''))
-                    }
-                    agent_module._cached_strategy_ids = strategy_map
-                    logger.info(f"[Warmup] Pre-cached {len(strategy_map)} strategy IDs")
-            except Exception as e:
-                logger.warning(f"[Warmup] Failed to pre-cache strategy IDs: {e}")
-
         return {"status": "warm"}
 
     # Stop
@@ -260,7 +235,7 @@ async def ping():
 
 def _parse_message(message: str, request_type: str) -> tuple[str, dict]:
     """
-    Parse message for special cases (HITL interrupt response, compose confirmation).
+    Parse message for special cases (HITL interrupt response).
 
     Returns:
         (message_content, special_params) tuple
@@ -283,19 +258,6 @@ def _parse_message(message: str, request_type: str) -> tuple[str, dict]:
         except (json.JSONDecodeError, TypeError, KeyError):
             pass
 
-    # Handle compose confirmation (compose mode only)
-    if request_type == "compose":
-        try:
-            from models.composer_schemas import OutlineConfirmation
-            parsed = json.loads(message)
-            if isinstance(parsed, dict) and "approved" in parsed:
-                confirmation = OutlineConfirmation(**parsed)
-                logger.info(f"[Compose] Outline confirmation: approved={confirmation.approved}")
-                special_params["confirmation_response"] = confirmation
-                return "", special_params  # Empty message, pass confirmation separately
-        except (json.JSONDecodeError, TypeError, ValueError):
-            pass
-
     # Normal message - no special handling
     return message, special_params
 
@@ -304,6 +266,9 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
     """Handle AG-UI protocol RunAgentInput requests."""
     # forwarded_props is required by RunAgentInput but optional in practice; default to None
     body = {**body, "forwarded_props": body.get("forwarded_props")}
+    for tool in body.get("tools", []):
+        if "parameters" not in tool:
+            tool["parameters"] = {}
     input_data = RunAgentInput(**body)
     thread_id = input_data.thread_id
     run_id = input_data.run_id
@@ -412,13 +377,29 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         execution = await registry.create_execution(session_id, user_id, run_id)
         execution.media_type = media_type
 
-        # Parse message for special cases (HITL interrupt response, compose confirmation)
+        # Parse message for special cases (HITL interrupt response)
         message_content, special_params = _parse_message(message, request_type)
 
         # Build multimodal message using build_prompt() (handles size checks, sanitization, workspace storage)
         if isinstance(message_content, list):
-            # Special case (e.g. HITL interrupt response) — bypass build_prompt, use as-is
+            # HITL interrupt response — bypass build_prompt, use as-is.
+            # SDK restores _interrupt_state from session automatically
+            # (AgentInitializedEvent → initialize_internal_state), so no manual restore needed.
             agui_message = message_content
+            # Diagnostic: log restored state for HITL resume
+            inner_agent = agent.agent
+            if hasattr(inner_agent, '_interrupt_state') and hasattr(inner_agent, 'messages'):
+                istate = inner_agent._interrupt_state
+                msg_summary = []
+                for i, msg in enumerate(inner_agent.messages):
+                    role = msg.get('role', '?')
+                    content_types = [list(c.keys())[0] if isinstance(c, dict) and c else '?' for c in msg.get('content', [])]
+                    msg_summary.append(f"  [{i}] role={role} content={content_types}")
+                logger.info(
+                    f"[HITL Resume] activated={istate.activated}, "
+                    f"interrupts={list(istate.interrupts.keys()) if hasattr(istate, 'interrupts') else '?'}, "
+                    f"messages ({len(inner_agent.messages)}):\n" + "\n".join(msg_summary)
+                )
         else:
             raw_files = []
             for img in image_content_parts:

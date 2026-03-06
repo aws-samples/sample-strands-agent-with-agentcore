@@ -1,4 +1,4 @@
-import { FileText, Download, Trash2, Sparkles, Minimize2, LucideIcon } from "lucide-react"
+import { Download, Trash2, Sparkles, Minimize2, LucideIcon } from "lucide-react"
 import { Tool } from "@/types/chat"
 
 export interface SlashCommand {
@@ -17,13 +17,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     keywords: ['tools', 'enable', 'activate', 'select'],
     isToolCommand: true
   },
-  {
-    name: '/compose',
-    description: 'Create a new document',
-    icon: FileText,
-    keywords: ['document', 'write', 'create', 'draft']
-  },
-  {
+{
     name: '/export',
     description: 'Export conversation to file',
     icon: Download,

@@ -15,9 +15,7 @@ import { ToolsDropdown } from "@/components/ToolsDropdown"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
 import { SwarmProgress } from "@/components/SwarmProgress"
 import { Canvas } from "@/components/canvas"
-import { ComposeWizard, ComposeConfig } from "@/components/ComposeWizard"
 import { ChatInputArea } from "@/components/chat/ChatInputArea"
-import { useComposer } from "@/hooks/useComposer"
 import { useResearch } from "@/hooks/useResearch"
 import { Button } from "@/components/ui/button"
 import { SidebarTrigger, SidebarInset, useSidebar } from "@/components/ui/sidebar"
@@ -238,10 +236,6 @@ export function ChatInterface() {
   // Agent executions (research)
   const { researchData } = useAgentExecutions(groupedMessages)
 
-  // Compose wizard state
-  const [isComposeWizardOpen, setIsComposeWizardOpen] = useState(false)
-  const [inputRect, setInputRect] = useState<DOMRect | null>(null)
-
   // Greeting prompt prefill
   const [prefillMessage, setPrefillMessage] = useState<string | undefined>(undefined)
 
@@ -287,9 +281,6 @@ export function ChatInterface() {
     })
   }, [artifacts, refreshArtifacts, addArtifact, updateArtifact, openArtifact, setArtifactMethods])
 
-  // Composer artifact ID tracking
-  const [composeArtifactId, setComposeArtifactId] = useState<string | null>(null)
-
   // Research artifact ID tracking
   const [researchArtifactId, setResearchArtifactId] = useState<string | null>(null)
 
@@ -308,67 +299,6 @@ export function ChatInterface() {
   useEffect(() => {
     setBrowserArtifactIdRef.current = setBrowserArtifactId
   }, [setBrowserArtifactId])
-
-  // Composer management
-  const composer = useComposer({
-    sessionId,
-    onDocumentComplete: async (doc) => {
-      // Remove temporary compose artifact from UI
-      if (composeArtifactId) {
-        removeArtifact(composeArtifactId)
-      }
-      setComposeArtifactId(null)
-      // Artifact is added via onArtifactCreated callback (real-time from backend)
-    },
-    onArtifactCreated: (artifact) => {
-      // Artifact saved to backend - add to local state immediately
-      console.log('[ChatInterface] Artifact created from backend:', artifact.id)
-      addArtifact({
-        id: artifact.id,
-        type: artifact.type as ArtifactType,
-        title: artifact.title,
-        content: artifact.content,
-        description: artifact.metadata?.description || `${artifact.metadata?.word_count || 0} words`,
-        timestamp: artifact.created_at || new Date().toISOString(),
-        sessionId: sessionId || '',
-      })
-
-      // Add artifact message to chat (real-time update)
-      addArtifactMessage({
-        id: artifact.id,
-        type: artifact.type,
-        title: artifact.title,
-        wordCount: artifact.metadata?.word_count
-      })
-
-      // Auto-open the new artifact
-      openArtifactBase(artifact.id)
-    },
-  })
-
-  // Wrapped startCompose to create artifact immediately
-  const startCompose = useCallback(async (message: string) => {
-    // Create compose artifact
-    const artifactId = `compose-${Date.now()}`
-    setComposeArtifactId(artifactId)
-
-    addArtifact({
-      id: artifactId,
-      type: 'compose',
-      title: 'Composing Document...',
-      content: {}, // Content is provided via composeState prop in Canvas
-      description: 'Document composition in progress',
-      toolName: 'composer',
-      timestamp: new Date().toISOString(),
-      sessionId: sessionId || '',
-    })
-
-    // Open canvas
-    openArtifactBase(artifactId)
-
-    // Start composition - backend will load conversation history and model config automatically
-    await composer.startCompose(message)
-  }, [sessionId, composer, addArtifact, openArtifactBase])
 
   // Research management
   const research = useResearch({
@@ -617,14 +547,16 @@ export function ChatInterface() {
       const interrupt = currentInterrupt.interrupts[0]
 
       if (interrupt.name === "chatbot-research-approval" &&
-          !researchArtifactId &&
           processedInterruptRef.current !== interrupt.id) {
 
         // Mark as processed
         processedInterruptRef.current = interrupt.id
 
-        // Set research in progress flag (no temp artifact needed)
+        // Reset research state for new interrupt (clears any previous run)
         setResearchArtifactId('in-progress')
+
+        // Deselect any currently viewed artifact so ResearchArtifact renders
+        setSelectedArtifactId(null)
 
         // Open canvas and pass interrupt to research hook
         openCanvas()
@@ -943,46 +875,6 @@ export function ChatInterface() {
     forceDisconnectVoice()
     await loadSession(newSessionId)
   }, [loadSession, forceDisconnectVoice])
-
-  // Compose wizard handlers
-  const handleComposeComplete = useCallback(async (config: ComposeConfig) => {
-    setIsComposeWizardOpen(false)
-
-    // Close sidebars
-    if (open) {
-      setOpen(false)
-    }
-    setOpenMobile(false)
-
-    // Send structured data as JSON to backend (no LLM parsing needed)
-    const documentTypeMap: Record<string, string> = {
-      'blog': 'blog post',
-      'report': 'technical report',
-      'essay': 'essay',
-      'proposal': 'proposal',
-      'article': 'article',
-      'custom': 'document'
-    }
-
-    const composeRequest = {
-      document_type: documentTypeMap[config.documentType] || config.documentType,
-      topic: config.topic,
-      length_guidance: config.length,
-      extracted_points: [] // Empty for now, backend will extract from conversation
-    }
-
-    // Send as JSON string (backend will detect and parse directly)
-    const composeMessage = JSON.stringify(composeRequest)
-
-    // Start compose workflow using hook
-    await startCompose(composeMessage)
-  }, [startCompose, open, setOpen, setOpenMobile])
-
-  // Open compose wizard handler (called from ChatInputArea)
-  const handleOpenComposeWizard = useCallback((rect: DOMRect) => {
-    setInputRect(rect)
-    setIsComposeWizardOpen(true)
-  }, [])
 
   const handleSendMessage = async (text: string, files: File[]) => {
     if (open) {
@@ -1352,10 +1244,6 @@ export function ChatInterface() {
           isCanvasOpen={isCanvasOpen}
           availableTools={availableTools}
           sessionId={sessionId}
-          composerState={{
-            isComposing: composer.isComposing,
-            showOutlineConfirm: composer.showOutlineConfirm,
-          }}
           currentModelId={currentModelId}
           onModelChange={updateModelConfig}
           onSendMessage={handleSendMessage}
@@ -1367,7 +1255,6 @@ export function ChatInterface() {
           onToggleSkills={toggleSkillsMode}
           onConnectVoice={connectVoice}
           onDisconnectVoice={disconnectVoice}
-          onOpenComposeWizard={handleOpenComposeWizard}
           onExportConversation={exportConversation}
           onNewChat={handleNewChat}
           onCompact={handleCompactRequest}
@@ -1415,14 +1302,6 @@ export function ChatInterface() {
         />
       )}
 
-      {/* Compose Wizard */}
-      <ComposeWizard
-        isOpen={isComposeWizardOpen}
-        onComplete={handleComposeComplete}
-        onClose={() => setIsComposeWizardOpen(false)}
-        inputRect={inputRect}
-      />
-
       {/* Canvas */}
       <Canvas
         isOpen={isCanvasOpen}
@@ -1432,25 +1311,6 @@ export function ChatInterface() {
         onSelectArtifact={openArtifact}
         onUpdateArtifact={updateArtifact}
         justUpdated={artifactJustUpdated}
-        composeState={composeArtifactId && selectedArtifactId === composeArtifactId ? {
-          isComposing: composer.isComposing,
-          progress: composer.progress,
-          outline: composer.outline,
-          showOutlineConfirm: composer.showOutlineConfirm,
-          outlineAttempt: composer.outlineAttempt,
-          documentParts: composer.documentParts,
-          completedDocument: composer.completedDocument,
-          onConfirmOutline: composer.confirmOutlineResponse,
-          onCancel: () => {
-            composer.reset()
-            // Remove compose artifact
-            if (composeArtifactId) {
-              removeArtifact(composeArtifactId)
-            }
-            setComposeArtifactId(null)
-            closeCanvas()
-          },
-        } : undefined}
         researchState={researchArtifactId ? {
           isResearching: research.isResearching,
           progress: research.progress,

@@ -9,11 +9,12 @@ as the normal agent, enabling unified session storage.
 
 import json
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
 from strands.types.session import Session, SessionAgent, SessionMessage, SessionType
 from strands.types.exceptions import SessionException
+
+from agent.factory.session_manager_factory import create_session_manager, is_cloud_mode
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +36,6 @@ class SwarmMessageStore:
         self,
         session_id: str,
         user_id: str,
-        memory_id: Optional[str] = None,
-        region_name: str = "us-west-2"
     ):
         """
         Initialize SwarmMessageStore with existing session manager.
@@ -44,67 +43,22 @@ class SwarmMessageStore:
         Args:
             session_id: Session identifier
             user_id: User identifier
-            memory_id: AgentCore Memory ID (None for local mode)
-            region_name: AWS region for cloud mode
         """
         self.session_id = session_id
         self.user_id = user_id
-        self.memory_id = memory_id or os.environ.get("MEMORY_ID")
-        self.region_name = region_name
 
-        # Create session manager (reusing existing infrastructure)
-        self.session_manager = self._create_session_manager()
+        # Create session manager via factory (handles cloud/local detection)
+        self.session_manager = create_session_manager(
+            session_id=session_id,
+            user_id=user_id,
+            mode="swarm",
+        )
 
         # Track message index for sequential storage
         self._message_index = self._get_next_message_index()
 
-        mode = "cloud" if self.memory_id else "local"
+        mode = "cloud" if is_cloud_mode() else "local"
         logger.debug(f"SwarmMessageStore: mode={mode}, session={session_id}, agent_id={SWARM_AGENT_ID}")
-
-    def _create_session_manager(self):
-        """Create appropriate session manager based on environment."""
-        from pathlib import Path
-
-        if self.memory_id:
-            # Cloud mode: Use CompactingSessionManager
-            try:
-                from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
-                from agent.session.compacting_session_manager import CompactingSessionManager
-
-                config = AgentCoreMemoryConfig(
-                    memory_id=self.memory_id,
-                    session_id=self.session_id,
-                    actor_id=self.user_id,
-                    enable_prompt_caching=False,
-                    retrieval_config=None
-                )
-
-                manager = CompactingSessionManager(
-                    agentcore_memory_config=config,
-                    region_name=self.region_name,
-                    user_id=self.user_id,
-                    metrics_only=True  # No compaction for swarm messages
-                )
-
-                logger.debug("Using CompactingSessionManager for swarm storage")
-                return manager
-
-            except ImportError:
-                logger.warning("AgentCore Memory not available, falling back to local storage")
-
-        # Local mode: Use FileSessionManager
-        from strands.session.file_session_manager import FileSessionManager
-
-        sessions_dir = Path(__file__).parent.parent.parent.parent / "sessions"
-        sessions_dir.mkdir(exist_ok=True)
-
-        manager = FileSessionManager(
-            session_id=self.session_id,
-            storage_dir=str(sessions_dir)
-        )
-
-        logger.debug(f"Using FileSessionManager for swarm storage: {sessions_dir}")
-        return manager
 
     @property
     def _repo(self):
@@ -204,8 +158,7 @@ class SwarmMessageStore:
                 )
                 self._message_index += 1
 
-            mode = "cloud" if self.memory_id else "local"
-            logger.info(f"[Swarm] Saved {len(messages_to_save)} messages to {mode}: session={self.session_id}")
+            logger.info(f"[Swarm] Saved {len(messages_to_save)} messages: session={self.session_id}")
 
         except Exception as e:
             logger.error(f"[Swarm] Failed to save turn: {e}", exc_info=True)
@@ -351,7 +304,7 @@ class SwarmMessageStore:
 def get_swarm_message_store(
     session_id: str,
     user_id: str,
-    memory_id: Optional[str] = None
+    memory_id: Optional[str] = None,
 ) -> SwarmMessageStore:
     """
     Factory function to create SwarmMessageStore.
@@ -359,7 +312,8 @@ def get_swarm_message_store(
     Args:
         session_id: Session identifier
         user_id: User identifier
-        memory_id: Optional AgentCore Memory ID
+        memory_id: Unused, kept for backward compatibility.
+                   Cloud/local detection is handled by session_manager_factory.
 
     Returns:
         Configured SwarmMessageStore instance
@@ -367,6 +321,4 @@ def get_swarm_message_store(
     return SwarmMessageStore(
         session_id=session_id,
         user_id=user_id,
-        memory_id=memory_id or os.environ.get("MEMORY_ID"),
-        region_name=os.environ.get("AWS_REGION", "us-west-2")
     )

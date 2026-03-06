@@ -13,7 +13,6 @@ These tests verify the interaction between:
 """
 import json
 import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 from typing import Dict, Any, List
 
 
@@ -53,20 +52,6 @@ class MockCompletedResult:
 # Helper Functions
 # ============================================================
 
-async def create_async_generator(items):
-    """Create async generator from list of items."""
-    for item in items:
-        yield item
-
-
-def make_stream_async_mock(items):
-    """Create a callable mock that returns an async generator."""
-    async def stream_async(*args, **kwargs):
-        for item in items:
-            yield item
-    return stream_async
-
-
 def parse_sse_event(event_str: str) -> Dict[str, Any]:
     """Parse SSE event string to dictionary."""
     if event_str.startswith("data: "):
@@ -77,99 +62,6 @@ def parse_sse_event(event_str: str) -> Dict[str, Any]:
 # ============================================================
 # Research Interrupt Event Tests
 # ============================================================
-
-class TestResearchInterruptEvent:
-    """Tests for research interrupt event generation."""
-
-    @pytest.fixture
-    def processor(self):
-        """Create StreamEventProcessor for testing."""
-        from streaming.event_processor import StreamEventProcessor
-        return StreamEventProcessor()
-
-    @pytest.fixture
-    def mock_agent(self):
-        """Create mock agent with session manager."""
-        agent = MagicMock()
-        agent.session_manager = MagicMock()
-        agent.session_manager.append_message = MagicMock()
-        return agent
-
-    @pytest.mark.asyncio
-    async def test_research_approval_interrupt_event_structure(self, processor, mock_agent):
-        """Test that research approval interrupt has correct structure for frontend."""
-        interrupt = MockInterrupt(
-            interrupt_id="chatbot-research-001",
-            name="chatbot-research-approval",
-            reason="User must approve the research plan before execution"
-        )
-        interrupt_result = MockInterruptResult([interrupt])
-
-        events_list = [{"result": interrupt_result}]
-        mock_agent.stream_async = make_stream_async_mock(events_list)
-
-        events = []
-        async for event in processor.process_stream(mock_agent, "Research AI safety", session_id="test_session"):
-            events.append(event)
-
-        # Find interrupt event
-        interrupt_events = [e for e in events if '"type": "interrupt"' in e]
-        assert len(interrupt_events) == 1
-
-        interrupt_event = parse_sse_event(interrupt_events[0])
-        assert interrupt_event["type"] == "interrupt"
-        assert "interrupts" in interrupt_event
-        assert len(interrupt_event["interrupts"]) == 1
-        assert interrupt_event["interrupts"][0]["id"] == "chatbot-research-001"
-        assert interrupt_event["interrupts"][0]["name"] == "chatbot-research-approval"
-
-    @pytest.mark.asyncio
-    async def test_browser_approval_interrupt_event_structure(self, processor, mock_agent):
-        """Test that browser approval interrupt has correct structure."""
-        interrupt = MockInterrupt(
-            interrupt_id="chatbot-browser-001",
-            name="chatbot-browser-approval",
-            reason="User must approve the browser task"
-        )
-        interrupt_result = MockInterruptResult([interrupt])
-
-        events_list = [{"result": interrupt_result}]
-        mock_agent.stream_async = make_stream_async_mock(events_list)
-
-        events = []
-        async for event in processor.process_stream(mock_agent, "Browse Amazon", session_id="test_browser"):
-            events.append(event)
-
-        interrupt_events = [e for e in events if '"type": "interrupt"' in e]
-        assert len(interrupt_events) == 1
-
-        interrupt_event = parse_sse_event(interrupt_events[0])
-        assert interrupt_event["interrupts"][0]["name"] == "chatbot-browser-approval"
-
-    @pytest.mark.asyncio
-    async def test_interrupt_reason_contains_plan(self, processor, mock_agent):
-        """Test that interrupt reason can contain research plan."""
-        plan = "Step 1: Search web\nStep 2: Analyze results\nStep 3: Generate report"
-        interrupt = MockInterrupt(
-            interrupt_id="research-plan-001",
-            name="chatbot-research-approval",
-            reason=plan
-        )
-        interrupt_result = MockInterruptResult([interrupt])
-
-        events_list = [{"result": interrupt_result}]
-        mock_agent.stream_async = make_stream_async_mock(events_list)
-
-        events = []
-        async for event in processor.process_stream(mock_agent, "Test", session_id="test"):
-            events.append(event)
-
-        interrupt_events = [e for e in events if '"type": "interrupt"' in e]
-        interrupt_event = parse_sse_event(interrupt_events[0])
-
-        # Reason should contain the plan
-        assert "Step 1" in str(interrupt_event["interrupts"][0]["reason"])
-
 
 # ============================================================
 # Research Approval Response Tests

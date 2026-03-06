@@ -13,7 +13,6 @@ export type ArtifactType =
   | 'powerpoint_presentation' // PowerPoint presentations from PPT tools
   | 'image'              // Images and charts
   | 'code'               // Code snippets
-  | 'compose'            // Interactive composer workflow
   | 'excalidraw'         // Excalidraw hand-drawn diagrams
 
 export interface Artifact {

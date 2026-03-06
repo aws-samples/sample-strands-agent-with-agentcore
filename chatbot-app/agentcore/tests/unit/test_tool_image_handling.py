@@ -12,6 +12,7 @@ import json
 import pytest
 from unittest.mock import MagicMock, patch, ANY
 from typing import Dict, Any, List
+from streaming.agui_event_formatter import extract_basic_content, create_tool_result_event
 
 
 # ============================================================
@@ -137,7 +138,7 @@ class TestEventFormatterImageProcessing:
 
     def test_extract_basic_content_with_image(self, diagram_tool_result, sample_png_bytes):
         """Test _extract_basic_content extracts image and converts to base64."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         # Wrap in toolUseId format (as received from Strands)
         tool_result_with_id = {
@@ -145,7 +146,7 @@ class TestEventFormatterImageProcessing:
             **diagram_tool_result
         }
 
-        result_text, result_images = StreamEventFormatter._extract_basic_content(tool_result_with_id)
+        result_text, result_images = extract_basic_content(tool_result_with_id)
 
         # Should extract text
         assert "Diagram generated" in result_text
@@ -164,7 +165,7 @@ class TestEventFormatterImageProcessing:
 
     def test_bytes_to_base64_conversion(self, sample_png_bytes):
         """Test direct bytes to base64 conversion."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         tool_result = {
             "toolUseId": "toolu_001",
@@ -180,7 +181,7 @@ class TestEventFormatterImageProcessing:
             ]
         }
 
-        result_text, result_images = StreamEventFormatter._extract_basic_content(tool_result)
+        result_text, result_images = extract_basic_content(tool_result)
 
         assert len(result_images) == 1
         # Should be base64 encoded
@@ -190,7 +191,7 @@ class TestEventFormatterImageProcessing:
 
     def test_already_base64_data_passthrough(self, sample_png_bytes):
         """Test that already-base64 data in 'data' field passes through."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         # Some tools might return base64 in 'data' field
         base64_data = base64.b64encode(sample_png_bytes).decode('utf-8')
@@ -209,14 +210,14 @@ class TestEventFormatterImageProcessing:
             ]
         }
 
-        result_text, result_images = StreamEventFormatter._extract_basic_content(tool_result)
+        result_text, result_images = extract_basic_content(tool_result)
 
         assert len(result_images) == 1
         assert result_images[0]["data"] == base64_data
 
     def test_create_tool_result_event_with_images(self, sample_png_bytes):
         """Test full tool_result event creation includes images."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         tool_result = {
             "toolUseId": "toolu_diagram_001",
@@ -231,7 +232,7 @@ class TestEventFormatterImageProcessing:
             ]
         }
 
-        event_str = StreamEventFormatter.create_tool_result_event(tool_result)
+        event_str = create_tool_result_event(tool_result)
 
         # Parse SSE event
         assert event_str.startswith("data: ")
@@ -434,7 +435,7 @@ class TestFrontendImageDisplay:
 
     def test_sse_event_image_format_for_frontend(self, sample_png_bytes):
         """Test SSE event has correct image format for frontend rendering."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         tool_result = {
             "toolUseId": "toolu_001",
@@ -449,7 +450,7 @@ class TestFrontendImageDisplay:
             ]
         }
 
-        event_str = StreamEventFormatter.create_tool_result_event(tool_result)
+        event_str = create_tool_result_event(tool_result)
         data = json.loads(event_str[6:-2])
 
         # Frontend expects images array with format and data
@@ -466,7 +467,7 @@ class TestFrontendImageDisplay:
 
     def test_multiple_images_in_sse_event(self, sample_png_bytes):
         """Test multiple images are all included in SSE event."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         tool_result = {
             "toolUseId": "toolu_001",
@@ -477,14 +478,14 @@ class TestFrontendImageDisplay:
             ]
         }
 
-        event_str = StreamEventFormatter.create_tool_result_event(tool_result)
+        event_str = create_tool_result_event(tool_result)
         data = json.loads(event_str[6:-2])
 
         assert len(data["images"]) == 2
 
     def test_empty_image_bytes_handling(self):
         """Test handling of empty/invalid image bytes."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         tool_result = {
             "toolUseId": "toolu_001",
@@ -500,7 +501,7 @@ class TestFrontendImageDisplay:
         }
 
         # Should not crash, but may not include empty image
-        event_str = StreamEventFormatter.create_tool_result_event(tool_result)
+        event_str = create_tool_result_event(tool_result)
         data = json.loads(event_str[6:-2])
 
         # Empty image data should be handled gracefully
@@ -519,7 +520,7 @@ class TestImageToolFullFlow:
 
     def test_diagram_tool_to_frontend_flow(self, sample_png_bytes):
         """Test full flow: tool return → event formatter → SSE → frontend data."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         # 1. Tool returns result with raw bytes
         tool_output = {
@@ -542,7 +543,7 @@ class TestImageToolFullFlow:
         }
 
         # 3. Event formatter creates SSE event
-        sse_event = StreamEventFormatter.create_tool_result_event(tool_result)
+        sse_event = create_tool_result_event(tool_result)
 
         # 4. Parse as frontend would
         assert sse_event.startswith("data: ")
@@ -565,7 +566,7 @@ class TestImageToolFullFlow:
 
     def test_tool_error_no_image_flow(self):
         """Test error flow doesn't include images."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         error_result = {
             "toolUseId": "toolu_error_001",
@@ -573,7 +574,7 @@ class TestImageToolFullFlow:
             "status": "error"
         }
 
-        sse_event = StreamEventFormatter.create_tool_result_event(error_result)
+        sse_event = create_tool_result_event(error_result)
         frontend_data = json.loads(sse_event[6:-2])
 
         assert frontend_data["status"] == "error"
@@ -726,7 +727,7 @@ class TestBrowserToolJsonSerialization:
         Browser tools use source.data for cloud compatibility.
         Event formatter should extract this and pass to frontend.
         """
-        from streaming.event_formatter import StreamEventFormatter
+
 
         # Browser tool result with source.data (cloud-compatible format)
         tool_result = {
@@ -745,7 +746,7 @@ class TestBrowserToolJsonSerialization:
             "status": "success"
         }
 
-        result_text, result_images = StreamEventFormatter._extract_basic_content(tool_result)
+        result_text, result_images = extract_basic_content(tool_result)
 
         # Should extract text
         assert "Navigated to" in result_text
@@ -768,7 +769,7 @@ class TestBrowserToolJsonSerialization:
         Diagram tool and other tools use source.bytes with raw bytes.
         Event formatter should convert to base64 for frontend.
         """
-        from streaming.event_formatter import StreamEventFormatter
+
 
         # Tool result with source.bytes (raw bytes - local mode compatible)
         tool_result = {
@@ -787,7 +788,7 @@ class TestBrowserToolJsonSerialization:
             "status": "success"
         }
 
-        result_text, result_images = StreamEventFormatter._extract_basic_content(tool_result)
+        result_text, result_images = extract_basic_content(tool_result)
 
         # Should extract text
         assert "Diagram generated" in result_text
@@ -806,7 +807,7 @@ class TestBrowserToolJsonSerialization:
 
     def test_event_formatter_handles_both_formats_in_same_result(self, sample_jpeg_bytes, sample_png_bytes):
         """Test that event_formatter handles mixed source.data and source.bytes."""
-        from streaming.event_formatter import StreamEventFormatter
+
 
         # Mixed format (unlikely but should be handled)
         tool_result = {
@@ -833,7 +834,7 @@ class TestBrowserToolJsonSerialization:
             "status": "success"
         }
 
-        result_text, result_images = StreamEventFormatter._extract_basic_content(tool_result)
+        result_text, result_images = extract_basic_content(tool_result)
 
         # Should extract both images
         assert len(result_images) == 2

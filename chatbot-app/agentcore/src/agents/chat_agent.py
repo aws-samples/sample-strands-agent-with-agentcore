@@ -1,20 +1,16 @@
 """
 ChatAgent - Text-based conversational agent
-- Uses Strands Agent with StreamEventProcessor
 - Session management with AgentCore Memory (cloud) or File-based (local)
-- Streaming with SSE event processing
+- AG-UI streaming via agui_event_processor
 """
 
 import logging
 import os
-import base64
-from typing import AsyncGenerator, Dict, Any, List, Optional
-from pathlib import Path
+from typing import Dict, Any, List, Optional
 from strands import Agent
 from strands.models import BedrockModel, CacheConfig
 from strands.tools.executors import SequentialToolExecutor
 from agents.base import BaseAgent
-from streaming.event_processor import StreamEventProcessor
 from agent.hooks import ResearchApprovalHook, EmailApprovalHook, GitHubApprovalHook
 from agent.config.prompt_builder import (
     build_text_system_prompt,
@@ -23,7 +19,7 @@ from agent.config.prompt_builder import (
 
 # AgentCore Memory integration (optional, only for cloud deployment)
 try:
-    from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig, RetrievalConfig
+    from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
     AGENTCORE_MEMORY_AVAILABLE = True
 except ImportError:
     AGENTCORE_MEMORY_AVAILABLE = False
@@ -38,17 +34,6 @@ import local_tools
 import builtin_tools
 
 logger = logging.getLogger(__name__)
-
-# Global stream processor instance
-_global_stream_processor = None
-
-# Global cache for Memory Strategy IDs (loaded once per container lifecycle)
-_cached_strategy_ids: Optional[Dict[str, str]] = None
-
-
-def get_global_stream_processor():
-    """Get the global stream processor instance"""
-    return _global_stream_processor
 
 
 # Tool ID to tool object mapping
@@ -105,11 +90,6 @@ class ChatAgent(BaseAgent):
             use_null_conversation_manager: Use NullConversationManager instead of default SlidingWindow (default: False)
             api_keys: User-specific API keys for external services
         """
-        # Initialize stream processor first (before BaseAgent.__init__)
-        global _global_stream_processor
-        self.stream_processor = StreamEventProcessor()
-        _global_stream_processor = self.stream_processor
-
         # Initialize Strands agent placeholder
         self.agent = None
         self.use_null_conversation_manager = use_null_conversation_manager if use_null_conversation_manager is not None else False
@@ -137,35 +117,6 @@ class ChatAgent(BaseAgent):
         return build_text_system_prompt(
             enabled_tools=self.enabled_tools
         )
-
-    def _get_memory_strategy_ids(self, memory_id: str, aws_region: str) -> Dict[str, str]:
-        """Get Memory Strategy IDs from AgentCore Memory with global caching."""
-        global _cached_strategy_ids
-
-        if _cached_strategy_ids is not None:
-            return _cached_strategy_ids
-
-        import boto3
-
-        try:
-            gmcp = boto3.client('bedrock-agentcore-control', region_name=aws_region)
-            response = gmcp.get_memory(memoryId=memory_id)
-            memory = response['memory']
-            strategies = memory.get('strategies', memory.get('memoryStrategies', []))
-
-            strategy_map = {
-                s.get('type', s.get('memoryStrategyType', '')): s.get('strategyId', s.get('memoryStrategyId', ''))
-                for s in strategies
-                if s.get('type', s.get('memoryStrategyType', '')) and s.get('strategyId', s.get('memoryStrategyId', ''))
-            }
-
-            _cached_strategy_ids = strategy_map
-            logger.info(f"[StrategyCache] Loaded {len(strategy_map)} strategy IDs: {list(strategy_map.keys())}")
-
-            return strategy_map
-        except Exception as e:
-            logger.warning(f"Failed to get memory strategy IDs: {e}")
-            return {}
 
     def get_model_config(self) -> Dict[str, Any]:
         """Return model configuration"""
@@ -274,6 +225,91 @@ class ChatAgent(BaseAgent):
 
             self.agent = Agent(**agent_kwargs)
 
+            # Defensive hook: validate and repair toolUse/toolResult pairing before every model call.
+            # Bedrock raises ValidationException if toolResult blocks in messages[i+1] exceed
+            # toolUse blocks in messages[i]. This can happen when session messages get corrupted
+            # (e.g., cross-agent contamination or _fix_broken_tool_use creating extra fake blocks).
+            from strands.hooks import BeforeModelCallEvent as _BMCEvent
+            def _validate_and_repair_messages(event: _BMCEvent) -> None:
+                a = event.agent
+                if not hasattr(a, 'messages') or not a.messages:
+                    return
+
+                messages = a.messages
+                istate = a._interrupt_state
+
+                # Log current message structure for diagnostics
+                msg_summary = []
+                for i, msg in enumerate(messages):
+                    role = msg.get('role', '?')
+                    content_types = [
+                        list(c.keys())[0] if isinstance(c, dict) and c else str(type(c).__name__)
+                        for c in msg.get('content', [])
+                    ]
+                    msg_summary.append(f"  [{i}] role={role} content={content_types}")
+                logger.info(
+                    f"[BeforeModelCall] activated={istate.activated} | "
+                    f"messages ({len(messages)}):\n" + "\n".join(msg_summary)
+                )
+
+                # Repair: remove orphaned toolResult at messages[0] (user message with no preceding assistant toolUse)
+                if messages and messages[0].get('role') == 'user':
+                    content = messages[0].get('content', [])
+                    tool_result_ids = [
+                        c['toolResult']['toolUseId']
+                        for c in content
+                        if isinstance(c, dict) and 'toolResult' in c
+                    ]
+                    if tool_result_ids:
+                        logger.warning(
+                            f"[MessageRepair] Removing orphaned toolResult blocks from messages[0]: {tool_result_ids}"
+                        )
+                        messages[0]['content'] = [
+                            c for c in content
+                            if not (isinstance(c, dict) and 'toolResult' in c)
+                        ]
+
+                # Repair: for each assistant message with toolUse, ensure the NEXT user message
+                # has exactly the matching toolResult blocks (no more, no fewer).
+                for i in range(len(messages) - 1):
+                    msg = messages[i]
+                    if msg.get('role') != 'assistant':
+                        continue
+
+                    tool_use_ids = [
+                        c['toolUse']['toolUseId']
+                        for c in msg.get('content', [])
+                        if isinstance(c, dict) and 'toolUse' in c
+                    ]
+                    if not tool_use_ids:
+                        continue
+
+                    next_msg = messages[i + 1]
+                    if next_msg.get('role') != 'user':
+                        continue
+
+                    next_content = next_msg.get('content', [])
+                    result_ids_in_next = [
+                        c['toolResult']['toolUseId']
+                        for c in next_content
+                        if isinstance(c, dict) and 'toolResult' in c
+                    ]
+
+                    # Remove excess toolResult blocks that have no matching toolUse
+                    excess = [rid for rid in result_ids_in_next if rid not in tool_use_ids]
+                    if excess:
+                        logger.warning(
+                            f"[MessageRepair] messages[{i+1}] has {len(excess)} excess toolResult block(s) "
+                            f"with no matching toolUse in messages[{i}]: {excess}. Removing them."
+                        )
+                        next_msg['content'] = [
+                            c for c in next_content
+                            if not (isinstance(c, dict) and 'toolResult' in c
+                                    and c['toolResult']['toolUseId'] in excess)
+                        ]
+
+            self.agent.add_hook(_validate_and_repair_messages, _BMCEvent)
+
             # Calculate total characters for logging
             total_chars = sum(len(block.get("text", "")) for block in self.system_prompt)
             logger.debug(f"Agent created with {len(self.tools)} tools")
@@ -292,398 +328,3 @@ class ChatAgent(BaseAgent):
             logger.error(f"Error creating agent: {e}")
             raise
 
-    async def stream_async(self, message: str, session_id: str = None, files: Optional[List] = None, selected_artifact_id: Optional[str] = None, api_keys: Optional[Dict[str, str]] = None) -> AsyncGenerator[str, None]:
-        """
-        Stream responses using StreamEventProcessor
-
-        Args:
-            message: User message text
-            session_id: Session identifier
-            files: Optional list of FileContent objects (with base64 bytes)
-            selected_artifact_id: Currently selected artifact ID for tool context
-            api_keys: User-specific API keys for external services
-        """
-        if not self.agent:
-            self.create_agent()
-
-        # Set SESSION_ID for browser session isolation (each conversation has isolated browser)
-        os.environ['SESSION_ID'] = self.session_id
-        os.environ['USER_ID'] = self.user_id or self.session_id
-
-        try:
-            # Surface tool validation warnings (e.g., MCP tools require auth)
-            if self.tool_validation_errors:
-                import json as _json
-                for err in self.tool_validation_errors:
-                    warning_event = {"type": "warning", "message": err}
-                    yield f"data: {_json.dumps(warning_event)}\n\n"
-
-            # Reset context token tracking for new turn
-            if hasattr(self.session_manager, 'reset_context_token_tracking'):
-                self.session_manager.reset_context_token_tracking()
-
-            logger.debug(f"Streaming message: {message[:50]}...")
-            if files:
-                logger.debug(f"Processing {len(files)} file(s)")
-
-            # Convert files to Strands ContentBlock format and prepare uploaded_files for tools
-            prompt, uploaded_files = self._build_prompt(message, files)
-
-            # Log prompt type for debugging (without printing bytes)
-            if isinstance(prompt, list):
-                logger.debug(f"Prompt is list with {len(prompt)} content blocks")
-            else:
-                logger.debug(f"Prompt is string: {prompt[:100]}")
-
-            # Prepare invocation_state with model_id, user_id, session_id, session_manager, and uploaded files
-            invocation_state = {
-                "session_id": self.session_id,
-                "user_id": self.user_id,
-                "model_id": self.model_id,
-                "session_manager": self.session_manager  # For tools that need to persist state (e.g., research artifacts)
-            }
-
-            # Add user API keys to invocation_state (for gateway tools)
-            effective_api_keys = api_keys or self.api_keys
-            if effective_api_keys:
-                invocation_state['api_keys'] = effective_api_keys
-                logger.debug(f"Added API keys to invocation_state: {len(effective_api_keys)} key(s)")
-
-                # Update Gateway client's api_keys for tool calls
-                if self.gateway_client and hasattr(self.gateway_client, 'api_keys'):
-                    self.gateway_client.api_keys = effective_api_keys
-                    logger.debug(f"Updated Gateway client with user API keys")
-
-            # Add uploaded files to invocation_state (for tool access)
-            if uploaded_files:
-                invocation_state['uploaded_files'] = uploaded_files
-                logger.debug(f"Added {len(uploaded_files)} file(s) to invocation_state")
-
-            # Add selected artifact ID to invocation_state (for artifact editor tool)
-            if selected_artifact_id:
-                invocation_state['selected_artifact_id'] = selected_artifact_id
-                logger.debug(f"Selected artifact: {selected_artifact_id}")
-
-            # Use stream processor to handle Strands agent streaming
-            async for event in self.stream_processor.process_stream(
-                self.agent,
-                prompt,  # Can be str or list[ContentBlock]
-                file_paths=None,
-                session_id=self.session_id,
-                invocation_state=invocation_state,
-                elicitation_bridge=getattr(self, 'elicitation_bridge', None),
-            ):
-                yield event
-
-            # Update compaction state after turn completion
-            self._update_compaction_state()
-
-        except Exception as e:
-            import traceback
-            logger.error(f"Error in stream_async: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
-
-            # Send error event
-            import json
-            error_event = {
-                "type": "error",
-                "message": str(e)
-            }
-            yield f"data: {json.dumps(error_event)}\n\n"
-
-    def _update_compaction_state(self):
-        """Update compaction state after turn completion (if using CompactingSessionManager)."""
-        if not hasattr(self.session_manager, 'update_after_turn'):
-            return
-
-        try:
-            # Get last LLM call's input tokens from stream processor
-            context_tokens = self.stream_processor.last_llm_input_tokens
-            logger.debug(f"_update_compaction_state: context_tokens={context_tokens:,} (from last LLM call)")
-
-            if context_tokens > 0:
-                self.session_manager.update_after_turn(context_tokens, self.agent.agent_id)
-                logger.debug(f"Compaction updated: context={context_tokens:,} tokens")
-            else:
-                logger.debug(f"Skipping compaction: context_tokens=0 (no token data from stream processor)")
-        except Exception as e:
-            logger.error(f"Compaction update failed: {e}")
-
-    def _sanitize_filename(self, filename: str) -> str:
-        """
-        Sanitize filename to meet AWS Bedrock requirements:
-        - Only alphanumeric, hyphens, parentheses, and square brackets
-        - Convert underscores and spaces to hyphens for consistency
-        - No consecutive hyphens
-        """
-        import re
-
-        # First, replace underscores and spaces with hyphens
-        sanitized = filename.replace('_', '-').replace(' ', '-')
-
-        # Keep only allowed characters: alphanumeric, hyphens, parentheses, square brackets
-        sanitized = re.sub(r'[^a-zA-Z0-9\-\(\)\[\]]', '', sanitized)
-
-        # Replace consecutive hyphens with single hyphen
-        sanitized = re.sub(r'\-+', '-', sanitized)
-
-        # Trim hyphens from start/end
-        sanitized = sanitized.strip('-')
-
-        # If name becomes empty, use default
-        if not sanitized:
-            sanitized = 'document'
-
-        return sanitized
-
-    def _get_code_interpreter_id(self) -> Optional[str]:
-        """Get Code Interpreter ID from environment or Parameter Store"""
-        # Check environment variable first
-        code_interpreter_id = os.getenv('CODE_INTERPRETER_ID')
-        if code_interpreter_id:
-            logger.debug(f"Found CODE_INTERPRETER_ID in environment: {code_interpreter_id}")
-            return code_interpreter_id
-
-        # Try Parameter Store
-        try:
-            import boto3
-            project_name = os.getenv('PROJECT_NAME', 'strands-agent-chatbot')
-            environment = os.getenv('ENVIRONMENT', 'dev')
-            region = os.getenv('AWS_REGION', 'us-west-2')
-            param_name = f"/{project_name}/{environment}/agentcore/code-interpreter-id"
-
-            logger.debug(f"Checking Parameter Store for Code Interpreter ID: {param_name}")
-            ssm = boto3.client('ssm', region_name=region)
-            response = ssm.get_parameter(Name=param_name)
-            code_interpreter_id = response['Parameter']['Value']
-            logger.debug(f"Found CODE_INTERPRETER_ID in Parameter Store: {code_interpreter_id}")
-            return code_interpreter_id
-        except Exception as e:
-            logger.warning(f"CODE_INTERPRETER_ID not found in env or Parameter Store: {e}")
-            return None
-
-    def _auto_store_files(self, uploaded_files: List[Dict[str, Any]]):
-        """Store uploaded files to S3 workspace and optionally to Code Interpreter."""
-        from agent.processor.file_processor import auto_store_files
-        auto_store_files(uploaded_files, self.user_id, self.session_id)
-
-    def _build_prompt(self, message: str, files: Optional[List] = None):
-        """
-        Build prompt for Strands Agent and prepare uploaded files for tools
-
-        Args:
-            message: User message text
-            files: Optional list of FileContent objects with base64 bytes
-
-        Returns:
-            tuple: (prompt, uploaded_files)
-                - prompt: str or list[ContentBlock] for Strands Agent
-                - uploaded_files: list of dicts with filename, bytes, content_type
-        """
-        # If no files, return simple text message
-        if not files or len(files) == 0:
-            return message, []
-
-        # Build ContentBlock list for multimodal input
-        content_blocks = []
-        uploaded_files = []
-
-        # Add text first (file hints will be added after sanitization)
-        text_block_content = message
-
-        # Track sanitized filenames for agent's reference
-        sanitized_filenames = []
-
-        # Track files that will use workspace tools (not sent as ContentBlock)
-        workspace_only_files = []
-
-        # Add each file as appropriate ContentBlock
-        for file in files:
-            content_type = file.content_type.lower()
-            filename = file.filename.lower()
-
-            # Decode base64 to bytes (do this only once)
-            file_bytes = base64.b64decode(file.bytes)
-
-            # Sanitize filename for consistency
-            if '.' in file.filename:
-                name_parts = file.filename.rsplit('.', 1)
-                sanitized_full_name = self._sanitize_filename(name_parts[0]) + '.' + name_parts[1]
-            else:
-                sanitized_full_name = self._sanitize_filename(file.filename)
-
-            # Store for tool invocation_state with sanitized filename
-            uploaded_files.append({
-                'filename': sanitized_full_name,
-                'bytes': file_bytes,
-                'content_type': file.content_type
-            })
-
-            # Track sanitized filename for agent's reference
-            sanitized_filenames.append(sanitized_full_name)
-
-            # Determine file type and create appropriate ContentBlock
-            if content_type.startswith("image/") or filename.endswith((".png", ".jpg", ".jpeg", ".gif", ".webp")):
-                # Image content - always send as ContentBlock
-                image_format = self._get_image_format(content_type, filename)
-                content_blocks.append({
-                    "image": {
-                        "format": image_format,
-                        "source": {
-                            "bytes": file_bytes
-                        }
-                    }
-                })
-                logger.debug(f"Added image: {filename} (format: {image_format})")
-
-            elif filename.endswith(".pptx"):
-                # PowerPoint - always use workspace
-                workspace_only_files.append(sanitized_full_name)
-                logger.debug(f"PowerPoint presentation uploaded: {sanitized_full_name} (will be stored in workspace)")
-
-            elif filename.endswith((".docx", ".xlsx")):
-                # Word/Excel: send as ContentBlock if within Bedrock's 4.5 MB limit, else workspace-only
-                if len(file_bytes) > 4_500_000:
-                    workspace_only_files.append(sanitized_full_name)
-                    logger.warning(f"File too large for ContentBlock ({len(file_bytes)} bytes), storing to workspace only: {sanitized_full_name}")
-                else:
-                    doc_format = self._get_document_format(filename)
-                    name_without_ext = sanitized_full_name.rsplit('.', 1)[0] if '.' in sanitized_full_name else sanitized_full_name
-                    content_blocks.append({
-                        "document": {
-                            "format": doc_format,
-                            "name": name_without_ext,
-                            "source": {
-                                "bytes": file_bytes
-                            }
-                        }
-                    })
-                    logger.debug(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
-
-            elif filename.endswith((".pdf", ".csv", ".doc", ".xls", ".html", ".txt", ".md")):
-                # Other documents - send as ContentBlock
-                doc_format = self._get_document_format(filename)
-                name_without_ext = sanitized_full_name.rsplit('.', 1)[0] if '.' in sanitized_full_name else sanitized_full_name
-
-                content_blocks.append({
-                    "document": {
-                        "format": doc_format,
-                        "name": name_without_ext,
-                        "source": {
-                            "bytes": file_bytes
-                        }
-                    }
-                })
-                logger.debug(f"Added document: {file.filename} -> {sanitized_full_name} (format: {doc_format})")
-
-            else:
-                logger.warning(f"Unsupported file type: {filename} ({content_type})")
-
-        # Add file hints to text block
-        if sanitized_filenames:
-            # Categorize files
-            pptx_files = [fn for fn in sanitized_filenames if fn.endswith('.pptx')]
-            attached_files = [fn for fn in sanitized_filenames if fn not in workspace_only_files]
-
-            # docx/xlsx sent as ContentBlocks
-            docx_attached = [fn for fn in attached_files if fn.endswith('.docx')]
-            xlsx_attached = [fn for fn in attached_files if fn.endswith('.xlsx')]
-            other_attached = [fn for fn in attached_files if not fn.endswith(('.docx', '.xlsx'))]
-
-            # docx/xlsx too large for ContentBlock — workspace only
-            docx_workspace = [fn for fn in workspace_only_files if fn.endswith('.docx')]
-            xlsx_workspace = [fn for fn in workspace_only_files if fn.endswith('.xlsx')]
-
-            file_hints_lines = []
-
-            # Add non-office files sent as ContentBlocks (images, PDFs, etc.)
-            if other_attached:
-                file_hints_lines.append("Attached files:")
-                file_hints_lines.extend([f"- {fn}" for fn in other_attached])
-
-            # Word documents: attached as ContentBlock AND saved to workspace
-            if docx_attached:
-                if file_hints_lines:
-                    file_hints_lines.append("")
-                file_hints_lines.append("Word documents (attached and saved to workspace):")
-                for fn in docx_attached:
-                    file_hints_lines.append(f"- {fn} (also saved to workspace)")
-
-            # Excel spreadsheets: attached as ContentBlock AND saved to workspace
-            if xlsx_attached:
-                if file_hints_lines:
-                    file_hints_lines.append("")
-                file_hints_lines.append("Excel spreadsheets (attached and saved to workspace):")
-                for fn in xlsx_attached:
-                    file_hints_lines.append(f"- {fn} (also saved to workspace)")
-
-            # Word documents too large for ContentBlock — workspace only
-            if docx_workspace:
-                if file_hints_lines:
-                    file_hints_lines.append("")
-                file_hints_lines.append("Word documents in workspace:")
-                for fn in docx_workspace:
-                    file_hints_lines.append(f"- {fn}")
-
-            # Excel spreadsheets too large for ContentBlock — workspace only
-            if xlsx_workspace:
-                if file_hints_lines:
-                    file_hints_lines.append("")
-                file_hints_lines.append("Excel spreadsheets in workspace:")
-                for fn in xlsx_workspace:
-                    file_hints_lines.append(f"- {fn}")
-
-            if pptx_files:
-                if file_hints_lines:
-                    file_hints_lines.append("")
-                file_hints_lines.append("PowerPoint presentations in workspace:")
-                for fn in pptx_files:
-                    file_hints_lines.append(f"- {fn}")
-
-            file_hints = "\n".join(file_hints_lines)
-            text_block_content = f"{text_block_content}\n\n<uploaded_files>\n{file_hints}\n</uploaded_files>"
-            logger.debug(f"Added file hints to prompt: {sanitized_filenames}")
-
-        # Insert text block at the beginning of content_blocks
-        content_blocks.insert(0, {"text": text_block_content})
-
-        # Auto-store files to workspace
-        self._auto_store_files(uploaded_files)
-
-        return content_blocks, uploaded_files
-
-    def _get_image_format(self, content_type: str, filename: str) -> str:
-        """Determine image format from content type or filename"""
-        if "png" in content_type or filename.endswith(".png"):
-            return "png"
-        elif "jpeg" in content_type or "jpg" in content_type or filename.endswith((".jpg", ".jpeg")):
-            return "jpeg"
-        elif "gif" in content_type or filename.endswith(".gif"):
-            return "gif"
-        elif "webp" in content_type or filename.endswith(".webp"):
-            return "webp"
-        else:
-            return "png"  # default
-
-    def _get_document_format(self, filename: str) -> str:
-        """Determine document format from filename"""
-        if filename.endswith(".pdf"):
-            return "pdf"
-        elif filename.endswith(".csv"):
-            return "csv"
-        elif filename.endswith(".doc"):
-            return "doc"
-        elif filename.endswith(".docx"):
-            return "docx"
-        elif filename.endswith(".xls"):
-            return "xls"
-        elif filename.endswith(".xlsx"):
-            return "xlsx"
-        elif filename.endswith(".html"):
-            return "html"
-        elif filename.endswith(".txt"):
-            return "txt"
-        elif filename.endswith(".md"):
-            return "md"
-        else:
-            return "txt"  # default

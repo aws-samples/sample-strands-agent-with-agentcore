@@ -6,6 +6,7 @@ No external dependencies required - the LLM generates the diagram JSON directly.
 
 import json
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Any
 from strands import tool, ToolContext
@@ -22,7 +23,7 @@ def _save_excalidraw_artifact(
 ) -> None:
     """Save Excalidraw diagram as artifact to agent.state for Canvas display."""
     try:
-        artifact_id = f"excalidraw-{title}"
+        artifact_id = f"excalidraw-{uuid.uuid4().hex[:8]}-{title}"
         artifacts = tool_context.agent.state.get("artifacts") or {}
 
         artifacts[artifact_id] = {
@@ -34,7 +35,7 @@ def _save_excalidraw_artifact(
             "metadata": {
                 "element_count": element_count,
             },
-            "created_at": artifacts.get(artifact_id, {}).get("created_at", datetime.now(timezone.utc).isoformat()),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 

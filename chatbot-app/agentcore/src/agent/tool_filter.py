@@ -6,7 +6,7 @@ Consolidates tool filtering logic for all tool sources:
 - Gateway MCP tools (gateway_* prefix)
 - A2A Agent tools (agentcore_* prefix)
 
-This module eliminates code duplication between ChatbotAgent and VoiceAgent.
+This module provides unified tool filtering across all agent types.
 """
 
 import logging
@@ -93,7 +93,7 @@ class ToolFilterRegistry:
     def _get_local_registry(self) -> Dict[str, Any]:
         """Lazy load local registry to avoid circular imports."""
         if self._local_registry is None:
-            from agent.agent import TOOL_REGISTRY
+            from agents.chat_agent import TOOL_REGISTRY
             self._local_registry = TOOL_REGISTRY
         return self._local_registry
 

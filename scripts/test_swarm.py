@@ -61,6 +61,12 @@ SCENARIOS = {
         "expected_agents": ["coordinator", "web_researcher", "responder"],
         "description": "Coordinator routes to web_researcher, then responder",
     },
+    "multi": {
+        "name": "Multi-Agent → Search + Calculate",
+        "query": "First, search the web for the current population of South Korea. Then calculate what 3.5% of that population would be.",
+        "expected_agents": ["coordinator", "web_researcher", "data_analyst", "responder"],
+        "description": "Coordinator routes to web_researcher, then data_analyst, then responder (2-3 handoffs)",
+    },
 }
 
 
@@ -244,90 +250,122 @@ def print_event_sdk(event_type: str, data: dict, current_node: str):
 # =============================================================================
 
 async def test_swarm_direct(query: str, session_id: str, user_id: str, verbose: bool = False):
-    """Test Swarm directly using SDK."""
+    """Test Swarm directly using SwarmAgent.
 
-    from agent.swarm_agents import create_chatbot_swarm
-    from agent.config.swarm_config import AGENT_DESCRIPTIONS
+    SwarmAgent.stream_async() yields SSE-formatted strings (same as HTTP API).
+    We parse the SSE events and display them.
+    """
+
+    from agents.swarm_agent import SwarmAgent
 
     print(f"{c('Query:', 'bold')} {query}")
     print(f"{c('Session:', 'dim')} {session_id}")
     print()
 
-    # Create Swarm
-    print(f"{c('Creating Swarm...', 'dim')}")
-    swarm = create_chatbot_swarm(
+    # Create SwarmAgent
+    print(f"{c('Creating SwarmAgent...', 'dim')}")
+    agent = SwarmAgent(
         session_id=session_id,
         user_id=user_id,
     )
 
-    print(f"Swarm created with {c(str(len(swarm.nodes)), 'bold')} agents")
-    print(f"Entry point: {c(swarm.entry_point.name, 'bold')}")
+    print(f"SwarmAgent created (model: {c(agent.model_id, 'bold')})")
 
-    print_header("Execution Flow (SDK Events → SSE Events)")
+    print_header("SSE Event Stream")
 
-    node_history = []
-    current_node_id = ""
-    shared_context = {}
+    tools_used = []         # tool names in order
     final_response_text = ""
+    event_counts: Dict[str, int] = {}
 
-    # Execute with streaming
-    async for event in swarm.stream_async(query):
-        event_type = event.get("type", "unknown")
+    # Execute with streaming — yields SSE strings
+    # Note: SwarmAgent.stream_async() emits standard SSE events (tool_use, response, complete)
+    # NOT swarm-specific events (node_start/stop/handoff). Agent handoffs happen internally.
+    async for sse_chunk in agent.stream_async(message=query):
+        # Parse SSE data lines
+        for line in sse_chunk.strip().split("\n"):
+            if not line.startswith("data: "):
+                continue
 
-        # Track nodes
-        if event_type == "multiagent_node_start":
-            current_node_id = event.get("node_id", "unknown")
-            node_history.append(current_node_id)
+            try:
+                data = json.loads(line[6:])
+                event_type = data.get("type", "unknown")
+                event_counts[event_type] = event_counts.get(event_type, 0) + 1
 
-        # Capture responder text
-        if event_type == "multiagent_node_stream":
-            inner = event.get("event", {})
-            if "data" in inner and current_node_id == "responder":
-                final_response_text += inner.get("data", "")
+                if event_type == "tool_use":
+                    tool_name = data.get("name", "unknown")
+                    tool_id = data.get("toolUseId", "")
+                    tools_used.append(tool_name)
+                    print(f"\n  {c(f'Tool #{len(tools_used)}:', 'magenta')} {c(tool_name, 'bold')}")
+                    tool_input = data.get("input", {})
+                    if tool_input and verbose:
+                        input_str = json.dumps(tool_input, ensure_ascii=False)
+                        if len(input_str) > 120:
+                            input_str = input_str[:120] + "..."
+                        print(f"    {c('Input:', 'dim')} {input_str}")
 
-        # Capture shared context from handoffs
-        if event_type == "multiagent_handoff":
-            from_nodes = event.get("from_node_ids", [])
-            if from_nodes and hasattr(swarm, 'shared_context'):
-                from_node = from_nodes[0]
-                if hasattr(swarm.shared_context, 'context'):
-                    ctx = swarm.shared_context.context.get(from_node)
-                    if ctx:
-                        shared_context[from_node] = ctx
+                elif event_type == "tool_result":
+                    status = data.get("status", "success")
+                    result_text = data.get("result", "")
+                    if result_text and verbose:
+                        if len(result_text) > 120:
+                            result_text = result_text[:120] + "..."
+                        print(f"    {c(f'Result ({status}):', 'dim')} {result_text}")
+                    else:
+                        print(f"    {c(f'Result:', 'dim')} {status}")
 
-        print_event_sdk(event_type, event, current_node_id)
+                elif event_type == "response":
+                    text = data.get("text", "")
+                    final_response_text += text
+                    print(text, end="", flush=True)
 
-    # Print final SSE format
-    print_header("Final SSE Event (swarm_complete)")
+                elif event_type == "reasoning":
+                    if verbose:
+                        text = data.get("text", "")
+                        print(f"{c('[thinking]', 'dim')} {text[:80]}", end="", flush=True)
 
-    complete_event = {
-        "type": "swarm_complete",
-        "total_nodes": len(node_history),
-        "node_history": node_history,
-        "status": "completed",
-        "final_response": None,  # Only set if non-responder ends
-        "final_node_id": node_history[-1] if node_history else None,
-        "shared_context": shared_context if shared_context else None
-    }
-    print(f"data: {json.dumps(complete_event, indent=2)}")
+                elif event_type == "start":
+                    print(f"  {c('[Stream started]', 'dim')}")
 
+                elif event_type == "complete":
+                    usage = data.get("usage")
+                    if usage:
+                        inp = usage.get("inputTokens", 0)
+                        out = usage.get("outputTokens", 0)
+                        print(f"\n\n  {c('[Complete]', 'green')} Tokens: {inp:,} in / {out:,} out")
+                    else:
+                        print(f"\n\n  {c('[Complete]', 'green')}")
+
+                elif event_type == "error":
+                    content = data.get("content", "unknown error")
+                    print(f"\n  {c('[ERROR]', 'red')} {content}")
+
+            except json.JSONDecodeError:
+                continue
+
+    # Summary
     print_header("Summary")
-    print(f"{c('Node History:', 'bold')} {' → '.join(node_history)}")
-    print(f"{c('Total Nodes:', 'bold')} {len(node_history)}")
-    if shared_context:
-        print(f"{c('Shared Context:', 'bold')} {list(shared_context.keys())}")
+
+    if tools_used:
+        print(f"{c('Tools Used:', 'bold')} {len(tools_used)}")
+        for i, name in enumerate(tools_used, 1):
+            print(f"  {i}. {name}")
+    else:
+        print(f"{c('Tools Used:', 'bold')} (none)")
+
+    print(f"\n{c('Event Counts:', 'bold')}")
+    for evt, cnt in sorted(event_counts.items()):
+        print(f"  {evt}: {cnt}")
     print()
 
     # Print final response
     if final_response_text.strip():
-        print_header("Final Response (from Responder)")
-        print(final_response_text.strip()[:500])
-        if len(final_response_text) > 500:
+        print_header("Final Response")
+        print(final_response_text.strip()[:800])
+        if len(final_response_text) > 800:
             print(f"\n{c('... (truncated)', 'dim')}")
 
     return {
-        "node_history": node_history,
-        "shared_context": shared_context,
+        "tools_used": tools_used,
         "final_response": final_response_text.strip()
     }
 

@@ -39,5 +39,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
-# Run the FastAPI application with OpenTelemetry auto-instrumentation
+# Run with OpenTelemetry auto-instrumentation (metrics disabled to suppress EMF logs)
+ENV OTEL_METRICS_EXPORTER=none
 CMD ["opentelemetry-instrument", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]

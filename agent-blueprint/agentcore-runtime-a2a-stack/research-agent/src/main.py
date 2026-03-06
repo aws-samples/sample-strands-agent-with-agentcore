@@ -95,10 +95,9 @@ class MetadataAwareExecutor(StrandsA2AExecutor):
         - data: Text content being generated (thinking)
         - result: Final agent result
         """
-        # Debug: log ALL events to understand structure
         event_type = event.get("type", "unknown")
         event_keys = list(event.keys())
-        logger.info(f"[MetadataAwareExecutor] Event - type: {event_type}, keys: {event_keys}")
+        logger.debug(f"[MetadataAwareExecutor] Event - type: {event_type}, keys: {event_keys}")
 
         # Handle tool use start - stream status when tool begins
         # Check both direct key and type-based detection

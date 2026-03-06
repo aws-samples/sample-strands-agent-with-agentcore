@@ -1,7 +1,9 @@
 import json
+import base64
+import copy
 import uuid
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from ag_ui.core import (
     RunStartedEvent,
@@ -20,10 +22,318 @@ from ag_ui.core import (
 )
 from ag_ui.encoder import EventEncoder
 
-from .event_formatter import StreamEventFormatter
-
 logger = logging.getLogger(__name__)
 
+
+# ================================================================== #
+# Tool result parsing utilities                                        #
+# (migrated from legacy event_formatter.py)                            #
+# ================================================================== #
+
+def extract_final_result_data(final_result) -> Tuple[List[Dict[str, str]], str]:
+    """Extract images and text from final result."""
+    images = []
+    result_text = str(final_result)
+
+    try:
+        if hasattr(final_result, 'message') and hasattr(final_result.message, 'content'):
+            content = final_result.message.content
+            text_parts = []
+
+            for item in content:
+                if isinstance(item, dict):
+                    if "text" in item:
+                        text_parts.append(item["text"])
+                    elif "image" in item and "source" in item["image"]:
+                        image_data = item["image"]
+                        images.append({
+                            "format": image_data.get("format", "png"),
+                            "data": image_data["source"].get("data", "")
+                        })
+
+            if text_parts:
+                result_text = " ".join(text_parts)
+
+    except Exception:
+        pass
+
+    return images, result_text
+
+
+def extract_basic_content(tool_result: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
+    """Extract basic text and image content from MCP format."""
+    result_text = ""
+    result_images = []
+
+    # Handle case where content might be a JSON string
+    if "content" in tool_result and isinstance(tool_result["content"], str):
+        try:
+            parsed_content = json.loads(tool_result["content"])
+            tool_result = tool_result.copy()
+            tool_result["content"] = parsed_content
+        except json.JSONDecodeError:
+            pass
+
+    if "content" in tool_result:
+        content = tool_result["content"]
+
+        for idx, item in enumerate(content):
+            if isinstance(item, dict):
+
+                if "text" in item:
+                    text_content = item["text"]
+
+                    # Check if this text is actually a JSON-stringified response
+                    if text_content.strip().startswith('{'):
+                        try:
+                            parsed_json = json.loads(text_content)
+
+                            if isinstance(parsed_json, dict):
+                                # Handle Google search results with images (URL-based)
+                                if "images" in parsed_json and isinstance(parsed_json["images"], list):
+                                    for img in parsed_json["images"]:
+                                        if isinstance(img, dict) and "link" in img:
+                                            result_images.append({
+                                                "type": "url",
+                                                "url": img.get("link"),
+                                                "thumbnail": img.get("thumbnail"),
+                                                "title": img.get("title", ""),
+                                                "width": img.get("width", 0),
+                                                "height": img.get("height", 0)
+                                            })
+
+                                # Handle structured tool response: {"text": "...", "metadata": {...}}
+                                if "text" in parsed_json:
+                                    result_text += parsed_json["text"]
+                                    if "metadata" in parsed_json and isinstance(parsed_json["metadata"], dict):
+                                        if "metadata" not in tool_result:
+                                            tool_result["metadata"] = {}
+                                        tool_result["metadata"].update(parsed_json["metadata"])
+                                    continue
+
+                                # Handle MCP response format: {"status": "...", "content": [...]}
+                                if "content" in parsed_json and isinstance(parsed_json["content"], list):
+                                    for unwrapped_item in parsed_json["content"]:
+                                        if isinstance(unwrapped_item, dict):
+                                            if "text" in unwrapped_item:
+                                                result_text += unwrapped_item["text"]
+                                            elif "image" in unwrapped_item and "source" in unwrapped_item["image"]:
+                                                image_source = unwrapped_item["image"]["source"]
+                                                image_data = ""
+
+                                                if "data" in image_source:
+                                                    image_data = image_source["data"]
+                                                elif "bytes" in image_source:
+                                                    if isinstance(image_source["bytes"], bytes):
+                                                        image_data = base64.b64encode(image_source["bytes"]).decode('utf-8')
+                                                    else:
+                                                        image_data = str(image_source["bytes"])
+
+                                                if image_data:
+                                                    result_images.append({
+                                                        "format": unwrapped_item["image"].get("format", "png"),
+                                                        "data": image_data
+                                                    })
+                                            elif "document" in unwrapped_item:
+                                                pass
+                                    continue
+
+                        except json.JSONDecodeError:
+                            pass
+
+                    # Normal text processing (if not unwrapped)
+                    result_text += text_content
+
+                elif "image" in item:
+                    if "source" in item["image"]:
+                        image_source = item["image"]["source"]
+                        image_data = ""
+
+                        if "data" in image_source:
+                            image_data = image_source["data"]
+                        elif "bytes" in image_source:
+                            if isinstance(image_source["bytes"], bytes):
+                                image_data = base64.b64encode(image_source["bytes"]).decode('utf-8')
+                            else:
+                                image_data = str(image_source["bytes"])
+
+                        if image_data:
+                            result_images.append({
+                                "format": item["image"].get("format", "png"),
+                                "data": image_data
+                            })
+
+                elif "document" in item:
+                    doc_info = item["document"]
+                    doc_name = doc_info.get("name", "unknown")
+                    doc_format = doc_info.get("format", "unknown")
+                    logger.info(f"[Document] Skipping document bytes from frontend display: {doc_name}.{doc_format}")
+
+    return result_text, result_images
+
+
+def _extract_images_from_json_response(response_data):
+    """Extract images from any JSON tool response automatically."""
+    images = []
+
+    if isinstance(response_data, dict):
+        image_fields = ['screenshot', 'image', 'diagram', 'chart', 'visualization', 'figure']
+
+        for field in image_fields:
+            if field in response_data and isinstance(response_data[field], dict):
+                img_data = response_data[field]
+
+                # Handle lightweight screenshot format (Nova Act optimized) — no actual image data
+                if img_data.get("available") and "description" in img_data:
+                    logger.debug(f"Found optimized screenshot reference: {img_data.get('description')}")
+                    continue
+
+                # Handle legacy format with actual base64 data
+                elif "data" in img_data and "format" in img_data:
+                    images.append({
+                        "format": img_data["format"],
+                        "data": img_data["data"]
+                    })
+
+        if "images" in response_data and isinstance(response_data["images"], list):
+            images.extend(response_data["images"])
+
+    return images
+
+
+def _clean_result_text_for_display(original_text: str, parsed_result: dict) -> str:
+    """Clean result text by removing large image data but keeping other information."""
+    try:
+        cleaned_result = copy.deepcopy(parsed_result)
+
+        image_fields = ['screenshot', 'image', 'diagram', 'chart', 'visualization', 'figure']
+
+        for field in image_fields:
+            if field in cleaned_result and isinstance(cleaned_result[field], dict):
+                if "data" in cleaned_result[field]:
+                    data_size = len(cleaned_result[field]["data"])
+                    cleaned_result[field] = {
+                        "format": cleaned_result[field].get("format", "unknown"),
+                        "size": f"{data_size} characters",
+                        "note": "Image data extracted and displayed separately"
+                    }
+
+        return json.dumps(cleaned_result, indent=2)
+
+    except Exception:
+        return original_text
+
+
+def _process_json_content(result_text: str) -> Tuple[List[Dict[str, str]], str]:
+    """Process JSON content to extract screenshots and clean text."""
+    try:
+        parsed_result = json.loads(result_text)
+        extracted_images = _extract_images_from_json_response(parsed_result)
+
+        if extracted_images:
+            cleaned_text = _clean_result_text_for_display(result_text, parsed_result)
+            return extracted_images, cleaned_text
+        else:
+            return [], result_text
+
+    except (json.JSONDecodeError, TypeError):
+        return [], result_text
+
+
+def extract_all_content(tool_result: Dict[str, Any]) -> Tuple[str, List[Dict[str, str]]]:
+    """Extract text content and images from tool result and process Base64."""
+    result_text, result_images = extract_basic_content(tool_result)
+
+    json_images, cleaned_text = _process_json_content(result_text)
+    result_images.extend(json_images)
+
+    return cleaned_text, result_images
+
+
+def extract_metadata_from_json_result(tool_result: Dict[str, Any], result_text: str) -> str:
+    """
+    Extract metadata from JSON-wrapped result text produced by build_success_response
+    or build_image_response.  These helpers embed metadata inside the content text as
+    {"text": "...", "metadata": {...}} because the Strands SDK -> Bedrock toolResult
+    pipeline drops top-level metadata fields.
+
+    This method:
+    1. Merges the embedded metadata dict into tool_result["metadata"]
+    2. Returns the unwrapped "text" value so downstream consumers see clean text
+    """
+    try:
+        parsed = json.loads(result_text)
+
+        if isinstance(parsed, dict):
+            if "metadata" in parsed and isinstance(parsed["metadata"], dict):
+                if "metadata" not in tool_result:
+                    tool_result["metadata"] = {}
+                tool_result["metadata"].update(parsed["metadata"])
+
+                if "text" in parsed:
+                    return parsed["text"]
+
+            # Legacy: browser_session_arn at top level (older A2A format)
+            browser_session_arn = parsed.get("browser_session_arn")
+            if browser_session_arn:
+                if "metadata" not in tool_result:
+                    tool_result["metadata"] = {}
+                tool_result["metadata"]["browserSessionId"] = browser_session_arn
+
+                if "text" in parsed:
+                    return parsed["text"]
+
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    return result_text
+
+
+def create_tool_result_event(tool_result: Dict[str, Any]) -> str:
+    """Create legacy SSE tool_result event. Used by tests for full-pipeline validation."""
+    if isinstance(tool_result, str):
+        try:
+            tool_result = json.loads(tool_result)
+        except json.JSONDecodeError:
+            tool_result = {"toolUseId": "unknown", "content": [{"text": str(tool_result)}]}
+
+    # Unwrap Lambda response if present
+    if "content" in tool_result and isinstance(tool_result["content"], list):
+        if tool_result["content"]:
+            first_item = tool_result["content"][0]
+            if isinstance(first_item, dict) and "text" in first_item:
+                text_content = first_item["text"]
+                if text_content and text_content.strip():
+                    try:
+                        parsed = json.loads(text_content)
+                        if isinstance(parsed, dict) and "statusCode" in parsed and "body" in parsed:
+                            body = json.loads(parsed["body"]) if isinstance(parsed["body"], str) else parsed["body"]
+                            if "content" in body:
+                                tool_result["content"] = body["content"]
+                    except (json.JSONDecodeError, KeyError):
+                        pass
+
+    result_text, result_images = extract_all_content(tool_result)
+    result_text = extract_metadata_from_json_result(tool_result, result_text)
+
+    tool_result_data = {
+        "type": "tool_result",
+        "toolUseId": tool_result.get("toolUseId"),
+        "result": result_text,
+    }
+    if result_images:
+        tool_result_data["images"] = result_images
+    if "status" in tool_result:
+        tool_result_data["status"] = tool_result["status"]
+    if "metadata" in tool_result:
+        tool_result_data["metadata"] = tool_result["metadata"]
+
+    return f"data: {json.dumps(tool_result_data)}\n\n"
+
+
+# ================================================================== #
+# AG-UI Formatter Class                                                #
+# ================================================================== #
 
 class AGUIStreamEventFormatter:
     """
@@ -31,10 +341,6 @@ class AGUIStreamEventFormatter:
 
     Stateful: tracks the current run_id, thread_id, and any open text message
     so that AG-UI start/end pairs are always properly matched.
-
-    All parsing/extraction logic (Lambda envelope unwrapping, image extraction,
-    metadata merging, etc.) is preserved by delegating to StreamEventFormatter
-    static helpers.  Only the final SSE output format changes.
 
     Usage::
 
@@ -77,18 +383,18 @@ class AGUIStreamEventFormatter:
     # ------------------------------------------------------------------ #
 
     def format_event(self, event_type: str, **kwargs) -> str:
-        """Return an AG-UI–encoded SSE string for the given event type.
+        """Return an AG-UI-encoded SSE string for the given event type.
 
         Maps custom event types to AG-UI equivalents:
-          init                → RunStartedEvent
-          thinking            → CustomEvent(name='thinking')
-          reasoning           → CustomEvent(name='reasoning')
-          response            → TextMessageStartEvent + TextMessageContentEvent
-          complete            → (TextMessageEndEvent if message open, else TextMessage if message kwarg provided) + RunFinishedEvent
-          tool_use            → ToolCallStartEvent + ToolCallArgsEvent + ToolCallEndEvent
-          tool_result         → ToolCallResultEvent
-          error               → RunErrorEvent
-          <all others>        → CustomEvent(name=<original_type>, value=<payload>)
+          init                -> RunStartedEvent
+          thinking            -> CustomEvent(name='thinking')
+          reasoning           -> CustomEvent(name='reasoning')
+          response            -> TextMessageStartEvent + TextMessageContentEvent
+          complete            -> (TextMessageEndEvent if message open, else TextMessage if message kwarg provided) + RunFinishedEvent
+          tool_use            -> ToolCallStartEvent + ToolCallArgsEvent + ToolCallEndEvent
+          tool_result         -> ToolCallResultEvent
+          error               -> RunErrorEvent
+          <all others>        -> CustomEvent(name=<original_type>, value=<payload>)
         """
         _dispatch: Dict[str, Any] = {
             "init":        self._format_init,
@@ -270,11 +576,9 @@ class AGUIStreamEventFormatter:
                         except (json.JSONDecodeError, KeyError):
                             pass
 
-        # Delegate the full parsing pipeline to StreamEventFormatter static helpers:
-        # image extraction, JSON content unwrapping, screenshot handling, etc.
-        result_text, result_images = StreamEventFormatter._extract_all_content(tool_result)
-        StreamEventFormatter._handle_tool_storage(tool_result, result_text)
-        result_text = StreamEventFormatter._extract_metadata_from_json_result(tool_result, result_text)
+        # Parse tool result content
+        result_text, result_images = extract_all_content(tool_result)
+        result_text = extract_metadata_from_json_result(tool_result, result_text)
 
         # Build a structured payload that carries all the same fields the original
         # tool_result SSE blob would have contained.
@@ -294,12 +598,7 @@ class AGUIStreamEventFormatter:
         ))
 
     def _format_stop(self, event_type: str = "stop", **kwargs) -> str:
-        """Emitted when the stream is gracefully stopped by the user.
-
-        Closes any open text message, emits RunFinishedEvent, then signals
-        the frontend via CustomEvent(name='stream_stopped') so it can reset
-        state without showing the stop message as a chat bubble.
-        """
+        """Emitted when the stream is gracefully stopped by the user."""
         result = self._close_open_message()
         run_id = self._run_id or str(uuid.uuid4())
         result += self._encode(RunFinishedEvent(
@@ -323,7 +622,7 @@ class AGUIStreamEventFormatter:
         return result
 
     # ------------------------------------------------------------------ #
-    # App-specific events → CustomEvent passthrough                        #
+    # App-specific events -> CustomEvent passthrough                        #
     # ------------------------------------------------------------------ #
 
     def _format_custom(self, event_type: str = "custom", **kwargs) -> str:

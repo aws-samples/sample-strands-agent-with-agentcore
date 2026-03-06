@@ -377,6 +377,14 @@ destroy_single_a2a_agent() {
     log_step "Destroying CDK stack..."
     npx cdk destroy --force --all --region $AWS_REGION
 
+    # Delete ECR repository (CDK uses RETAIN policy so it survives stack deletion)
+    local ecr_repo="${PROJECT_NAME:-strands-agent-chatbot}-${agent_name}"
+    if aws ecr describe-repositories --repository-names "$ecr_repo" --region "$AWS_REGION" &> /dev/null; then
+        log_step "Deleting ECR repository: $ecr_repo"
+        aws ecr delete-repository --repository-name "$ecr_repo" --region "$AWS_REGION" --force > /dev/null 2>&1 || true
+        log_info "ECR repository deleted"
+    fi
+
     cd ../..
 
     log_info "$agent_name A2A agent destroyed!"

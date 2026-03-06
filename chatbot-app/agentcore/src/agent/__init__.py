@@ -9,7 +9,7 @@ Submodules:
     - hooks/: Agent lifecycle hooks
 
 Usage:
-    from agent.agent import ChatbotAgent, get_global_stream_processor
+    from agents.chat_agent import ChatAgent
     from agent.voice_agent import VoiceAgent
     from agent.stop_signal import get_stop_signal_provider
 

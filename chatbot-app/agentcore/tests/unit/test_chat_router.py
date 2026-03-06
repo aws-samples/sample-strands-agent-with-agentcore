@@ -315,8 +315,8 @@ class TestInvocationsEndpoint:
 
         payload = _agui_payload()
         payload["tools"] = [
-            {"name": "calculator", "description": ""},
-            {"name": "web_search", "description": ""},
+            {"name": "calculator", "description": "", "parameters": {}},
+            {"name": "web_search", "description": "", "parameters": {}},
         ]
 
         client.post("/invocations", json=payload)
@@ -397,7 +397,7 @@ class TestLifecycleActions:
         assert response.status_code == 200
         assert response.json() == {"status": "warm"}
 
-    @patch('routers.chat.get_stop_signal_provider')
+    @patch('agent.stop_signal.get_stop_signal_provider')
     def test_stop_sets_signal(self, mock_get_provider):
         """Test stop action sets stop signal."""
         mock_provider = MagicMock()
@@ -424,7 +424,7 @@ class TestLifecycleActions:
         assert data["status"] == "stop_requested"
         assert data["session_id"] == "test-session"
 
-    @patch('routers.chat.get_bridge')
+    @patch('agent.mcp.elicitation_bridge.get_bridge')
     def test_elicitation_complete(self, mock_get_bridge):
         """Test elicitation_complete action signals bridge."""
         mock_bridge = MagicMock()

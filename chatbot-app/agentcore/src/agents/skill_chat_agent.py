@@ -23,14 +23,7 @@ import local_tools
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------------
-# MCP tool → skill mapping
-#
-# Maps simplified MCP tool names (after FilteredMCPClient name simplification)
-# to skill names. Each skill groups related tools under a single SKILL.md.
-# ---------------------------------------------------------------------------
-
-# Skills served by MCP Runtime (3LO OAuth). Everything else is Gateway.
+# MCP Runtime skills require 3LO OAuth; everything else is Gateway.
 _MCP_RUNTIME_SKILLS = {"gmail", "google-calendar", "notion", "github"}
 
 MCP_TOOL_SKILL_MAP: Dict[str, str] = {
@@ -102,13 +95,7 @@ MCP_TOOL_SKILL_MAP: Dict[str, str] = {
     "github_create_pull_request": "github",
 }
 
-# ---------------------------------------------------------------------------
-# A2A agent → skill mapping
-#
-# A2A agents that are exposed as skills. These are auto-injected into
-# enabled_tools so SkillChatAgent can load them even when the Tools panel
-# is not used. The _skill_name set on each tool binds it to its SKILL.md.
-# ---------------------------------------------------------------------------
+# A2A agents exposed as skills (auto-injected into enabled_tools).
 A2A_SKILL_TOOLS: Dict[str, str] = {
     "agentcore_code-agent": "code-agent",
 }
@@ -135,26 +122,12 @@ class SkillChatAgent(ChatAgent):
         ]
 
     def _load_tools(self):
-        """Override: always include all @skill-decorated local tools + MCP skill tools.
-
-        The frontend may not send skill tool IDs in enabled_tools (Skills mode
-        is independent of the Tools panel), so we inject all MCP tool IDs into
-        enabled_tools before calling the parent, letting filter_tools handle
-        client creation through the normal pipeline.
-
-        For MCP tools (gateway / runtime), FilteredMCPClient instances in the
-        tools list are replaced with individual MCPAgentTool objects annotated
-        with skill metadata (_skill_name).
-        """
-        # Inject MCP tool IDs so filter_tools creates Gateway/Runtime clients.
-        # Skills mode manages tools via skills, not the frontend tool panel.
+        """Override: inject all MCP/A2A skill tool IDs and extract individual MCP tools."""
         if self.enabled_tools is None:
             self.enabled_tools = []
         has_auth = bool(getattr(self, 'auth_token', None))
         for tool_name, skill_name in MCP_TOOL_SKILL_MAP.items():
             if skill_name in _MCP_RUNTIME_SKILLS:
-                # MCP Runtime tools (Gmail, Calendar, Notion) require auth_token.
-                # Skip injection when unauthenticated to avoid spurious warnings.
                 if not has_auth:
                     continue
                 prefixed = f"mcp_{tool_name}"
@@ -163,30 +136,20 @@ class SkillChatAgent(ChatAgent):
             if prefixed not in self.enabled_tools:
                 self.enabled_tools.append(prefixed)
 
-        # Inject A2A skill agent IDs so filter_tools creates their tool objects.
-        # A2A tools are dynamically created (not in TOOL_REGISTRY), so they
-        # must be in enabled_tools for create_a2a_tool() to run.
         for agent_id in A2A_SKILL_TOOLS:
             if agent_id not in self.enabled_tools:
                 self.enabled_tools.append(agent_id)
                 logger.debug(f"[SkillChatAgent] Auto-injected A2A skill tool: {agent_id}")
 
-        # Parent's _load_tools → filter_tools handles client creation,
-        # gateway_client, elicitation_bridge, etc.
         tools = super()._load_tools()
 
-        # Collect IDs already loaded to avoid duplicates
         loaded_ids = {getattr(t, 'tool_name', None) for t in tools}
-
-        # Scan the full local registry for @skill tools not yet loaded
         from agents.chat_agent import TOOL_REGISTRY
         for tool_id, tool_obj in TOOL_REGISTRY.items():
             if getattr(tool_obj, '_skill_name', None) and tool_id not in loaded_ids:
                 tools.append(tool_obj)
                 logger.debug(f"[SkillChatAgent] Auto-loaded skill tool: {tool_id}")
 
-        # Extract individual MCPAgentTool from any FilteredMCPClient instances
-        # and attach skill metadata so SkillRegistry can index them.
         final_tools = []
         for t in tools:
             if self._is_mcp_client(t):
@@ -208,12 +171,7 @@ class SkillChatAgent(ChatAgent):
         return hasattr(obj, "list_tools_sync") and not hasattr(obj, "tool_spec")
 
     def _extract_mcp_skill_tools(self, client) -> list:
-        """Start an MCP client and extract individual MCPAgentTool with skill metadata.
-
-        Each tool is mapped to a skill name via MCP_TOOL_SKILL_MAP.
-        Tools not found in the mapping are still included but without skill metadata
-        (they'll be passed as non-skill tools to the agent directly).
-        """
+        """Start MCP client and extract individual tools with skill metadata."""
         try:
             # Start client session and list available tools
             client.start()
@@ -221,7 +179,7 @@ class SkillChatAgent(ChatAgent):
 
             skill_tools = []
             for tool in paginated_tools:
-                tool_name = tool.tool_name  # Simplified name (e.g., "get_today_weather")
+                tool_name = tool.tool_name
                 skill_name = MCP_TOOL_SKILL_MAP.get(tool_name)
 
                 if skill_name:
@@ -244,17 +202,10 @@ class SkillChatAgent(ChatAgent):
             return []
 
     def create_agent(self):
-        """Override: set up skill registry, then delegate to ChatAgent.create_agent().
-
-        Modifies self.tools and self.system_prompt to route skill tools through
-        skill_dispatcher/executor, then calls the parent's create_agent() which
-        handles hooks, SequentialToolExecutor, NullConversationManager, and all
-        other Agent configuration.
-        """
+        """Override: set up skill registry, then delegate to ChatAgent.create_agent()."""
         from skill.skill_tools import skill_dispatcher, skill_executor
         from agent.config.prompt_builder import system_prompt_to_string
 
-        # Separate skill tools from non-skill tools
         skill_tools = [t for t in self.tools if getattr(t, '_skill_name', None)]
         non_skill_tools = [t for t in self.tools if not getattr(t, '_skill_name', None)]
 
@@ -269,14 +220,12 @@ class SkillChatAgent(ChatAgent):
                 f"{[getattr(t, 'tool_name', getattr(t, '__name__', str(t))) for t in non_skill_tools]}"
             )
 
-        # Set up skill registry
         registry = SkillRegistry(_SKILLS_DIR)
         registry.discover_skills()
         registry.bind_tools(skill_tools)
         set_dispatcher_registry(registry)
         self._skill_registry = registry
 
-        # Append skill catalog to system prompt
         catalog = registry.get_catalog()
         if self.system_prompt:
             base_prompt_text = system_prompt_to_string(self.system_prompt)
@@ -284,17 +233,13 @@ class SkillChatAgent(ChatAgent):
         else:
             self.system_prompt = [{"text": catalog}]
 
-        # Replace tools: skill infrastructure + non-skill tools
         self.tools = [skill_dispatcher, skill_executor] + non_skill_tools
 
-        # Skills that must not be called in parallel (e.g. DuckDuckGo rate-limits on concurrent requests)
         _SEQUENTIAL_SKILLS = {'web-search'}
         if _SEQUENTIAL_SKILLS & set(registry.skill_names):
             self._force_sequential = True
             logger.info(f"[SkillChatAgent] SequentialToolExecutor forced — skills require it: {_SEQUENTIAL_SKILLS & set(registry.skill_names)}")
 
-        # Delegate to parent — inherits hooks, SequentialToolExecutor,
-        # NullConversationManager, and all other Agent configuration.
         super().create_agent()
 
         logger.info(

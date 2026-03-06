@@ -4,25 +4,12 @@ Wraps FileSessionManager with buffering support for local development.
 """
 
 import logging
-import base64
-from typing import Optional, Dict, Any, List
+import os
+from typing import Dict, Any, List
+
+from strands.types.session import SessionMessage
 
 logger = logging.getLogger(__name__)
-
-
-def encode_bytes_for_json(obj: Any) -> Any:
-    """Recursively encode any bytes values in an object to base64.
-
-    Compatible with Strands SDK's encode_bytes_values format.
-    """
-    if isinstance(obj, bytes):
-        return {"__bytes_encoded__": True, "data": base64.b64encode(obj).decode()}
-    elif isinstance(obj, dict):
-        return {k: encode_bytes_for_json(v) for k, v in obj.items()}
-    elif isinstance(obj, list):
-        return [encode_bytes_for_json(item) for item in obj]
-    else:
-        return obj
 
 
 class LocalSessionBuffer:
@@ -90,62 +77,39 @@ class LocalSessionBuffer:
             self.flush()
 
     def flush(self):
-        """Force flush pending messages to FileSessionManager"""
+        """Force flush pending messages to FileSessionManager."""
         if not self.pending_messages:
             return
 
-        logger.info(f"💾 Flushing {len(self.pending_messages)} messages to FileSessionManager")
+        logger.info(f"Flushing {len(self.pending_messages)} messages to FileSessionManager")
 
-        # Write each pending message directly to file storage
-        # We bypass the base_manager.append_message() to avoid double-wrapping issues
-        import os
-        import json
-        from datetime import datetime, timezone
+        agent_id = getattr(self._last_agent, 'agent_id', None)
+        if not isinstance(agent_id, str):
+            agent_id = "default"
+
+        # Count existing messages for next index
+        messages_dir = os.path.join(
+            self.base_manager.storage_dir,
+            f"session_{self.session_id}",
+            "agents", f"agent_{agent_id}", "messages"
+        )
+        if os.path.exists(messages_dir):
+            existing_files = [f for f in os.listdir(messages_dir) if f.startswith("message_") and f.endswith(".json")]
+            next_index = len(existing_files)
+        else:
+            next_index = 0
 
         for message_dict in self.pending_messages:
             try:
-                # Get the next message index
-                session_dir = os.path.join(
-                    self.base_manager.storage_dir,
-                    f"session_{self.session_id}"
-                )
-                messages_dir = os.path.join(session_dir, "agents", "agent_default", "messages")
-                os.makedirs(messages_dir, exist_ok=True)
-
-                # Find next message index
-                existing_files = [f for f in os.listdir(messages_dir) if f.startswith("message_") and f.endswith(".json")]
-                next_index = len(existing_files)
-
-                # Create SessionMessage-compatible structure (single wrap)
-                now = datetime.now(timezone.utc).isoformat()
-                session_message_dict = {
-                    "message": {
-                        "role": message_dict["role"],
-                        "content": message_dict["content"]
-                    },
-                    "message_id": next_index,
-                    "redact_message": None,
-                    "created_at": now,
-                    "updated_at": now
-                }
-
-                # Encode bytes to base64 for JSON serialization
-                # (compatible with Strands SDK's encode_bytes_values format)
-                encoded_message = encode_bytes_for_json(session_message_dict)
-
-                # Write to file
-                message_path = os.path.join(messages_dir, f"message_{next_index}.json")
-                with open(message_path, 'w', encoding='utf-8') as f:
-                    json.dump(encoded_message, f, indent=2, ensure_ascii=False)
-
-                logger.debug(f" Written message_{next_index}.json (role={message_dict['role']})")
-
+                session_message = SessionMessage.from_message(message_dict, next_index)
+                self.base_manager.create_message(self.session_id, agent_id, session_message)
+                logger.debug(f"Written message_{next_index} (role={message_dict['role']})")
+                next_index += 1
             except Exception as e:
-                logger.error(f"Failed to write message to file: {e}")
+                logger.error(f"Failed to write message: {e}")
 
-        # Clear buffer
         self.pending_messages = []
-        logger.debug(f" Buffer flushed")
+        logger.debug("Buffer flushed")
 
     # Delegate all other methods to base manager
     def __getattr__(self, name):

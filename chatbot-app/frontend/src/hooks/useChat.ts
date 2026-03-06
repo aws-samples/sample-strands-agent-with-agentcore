@@ -1022,7 +1022,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setUIState(prev => ({ ...prev, agentStatus: status }))
   }, [uiState.agentStatus, skillsEnabled, swarmEnabled])
 
-  // Add artifact message (called when composer workflow creates an artifact)
+  // Add artifact message (called when a workflow creates an artifact)
   const addArtifactMessage = useCallback((artifact: { id: string; type: string; title: string; wordCount?: number }) => {
     const newMessage: Message = {
       id: `artifact_${Date.now()}`,

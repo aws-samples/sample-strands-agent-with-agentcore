@@ -76,9 +76,7 @@ AGENT_TOOL_MAPPING: Dict[str, List[str]] = {
         "calculator",
     ],
     "browser_agent": [
-        "browser_navigate",
         "browser_act",
-        "browser_extract",
         "browser_get_page_info",
         "browser_manage_tabs",
         "browser_save_screenshot",

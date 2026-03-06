@@ -471,7 +471,7 @@ export async function POST(request: NextRequest) {
           }
 
           // enabled_tools as AG-UI tools array
-          const aguiTools = enabledToolsList.map(id => ({ name: id, description: '' }))
+          const aguiTools = enabledToolsList.map(id => ({ name: id, description: '', parameters: {} }))
 
           const aguiBody = {
             thread_id: sessionId,
