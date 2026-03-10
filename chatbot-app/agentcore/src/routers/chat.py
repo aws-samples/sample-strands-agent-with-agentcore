@@ -382,24 +382,9 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
 
         # Build multimodal message using build_prompt() (handles size checks, sanitization, workspace storage)
         if isinstance(message_content, list):
-            # HITL interrupt response — bypass build_prompt, use as-is.
-            # SDK restores _interrupt_state from session automatically
-            # (AgentInitializedEvent → initialize_internal_state), so no manual restore needed.
+            # HITL interrupt response — bypass build_prompt, pass as-is to SDK.
+            # SDK restores _interrupt_state from session via initialize_internal_state().
             agui_message = message_content
-            # Diagnostic: log restored state for HITL resume
-            inner_agent = agent.agent
-            if hasattr(inner_agent, '_interrupt_state') and hasattr(inner_agent, 'messages'):
-                istate = inner_agent._interrupt_state
-                msg_summary = []
-                for i, msg in enumerate(inner_agent.messages):
-                    role = msg.get('role', '?')
-                    content_types = [list(c.keys())[0] if isinstance(c, dict) and c else '?' for c in msg.get('content', [])]
-                    msg_summary.append(f"  [{i}] role={role} content={content_types}")
-                logger.info(
-                    f"[HITL Resume] activated={istate.activated}, "
-                    f"interrupts={list(istate.interrupts.keys()) if hasattr(istate, 'interrupts') else '?'}, "
-                    f"messages ({len(inner_agent.messages)}):\n" + "\n".join(msg_summary)
-                )
         else:
             raw_files = []
             for img in image_content_parts:
