@@ -82,14 +82,15 @@ describe('useChat Hook', () => {
       expect(result.current.isTyping).toBe(false)
     })
 
-    it('should initialize with null sessionId', async () => {
+    it('should initialize with a generated sessionId', async () => {
       const { result } = renderHook(() => useChat())
 
       await act(async () => {
         await vi.runAllTimersAsync()
       })
 
-      expect(result.current.sessionId).toBe(null)
+      expect(typeof result.current.sessionId).toBe('string')
+      expect(result.current.sessionId.length).toBeGreaterThan(0)
     })
   })
 

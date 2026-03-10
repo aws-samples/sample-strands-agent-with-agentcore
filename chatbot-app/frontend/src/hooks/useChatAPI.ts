@@ -162,6 +162,7 @@ interface UseChatAPIProps {
   availableTools: Tool[]  // Added: need current tools state
   setAvailableTools: React.Dispatch<React.SetStateAction<Tool[]>>
   handleStreamEvent: (event: AGUIStreamEvent) => void
+  resetStreamingState: () => void
   onSessionCreated?: () => void  // Callback when new session is created
   gatewayToolIds?: string[]  // Gateway tool IDs from frontend
   sessionId: string
@@ -197,6 +198,7 @@ export const useChatAPI = ({
   availableTools,
   setAvailableTools,
   handleStreamEvent,
+  resetStreamingState,
   onSessionCreated,
   gatewayToolIds = [],
   sessionId,
@@ -410,21 +412,37 @@ export const useChatAPI = ({
     try {
       const authHeaders = await getAuthHeaders()
 
+      // Strip heavy fields (toolExecutions, images, documents, etc.) — summarize only needs text
+      const messagesForSummary = messages.map((m: any) => ({
+        sender: m.sender,
+        role: m.role,
+        text: m.text,
+        content: m.content,
+        isToolMessage: m.isToolMessage,
+      }))
+
       const response = await fetch(getApiUrl('session/compact/summarize'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeaders },
-        body: JSON.stringify({ messages, modelId: currentModelId }),
+        body: JSON.stringify({ messages: messagesForSummary, modelId: currentModelId }),
       })
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({}))
-        throw new Error(err.message || `Summarize failed: ${response.status}`)
+        throw new Error(`Summarize failed: ${response.status}`)
       }
 
-      const data = await response.json()
-      if (!data.success) throw new Error(data.message || 'Summarize failed')
+      const reader = response.body?.getReader()
+      if (!reader) throw new Error('No response body')
 
-      return data.summary
+      const decoder = new TextDecoder()
+      let summary = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        summary += decoder.decode(value, { stream: true })
+      }
+
+      return summary || null
     } catch (error) {
       logger.error('Error generating compact summary:', error)
       return null
@@ -661,7 +679,7 @@ export const useChatAPI = ({
             let lastStatus = response.status
             for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
               const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 4000)
-              const delay = Math.floor(baseDelay * (0.5 + crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000 * 0.5))
+              const delay = Math.floor(baseDelay * (0.5 + crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000 * 0.5)) // lgtm[js/biased-cryptographic-random]
               logger.info(`[useChatAPI] Retrying after ${response.status} (attempt ${attempt}/${MAX_RETRIES}, wait ${delay}ms)`)
               await new Promise(resolve => setTimeout(resolve, delay))
 
@@ -827,7 +845,17 @@ export const useChatAPI = ({
         || (error instanceof Error && error.message.includes('Stream read error'))
       if (isNetworkError) {
         logger.info('[useChatAPI] Network error detected, attempting SSE reconnection...')
-        setUIState(prev => ({ ...prev, isReconnecting: true }))
+        // Reset streaming state and clear partial assistant turn before replay.
+        // Mirrors the loadSession path: prevents duplicate messages when replaying from cursor=0.
+        resetStreamingState()
+        setMessages(prev => {
+          let lastUserIdx = -1
+          for (let i = prev.length - 1; i >= 0; i--) {
+            if (prev[i].sender === 'user') { lastUserIdx = i; break }
+          }
+          return lastUserIdx >= 0 ? prev.slice(0, lastUserIdx + 1) : prev
+        })
+        setUIState(prev => ({ ...prev, isTyping: true, isReconnecting: true, agentStatus: 'thinking' }))
         try {
           await reconnect.attemptReconnect(
             (event) => handleStreamEvent(event),

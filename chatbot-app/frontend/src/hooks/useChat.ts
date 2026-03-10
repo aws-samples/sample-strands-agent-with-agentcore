@@ -241,6 +241,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     availableTools,
     setAvailableTools,
     handleStreamEvent,
+    resetStreamingState,
     gatewayToolIds,
     sessionId,
     setSessionId,
@@ -735,66 +736,69 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [apiCompactSession, setUIState, loadSessionWithPreferences])
 
-  // Compact session in-place:
-  //   summarize → snapshot oldEventIds → sendMessage(summary) →
-  //   persist checkpoint → delete oldEventIds → reload session
   const compactSession = useCallback(async (): Promise<void> => {
     const currentSessionId = sessionId
-    if (!currentSessionId) {
-      console.warn('[compact] No session ID, aborting')
-      return
-    }
+    if (!currentSessionId) return
 
-    console.log(`[compact] Starting compact for session ${currentSessionId}`)
     setCompactingSessionId(currentSessionId)
     setUIState(prev => ({ ...prev, agentStatus: 'compacting', isTyping: true }))
     try {
-      // Step 1: Generate summary from current messages
-      console.log('[compact] Step 1: Generating summary...')
       const summary = await apiSummarizeForCompact(messages)
       if (!summary) {
-        console.error('[compact] Summary generation failed or returned empty')
         setCompactingSessionId(null)
         setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
         return
       }
-      console.log(`[compact] Step 1 done: summary generated (${summary.length} chars)`)
 
-      // Step 2: Snapshot current eventIds BEFORE sending summary
-      console.log('[compact] Step 2: Snapshotting current eventIds...')
+      // Snapshot eventIds before sending summary so old events can be deleted safely
       const oldEventIds = await apiListSessionEvents()
-      console.log(`[compact] Step 2 done: ${oldEventIds.length} old eventIds captured`)
 
-      // Step 3: Send summary — creates new event in AgentCore Memory BEFORE deleting old ones
-      // isCompacting stays true throughout; agentStatus may flip to 'thinking' during sendMessage
-      console.log('[compact] Step 3: Sending summary message...')
-      await sendMessage(`Here is a summary of the previous session to continue our work:\n\n${summary}`)
-      console.log('[compact] Step 3 done: summary sent')
+      // Send summary as user message — this creates the event in memory AND gets an agent response.
+      // Use apiSendMessage directly to detect backend rejection before proceeding with deletion.
+      const summaryText = `Here is a summary of the previous session to continue our work:\n\n${summary}`
+      const summaryMsgId = String(Date.now())
+      setMessages(prev => [...prev, {
+        id: summaryMsgId,
+        text: summaryText,
+        sender: 'user' as const,
+        timestamp: new Date().toLocaleTimeString(),
+        rawTimestamp: Date.now(),
+      }])
+      setUIState(prev => ({ ...prev, agentStatus: 'thinking', isTyping: true }))
+      let summarySent = false
+      await apiSendMessage(
+        summaryText,
+        undefined,
+        () => { summarySent = true },
+        () => { summarySent = false },
+      )
+      if (!summarySent) {
+        setMessages(prev => prev.filter(m => m.id !== summaryMsgId))
+        setCompactingSessionId(null)
+        setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
+        return
+      }
 
-      // sendMessage resets agentStatus to 'idle' — re-lock UI for the deletion phase
       setUIState(prev => ({ ...prev, agentStatus: 'compacting', isTyping: true }))
-
-      // Step 4: Persist checkpoint AFTER summary is safely in AgentCore Memory
-      // If refresh happens here, resumeCompact can delete old events knowing summary exists
       localStorage.setItem(getCompactPendingKey(currentSessionId), JSON.stringify({ oldEventIds }))
 
-      // Step 5: Delete old events (summary event is now safely persisted)
-      console.log(`[compact] Step 5: Deleting ${oldEventIds.length} old events...`)
       await apiCompactSession(oldEventIds)
-      console.log('[compact] Step 5 done: old events deleted')
 
-      // Step 6: Clear checkpoint and reload session from AgentCore Memory (only summary remains)
+      // Trim UI to summary + agent response. Do not reload from backend — the response is
+      // already in the messages state from streaming, but backend write may not be committed yet.
       localStorage.removeItem(getCompactPendingKey(currentSessionId))
-      await loadSessionWithPreferences(currentSessionId)
+      setMessages(prev => {
+        const summaryIdx = prev.findIndex(m => m.id === summaryMsgId)
+        return summaryIdx >= 0 ? prev.slice(summaryIdx) : prev
+      })
       setCompactingSessionId(null)
       setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
-      console.log('[compact] Step 6 done: session reloaded, compact complete')
     } catch (error) {
       console.error('[compact] Error during compact:', error)
       setCompactingSessionId(null)
       setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
     }
-  }, [sessionId, messages, apiSummarizeForCompact, apiListSessionEvents, apiCompactSession, setUIState, sendMessage, loadSessionWithPreferences])
+  }, [sessionId, messages, apiSummarizeForCompact, apiListSessionEvents, apiCompactSession, setUIState, apiSendMessage, setMessages])
 
   // Truncate chat history from a specific user message (inclusive) onward
   const truncateFromMessage = useCallback(async (message: Message): Promise<void> => {

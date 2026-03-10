@@ -400,6 +400,60 @@ export function getSessionMessages(sessionId: string): any[] {
 }
 
 /**
+ * Return the filenames of all current message files as pseudo event IDs.
+ * Used by the compact GET handler to snapshot which files exist before the summary is sent.
+ * Covers both text (agent_default) and voice (agent_voice) directories.
+ * Returns IDs in the form "default/message_0.json" or "voice/message_1.json".
+ */
+export function getSessionMessageFileIds(sessionId: string): string[] {
+  if (!validateSessionId(sessionId)) return []
+  const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '')
+  const agentcoreSessionsDir = path.resolve(process.cwd(), '..', 'agentcore', 'sessions')
+  const sessionDir = path.resolve(agentcoreSessionsDir, `session_${sanitizedSessionId}`)
+  if (!sessionDir.startsWith(agentcoreSessionsDir + path.sep)) return []
+
+  const ids: string[] = []
+  for (const agentId of ['default', 'voice']) {
+    const messagesDir = path.resolve(sessionDir, 'agents', `agent_${agentId}`, 'messages')
+    if (!messagesDir.startsWith(agentcoreSessionsDir + path.sep)) continue
+    if (!fs.existsSync(messagesDir)) continue
+    for (const f of fs.readdirSync(messagesDir)) {
+      if (/^message_\d+\.json$/.test(f)) {
+        ids.push(`${agentId}/${f}`)
+      }
+    }
+  }
+  return ids
+}
+
+/**
+ * Delete specific message files by pseudo event ID (from getSessionMessageFileIds).
+ * IDs are "default/message_0.json" or "voice/message_1.json".
+ */
+export function deleteSessionMessageFiles(sessionId: string, fileIds: string[]): void {
+  if (!validateSessionId(sessionId)) return
+  const sanitizedSessionId = sessionId.replace(/[^a-zA-Z0-9_-]/g, '')
+  const agentcoreSessionsDir = path.resolve(process.cwd(), '..', 'agentcore', 'sessions')
+  const sessionDir = path.resolve(agentcoreSessionsDir, `session_${sanitizedSessionId}`)
+  if (!sessionDir.startsWith(agentcoreSessionsDir + path.sep)) return
+
+  let deleted = 0
+  for (const fileId of fileIds) {
+    // Expected format: "default/message_0.json" or "voice/message_1.json"
+    const match = fileId.match(/^(default|voice)\/(message_\d+\.json)$/)
+    if (!match) continue
+    const [, agentId, filename] = match
+    const filePath = path.resolve(sessionDir, 'agents', `agent_${agentId}`, 'messages', filename)
+    if (!filePath.startsWith(agentcoreSessionsDir + path.sep)) continue
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath)
+      deleted++
+    }
+  }
+  console.log(`[LocalSessionStore] Deleted ${deleted}/${fileIds.length} message files for session ${sessionId}`)
+}
+
+/**
  * Clear all conversation messages for a session (for in-place compact).
  * Deletes all message_*.json files from both text and voice agent directories.
  */

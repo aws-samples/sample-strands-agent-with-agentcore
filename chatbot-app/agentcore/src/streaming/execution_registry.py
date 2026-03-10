@@ -109,6 +109,17 @@ class ExecutionRegistry:
 
     async def create_execution(self, session_id: str, user_id: str, run_id: str) -> Execution:
         async with self._lock:
+            # Reject if another execution is already running for this session
+            latest_id = self._session_latest.get(session_id)
+            if latest_id:
+                latest = self._executions.get(latest_id)
+                if latest and latest.status == ExecutionStatus.RUNNING:
+                    logger.warning(
+                        f"[ExecutionRegistry] Session {session_id} already has a running execution "
+                        f"{latest_id}, rejecting new execution {session_id}:{run_id}"
+                    )
+                    raise RuntimeError(f"Session {session_id} already has a running execution")
+
             execution_id = f"{session_id}:{run_id}"
             execution = Execution(
                 execution_id=execution_id,
