@@ -46,7 +46,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (userId === 'anonymous' || IS_LOCAL) {
-      return NextResponse.json({ success: true, eventIds: [] })
+      // Return current message filenames as pseudo event IDs so POST can selectively delete them
+      const { getSessionMessageFileIds } = await import('@/lib/local-session-store')
+      const eventIds = getSessionMessageFileIds(sessionId)
+      return NextResponse.json({ success: true, eventIds })
     }
 
     const memoryId = await getMemoryId()
@@ -102,9 +105,17 @@ export async function POST(request: NextRequest) {
     console.log(`[compact] Clearing events for session ${sessionId}, user ${userId}`)
 
     if (userId === 'anonymous' || IS_LOCAL) {
-      const { clearSessionMessages } = await import('@/lib/local-session-store')
-      clearSessionMessages(userId, sessionId)
-      console.log(`[compact] LOCAL - Messages cleared for session ${sessionId}`)
+      if (Array.isArray(eventIds) && eventIds.length > 0) {
+        // Delete only the specific files captured before the summary was sent
+        const { deleteSessionMessageFiles } = await import('@/lib/local-session-store')
+        deleteSessionMessageFiles(sessionId, eventIds)
+        console.log(`[compact] LOCAL - Deleted ${eventIds.length} message files for session ${sessionId}`)
+      } else if (!Array.isArray(eventIds)) {
+        // No snapshot provided — delete all (legacy / fallback)
+        const { clearSessionMessages } = await import('@/lib/local-session-store')
+        clearSessionMessages(userId, sessionId)
+        console.log(`[compact] LOCAL - Messages cleared for session ${sessionId}`)
+      }
     } else {
       const memoryId = await getMemoryId()
       if (!memoryId) {
@@ -119,8 +130,7 @@ export async function POST(request: NextRequest) {
 
       const client = new BedrockAgentCoreClient({ region: AWS_REGION })
 
-      // Use provided eventIds if given (even if empty — empty means delete nothing).
-      // Only fall back to listing all events when eventIds is absent (undefined/null).
+      // Use provided snapshot if given (empty array = delete nothing); list all only when absent.
       let allEvents: { eventId: string; actorId: string }[]
       if (Array.isArray(eventIds)) {
         allEvents = eventIds.map((id: string) => ({ eventId: id, actorId: userId }))
@@ -149,7 +159,7 @@ export async function POST(request: NextRequest) {
 
       const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
-      const deleteWithRetry = async (eventId: string, actorId: string, retries = 3): Promise<void> => {
+      const deleteWithRetry = async (eventId: string, actorId: string, retries = 6): Promise<void> => {
         for (let attempt = 0; attempt < retries; attempt++) {
           try {
             await client.send(new DeleteEventCommand({ memoryId, sessionId, eventId, actorId }))
@@ -163,7 +173,9 @@ export async function POST(request: NextRequest) {
               err?.name === 'ThrottlingException' ||
               err?.name === 'TooManyRequestsException'
             if (isRateError && attempt < retries - 1) {
-              await sleep(500 * (attempt + 1))
+              const base = 1000 * Math.pow(2, attempt) // exponential backoff with jitter
+              const jitter = Math.floor(Math.random() * 500)
+              await sleep(base + jitter)
             } else {
               throw err
             }
@@ -171,13 +183,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // Delete in batches of 10 with 500ms delay between batches (~20 TPS, under 25 TPS limit)
-      const BATCH_SIZE = 10
+      // Sequential batches of 5, 1s inter-batch delay (~5 TPS)
+      const BATCH_SIZE = 5
       for (let i = 0; i < allEvents.length; i += BATCH_SIZE) {
         const batch = allEvents.slice(i, i + BATCH_SIZE)
-        await Promise.all(batch.map(({ eventId, actorId }) => deleteWithRetry(eventId, actorId)))
+        for (const { eventId, actorId } of batch) {
+          await deleteWithRetry(eventId, actorId)
+        }
         if (i + BATCH_SIZE < allEvents.length) {
-          await sleep(500)
+          await sleep(1000)
         }
       }
 

@@ -8,7 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import {
   BedrockRuntimeClient,
-  ConverseCommand,
+  ConverseStreamCommand,
 } from '@aws-sdk/client-bedrock-runtime'
 
 const AWS_REGION = process.env.AWS_REGION || process.env.NEXT_PUBLIC_AWS_REGION || 'us-west-2'
@@ -102,13 +102,27 @@ ${transcript}
 Now produce the summary following the instructions above.`
 }
 
-async function callConverse(client: BedrockRuntimeClient, modelId: string, prompt: string): Promise<string> {
-  const response = await client.send(new ConverseCommand({
+async function streamConverse(client: BedrockRuntimeClient, modelId: string, prompt: string): Promise<ReadableStream<Uint8Array>> {
+  const response = await client.send(new ConverseStreamCommand({
     modelId,
     messages: [{ role: 'user', content: [{ text: prompt }] }],
     inferenceConfig: { maxTokens: 4096 },
   }))
-  return response.output?.message?.content?.[0]?.text ?? 'Unable to generate summary.'
+
+  const encoder = new TextEncoder()
+  return new ReadableStream({
+    async start(controller) {
+      try {
+        for await (const event of response.stream ?? []) {
+          const text = event.contentBlockDelta?.delta?.text
+          if (text) controller.enqueue(encoder.encode(text))
+        }
+        controller.close()
+      } catch (err) {
+        controller.error(err)
+      }
+    },
+  })
 }
 
 function isContextWindowError(error: unknown): boolean {
@@ -134,13 +148,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Filter to only user/assistant text messages (skip tool messages)
-    const textMessages = messages.filter((msg: any) => {
+    // Filter to only user/assistant text messages (skip tool-only turns), then take the most recent 40.
+    // Tool input/result pairs are excluded: UI messages with only toolExecutions have empty text,
+    // and API-format content arrays are filtered to text blocks only in buildTranscript.
+    const MAX_MESSAGES = 40
+    const allTextMessages = messages.filter((msg: any) => {
       const sender = msg.sender || msg.role
       return (sender === 'user' || sender === 'assistant' || sender === 'bot') &&
         !msg.isToolMessage &&
         (msg.text || msg.content)
     })
+    const recent = allTextMessages.slice(-MAX_MESSAGES)
+    // Always include the first user message for context anchoring
+    const firstUser = allTextMessages.find((m: any) => (m.sender || m.role) === 'user')
+    const textMessages = firstUser && !recent.includes(firstUser)
+      ? [firstUser, ...recent]
+      : recent
 
     if (textMessages.length === 0) {
       return NextResponse.json(
@@ -149,7 +172,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[compact/summarize] Summarizing ${textMessages.length} messages`)
+    console.log(`[compact/summarize] Summarizing ${textMessages.length} messages (max ${MAX_MESSAGES}+first, original ${messages.length})`)
 
     const { transcript, truncated } = truncateTranscript(textMessages, MAX_TRANSCRIPT_CHARS)
     if (truncated) {
@@ -157,22 +180,21 @@ export async function POST(request: NextRequest) {
     }
 
     const client = new BedrockRuntimeClient({ region: AWS_REGION })
-    const prompt = buildPrompt(transcript, truncated)
 
-    let summary: string
+    let stream: ReadableStream<Uint8Array>
     try {
-      summary = await callConverse(client, modelId, prompt)
+      stream = await streamConverse(client, modelId, buildPrompt(transcript, truncated))
     } catch (firstError) {
       if (!isContextWindowError(firstError)) throw firstError
 
       console.warn(`[compact/summarize] Context window error, retrying with reduced transcript`)
       const { transcript: shorter, truncated: moreTruncated } = truncateTranscript(textMessages, 100_000)
-      summary = await callConverse(client, modelId, buildPrompt(shorter, moreTruncated))
+      stream = await streamConverse(client, modelId, buildPrompt(shorter, moreTruncated))
     }
 
-    console.log(`[compact/summarize] Summary generated (${summary.length} chars)`)
-
-    return NextResponse.json({ success: true, summary })
+    return new Response(stream, {
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    })
   } catch (error) {
     console.error('[compact/summarize] Error:', error)
     return NextResponse.json(

@@ -132,7 +132,7 @@ export function useSSEReconnect() {
       // Exponential backoff with jitter
       if (attempt > 0) {
         const baseDelay = Math.min(BASE_DELAY_MS * Math.pow(2, attempt - 1), MAX_DELAY_MS)
-        const delay = Math.floor(baseDelay * (0.5 + crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000 * 0.5))
+        const delay = Math.floor(baseDelay * (0.5 + crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000 * 0.5)) // lgtm[js/biased-cryptographic-random]
         await new Promise(resolve => setTimeout(resolve, delay))
       }
 

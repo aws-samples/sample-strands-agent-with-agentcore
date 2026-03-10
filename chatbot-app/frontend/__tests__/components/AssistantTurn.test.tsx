@@ -60,9 +60,8 @@ describe('AssistantTurn', () => {
   })
 
   describe('Document Download Rendering', () => {
-    // Note: docx/xlsx/pptx are now handled in Canvas and excluded from turnDocuments.
-    // Only non-canvas doc types (pdf, csv, etc.) are shown in the document section.
-    it('should render document download button for PDF file', () => {
+    // Documents (pdf, csv, etc.) are now handled in Canvas, not rendered in AssistantTurn.
+    it('should not render PDF document in AssistantTurn (moved to Canvas)', () => {
       const messages: Message[] = [
         createMessage({
           documents: [{ filename: 'report.pdf', tool_type: 'pdf' }]
@@ -71,11 +70,11 @@ describe('AssistantTurn', () => {
 
       render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      expect(screen.getByText('report.pdf')).toBeInTheDocument()
-      expect(screen.getByText('1 Document')).toBeInTheDocument()
+      expect(screen.queryByText('report.pdf')).not.toBeInTheDocument()
+      expect(screen.queryByText('1 Document')).not.toBeInTheDocument()
     })
 
-    it('should render document download button for CSV file', () => {
+    it('should not render CSV document in AssistantTurn (moved to Canvas)', () => {
       const messages: Message[] = [
         createMessage({
           documents: [{ filename: 'data.csv', tool_type: 'csv' }]
@@ -84,7 +83,7 @@ describe('AssistantTurn', () => {
 
       render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      expect(screen.getByText('data.csv')).toBeInTheDocument()
+      expect(screen.queryByText('data.csv')).not.toBeInTheDocument()
     })
 
     it('should not render canvas doc types (docx/xlsx/pptx) in document section', () => {
@@ -100,7 +99,7 @@ describe('AssistantTurn', () => {
       expect(screen.queryByText('1 Document')).not.toBeInTheDocument()
     })
 
-    it('should render multiple non-canvas documents', () => {
+    it('should not render any documents in AssistantTurn (all moved to Canvas)', () => {
       const messages: Message[] = [
         createMessage({
           documents: [
@@ -113,10 +112,10 @@ describe('AssistantTurn', () => {
 
       render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      expect(screen.getByText('report.pdf')).toBeInTheDocument()
-      expect(screen.getByText('data.csv')).toBeInTheDocument()
-      expect(screen.getByText('log.txt')).toBeInTheDocument()
-      expect(screen.getByText('3 Documents')).toBeInTheDocument()
+      expect(screen.queryByText('report.pdf')).not.toBeInTheDocument()
+      expect(screen.queryByText('data.csv')).not.toBeInTheDocument()
+      expect(screen.queryByText('log.txt')).not.toBeInTheDocument()
+      expect(screen.queryByText('3 Documents')).not.toBeInTheDocument()
     })
 
     it('should not render document section when no documents', () => {
@@ -129,7 +128,7 @@ describe('AssistantTurn', () => {
   })
 
   describe('Document Download Click Handler', () => {
-    it('should call download API when document clicked', async () => {
+    it('should not render document download elements in AssistantTurn', () => {
       const messages: Message[] = [
         createMessage({
           documents: [{ filename: 'report.pdf', tool_type: 'pdf' }]
@@ -138,42 +137,9 @@ describe('AssistantTurn', () => {
 
       render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      const docButton = screen.getByText('report.pdf').closest('div[class*="cursor-pointer"]')
-      if (docButton) {
-        fireEvent.click(docButton)
-      }
-
-      await waitFor(() => {
-        expect(mockFetch).toHaveBeenCalledWith(
-          '/api/documents/download',
-          expect.objectContaining({
-            method: 'POST',
-            body: expect.stringContaining('report.pdf')
-          })
-        )
-      })
-    })
-
-    it('should not attempt download without sessionId', () => {
-      const messages: Message[] = [
-        createMessage({
-          documents: [{ filename: 'report.pdf', tool_type: 'pdf' }]
-        })
-      ]
-
-      // No sessionId provided
-      render(<AssistantTurn messages={messages} />)
-
-      const docButton = screen.getByText('report.pdf').closest('div[class*="cursor-pointer"]')
-      if (docButton) {
-        fireEvent.click(docButton)
-      }
-
-      // Should not call fetch without sessionId
-      expect(mockFetch).not.toHaveBeenCalledWith(
-        '/api/documents/download',
-        expect.anything()
-      )
+      // Documents are handled in Canvas, no download button in AssistantTurn
+      expect(screen.queryByText('report.pdf')).not.toBeInTheDocument()
+      expect(mockFetch).not.toHaveBeenCalledWith('/api/documents/download', expect.anything())
     })
   })
 
@@ -322,9 +288,7 @@ describe('AssistantTurn', () => {
   })
 
   describe('File Icon Selection', () => {
-    // Note: docx/xlsx/pptx are now handled in Canvas and excluded from turnDocuments.
-    // File icon selection still works for non-canvas doc types using the default icon.
-    it('should use default icon for .pdf files', () => {
+    it('should not render file icons for documents (documents moved to Canvas)', () => {
       const messages: Message[] = [
         createMessage({
           documents: [{ filename: 'test.pdf', tool_type: 'pdf' }]
@@ -333,8 +297,8 @@ describe('AssistantTurn', () => {
 
       const { container } = render(<AssistantTurn messages={messages} sessionId="test-session" />)
 
-      // Default icon uses blue color class
-      expect(container.innerHTML).toContain('text-blue-600')
+      // No document icon rendered in AssistantTurn
+      expect(container.querySelector('[class*="cursor-pointer"]')).toBeNull()
     })
   })
 
