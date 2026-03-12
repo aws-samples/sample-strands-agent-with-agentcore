@@ -451,87 +451,31 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       // Verify origin for security
       if (event.origin !== window.location.origin) return
 
-      // Handle MCP elicitation-based OAuth completion (new protocol)
-      if (event.data?.type === 'oauth_elicitation_complete') {
-        console.log('[useChat] OAuth elicitation completion message received:', event.data)
+      if (event.data?.type !== 'oauth_elicitation_complete') return
 
-        // Signal backend that elicitation is complete (unblocks the waiting MCP tool)
-        try {
-          await fetch('/api/stream/elicitation-complete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              sessionId: sessionId,
-              elicitationId: sessionState.pendingOAuth?.elicitationId,
-            }),
-          })
-        } catch (error) {
-          console.error('[useChat] Failed to signal elicitation complete:', error)
-        }
+      console.log('[useChat] OAuth elicitation completion message received:', event.data)
 
-        // Clear pending OAuth state
-        setSessionState(prev => ({ ...prev, pendingOAuth: null }))
-        return
-      }
-
-      // Handle legacy OAuth completion (pre-elicitation protocol)
-      if (event.data?.type !== 'oauth_complete') return
-
-      console.log('[useChat] OAuth completion message received:', event.data)
-
-      const pendingOAuth = sessionState.pendingOAuth
-      if (!pendingOAuth) {
-        console.log('[useChat] No pending OAuth to resume')
-        return
+      // Signal backend that elicitation is complete (unblocks the waiting MCP tool)
+      try {
+        await fetch('/api/stream/elicitation-complete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sessionId: sessionId,
+            elicitationId: sessionState.pendingOAuth?.elicitationId,
+          }),
+        })
+      } catch (error) {
+        console.error('[useChat] Failed to signal elicitation complete:', error)
       }
 
       // Clear pending OAuth state
       setSessionState(prev => ({ ...prev, pendingOAuth: null }))
-
-      if (event.data.success) {
-        console.log(`[useChat] OAuth completed successfully for ${pendingOAuth.serviceName}, retrying...`)
-
-        // Add a retry message to trigger the agent to try again
-        const retryMessage = `The ${pendingOAuth.serviceName} authorization has been completed. Please continue with the previous request.`
-
-        // Set UI state to show we're retrying
-        setUIState(prev => ({
-          ...prev,
-          isTyping: true,
-          agentStatus: 'thinking'
-        }))
-
-        // Send retry message automatically
-        try {
-          await apiSendMessage(
-            retryMessage,
-            undefined,
-            () => {},
-            () => {
-              setSessionState(prev => ({
-                reasoning: null,
-                streaming: null,
-                toolExecutions: [],
-                browserSession: prev.browserSession,
-                browserProgress: undefined,
-                researchProgress: undefined,
-                interrupt: null,
-                pendingOAuth: null
-              }))
-            },
-            undefined, // overrideEnabledTools
-            skillsEnabled ? "skill" : swarmEnabled ? "swarm" : undefined // preserve request type
-          )
-        } catch (error) {
-          console.error('[useChat] Failed to send retry message:', error)
-          setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
-        }
-      }
     }
 
     window.addEventListener('message', handleOAuthMessage)
     return () => window.removeEventListener('message', handleOAuthMessage)
-  }, [sessionState.pendingOAuth, apiSendMessage, sessionId, skillsEnabled, swarmEnabled])
+  }, [sessionState.pendingOAuth, sessionId])
 
   // ==================== ACTIONS ====================
   const toggleTool = useCallback(async (toolId: string) => {
