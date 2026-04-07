@@ -105,9 +105,9 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
     # Check if Cognito User Pool already exists but stack does not
     # (stack exists = CDK manages the pool normally; stack gone + pool retained = import mode)
     if [ "$USE_EXISTING_COGNITO" = "true" ] && [ -n "$EXISTING_COGNITO_USER_POOL_ID" ]; then
-        echo "Using existing Cognito User Pool from configuration: $EXISTING_COGNITO_USER_POOL_ID"
+        echo " Using existing Cognito User Pool from configuration: $EXISTING_COGNITO_USER_POOL_ID"
     else
-        echo "Checking for existing Cognito User Pool..."
+        echo " Checking for existing Cognito User Pool..."
 
         COGNITO_STACK_EXISTS=$(aws cloudformation describe-stacks --stack-name CognitoAuthStack \
             --region $AWS_REGION 2>/dev/null && echo "true" || echo "false")
@@ -117,15 +117,15 @@ if [ "$ENABLE_COGNITO" = "true" ]; then
                 --query "UserPools[?Name=='chatbot-users'].Id" --output text 2>/dev/null || echo "")
 
             if [ -n "$EXISTING_POOL_ID" ] && [ "$EXISTING_POOL_ID" != "None" ]; then
-                echo "Retained Cognito User Pool found: $EXISTING_POOL_ID - will import"
+                echo " Retained Cognito User Pool found: $EXISTING_POOL_ID - will import"
                 export USE_EXISTING_COGNITO=true
                 export EXISTING_COGNITO_USER_POOL_ID="$EXISTING_POOL_ID"
             else
-                echo "No existing Cognito User Pool found - will create new one"
+                echo " No existing Cognito User Pool found - will create new one"
                 export USE_EXISTING_COGNITO=false
             fi
         else
-            echo "CognitoAuthStack already exists - CDK will manage the existing pool"
+            echo " CognitoAuthStack already exists - CDK will manage the existing pool"
             export USE_EXISTING_COGNITO=false
         fi
     fi
