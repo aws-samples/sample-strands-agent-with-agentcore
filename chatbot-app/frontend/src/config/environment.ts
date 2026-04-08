@@ -7,6 +7,8 @@ export const ENV_CONFIG = {
   API_BASE_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
   FRONTEND_URL: process.env.NEXT_PUBLIC_FRONTEND_URL || 'http://localhost:3000',
 
+  APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION || '0.0.0',
+
   // Streaming API Configuration (bypasses CloudFront 60s timeout)
   // This should point to ALB directly for long-running streaming requests
   STREAMING_API_URL: process.env.NEXT_PUBLIC_STREAMING_API_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000',
