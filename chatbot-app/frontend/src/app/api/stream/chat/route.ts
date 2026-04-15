@@ -11,8 +11,9 @@ import * as executionBuffer from '../../lib/execution-buffer'
 import sharp from 'sharp'
 // Note: browser-session-poller is dynamically imported when browser-use-agent is enabled
 
-// Maximum image size in bytes (5MB)
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024
+// Maximum image size in bytes — must stay well under AgentCore Memory's
+// CreateEvent payload limit. Raw bytes become ~33% larger in base64.
+const MAX_IMAGE_SIZE = 1.5 * 1024 * 1024
 
 /**
  * Resize image if it exceeds max size
@@ -107,7 +108,7 @@ async function resizeImageIfNeeded(
 
 /**
  * Resize base64-encoded images inside an AG-UI messages array that exceed 5MB.
- * Iterates message content parts and replaces oversized image data in-place.
+ * Handles both AG-UI "binary" content parts (from frontend) and "image" content parts.
  */
 async function processAguiMessagesImages(
   messages: Array<{ role?: string; content?: unknown }>
@@ -115,14 +116,25 @@ async function processAguiMessagesImages(
   for (const msg of messages) {
     if (!Array.isArray(msg.content)) continue
     for (const part of msg.content as any[]) {
-      if (part.type !== 'image') continue
-      const source = part.source
-      if (!source || source.type !== 'base64' || !source.data) continue
-      const raw = Buffer.from(source.data, 'base64')
-      const mime: string = source.mediaType || 'image/jpeg'
-      const { buffer: resized, resized: didResize } = await resizeImageIfNeeded(raw, mime, 'inline')
-      if (didResize) {
-        source.data = resized.toString('base64')
+      // AG-UI binary parts with image MIME type (sent by web and mobile frontends)
+      if (part.type === 'binary' && typeof part.mimeType === 'string' && part.mimeType.startsWith('image/') && part.data) {
+        const raw = Buffer.from(part.data, 'base64')
+        const { buffer: resized, resized: didResize } = await resizeImageIfNeeded(raw, part.mimeType, part.filename || 'image')
+        if (didResize) {
+          part.data = resized.toString('base64')
+        }
+        continue
+      }
+      // Legacy "image" content parts (Anthropic-style)
+      if (part.type === 'image') {
+        const source = part.source
+        if (!source || source.type !== 'base64' || !source.data) continue
+        const raw = Buffer.from(source.data, 'base64')
+        const mime: string = source.mediaType || 'image/jpeg'
+        const { buffer: resized, resized: didResize } = await resizeImageIfNeeded(raw, mime, 'inline')
+        if (didResize) {
+          source.data = resized.toString('base64')
+        }
       }
     }
   }

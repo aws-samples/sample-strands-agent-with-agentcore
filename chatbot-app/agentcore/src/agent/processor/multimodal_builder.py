@@ -19,6 +19,7 @@ Usage:
 """
 
 import base64
+import io
 import logging
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -36,6 +37,73 @@ logger = logging.getLogger(__name__)
 
 # Bedrock ConverseStream rejects document ContentBlocks larger than 4.5 MB
 _BEDROCK_DOC_MAX_BYTES = 4_500_000
+
+# Max image size: 3 MB raw → ~4 MB base64 (fits CreateEvent blob limit)
+_BEDROCK_IMAGE_MAX_BYTES = 3_000_000
+
+# Maximum characters of extracted PDF text to include in the prompt
+_PDF_TEXT_MAX_CHARS = 100_000
+
+
+def _extract_pdf_text(file_bytes: bytes) -> Optional[str]:
+    """Extract text from PDF bytes using pymupdf. Returns None on failure."""
+    try:
+        import pymupdf
+        doc = pymupdf.open(stream=file_bytes, filetype="pdf")
+        pages = []
+        for page in doc:
+            text = page.get_text()
+            if text.strip():
+                pages.append(text)
+        doc.close()
+        if not pages:
+            return None
+        full_text = "\n\n".join(pages)
+        if len(full_text) > _PDF_TEXT_MAX_CHARS:
+            full_text = full_text[:_PDF_TEXT_MAX_CHARS] + f"\n... [truncated, {len(full_text) - _PDF_TEXT_MAX_CHARS} chars omitted]"
+        return full_text
+    except ImportError:
+        logger.warning("pymupdf not installed, cannot extract PDF text")
+        return None
+    except Exception as e:
+        logger.warning(f"PDF text extraction failed: {e}")
+        return None
+
+def _resize_image(image_bytes: bytes, fmt: str) -> bytes:
+    """Resize image to fit within Bedrock's 5 MB limit using Pillow."""
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(image_bytes))
+
+    # Progressive resize: reduce dimensions until under limit
+    max_dim = 2048
+    while max_dim >= 512:
+        img_copy = img.copy()
+        img_copy.thumbnail((max_dim, max_dim), Image.LANCZOS)
+
+        buf = io.BytesIO()
+        save_fmt = "PNG" if fmt == "png" else "JPEG"
+        save_kwargs = {}
+        if save_fmt == "JPEG":
+            save_kwargs["quality"] = 85
+        img_copy.save(buf, format=save_fmt, **save_kwargs)
+
+        if buf.tell() <= _BEDROCK_IMAGE_MAX_BYTES:
+            return buf.getvalue()
+
+        # Try lower quality for JPEG
+        if save_fmt == "JPEG":
+            for q in (70, 50, 30):
+                buf = io.BytesIO()
+                img_copy.save(buf, format="JPEG", quality=q)
+                if buf.tell() <= _BEDROCK_IMAGE_MAX_BYTES:
+                    return buf.getvalue()
+
+        max_dim -= 512
+
+    # Last resort: return whatever we have
+    return buf.getvalue()
+
 
 def get_image_format(content_type: str, filename: str) -> str:
     """
@@ -268,17 +336,23 @@ def build_prompt(
 
         # Determine file type and create appropriate ContentBlock
         if content_type.startswith("image/") or filename.endswith(IMAGE_EXTENSIONS):
-            # Image content - always send as ContentBlock (works in both local and cloud)
             image_format = get_image_format(content_type, filename)
+            image_bytes = file_bytes
+
+            # Resize if over Bedrock's 5 MB limit
+            if len(image_bytes) > _BEDROCK_IMAGE_MAX_BYTES:
+                image_bytes = _resize_image(image_bytes, image_format)
+                logger.info(f"Resized image {filename}: {len(file_bytes)} -> {len(image_bytes)} bytes")
+
             content_blocks.append({
                 "image": {
                     "format": image_format,
                     "source": {
-                        "bytes": file_bytes
+                        "bytes": image_bytes
                     }
                 }
             })
-            logger.debug(f"Added image: {filename} (format: {image_format})")
+            logger.debug(f"Added image: {filename} (format: {image_format}, {len(image_bytes)} bytes)")
 
         elif filename.endswith(".pptx"):
             # PowerPoint - always use workspace (never sent as ContentBlock)
@@ -312,8 +386,18 @@ def build_prompt(
         elif filename.endswith(tuple(DOCUMENT_EXTENSIONS)):
             # Other documents (PDF, CSV, HTML, TXT, MD) — workspace-only if over 4.5 MB limit
             if len(file_bytes) > _BEDROCK_DOC_MAX_BYTES:
-                workspace_only_files.append(sanitized_full_name)
-                logger.warning(f"File too large for ContentBlock ({len(file_bytes)} bytes), storing to workspace only: {sanitized_full_name}")
+                # For PDFs, try to extract text so the model can still read the content
+                if filename.endswith(".pdf"):
+                    extracted = _extract_pdf_text(file_bytes)
+                    if extracted:
+                        content_blocks.append({"text": f"<document name=\"{sanitized_full_name}\">\n{extracted}\n</document>"})
+                        logger.info(f"Extracted text from large PDF ({len(file_bytes)} bytes, {len(extracted)} chars): {sanitized_full_name}")
+                    else:
+                        workspace_only_files.append(sanitized_full_name)
+                        logger.warning(f"PDF too large and text extraction failed ({len(file_bytes)} bytes): {sanitized_full_name}")
+                else:
+                    workspace_only_files.append(sanitized_full_name)
+                    logger.warning(f"File too large for ContentBlock ({len(file_bytes)} bytes), storing to workspace only: {sanitized_full_name}")
             else:
                 doc_format = get_document_format(filename)
 

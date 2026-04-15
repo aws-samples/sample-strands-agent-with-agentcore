@@ -167,7 +167,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
 
     @override
     def append_message(self, message: Dict, agent: "Agent", **kwargs: Any) -> None:
-        """Append message with empty content filtering and API call tracking."""
+        """Append message with empty content filtering, image offloading, and API call tracking."""
         # Filter out empty content blocks before saving
         filtered_message = self._filter_empty_text(message)
 
@@ -511,20 +511,29 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
                 if 'image' in block:
                     image_data = block['image']
                     image_format = image_data.get('format', 'unknown')
-                    # Estimate original size from base64 bytes
                     source = image_data.get('source', {})
                     original_bytes = source.get('bytes', b'')
-                    if isinstance(original_bytes, bytes):
-                        original_size = len(original_bytes)
-                    else:
-                        original_size = 0
+                    original_size = len(original_bytes) if isinstance(original_bytes, bytes) else 0
 
-                    # Replace with text placeholder
                     content[block_idx] = {
                         'text': f'[Image placeholder: format={image_format}, original_size={original_size} bytes]'
                     }
                     truncation_count += 1
-                    # Estimate token savings (base64 images are ~1.33x original, then tokenized)
+                    total_chars_saved += original_size
+
+                # Replace document blocks with placeholder
+                elif 'document' in block:
+                    doc_data = block['document']
+                    doc_format = doc_data.get('format', 'unknown')
+                    doc_name = doc_data.get('name', 'unknown')
+                    source = doc_data.get('source', {})
+                    original_bytes = source.get('bytes', b'')
+                    original_size = len(original_bytes) if isinstance(original_bytes, bytes) else 0
+
+                    content[block_idx] = {
+                        'text': f'[Document placeholder: name={doc_name}, format={doc_format}, original_size={original_size} bytes]'
+                    }
+                    truncation_count += 1
                     total_chars_saved += original_size
 
                 # Truncate toolUse input

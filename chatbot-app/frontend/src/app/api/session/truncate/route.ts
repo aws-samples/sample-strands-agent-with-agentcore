@@ -1,10 +1,10 @@
 /**
- * Session Truncate - Delete conversation events from a given point (inclusive)
+ * Session Truncate - Delete conversation events from a given point onward (inclusive)
  *
  * POST { sessionId, fromEventId? , fromTimestamp? }
  *
  * Cloud mode:
- *   - fromEventId (preferred): list events in order, find fromEventId, delete from there onward
+ *   - fromEventId (preferred): list events in order, find fromEventId, delete it and everything after
  *   - fromTimestamp (fallback for newly-sent messages): delete events with eventTime >= fromTimestamp
  * Local mode: deletes message_*.json files whose created_at >= fromTimestamp
  *
