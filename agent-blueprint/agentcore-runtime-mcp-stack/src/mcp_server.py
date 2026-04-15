@@ -36,7 +36,7 @@ elif hasattr(sys.stdout, 'buffer'):
 
 # ── FastMCP Server ─────────────────────────────────────────────────────
 
-mcp = FastMCP(host="0.0.0.0", port=8000, stateless_http=True)
+mcp = FastMCP(host="0.0.0.0", port=8000, stateless_http=False)
 
 # Register Gmail tools (10 tools)
 register_gmail_tools(mcp)
@@ -54,16 +54,6 @@ register_github_tools(mcp)
 # ── Entrypoint ─────────────────────────────────────────────────────
 
 
-class PingRequestFilter(logging.Filter):
-    """Filter out noisy PingRequest and session termination logs."""
-
-    def filter(self, record):
-        msg = record.getMessage()
-        if "PingRequest" in msg or "Terminating session" in msg:
-            return False
-        return True
-
-
 async def main():
     # Set logging level
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
@@ -75,11 +65,9 @@ async def main():
     # Set our logger to always show warnings
     logger.setLevel(logging.WARNING)
 
-    # Add filter to suppress PingRequest noise
-    ping_filter = PingRequestFilter()
-    logging.getLogger().addFilter(ping_filter)
-    logging.getLogger("mcp").addFilter(ping_filter)
-    logging.getLogger("mcp.server").addFilter(ping_filter)
+    # Suppress noisy MCP SDK logs (PingRequest, Terminating session, etc.)
+    logging.getLogger("mcp.server.lowlevel.server").setLevel(logging.WARNING)
+    logging.getLogger("mcp.server.streamable_http").setLevel(logging.WARNING)
 
     # Enable debug logging for AgentCore Identity to see OAuth token flow
     logging.getLogger("bedrock_agentcore").setLevel(logging.DEBUG)

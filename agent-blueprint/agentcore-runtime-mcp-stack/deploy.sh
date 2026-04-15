@@ -125,14 +125,17 @@ npm run build
 log_info "Build complete"
 echo ""
 
-# Check ECR repository
+# Ensure ECR repository exists (managed outside CDK to avoid deletion on stack updates)
 log_step "Checking ECR repository..."
 if aws ecr describe-repositories --repository-names ${PROJECT_NAME}-mcp-3lo-server --region $AWS_REGION &> /dev/null; then
-    log_info "ECR repository already exists, importing..."
-    export USE_EXISTING_ECR=true
+    log_info "ECR repository already exists"
 else
-    log_info "Creating new ECR repository..."
-    export USE_EXISTING_ECR=false
+    log_step "Creating ECR repository..."
+    aws ecr create-repository \
+        --repository-name ${PROJECT_NAME}-mcp-3lo-server \
+        --region $AWS_REGION \
+        --image-scanning-configuration scanOnPush=true > /dev/null
+    log_info "ECR repository created"
 fi
 echo ""
 

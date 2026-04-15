@@ -40,27 +40,13 @@ export class Mcp3loRuntimeStack extends cdk.Stack {
     const cognitoClientId = props?.cognitoClientId || process.env.COGNITO_CLIENT_ID || ''
 
     // ============================================================
-    // Step 1: ECR Repository
+    // Step 1: ECR Repository (always import — created by deploy.sh)
     // ============================================================
-    const useExistingEcr = process.env.USE_EXISTING_ECR === 'true'
-    const repository = useExistingEcr
-      ? ecr.Repository.fromRepositoryName(
-          this,
-          'Mcp3loRepository',
-          `${projectName}-mcp-3lo-server`
-        )
-      : new ecr.Repository(this, 'Mcp3loRepository', {
-          repositoryName: `${projectName}-mcp-3lo-server`,
-          removalPolicy: cdk.RemovalPolicy.DESTROY,
-          emptyOnDelete: true,
-          imageScanOnPush: true,
-          lifecycleRules: [
-            {
-              description: 'Keep last 10 images',
-              maxImageCount: 10,
-            },
-          ],
-        })
+    const repository = ecr.Repository.fromRepositoryName(
+      this,
+      'Mcp3loRepository',
+      `${projectName}-mcp-3lo-server`
+    )
 
     // ============================================================
     // Step 2: IAM Execution Role for AgentCore Runtime
