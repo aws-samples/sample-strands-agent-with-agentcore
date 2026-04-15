@@ -208,16 +208,12 @@ async def invocations(http_request: Request):
         logger.info(f"[Stop] Stop signal set for session={thread_id}")
         return {"status": "stop_requested", "session_id": thread_id}
 
-    # Elicitation complete
+    # Elicitation complete — write to shared store (DynamoDB in cloud, in-memory locally)
     if action == "elicitation_complete":
-        from agent.mcp.elicitation_bridge import get_bridge
-        bridge = get_bridge(thread_id)
+        from agent.mcp.elicitation_bridge import signal_elicitation_complete
         elicitation_id = state.get("elicitation_id")
-        if bridge:
-            bridge.complete_elicitation(elicitation_id)
-            logger.info(f"[Elicitation] Complete for session={thread_id}")
-        else:
-            logger.warning(f"[Elicitation] No bridge found for session={thread_id}")
+        signal_elicitation_complete(thread_id, elicitation_id)
+        logger.info(f"[Elicitation] Complete for session={thread_id}, elicitation_id={elicitation_id}")
         return {"status": "elicitation_completed"}
 
     # Normal agent execution — requires thread_id + run_id

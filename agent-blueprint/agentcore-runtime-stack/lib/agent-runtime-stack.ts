@@ -883,7 +883,7 @@ async function sendResponse(event, status, data, reason) {
       })
     )
 
-    // DynamoDB permissions for Tool Registry, Session metadata, and Stop Signal
+    // DynamoDB permissions for Tool Registry, Session metadata, Stop Signal, and OAuth Elicitation
     // Using {projectName}-users-v2 table pattern (no additional env vars needed)
     executionRole.addToPolicy(
       new iam.PolicyStatement({
@@ -891,9 +891,10 @@ async function sendResponse(event, status, data, reason) {
         effect: iam.Effect.ALLOW,
         actions: [
           'dynamodb:GetItem',
+          'dynamodb:PutItem',
           'dynamodb:Query',
           'dynamodb:UpdateItem',
-          'dynamodb:DeleteItem',  // Required for clearing stop signal
+          'dynamodb:DeleteItem',
         ],
         resources: [
           `arn:aws:dynamodb:${this.region}:${this.account}:table/${projectName}-users-v2`,
