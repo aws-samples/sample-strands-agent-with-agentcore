@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Install nova-act separately with --no-deps to avoid strands-agents version conflict
 # Dependencies for nova-act are already in requirements.txt (numpy, pandas, pillow, playwright, etc.)
-RUN pip install --no-cache-dir --no-deps nova-act
+RUN pip install --no-cache-dir --no-deps nova-act==3.1.263
 
 # Copy application code and skill definitions
 COPY src/ ./src/

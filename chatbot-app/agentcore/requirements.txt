@@ -33,8 +33,9 @@ primp>=0.15.0  # Required by ddgs for browser impersonation (safari_18.2 profile
 # OpenTelemetry (for observability)
 aws-opentelemetry-distro>=0.10.1
 
-# Document preview (PDF to image conversion)
+# Document processing
 pdf2image>=1.16.0
+pymupdf>=1.25.0  # PDF text extraction for large files exceeding Bedrock's 4.5MB limit
 openpyxl>=3.1.0  # Excel sheet name extraction for preview
 defusedxml>=0.7.1  # Safe XML parsing for PPTX engine
 
@@ -53,6 +54,7 @@ fire
 deprecated
 playwright>=1.54.0,<=1.56.0
 install_playwright>=0.1.0,<1.0.0
+mypy-boto3-s3
 
 # AG-UI Protocol (agent-to-UI streaming standard)
 ag-ui-protocol>=0.1.13

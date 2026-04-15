@@ -878,8 +878,6 @@ class AGUIStreamEventProcessor:
 
         except Exception as e:
             logger.error(f"Stream error: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
 
             # Diagnostic logging for Bedrock ValidationException (toolResult/toolUse mismatch)
             err_str = str(e)

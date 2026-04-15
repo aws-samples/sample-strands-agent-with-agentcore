@@ -52,6 +52,13 @@ logging.getLogger("agent.gateway_mcp_client").setLevel(logging.WARNING)
 logging.getLogger("strands.agent.agent").setLevel(logging.WARNING)
 logging.getLogger("strands.tools.mcp").setLevel(logging.WARNING)
 
+# Suppress noisy third-party loggers
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("botocore.credentials").setLevel(logging.WARNING)
+logging.getLogger("mcp.client.streamable_http").setLevel(logging.WARNING)
+logging.getLogger("bedrock_agentcore.memory").setLevel(logging.WARNING)
+logging.getLogger("opentelemetry.instrumentation").setLevel(logging.WARNING)
+
 # Lifespan event handler (replaces on_event)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
