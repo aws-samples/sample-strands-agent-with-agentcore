@@ -445,31 +445,35 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [sessionId])
 
   // ==================== OAUTH COMPLETION LISTENER ====================
-  // Listen for postMessage from OAuth popup window
+  // Listen for postMessage from OAuth popup window (or popup-close fallback)
+  const oauthSignalledRef = useRef<string | null>(null)
   useEffect(() => {
     const handleOAuthMessage = async (event: MessageEvent) => {
-      // Verify origin for security
       if (event.origin !== window.location.origin) return
-
       if (event.data?.type !== 'oauth_elicitation_complete') return
 
-      console.log('[useChat] OAuth elicitation completion message received:', event.data)
+      const elicitationId = sessionState.pendingOAuth?.elicitationId
+      if (!elicitationId || !sessionState.pendingOAuth) return
 
-      // Signal backend that elicitation is complete (unblocks the waiting MCP tool)
+      // Deduplicate: only signal once per elicitation (postMessage + popup-close can both fire)
+      if (oauthSignalledRef.current === elicitationId) return
+      oauthSignalledRef.current = elicitationId
+
+      console.log('[useChat] OAuth elicitation completion signal:', event.data)
+
       try {
         await fetch('/api/stream/elicitation-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             sessionId: sessionId,
-            elicitationId: sessionState.pendingOAuth?.elicitationId,
+            elicitationId,
           }),
         })
       } catch (error) {
         console.error('[useChat] Failed to signal elicitation complete:', error)
       }
 
-      // Clear pending OAuth state
       setSessionState(prev => ({ ...prev, pendingOAuth: null }))
     }
 
