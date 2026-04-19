@@ -68,3 +68,25 @@ description: View, create, update, and delete calendar events
 **Quick scheduling**: `quick_add_event` accepts natural language (e.g., "Lunch with Sarah tomorrow at noon"). Convenient but less precise than `create_event`.
 
 **Reschedule**: Use `update_event` with new `start_time` and `end_time`. Only the fields you provide will be changed.
+
+## UI Guidance (from tools-config)
+
+**Google Calendar Tool Usage:**
+- list_calendars: Get all user's calendars (primary, shared, subscribed)
+- list_events: List upcoming events with date range filters and search
+- get_event: Get detailed event information
+- create_event: Create new calendar events with attendees and reminders
+- update_event: Modify existing events (time, title, description, attendees)
+- delete_event: Remove events with optional notification to attendees
+- quick_add_event: Create event from natural language (e.g., 'Meeting with John tomorrow at 3pm')
+- check_availability: Query free/busy status for scheduling
+
+**Time Format:**
+- RFC3339 format: 2024-01-15T09:00:00Z (UTC) or 2024-01-15T09:00:00+09:00 (with timezone)
+- All-day events: use date format YYYY-MM-DD
+
+**Common Operations:**
+- Schedule meeting: create_event with attendees parameter
+- Find available time: check_availability before creating events
+- Quick scheduling: quick_add_event for natural language input
+- Reschedule: update_event with new start_time and end_time

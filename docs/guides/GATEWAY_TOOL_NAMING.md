@@ -81,8 +81,9 @@ new agentcore.CfnGatewayTarget(this, 'MyNewToolTarget', {
           "name": "my_new_tool",  // Schema name
           "description": "Performs a specific action"
         }
-      ],
-      "systemPromptGuidance": "Optional guidance for Claude on when/how to use this tool."
+      ]
+      // For "when/how to use" guidance, edit the matching skill's SKILL.md
+      // under chatbot-app/agentcore/skills/<skill-name>/SKILL.md
     }
   ]
 }

@@ -22,12 +22,6 @@ Usage:
         mode="voice",
     )
 
-    # For SwarmMessageStore
-    session_manager = create_session_manager(
-        session_id=session_id,
-        user_id=user_id,
-        mode="swarm",
-    )
 """
 
 import logging
@@ -247,7 +241,7 @@ def create_session_manager(
     Args:
         session_id: Session identifier
         user_id: User/actor identifier
-        mode: Agent mode - "text", "voice", or "swarm"
+        mode: Agent mode - "text" or "voice"
         compaction_enabled: Whether to enable context compaction (text mode)
         summarization_strategy_id: Strategy ID for LTM summarization (text mode)
         use_buffer: Whether to wrap with LocalSessionBuffer (text mode, local only)
@@ -271,12 +265,6 @@ def create_session_manager(
             mode="voice",
         )
 
-        # For SwarmMessageStore
-        manager = create_session_manager(
-            session_id="sess-123",
-            user_id="user-456",
-            mode="swarm",
-        )
     """
     memory_id = get_memory_id()
 
@@ -354,15 +342,6 @@ def _create_cloud_session_manager(
             metrics_only=True,
         )
 
-    elif mode == "swarm":
-        # Swarm mode: Metrics only
-        return CompactingSessionManager(
-            agentcore_memory_config=agentcore_config,
-            region_name=aws_region,
-            user_id=user_id,
-            metrics_only=True,
-        )
-
     else:
         raise ValueError(f"Unknown mode: {mode}")
 
@@ -400,13 +379,6 @@ def _create_local_session_manager(
             storage_dir=str(sessions_dir),
         )
 
-    elif mode == "swarm":
-        # Swarm mode: UnifiedFileSessionManager (for metadata support)
-        from agent.session.unified_file_session_manager import UnifiedFileSessionManager
-        return UnifiedFileSessionManager(
-            session_id=session_id,
-            storage_dir=str(sessions_dir),
-        )
 
     else:
         raise ValueError(f"Unknown mode: {mode}")

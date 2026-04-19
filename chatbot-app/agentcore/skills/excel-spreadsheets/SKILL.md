@@ -134,3 +134,45 @@ Get sheet screenshots for visual inspection before editing.
 |-----------|------|----------|-------------|
 | `spreadsheet_name` | str | Yes | Spreadsheet name without extension |
 | `sheet_names` | list[str] | Yes | Sheet names to preview (empty list `[]` for all sheets) |
+
+## UI Guidance (from tools-config)
+
+**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).
+
+**When to Use:**
+- create_excel_spreadsheet: User asks to create/generate a NEW Excel spreadsheet
+- modify_excel_spreadsheet: User asks to edit/modify/update an EXISTING spreadsheet
+- list_my_excel_spreadsheets: User asks what spreadsheets are available
+- read_excel_spreadsheet: User wants to download or read spreadsheet contents
+- preview_excel_sheets: Check actual sheet appearance when editing
+
+**Before Modifying:** Always use preview_excel_sheets first to see the current layout.
+
+**CRITICAL — Formulas, Not Hardcoded Values:**
+- ALWAYS use Excel formulas. NEVER calculate in Python and hardcode the result.
+- Wrong: `ws['B10'] = total`. Right: `ws['B10'] = '=SUM(B2:B9)'`
+- Place assumptions in separate cells, reference them in formulas (e.g., =B5*(1+$B$6) not =B5*1.05)
+- Formulas are auto-recalculated via LibreOffice after save.
+- Avoid circular references.
+
+**Professional Formatting:**
+- Font: Arial for all cells unless existing template specifies otherwise
+- Negative numbers: parentheses format (1,234) not minus -1,234
+- Currency: $#,##0 format; specify units in headers ("Revenue ($mm)")
+- Percentages: 0.0% (one decimal)
+- Years: format as text ("2024" not "2,024")
+- Zeros: display as "-" using custom number format
+
+**Financial Model Color Coding (when applicable):**
+- Blue text (0,0,255): Hardcoded inputs and assumptions
+- Black text (0,0,0): All formulas and calculations
+- Green text (0,128,0): Links pulling from other worksheets
+- Yellow background (255,255,0): Key assumptions needing attention
+
+**Filenames:** Letters, numbers, hyphens only (e.g., "Q4-sales.xlsx")
+
+**Available Libraries:** openpyxl, matplotlib, pandas, numpy (seaborn NOT available)
+
+**Images:** `from openpyxl.drawing.image import Image; ws.add_image(Image('file.png'), 'E1')`
+
+**QA:** Always use preview_excel_sheets after creation to verify appearance.

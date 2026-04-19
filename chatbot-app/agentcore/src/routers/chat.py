@@ -230,32 +230,26 @@ async def ping():
 
 
 def _parse_message(message: str, request_type: str) -> tuple[str, dict]:
+    """Parse message for HITL interrupt responses.
+
+    Returns (message_content, special_params). HITL responses arrive as
+    JSON-encoded {"interruptResponse": ...}; everything else is plain text.
     """
-    Parse message for special cases (HITL interrupt response).
+    try:
+        parsed = json.loads(message)
+        if isinstance(parsed, list) and len(parsed) > 0:
+            first_item = parsed[0]
+            if isinstance(first_item, dict) and "interruptResponse" in first_item:
+                interrupt_data = first_item["interruptResponse"]
+                logger.debug(
+                    f"Interrupt response received: "
+                    f"{interrupt_data.get('interruptId', 'unknown')[:50]}"
+                )
+                return [first_item], {}
+    except (json.JSONDecodeError, TypeError, KeyError):
+        pass
 
-    Returns:
-        (message_content, special_params) tuple
-        - message_content: The actual message to send to agent
-        - special_params: Dict of additional kwargs for stream_async()
-    """
-    special_params = {}
-
-    # Handle HITL interrupt response (normal mode only)
-    if request_type == "normal":
-        try:
-            parsed = json.loads(message)
-            if isinstance(parsed, list) and len(parsed) > 0:
-                first_item = parsed[0]
-                if isinstance(first_item, dict) and "interruptResponse" in first_item:
-                    interrupt_data = first_item["interruptResponse"]
-                    logger.debug(f"Interrupt response received: {interrupt_data.get('interruptId', 'unknown')[:50]}")
-                    # Return interrupt prompt as-is (agent expects this format)
-                    return [first_item], {}
-        except (json.JSONDecodeError, TypeError, KeyError):
-            pass
-
-    # Normal message - no special handling
-    return message, special_params
+    return message, {}
 
 
 async def _handle_agui_invocation(body: dict, http_request: Request) -> StreamingResponse:
@@ -308,20 +302,17 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
                                 })
                 break
 
-    # Extract enabled tools from the AG-UI tools list
-    enabled_tools: Optional[List[str]] = None
-    if input_data.tools:
-        tool_names = [t.name for t in input_data.tools if t.name]
-        if tool_names:
-            enabled_tools = tool_names
+    # Extract enabled skills from state (None = all skills registered in catalog).
+    # Frontend sends `enabled_skills` as a list of skill names; skipping or empty
+    # list has different meaning — see SkillChatAgent._load_tools.
+    enabled_skills: Optional[List[str]] = None
 
-    # Extract additional config from state
     model_id = None
     temperature = None
     system_prompt = None
     caching_enabled = None
     compaction_enabled = None
-    request_type = "normal"
+    request_type = "skill"
     auth_token = None
     selected_artifact_id = None
     api_keys = None
@@ -331,19 +322,25 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         system_prompt = input_data.state.get("system_prompt")
         caching_enabled = input_data.state.get("caching_enabled")
         compaction_enabled = input_data.state.get("compaction_enabled")
-        request_type = input_data.state.get("request_type", "normal")
+        request_type = input_data.state.get("request_type", "skill")
         auth_token = input_data.state.get("auth_token")
         selected_artifact_id = input_data.state.get("selected_artifact_id")
         api_keys = input_data.state.get("api_keys")
+        raw_skills = input_data.state.get("enabled_skills")
+        if isinstance(raw_skills, list):
+            enabled_skills = [str(s) for s in raw_skills]
 
-    logger.info(f"AG-UI invocation: thread_id={thread_id}, run_id={run_id}, user_id={user_id}, tools={len(enabled_tools) if enabled_tools else 0}")
+    logger.info(
+        f"AG-UI invocation: thread_id={thread_id}, run_id={run_id}, user_id={user_id}, "
+        f"enabled_skills={'all' if enabled_skills is None else len(enabled_skills)}"
+    )
 
     try:
         agent = create_agent(
             request_type=request_type,
             session_id=session_id,
             user_id=user_id,
-            enabled_tools=enabled_tools,
+            enabled_skills=enabled_skills,
             model_id=model_id,
             temperature=temperature,
             system_prompt=system_prompt,
@@ -364,6 +361,7 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
             "model_id": agent.model_id,
             "session_manager": agent.session_manager,
             "selected_artifact_id": selected_artifact_id,
+            "auth_token": auth_token,
         }
 
         accept = http_request.headers.get("accept", "")

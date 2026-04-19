@@ -1,0 +1,7 @@
+name: weather
+description: "Current weather and multi-day forecasts worldwide"
+skill_md_path: weather/SKILL.md
+source: gateway
+tools:
+  - get_today_weather
+  - get_weather_forecast

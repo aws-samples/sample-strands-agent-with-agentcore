@@ -96,7 +96,6 @@ class ChatAgent(BaseAgent):
         self.api_keys = api_keys  # User-specific API keys
         self.auth_token = auth_token  # Cognito JWT for MCP Runtime 3LO
 
-        # Call BaseAgent init (handles tools, session_manager)
         super().__init__(
             session_id=session_id,
             user_id=user_id,
@@ -107,6 +106,7 @@ class ChatAgent(BaseAgent):
             caching_enabled=caching_enabled,
             compaction_enabled=compaction_enabled,
             auth_token=auth_token,
+            api_keys=api_keys,
         )
 
         # Create Strands agent after base initialization

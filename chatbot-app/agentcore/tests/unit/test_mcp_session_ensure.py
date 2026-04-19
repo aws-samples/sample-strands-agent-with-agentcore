@@ -21,8 +21,7 @@ class TestFilteredMCPClientEnsureSession:
 
     def _make_client(self, session_active=False):
         """Create a FilteredMCPClient with mocked internals."""
-        with patch('agent.gateway.mcp_client.get_gateway_region_from_url', return_value='us-west-2'), \
-             patch('agent.gateway.mcp_client.get_sigv4_auth'):
+        with patch('agent.gateway.mcp_client.get_gateway_url_from_ssm', return_value='https://gateway.example.com'):
             from agent.gateway.mcp_client import FilteredMCPClient
             client = FilteredMCPClient.__new__(FilteredMCPClient)
             client.enabled_tool_ids = []

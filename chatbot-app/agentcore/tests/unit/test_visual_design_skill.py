@@ -104,14 +104,3 @@ class TestNoCodeInterpreterFallback:
 
         assert result["status"] == "error"
         assert "Code Interpreter not configured" in result["content"][0]["text"]
-
-
-class TestSwarmToolMapping:
-    """Tests that swarm config correctly maps the new tool names."""
-
-    def test_data_analyst_has_new_tools(self):
-        from agent.config.swarm_config import AGENT_TOOL_MAPPING
-        tools = AGENT_TOOL_MAPPING["data_analyst"]
-        assert "generate_chart" in tools
-        assert "create_visual_design" in tools
-        assert "generate_diagram_and_validate" not in tools

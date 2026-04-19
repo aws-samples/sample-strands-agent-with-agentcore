@@ -103,3 +103,26 @@ For specific workflow patterns, load the reference files:
 - **spec-to-implementation.md** — Turn spec pages into implementation plans, tasks, and progress tracking
 
 Load a reference with: `skill_dispatcher("notion", reference="knowledge-capture.md")`
+
+## UI Guidance (from tools-config)
+
+**Notion Tool Usage:**
+- notion_search: Search pages and databases. Use filter_type='database' to list databases.
+- notion_fetch: Read a page's full content as markdown (metadata + all blocks in one call).
+- notion_create_page: Create a new page with markdown content.
+- notion_update_page: Update page properties (not content — use notion_append_blocks for content).
+- notion_append_blocks: Add markdown content to an existing page.
+
+**Typical workflows:**
+- Find and read: notion_search → notion_fetch
+- Create from scratch: notion_create_page with content_markdown
+- Update content: notion_append_blocks with markdown
+
+**Markdown support in content_markdown/notion_append_blocks:**
+- Headings: # H1 / ## H2 / ### H3
+- Lists: - bullet / 1. numbered
+- To-do: - [ ] unchecked / - [x] checked
+- Code: ```python ... ```
+- Quote: > text
+- Divider: ---
+- Inline: **bold**, *italic*, `code`

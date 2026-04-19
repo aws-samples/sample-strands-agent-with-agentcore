@@ -1,0 +1,18 @@
+name: tavily
+description: Tavily AI-powered web search and extraction
+tools:
+  - name: tavily_search
+    description: AI-powered web search using Tavily. Returns up to 5 high-quality results with relevance scores.
+    input_type: object
+    input_description: Search parameters
+    properties:
+      - { name: query, type: string, description: Search query, required: true }
+      - { name: search_depth, type: string, description: "Search depth: 'basic' or 'advanced' (default: basic)" }
+      - { name: topic, type: string, description: "Search topic: 'general' or 'news' (default: general)" }
+  - name: tavily_extract
+    description: Extract clean content from web URLs using Tavily. Removes ads and boilerplate.
+    input_type: object
+    input_description: Extraction parameters
+    properties:
+      - { name: urls, type: string, description: "Comma-separated URLs to extract content from", required: true }
+      - { name: extract_depth, type: string, description: "Extraction depth: 'basic' or 'advanced' (default: basic)" }

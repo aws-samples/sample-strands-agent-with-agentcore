@@ -13,6 +13,11 @@ from agents.chat_agent import ChatAgent
 from skill.skill_tools import set_dispatcher_registry
 from skill.skill_registry import SkillRegistry
 from skill.decorators import _apply_skill_metadata
+from registry import (
+    get_tool_to_skill_map,
+    get_mcp_runtime_skills,
+    get_a2a_skill_tools,
+)
 
 # Resolve skills directory relative to this file: src/agents/../../skills → agentcore/skills
 _SKILLS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
@@ -23,90 +28,18 @@ import local_tools
 logger = logging.getLogger(__name__)
 
 
-# MCP Runtime skills require 3LO OAuth; everything else is Gateway.
-_MCP_RUNTIME_SKILLS = {"gmail", "google-calendar", "notion", "github"}
-
-MCP_TOOL_SKILL_MAP: Dict[str, str] = {
-    # Gateway: weather
-    "get_today_weather": "weather",
-    "get_weather_forecast": "weather",
-    # Gateway: financial-news
-    "stock_quote": "financial-news",
-    "stock_history": "financial-news",
-    "financial_news": "financial-news",
-    "stock_analysis": "financial-news",
-    # Gateway: arxiv-search
-    "arxiv_search": "arxiv-search",
-    "arxiv_get_paper": "arxiv-search",
-    # Gateway: google-web-search
-    "google_web_search": "google-web-search",
-    # Gateway: google-maps
-    "search_places": "google-maps",
-    "search_nearby_places": "google-maps",
-    "get_place_details": "google-maps",
-    "get_directions": "google-maps",
-    "geocode_address": "google-maps",
-    "reverse_geocode": "google-maps",
-    "show_on_map": "google-maps",
-    # Gateway: wikipedia-search
-    "wikipedia_search": "wikipedia-search",
-    "wikipedia_get_article": "wikipedia-search",
-    # Gateway: tavily-search
-    "tavily_search": "tavily-search",
-    "tavily_extract": "tavily-search",
-    # MCP Runtime: gmail
-    "list_labels": "gmail",
-    "list_emails": "gmail",
-    "search_emails": "gmail",
-    "read_email": "gmail",
-    "send_email": "gmail",
-    "draft_email": "gmail",
-    "delete_email": "gmail",
-    "bulk_delete_emails": "gmail",
-    "modify_email": "gmail",
-    "get_email_thread": "gmail",
-    # MCP Runtime: google-calendar
-    "list_calendars": "google-calendar",
-    "list_events": "google-calendar",
-    "get_event": "google-calendar",
-    "create_event": "google-calendar",
-    "update_event": "google-calendar",
-    "delete_event": "google-calendar",
-    "quick_add_event": "google-calendar",
-    "check_availability": "google-calendar",
-    # MCP Runtime: notion
-    "notion_search": "notion",
-    "notion_fetch": "notion",
-    "notion_create_page": "notion",
-    "notion_update_page": "notion",
-    "notion_update_block": "notion",
-    "notion_append_blocks": "notion",
-    # MCP Runtime: github
-    "github_search_repos": "github",
-    "github_get_repo": "github",
-    "github_list_issues": "github",
-    "github_get_issue": "github",
-    "github_list_pulls": "github",
-    "github_get_pull": "github",
-    "github_get_file": "github",
-    "github_search_code": "github",
-    "github_create_branch": "github",
-    "github_push_files": "github",
-    "github_create_pull_request": "github",
-}
-
-# A2A agents exposed as skills (auto-injected into enabled_tools).
-A2A_SKILL_TOOLS: Dict[str, str] = {
-    "agentcore_code-agent": "code-agent",
-}
-
-
 class SkillChatAgent(ChatAgent):
     """ChatAgent with progressive skill disclosure.
 
     Only tools decorated with @skill are routed through skill_dispatcher/executor.
     The rest of the ChatAgent behavior (streaming, session, hooks) is inherited.
     """
+
+    def __init__(self, *args, enabled_skills: Optional[List[str]] = None, **kwargs):
+        # enabled_skills filters the Registry skill catalog (None = all).
+        # Stored before super().__init__ since _load_tools reads it.
+        self._enabled_skills = enabled_skills
+        super().__init__(*args, **kwargs)
 
     def _build_system_prompt(self):
         """Build system prompt for skill-based agent.
@@ -122,12 +55,27 @@ class SkillChatAgent(ChatAgent):
         ]
 
     def _load_tools(self):
-        """Override: inject all MCP/A2A skill tool IDs and extract individual MCP tools."""
+        """Override: inject tool IDs for skills the user has enabled.
+
+        self._enabled_skills (from constructor) filters the Registry:
+          - None        → all skills
+          - []          → no skills (agent has no tools)
+          - [names]     → only those skills' tools are auto-injected
+        """
         if self.enabled_tools is None:
             self.enabled_tools = []
         has_auth = bool(getattr(self, 'auth_token', None))
-        for tool_name, skill_name in MCP_TOOL_SKILL_MAP.items():
-            if skill_name in _MCP_RUNTIME_SKILLS:
+        tool_skill_map = get_tool_to_skill_map()
+        mcp_runtime_skills = get_mcp_runtime_skills()
+        a2a_tools = get_a2a_skill_tools()
+
+        def _skill_allowed(skill_name: str) -> bool:
+            return self._enabled_skills is None or skill_name in self._enabled_skills
+
+        for tool_name, skill_name in tool_skill_map.items():
+            if not _skill_allowed(skill_name):
+                continue
+            if skill_name in mcp_runtime_skills:
                 if not has_auth:
                     continue
                 prefixed = f"mcp_{tool_name}"
@@ -136,7 +84,9 @@ class SkillChatAgent(ChatAgent):
             if prefixed not in self.enabled_tools:
                 self.enabled_tools.append(prefixed)
 
-        for agent_id in A2A_SKILL_TOOLS:
+        for agent_id, skill_name in a2a_tools.items():
+            if not _skill_allowed(skill_name):
+                continue
             if agent_id not in self.enabled_tools:
                 self.enabled_tools.append(agent_id)
                 logger.debug(f"[SkillChatAgent] Auto-injected A2A skill tool: {agent_id}")
@@ -177,10 +127,11 @@ class SkillChatAgent(ChatAgent):
             client.start()
             paginated_tools = client.list_tools_sync()
 
+            tool_skill_map = get_tool_to_skill_map()
             skill_tools = []
             for tool in paginated_tools:
                 tool_name = tool.tool_name
-                skill_name = MCP_TOOL_SKILL_MAP.get(tool_name)
+                skill_name = tool_skill_map.get(tool_name)
 
                 if skill_name:
                     _apply_skill_metadata(tool, skill_name)

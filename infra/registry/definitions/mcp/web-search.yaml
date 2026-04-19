@@ -1,0 +1,18 @@
+name: web-search
+description: DuckDuckGo search + URL content fetcher (no API key)
+tools:
+  - name: ddg_web_search
+    description: Search the web using DuckDuckGo. Returns up to 10 results with titles, snippets, and links. No API key required.
+    input_type: object
+    input_description: Search parameters
+    properties:
+      - { name: query, type: string, description: Search query string, required: true }
+      - { name: max_results, type: integer, description: "Maximum results (1-10, default: 5)" }
+  - name: fetch_url_content
+    description: Fetch and extract text content from a web page URL. Useful for articles, job postings, documentation.
+    input_type: object
+    input_description: URL fetch parameters
+    properties:
+      - { name: url, type: string, description: "URL to fetch (http:// or https://)", required: true }
+      - { name: include_html, type: boolean, description: "If true, include raw HTML in response (default: false)" }
+      - { name: max_length, type: integer, description: "Maximum extracted text length (default: 50000)" }

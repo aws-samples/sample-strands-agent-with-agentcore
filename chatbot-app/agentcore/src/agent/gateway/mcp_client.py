@@ -1,17 +1,29 @@
 """
 Gateway MCP Client for AgentCore Gateway Tools
-Creates MCP client with SigV4 authentication for Gateway tools
+Creates MCP client with JWT Bearer authentication for Gateway tools.
+Gateway uses CUSTOM_JWT inbound auth — the orchestrator forwards the user's JWT.
 """
 
 import logging
 import os
+import httpx
 import boto3
 from typing import Optional, List, Callable, Any
 from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp import MCPClient
-from agent.gateway.sigv4_auth import get_sigv4_auth, get_gateway_region_from_url
 
 logger = logging.getLogger(__name__)
+
+
+class BearerAuth(httpx.Auth):
+    """httpx Auth that adds a Bearer token to every request."""
+
+    def __init__(self, token: str):
+        self.token = token
+
+    def auth_flow(self, request: httpx.Request):
+        request.headers["Authorization"] = f"Bearer {self.token}"
+        yield request
 
 
 class FilteredMCPClient(MCPClient):
@@ -202,136 +214,65 @@ def get_gateway_url_from_ssm(
         return None
 
 
+def _make_gateway_auth(auth_token: Optional[str] = None) -> Optional[httpx.Auth]:
+    """Create auth for Gateway: Bearer JWT if token available, else None."""
+    if auth_token:
+        token = auth_token.replace("Bearer ", "") if auth_token.startswith("Bearer ") else auth_token
+        return BearerAuth(token)
+    return None
+
+
 def create_gateway_mcp_client(
     gateway_url: Optional[str] = None,
-    prefix: str = "gateway",
-    tool_filters: Optional[dict] = None,
-    region: Optional[str] = None
+    auth_token: Optional[str] = None,
 ) -> Optional[MCPClient]:
-    """
-    Create MCP client for AgentCore Gateway with SigV4 authentication.
-
-    Args:
-        gateway_url: Gateway URL. If None, retrieves from SSM Parameter Store.
-        prefix: Prefix for tool names (default: 'gateway')
-        tool_filters: Tool filtering configuration (allowed/rejected lists)
-        region: AWS region. If None, extracts from gateway_url or uses default.
-
-    Returns:
-        MCPClient instance or None if Gateway URL not available
-
-    Example:
-        >>> # Create client with all tools
-        >>> client = create_gateway_mcp_client()
-        >>>
-        >>> # Create client with tool filtering
-        >>> client = create_gateway_mcp_client(
-        ...     tool_filters={"allowed": ["wikipedia_search", "arxiv_search"]}
-        ... )
-        >>>
-        >>> # Use with Strands Agent (Managed approach - Experimental)
-        >>> agent = Agent(tools=[client])
-        >>>
-        >>> # Or manual approach
-        >>> with client:
-        ...     tools = client.list_tools_sync()
-        ...     agent = Agent(tools=tools)
-    """
-    # Get Gateway URL from SSM if not provided
+    """Create MCP client for AgentCore Gateway with JWT Bearer authentication."""
     if not gateway_url:
         gateway_url = get_gateway_url_from_ssm()
         if not gateway_url:
             logger.debug("Gateway URL not available. Gateway tools will not be loaded.")
             return None
 
-    # Extract region from URL if not provided
-    if not region:
-        region = get_gateway_region_from_url(gateway_url)
+    auth = _make_gateway_auth(auth_token)
 
-    # Create SigV4 auth for Gateway
-    auth = get_sigv4_auth(region=region)
-
-    # Create MCP client with streamable HTTP transport
-    # Note: prefix and tool_filters are no longer supported in MCPClient constructor
-    # We'll filter tools manually after listing them
     mcp_client = MCPClient(
-        lambda: streamablehttp_client(
-            gateway_url,
-            auth=auth  # httpx Auth class for automatic SigV4 signing
-        )
+        lambda: streamablehttp_client(gateway_url, auth=auth)
     )
 
-    logger.debug(f"Gateway MCP client created: {gateway_url}, region: {region}")
-    if tool_filters:
-        logger.debug(f"   Filters {tool_filters} will be applied manually")
-
+    logger.debug(f"Gateway MCP client created: {gateway_url}")
     return mcp_client
 
 
 def create_filtered_gateway_client(
     enabled_tool_ids: List[str],
     prefix: str = "gateway",
-    api_keys: Optional[dict] = None
+    api_keys: Optional[dict] = None,
+    auth_token: Optional[str] = None,
 ) -> Optional[FilteredMCPClient]:
-    """
-    Create Gateway MCP client with tool filtering based on enabled tool IDs.
-
-    This is used to dynamically filter Gateway tools based on user's
-    tool selection in the UI sidebar.
-
-    Args:
-        enabled_tool_ids: List of tool IDs that are enabled by user
-                         e.g., ["gateway_wikipedia-search___wikipedia_search", "gateway_arxiv-search___arxiv_search"]
-        prefix: Prefix used for Gateway tools (default: 'gateway')
-        api_keys: User-specific API keys for external services
-
-    Returns:
-        FilteredMCPClient with filtered tools or None if no Gateway tools enabled
-
-    Example:
-        >>> # User enabled only Wikipedia tools
-        >>> enabled = ["gateway_wikipedia-search___wikipedia_search", "gateway_wikipedia-get-article___wikipedia_get_article"]
-        >>> client = create_filtered_gateway_client(enabled)
-        >>>
-        >>> # Use with Agent (Managed Integration)
-        >>> agent = Agent(tools=[client])
-    """
-    # Filter to only Gateway tool IDs
+    """Create Gateway MCP client with tool filtering and JWT Bearer auth."""
     gateway_tool_ids = [tid for tid in enabled_tool_ids if tid.startswith(f"{prefix}_")]
 
     if not gateway_tool_ids:
         logger.debug("No Gateway tools enabled")
         return None
 
-    # Get Gateway URL from SSM
     gateway_url = get_gateway_url_from_ssm()
     if not gateway_url:
         logger.debug("Gateway URL not available. Gateway tools will not be loaded.")
         return None
 
-    # Extract region from URL
-    region = get_gateway_region_from_url(gateway_url)
+    auth = _make_gateway_auth(auth_token)
 
-    # Create SigV4 auth for Gateway
-    auth = get_sigv4_auth(region=region)
-
-    # Create FilteredMCPClient with tool filtering and API keys
     logger.debug(f"Creating FilteredMCPClient with {len(gateway_tool_ids)} enabled tool IDs")
-    if api_keys:
-        logger.debug(f"   User API keys provided: {len(api_keys)} key(s)")
 
     mcp_client = FilteredMCPClient(
-        lambda: streamablehttp_client(
-            gateway_url,
-            auth=auth  # httpx Auth class for automatic SigV4 signing
-        ),
+        lambda: streamablehttp_client(gateway_url, auth=auth),
         enabled_tool_ids=gateway_tool_ids,
         prefix=prefix,
         api_keys=api_keys
     )
 
-    logger.debug(f"FilteredMCPClient created: {gateway_url}, region: {region}")
-
+    logger.debug(f"FilteredMCPClient created: {gateway_url}")
     return mcp_client
 
 
@@ -340,23 +281,15 @@ GATEWAY_ENABLED = os.environ.get('GATEWAY_MCP_ENABLED', 'true').lower() == 'true
 
 def get_gateway_client_if_enabled(
     enabled_tool_ids: Optional[List[str]] = None,
-    api_keys: Optional[dict] = None
+    api_keys: Optional[dict] = None,
+    auth_token: Optional[str] = None,
 ) -> Optional[MCPClient]:
-    """
-    Get Gateway MCP client if enabled via environment variable.
-
-    Args:
-        enabled_tool_ids: List of enabled tool IDs for filtering
-        api_keys: User-specific API keys for external services
-
-    Returns:
-        MCPClient or None if disabled or no tools enabled
-    """
+    """Get Gateway MCP client if enabled via environment variable."""
     if not GATEWAY_ENABLED:
         logger.debug("Gateway MCP is disabled via GATEWAY_MCP_ENABLED=false")
         return None
 
     if enabled_tool_ids:
-        return create_filtered_gateway_client(enabled_tool_ids, api_keys=api_keys)
+        return create_filtered_gateway_client(enabled_tool_ids, api_keys=api_keys, auth_token=auth_token)
     else:
-        return create_gateway_mcp_client()
+        return create_gateway_mcp_client(auth_token=auth_token)

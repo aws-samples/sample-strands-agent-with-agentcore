@@ -69,3 +69,10 @@ Pie chart:
 ## Common Mistakes to Avoid
 - Do NOT use `{"labels": [...], "values": [...]}` format — data MUST be a list of dicts.
 - Bar/line data MUST use `"x"` and `"y"` keys, NOT `"label"` or `"name"`.
+
+## UI Guidance (from tools-config)
+
+**Data Format:**
+- Bar/Line charts: [{"x": label, "y": value}]
+- Pie charts: [{"segment": name, "value": number}]
+- Optional colors: "color": "hsl(210, 100%, 50%)"

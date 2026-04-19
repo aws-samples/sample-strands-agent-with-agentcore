@@ -218,3 +218,13 @@ When the user asks to modify a diagram, you will receive the current elements in
 - **No emoji** — Excalidraw's font does not render emoji
 - **Element overlap** — check that labels, boxes, and zone overlays don't stack on each other (minimum 20px gap)
 - **Camera padding** — leave padding inside the camera frame; don't match camera size exactly to content size
+
+## UI Guidance (from tools-config)
+
+**Element Format:**
+- Required: type, x, y, id
+- Shapes (rectangle/ellipse/diamond): add width, height
+- Arrows/lines: add width, height, points [[0,0],[dx,dy]]
+- Text: add text, fontSize
+- Use label field on shapes for centered text
+- Connect shapes with arrow elements using points routing

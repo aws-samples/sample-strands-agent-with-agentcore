@@ -1,0 +1,3 @@
+name: browser-automation
+description: "Web browser automation for tasks requiring UI interaction, login-protected pages, or human-like browsing when APIs are insufficient."
+skill_md_path: browser-automation/SKILL.md

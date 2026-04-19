@@ -31,11 +31,11 @@ export function extractUserFromRequest(request: Request): CognitoUser {
 
     const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'))
 
-    // Extract user info from Cognito token
-    // Cognito ID tokens contain: sub (user ID), email, cognito:username
-    const userId = payload.sub || payload['cognito:username'] || 'anonymous'
+    // Cognito access tokens: sub, username, client_id
+    // Cognito ID tokens: sub, email, cognito:username
+    const userId = payload.sub || payload['cognito:username'] || payload.username || 'anonymous'
     const email = payload.email
-    const username = payload['cognito:username']
+    const username = payload['cognito:username'] || payload.username
 
     console.log(`[Auth] Authenticated user: ${userId} (${email || username || 'no email'})`)
 

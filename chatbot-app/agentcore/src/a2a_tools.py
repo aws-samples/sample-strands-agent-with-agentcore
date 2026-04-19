@@ -18,11 +18,10 @@ from strands.tools import tool
 from strands.types.tools import ToolContext
 
 import httpx
-from a2a.client import A2ACardResolver, ClientConfig, ClientFactory
+from a2a.client import ClientConfig, ClientFactory
 from a2a.types import Message, Part, Role, TextPart, AgentCard
 
-# Import SigV4 auth for IAM authentication
-from agent.gateway.sigv4_auth import get_sigv4_auth
+from agent.gateway.mcp_client import BearerAuth
 
 logger = logging.getLogger(__name__)
 
@@ -167,21 +166,27 @@ def get_cached_agent_arn(agent_id: str, region: str = "us-west-2") -> Optional[s
     return _cache['agent_arns'][agent_id]
 
 
-def get_http_client(region: str = "us-west-2"):
-    """Reuse HTTP client with SigV4 IAM authentication"""
-    if not _cache['http_client']:
-        # Create SigV4 auth handler for IAM authentication
-        sigv4_auth = get_sigv4_auth(
-            service="bedrock-agentcore",
-            region=region
+def get_http_client(region: str = "us-west-2", auth_token: Optional[str] = None):
+    """Create HTTP client with JWT Bearer authentication.
+
+    A new client is created per call when auth_token is provided,
+    since each user session has a different JWT.
+    """
+    if auth_token:
+        auth = BearerAuth(
+            auth_token.replace("Bearer ", "") if auth_token.startswith("Bearer ") else auth_token
+        )
+        return httpx.AsyncClient(
+            timeout=httpx.Timeout(DEFAULT_TIMEOUT, connect=30.0),
+            limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
+            auth=auth,
         )
 
+    if not _cache['http_client']:
         _cache['http_client'] = httpx.AsyncClient(
-            timeout=httpx.Timeout(DEFAULT_TIMEOUT, connect=30.0),  # 40 min timeout, 30s connect
+            timeout=httpx.Timeout(DEFAULT_TIMEOUT, connect=30.0),
             limits=httpx.Limits(max_keepalive_connections=5, max_connections=10),
-            auth=sigv4_auth  # Add SigV4 auth
         )
-        logger.info(f"Created HTTP client with SigV4 IAM auth (timeout: {DEFAULT_TIMEOUT}s) for region {region}")
     return _cache['http_client']
 
 
@@ -190,7 +195,8 @@ async def send_a2a_message(
     message: str,
     session_id: Optional[str] = None,
     region: str = "us-west-2",
-    metadata: Optional[dict] = None
+    metadata: Optional[dict] = None,
+    auth_token: Optional[str] = None,
 ) -> AsyncGenerator[Dict[str, Any], None]:
     """
     Stream messages from A2A agent on AgentCore Runtime (ASYNC GENERATOR)
@@ -216,6 +222,12 @@ async def send_a2a_message(
             "format_preference": "markdown"
         }
     """
+    # Initialise finally-block variables up front so an early exception cannot
+    # shadow them with UnboundLocalError.
+    completed = False
+    current_task_id = None
+    client = None
+
     try:
         # Check for local testing mode (per-agent env var)
         # e.g. LOCAL_RESEARCH_AGENT_URL, LOCAL_CODE_AGENT_URL, LOCAL_BROWSER_USE_AGENT_URL
@@ -242,8 +254,7 @@ async def send_a2a_message(
 
         logger.debug(f"Invoking A2A agent {agent_id}")
 
-        # Get HTTP client with SigV4 IAM auth
-        httpx_client = get_http_client(region)
+        httpx_client = get_http_client(region, auth_token=auth_token)
 
         # Add session ID header (must be >= 33 characters)
         if not session_id:
@@ -258,404 +269,134 @@ async def send_a2a_message(
         }
         httpx_client.headers.update(headers)
 
-        # Get or cache agent card (skip for local testing)
-        if agent_arn and agent_arn not in _cache['agent_cards']:
-            logger.debug(f"Fetching agent card for ARN: {agent_arn}")
-
-            try:
-                # Use boto3 SDK to get agent card directly
-                bedrock_agentcore = boto3.client('bedrock-agentcore', region_name=region)
-                response = await asyncio.get_event_loop().run_in_executor(
-                    None,
-                    lambda: bedrock_agentcore.get_agent_card(agentRuntimeArn=agent_arn)
-                )
-
-                agent_card_dict = response.get('agentCard', {})
-
-                if not agent_card_dict:
-                    raise ValueError(f"No agent card found in boto3 response")
-
-                logger.debug(f"Retrieved agent card for {agent_id}")
-
-                # Convert dict to AgentCard object
-                agent_card = AgentCard(**agent_card_dict)
-
-                # Cache the agent card object
-                _cache['agent_cards'][agent_arn] = agent_card
-
-            except Exception as e:
-                logger.error(f"Error fetching agent card: {e}")
-                raise
-
-        # Get agent card from cache (or create dummy for local testing)
-        if agent_arn:
-            agent_card = _cache['agent_cards'][agent_arn]
-        else:
-            # Local testing mode: create minimal agent card
-            agent_card = AgentCard(url=runtime_url, capabilities={})
-
-        # Create A2A client with streaming enabled
+        agent_card = AgentCard(
+            url=runtime_url,
+            name=agent_id,
+            description="",
+            version="1.0.0",
+            capabilities={},
+            defaultInputModes=["text/plain"],
+            defaultOutputModes=["text/plain"],
+            skills=[],
+        )
         config = ClientConfig(httpx_client=httpx_client, streaming=True)
         factory = ClientFactory(config)
         client = factory.create(agent_card)
 
-        # Create message with metadata in Message.metadata
         msg = Message(
             kind="message",
             role=Role.user,
             parts=[Part(TextPart(kind="text", text=message))],
             message_id=uuid4().hex,
-            metadata=metadata
+            metadata=metadata,
         )
 
 
-        current_task_id = None   # A2A task id captured from first streaming event
-        completed = False        # Set True only on successful completion
+        current_task_id = None
+        completed = False
         response_text = ""
-        code_result_meta = None    # Structured result metadata from code agent
-        browser_session_arn = None  # For browser-use agent live view
-        browser_id_from_stream = None  # Browser ID from artifact
-        browser_session_event_sent = False  # Track if we've sent the event
-        sent_browser_steps = set()  # Track sent browser/research steps to avoid duplicates
-        sent_screenshots = set()   # Track sent screenshots to avoid duplicates
-        sent_code_steps = set()    # Track sent code_step_N artifacts
-        sent_code_todos = set()    # Track sent code_todos_N artifacts
+        code_result_meta = None
+        sent_code_steps = set()
+        sent_code_todos = set()
+        sent_research_steps = set()
+
+        def _extract_text(parts):
+            for p in (parts or []):
+                if hasattr(p, 'root') and hasattr(p.root, 'text'):
+                    return p.root.text
+                if hasattr(p, 'text'):
+                    return p.text
+            return ""
+
+        def _process_artifact(artifact):
+            """Process a single artifact, return yield-able event or None."""
+            nonlocal response_text, code_result_meta
+            name = getattr(artifact, 'name', 'unnamed')
+            text = _extract_text(getattr(artifact, 'parts', []))
+
+            if name.startswith('research_step_'):
+                try:
+                    n = int(name.split('_')[-1])
+                    if n not in sent_research_steps and text:
+                        sent_research_steps.add(n)
+                        return {"type": "research_step", "stepNumber": n, "content": text}
+                except (ValueError, IndexError):
+                    pass
+            elif name.startswith('code_step_'):
+                try:
+                    n = int(name.split('_')[-1])
+                    if n not in sent_code_steps and text:
+                        sent_code_steps.add(n)
+                        return {"type": "code_step", "stepNumber": n, "content": text}
+                except (ValueError, IndexError):
+                    pass
+            elif name.startswith('code_todos_'):
+                try:
+                    n = int(name.split('_')[-1])
+                    if n not in sent_code_todos and text:
+                        import json as _json
+                        sent_code_todos.add(n)
+                        return {"type": "code_todo_update", "todos": _json.loads(text)}
+                except Exception:
+                    pass
+            elif name == 'code_result':
+                try:
+                    import json as _json
+                    result_data = _json.loads(text)
+                    response_text += result_data.get("summary", "")
+                    code_result_meta = {
+                        "files_changed": result_data.get("files_changed", []),
+                        "todos": result_data.get("todos", []),
+                        "steps": result_data.get("steps", 0),
+                        "status": result_data.get("status", "completed"),
+                    }
+                except Exception:
+                    response_text += text
+            elif text:
+                response_text += text
+            return None
+
         async with asyncio.timeout(AGENT_TIMEOUT):
             async for event in client.send_message(msg):
-                logger.debug(f"Received A2A event type: {type(event).__name__}")
-
                 if isinstance(event, Message):
-                    # Extract text from Message response
-                    if event.parts and len(event.parts) > 0:
-                        for part in event.parts:
-                            if hasattr(part, 'text'):
-                                response_text += part.text
-                            elif hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                response_text += part.root.text
-
-                    logger.debug(f"A2A Message received ({len(response_text)} chars)")
+                    for part in (event.parts or []):
+                        t = _extract_text([part])
+                        if t:
+                            response_text += t
                     break
 
-                elif isinstance(event, tuple) and len(event) == 2:
-                    # (Task, UpdateEvent) tuple - streaming mode
+                if isinstance(event, tuple) and len(event) == 2:
                     task, update_event = event
 
-                    # Capture task id for cancel propagation
                     if current_task_id is None and hasattr(task, 'id'):
                         current_task_id = task.id
 
-                    # Extract task status
                     task_status = task.status if hasattr(task, 'status') else task
-                    state = task_status.state if hasattr(task_status, 'state') else 'unknown'
+                    state = str(getattr(task_status, 'state', 'unknown'))
 
-                    # Accumulate text chunks from task_status.message
-                    # Note: browser_step content is sent via artifacts, NOT task_status.message
+                    # Accumulate text from status message
                     if hasattr(task_status, 'message') and task_status.message:
-                        message_obj = task_status.message
-                        if hasattr(message_obj, 'parts') and message_obj.parts:
-                            text_part = message_obj.parts[0]
-                            if hasattr(text_part, 'root') and hasattr(text_part.root, 'text'):
-                                response_text += text_part.root.text
-                            elif hasattr(text_part, 'text'):
-                                response_text += text_part.text
+                        txt = _extract_text(getattr(task_status.message, 'parts', []))
+                        if txt:
+                            response_text += txt
 
-                    # Check for artifacts IMMEDIATELY (for Live View - browser_session_arn and browser_id)
-                    # This allows frontend to show Live View button while agent is still working
-                    if hasattr(task, 'artifacts') and task.artifacts:
-                        # Always check artifacts for new browser_session_arn or browser_id
-                        # (they may arrive in separate streaming events)
-                        logger.debug(f"[A2A] Checking {len(task.artifacts)} artifacts")
-                        for artifact in task.artifacts:
-                            artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
-                            logger.debug(f"[A2A] Found artifact: {artifact_name}")
+                    # Process artifacts
+                    for artifact in (getattr(task, 'artifacts', None) or []):
+                        evt = _process_artifact(artifact)
+                        if evt:
+                            yield evt
 
-                            # Extract browser_session_arn (if not yet extracted)
-                            if artifact_name == 'browser_session_arn' and not browser_session_arn:
-                                if hasattr(artifact, 'parts') and artifact.parts:
-                                    for part in artifact.parts:
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            browser_session_arn = part.root.text
-                                        elif hasattr(part, 'text'):
-                                            browser_session_arn = part.text
-                                        if browser_session_arn:
-                                            logger.debug(f"Extracted browser_session_arn: {browser_session_arn[:50]}...")
-                                            break
-
-                            # Extract browser_id (required for validation) - if not yet extracted
-                            elif artifact_name == 'browser_id' and not browser_id_from_stream:
-                                if hasattr(artifact, 'parts') and artifact.parts:
-                                    for part in artifact.parts:
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            browser_id_from_stream = part.root.text
-                                        elif hasattr(part, 'text'):
-                                            browser_id_from_stream = part.text
-                                        if browser_id_from_stream:
-                                            logger.debug(f"Extracted browser_id: {browser_id_from_stream}")
-                                            break
-
-                        # If we have browser_session_arn AND browser_id, send event once
-                        if browser_session_arn and browser_id_from_stream and not browser_session_event_sent:
-                            event_data = {
-                                "type": "browser_session_detected",
-                                "browserSessionId": browser_session_arn,
-                                "browserId": browser_id_from_stream,
-                                "message": "Browser session started - Live View available"
-                            }
-                            logger.debug(f"Browser session detected: {browser_id_from_stream}")
-                            yield event_data
-                            browser_session_event_sent = True
-
-                        # Handle screenshot artifacts (auto-save to workspace)
-                        for artifact in task.artifacts:
-                            artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
-
-                            # Check for screenshot_N pattern (screenshot_1, screenshot_2, ...)
-                            if artifact_name.startswith('screenshot_'):
-                                # Skip if already processed (avoid duplicates)
-                                if artifact_name in sent_screenshots:
-                                    continue
-
-                                logger.debug(f"Found screenshot artifact: {artifact_name}")
-
-                                # Extract metadata
-                                artifact_metadata = artifact.metadata if hasattr(artifact, 'metadata') else {}
-                                filename = artifact_metadata.get('filename', f'screenshot_{uuid4()}.png')
-                                description = artifact_metadata.get('description', 'Browser screenshot')
-
-                                # Extract screenshot data
-                                if hasattr(artifact, 'parts') and artifact.parts:
-                                    for part in artifact.parts:
-                                        # Get base64 screenshot data
-                                        screenshot_b64 = None
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            screenshot_b64 = part.root.text
-                                        elif hasattr(part, 'text'):
-                                            screenshot_b64 = part.text
-
-                                        if screenshot_b64:
-
-                                            try:
-                                                # Decode base64 to bytes
-                                                import base64
-                                                screenshot_bytes = base64.b64decode(screenshot_b64)
-
-                                                # Save to workspace via ImageManager
-                                                from workspace import ImageManager
-                                                # Use session_id from function parameter (already available in send_a2a_message)
-                                                screenshot_session_id = session_id or 'unknown'
-                                                # Get user_id from artifact metadata (priority), then function metadata, then environment variable
-                                                # Use 'or' to skip None values and try next fallback
-                                                screenshot_user_id = (
-                                                    (artifact_metadata.get('user_id') if artifact_metadata else None)
-                                                    or (metadata.get('user_id') if metadata else None)
-                                                    or os.environ.get('USER_ID', 'default_user')
-                                                )
-                                                image_manager = ImageManager(user_id=screenshot_user_id, session_id=screenshot_session_id)
-                                                image_manager.save_to_s3(filename, screenshot_bytes)
-
-                                                # Mark as sent to avoid duplicate processing (by artifact name)
-                                                sent_screenshots.add(artifact_name)
-                                                logger.debug(f"Saved screenshot: {filename}")
-
-                                                # Add text notification to response_text for LLM context
-                                                screenshot_notification = f"\n\n**Screenshot Saved**\n- **Filename**: {filename}\n- **Description**: {description}\n"
-                                                response_text += screenshot_notification
-
-                                            except Exception as e:
-                                                logger.error(f"Failed to save screenshot {artifact_name}: {str(e)}")
-                                                error_notification = f"\n\n**Screenshot Error**: Failed to save {filename}\n"
-                                                response_text += error_notification
-
-                                            break
-
-                        # Check for real-time step/todo artifacts and stream them immediately.
-                        # This runs EVERY iteration, not just when extracting browser_session_arn.
-                        for artifact in task.artifacts:
-                            artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
-
-                            # browser_step_N / research_step_N
-                            if artifact_name.startswith('browser_step_') or artifact_name.startswith('research_step_'):
-                                try:
-                                    step_number = int(artifact_name.split('_')[-1])
-                                    step_type = "browser_step" if artifact_name.startswith('browser_step_') else "research_step"
-
-                                    if step_number not in sent_browser_steps:
-                                        step_text = ""
-                                        if hasattr(artifact, 'parts') and artifact.parts:
-                                            for part in artifact.parts:
-                                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                                    step_text = part.root.text
-                                                elif hasattr(part, 'text'):
-                                                    step_text = part.text
-                                                if step_text:
-                                                    break
-
-                                        if step_text:
-                                            yield {
-                                                "type": step_type,
-                                                "stepNumber": step_number,
-                                                "content": step_text
-                                            }
-                                            sent_browser_steps.add(step_number)
-                                            logger.debug(f"Yielded {artifact_name}")
-                                except (ValueError, IndexError):
-                                    pass
-
-                            # code_step_N — tool-use progress from code agent
-                            elif artifact_name.startswith('code_step_'):
-                                try:
-                                    step_number = int(artifact_name.split('_')[-1])
-                                    if step_number not in sent_code_steps:
-                                        step_text = ""
-                                        if hasattr(artifact, 'parts') and artifact.parts:
-                                            for part in artifact.parts:
-                                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                                    step_text = part.root.text
-                                                elif hasattr(part, 'text'):
-                                                    step_text = part.text
-                                                if step_text:
-                                                    break
-                                        if step_text:
-                                            yield {
-                                                "type": "code_step",
-                                                "stepNumber": step_number,
-                                                "content": step_text
-                                            }
-                                            sent_code_steps.add(step_number)
-                                            logger.debug(f"Yielded {artifact_name}")
-                                except (ValueError, IndexError):
-                                    pass
-
-                            # code_todos_N — TodoWrite state from code agent
-                            elif artifact_name.startswith('code_todos_'):
-                                try:
-                                    todo_number = int(artifact_name.split('_')[-1])
-                                    if todo_number not in sent_code_todos:
-                                        todos_json = ""
-                                        if hasattr(artifact, 'parts') and artifact.parts:
-                                            for part in artifact.parts:
-                                                if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                                    todos_json = part.root.text
-                                                elif hasattr(part, 'text'):
-                                                    todos_json = part.text
-                                                if todos_json:
-                                                    break
-                                        if todos_json:
-                                            try:
-                                                import json as _json
-                                                yield {
-                                                    "type": "code_todo_update",
-                                                    "todos": _json.loads(todos_json)
-                                                }
-                                                sent_code_todos.add(todo_number)
-                                                logger.debug(f"Yielded {artifact_name}")
-                                            except Exception:
-                                                pass
-                                except (ValueError, IndexError):
-                                    pass
-
-                    # Check if task failed
-                    if str(state) == 'TaskState.failed' or state == 'failed':
-                        logger.warning(f"Task failed")
-
-                        # Extract error message from task status
-                        error_message = "Agent task failed"
-                        if hasattr(task_status, 'message') and task_status.message:
-                            if hasattr(task_status.message, 'parts') and task_status.message.parts:
-                                for part in task_status.message.parts:
-                                    if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                        error_message = part.root.text
-                                    elif hasattr(part, 'text'):
-                                        error_message = part.text
-
-                        # Extract any artifacts (e.g., browser_session_arn, partial results)
-                        if hasattr(task, 'artifacts') and task.artifacts:
-                            for artifact in task.artifacts:
-                                artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
-                                if hasattr(artifact, 'parts') and artifact.parts:
-                                    for part in artifact.parts:
-                                        artifact_text = ""
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            artifact_text = part.root.text
-                                        elif hasattr(part, 'text'):
-                                            artifact_text = part.text
-
-                                        if artifact_text:
-                                            if artifact_name == 'browser_session_arn':
-                                                browser_session_arn = artifact_text
-                                            elif artifact_name == 'research_markdown':
-                                                response_text += artifact_text
-
-                        logger.warning(f"Task failed: {error_message}")
-
-                        # Yield error with any partial results
-                        yield {
-                            "status": "error",
-                            "content": [{
-                                "text": response_text or f"Error: {error_message}"
-                            }]
-                        }
+                    if 'failed' in state:
+                        error_msg = _extract_text(
+                            getattr(task_status.message, 'parts', []) if hasattr(task_status, 'message') and task_status.message else []
+                        )
+                        yield {"status": "error", "content": [{"text": response_text or error_msg or "Agent task failed"}]}
                         return
 
-                    # Check if task completed
-                    if str(state) == 'TaskState.completed' or state == 'completed':
-                        logger.debug(f"Task completed, extracting artifacts")
-
-                        # Extract all artifacts from completed task
-                        if hasattr(task, 'artifacts') and task.artifacts:
-                            for artifact in task.artifacts:
-                                artifact_name = artifact.name if hasattr(artifact, 'name') else 'unnamed'
-
-                                if hasattr(artifact, 'parts') and artifact.parts:
-                                    for part in artifact.parts:
-                                        artifact_text = ""
-                                        if hasattr(part, 'root') and hasattr(part.root, 'text'):
-                                            artifact_text = part.root.text
-                                        elif hasattr(part, 'text'):
-                                            artifact_text = part.text
-
-                                        if artifact_text:
-                                            # Special handling for browser_session_arn and browser_id
-                                            if artifact_name == 'browser_session_arn':
-                                                browser_session_arn = artifact_text
-                                                logger.info(f"Extracted browser_session_arn: {browser_session_arn}")
-                                            elif artifact_name == 'browser_id':
-                                                # Skip browser_id (already handled in metadata)
-                                                pass
-                                            elif artifact_name.startswith('browser_step_'):
-                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
-                                            elif artifact_name.startswith('research_step_'):
-                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
-                                            elif artifact_name.startswith('code_step_'):
-                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
-                                            elif artifact_name.startswith('code_todos_'):
-                                                logger.info(f"Skipping {artifact_name} (UI-only artifact)")
-                                            elif artifact_name == 'code_result':
-                                                # Parse JSON payload: use summary for LLM, stash meta for frontend event
-                                                try:
-                                                    import json as _json
-                                                    result_data = _json.loads(artifact_text)
-                                                    summary = result_data.get("summary", "")
-                                                    if summary:
-                                                        response_text += summary
-                                                    code_result_meta = {
-                                                        "files_changed": result_data.get("files_changed", []),
-                                                        "todos": result_data.get("todos", []),
-                                                        "steps": result_data.get("steps", 0),
-                                                        "status": result_data.get("status", "completed"),
-                                                    }
-                                                except Exception:
-                                                    # Fallback: treat as plain text
-                                                    response_text += artifact_text
-                                            else:
-                                                # Include other artifacts (agent_response, browser_result, etc.) in LLM context
-                                                response_text += artifact_text
-
-                        logger.debug(f"Total response: {len(response_text)} chars")
+                    if 'completed' in state:
                         break
 
-                    # Break on final event
-                    if update_event and hasattr(update_event, 'final') and update_event.final:
+                    if update_event and getattr(update_event, 'final', False):
                         break
 
         # Yield structured code-agent metadata before the final result (frontend use)
@@ -737,35 +478,33 @@ def create_a2a_tool(agent_id: str):
         session_id = None
         user_id = None
         model_id = None
+        _auth_token = None
 
         if tool_context:
-            # Try to get from invocation_state first
             session_id = tool_context.invocation_state.get("session_id")
             user_id = tool_context.invocation_state.get("user_id")
             model_id = tool_context.invocation_state.get("model_id")
 
-            # Fallback to agent's session_manager
             if not session_id and hasattr(tool_context.agent, '_session_manager'):
                 session_id = tool_context.agent._session_manager.session_id
 
-            # Get user_id from agent if not in invocation_state
             if not user_id and hasattr(tool_context.agent, 'user_id'):
                 user_id = tool_context.agent.user_id
 
-            # Get model_id from agent if not in invocation_state
             if not model_id:
                 if hasattr(tool_context.agent, 'model_id'):
                     model_id = tool_context.agent.model_id
                 elif hasattr(tool_context.agent, 'model') and hasattr(tool_context.agent.model, 'model_id'):
                     model_id = tool_context.agent.model.model_id
 
-        # Fallback to environment variable
+            _auth_token = tool_context.invocation_state.get("auth_token")
+
         if not session_id:
             session_id = os.environ.get('SESSION_ID')
         if not user_id:
             user_id = os.environ.get('USER_ID')
 
-        return session_id, user_id, model_id
+        return session_id, user_id, model_id, _auth_token
 
     # Generate correct tool name BEFORE creating function
     correct_name = agent_id.replace("agentcore_", "").replace("-", "_")
@@ -783,7 +522,7 @@ def create_a2a_tool(agent_id: str):
                              running the task (equivalent to /compact in Claude Code).
                              Useful when prior context is long but still relevant.
             """
-            session_id, user_id, model_id = extract_context(tool_context)
+            session_id, user_id, model_id, _auth_token = extract_context(tool_context)
 
             # Discover uploaded files from S3 workspace and forward to code-agent
             s3_files = _list_session_s3_files(user_id, session_id)
@@ -812,7 +551,7 @@ def create_a2a_tool(agent_id: str):
             if tool_context:
                 tool_context.invocation_state["_a2a_partial_progress"] = progress
 
-            async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata):
+            async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata, auth_token=_auth_token):
                 # Update partial progress from streamed events
                 if isinstance(event, dict) and tool_context:
                     event_type = event.get("type")
@@ -838,7 +577,7 @@ def create_a2a_tool(agent_id: str):
         # Browser Use Agent - task parameter only
         # Uses async generator to stream browser_session_arn immediately for Live View
         async def tool_impl(task: str, tool_context: ToolContext = None) -> AsyncGenerator[Dict[str, Any], None]:
-            session_id, user_id, model_id = extract_context(tool_context)
+            session_id, user_id, model_id, _auth_token = extract_context(tool_context)
 
             # Prepare metadata (max_steps handled internally by agent)
             metadata = {
@@ -849,7 +588,7 @@ def create_a2a_tool(agent_id: str):
             }
 
             # Stream events from A2A agent
-            async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata):
+            async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata, auth_token=_auth_token):
                 # Store browser_session_arn and browser_id in invocation_state for frontend access
                 if isinstance(event, dict):
                     if event.get("type") == "browser_session_detected":
@@ -872,7 +611,7 @@ def create_a2a_tool(agent_id: str):
         # Research Agent (default) - plan parameter
         # Uses async generator to stream research_step events for real-time status updates
         async def tool_impl(plan: str, tool_context: ToolContext = None) -> AsyncGenerator[Dict[str, Any], None]:
-            session_id, user_id, model_id = extract_context(tool_context)
+            session_id, user_id, model_id, _auth_token = extract_context(tool_context)
 
             # Prepare metadata
             metadata = {
@@ -888,7 +627,7 @@ def create_a2a_tool(agent_id: str):
             final_result_text = None
 
             # Stream events from A2A agent (including research_step events for real-time UI updates)
-            async for event in send_a2a_message(agent_id, plan, session_id, region, metadata=metadata):
+            async for event in send_a2a_message(agent_id, plan, session_id, region, metadata=metadata, auth_token=_auth_token):
                 # Yield event FIRST to maintain proper stream order
                 yield event
 

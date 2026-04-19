@@ -218,6 +218,18 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
 }
 
 @layer utilities {
+  .chat-input-container {
+    transition: box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+
+  .chat-input-container:focus-within {
+    border-color: hsl(var(--primary) / 0.5);
+    box-shadow:
+      0 0 0 1px hsl(var(--primary) / 0.25),
+      0 4px 24px -4px hsl(var(--primary) / 0.2),
+      0 0 40px -8px hsl(var(--primary) / 0.1);
+  }
+
   .text-balance {
     text-wrap: balance;
   }

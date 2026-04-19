@@ -1,0 +1,22 @@
+name: research-agent
+description: Autonomous research specialist that conducts web research and generates markdown reports with citations.
+agent_card:
+  name: Research Agent
+  description: Conducts comprehensive web research using DuckDuckGo, Wikipedia, and URL fetching. Generates well-structured markdown reports with proper citations. Can generate professional charts.
+  url: https://placeholder
+  version: "1.0.0"
+  protocolVersion: "0.3.0"
+  preferredTransport: JSONRPC
+  capabilities:
+    streaming: true
+  defaultInputModes: ["text/plain"]
+  defaultOutputModes: ["text/plain", "text/markdown"]
+  skills:
+    - id: research_topic
+      name: Research Topic
+      description: Conduct multi-source web research and produce a structured markdown report with citations.
+      tags: [research, web-search, citations, markdown-report]
+    - id: generate_report
+      name: Generate Report
+      description: Produce a cited markdown report, optionally including charts generated via matplotlib.
+      tags: [report, visualization, charts]

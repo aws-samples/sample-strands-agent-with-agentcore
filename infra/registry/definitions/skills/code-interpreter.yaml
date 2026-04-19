@@ -1,0 +1,3 @@
+name: code-interpreter
+description: "Test and prototype code in a sandboxed environment. Use for debugging, verifying logic, or installing packages."
+skill_md_path: code-interpreter/SKILL.md

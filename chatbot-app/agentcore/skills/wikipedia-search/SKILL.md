@@ -16,6 +16,7 @@ description: Wikipedia article search and retrieval
 
 ## Usage Guidelines
 
+- Only English Wikipedia is supported. Translate non-English queries to English before searching.
 - Use `wikipedia_search` first to find the correct article title, then `wikipedia_get_article` for full content.
 - Article titles are case-sensitive — use the exact title from search results.
 - Use `summary_only=true` for quick factual lookups when full article content isn't needed.

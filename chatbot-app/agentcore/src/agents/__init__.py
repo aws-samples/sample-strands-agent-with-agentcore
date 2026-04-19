@@ -1,19 +1,15 @@
-"""
-Agent module - Unified agent architecture
+"""Agent module.
 
-All agents inherit from BaseAgent and provide consistent interface:
-- ChatAgent: Text-based conversation with streaming
-- SwarmAgent: Multi-agent orchestration with specialist agents
-- VoiceAgent: Bidirectional audio streaming (Nova Sonic)
+- ChatAgent: base text-streaming agent (used as a superclass).
+- SkillChatAgent: progressive skill disclosure (the default for text requests).
+- VoiceAgent: Nova Sonic bidirectional audio.
 """
 
 from agents.base import BaseAgent
 from agents.chat_agent import ChatAgent
-from agents.swarm_agent import SwarmAgent
-from agents.factory import create_agent, get_agent_type_description
+from agents.skill_chat_agent import SkillChatAgent
+from agents.factory import create_agent
 
-# VoiceAgent is in agent.voice_agent module (separate due to different imports)
-# Import it here for consistency
 try:
     from agent.voice_agent import VoiceAgent
     _VOICE_AGENT_AVAILABLE = True
@@ -24,9 +20,8 @@ except ImportError:
 __all__ = [
     "BaseAgent",
     "ChatAgent",
-    "SwarmAgent",
+    "SkillChatAgent",
     "create_agent",
-    "get_agent_type_description",
 ]
 
 if _VOICE_AGENT_AVAILABLE:

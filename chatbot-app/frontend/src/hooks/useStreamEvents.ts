@@ -666,7 +666,7 @@ export const useStreamEvents = ({
           }
           try {
             const session = await fetchAuthSession()
-            const token = session.tokens?.idToken?.toString()
+            const token = session.tokens?.accessToken?.toString()
             if (token) {
               workspaceHeaders['Authorization'] = `Bearer ${token}`
             }

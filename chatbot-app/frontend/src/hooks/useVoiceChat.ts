@@ -378,7 +378,7 @@ export function useVoiceChat({
       }
       try {
         const session = await fetchAuthSession()
-        const token = session.tokens?.idToken?.toString()
+        const token = session.tokens?.accessToken?.toString()
         if (token) {
           headers['Authorization'] = `Bearer ${token}`
         }
@@ -422,7 +422,7 @@ export function useVoiceChat({
       let authToken: string | null = null
       try {
         const session = await fetchAuthSession()
-        authToken = session.tokens?.idToken?.toString() || null
+        authToken = session.tokens?.accessToken?.toString() || null
       } catch {
         // Continue without auth for local development
       }
@@ -477,7 +477,7 @@ export function useVoiceChat({
 
       // 2. Use WebSocket URL from BFF directly
       // BFF already includes query params (session_id, user_id, enabled_tools)
-      // For cloud mode, the URL is SigV4 pre-signed with all params included
+      // For cloud mode, the URL includes JWT token and all params as query parameters
       console.log('[VoiceChat] Connecting to WebSocket (URL from BFF)')
 
       // 3. Create WebSocket connection

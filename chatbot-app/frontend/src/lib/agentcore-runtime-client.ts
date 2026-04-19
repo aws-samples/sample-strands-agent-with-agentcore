@@ -1,41 +1,23 @@
 /**
  * AgentCore Client - Supports both local and AWS deployment
  * - Local: HTTP POST to localhost:8080
- * - AWS: Bedrock AgentCore Runtime via AWS SDK
- *
- * All payloads use AG-UI format (thread_id, run_id, messages, tools, state).
+ * - AWS: HTTP POST to AgentCore Runtime invocation URL with JWT auth
  */
 
-// Check if running in local development mode
 const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
 const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080'
 
-// AWS configuration (for cloud deployment)
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2'
 const PROJECT_NAME = process.env.PROJECT_NAME || 'strands-agent-chatbot'
 const ENVIRONMENT = process.env.ENVIRONMENT || 'dev'
 
-// Dynamic imports for AWS SDK (only loaded in cloud deployment)
-let BedrockAgentCoreClient: any
-let InvokeAgentRuntimeCommand: any
 let SSMClient: any
 let GetParameterCommand: any
-let agentCoreClient: any
 let ssmClient: any
-let cachedRuntimeArn: string | null = null
+let cachedRuntimeUrl: string | null = null
 
-/**
- * Initialize AWS clients (lazy loading for cloud deployment only)
- */
-async function initializeAwsClients() {
-  if (IS_LOCAL) return
-
-  if (!BedrockAgentCoreClient) {
-    const bedrockModule = await import('@aws-sdk/client-bedrock-agentcore')
-    BedrockAgentCoreClient = bedrockModule.BedrockAgentCoreClient
-    InvokeAgentRuntimeCommand = bedrockModule.InvokeAgentRuntimeCommand
-    agentCoreClient = new BedrockAgentCoreClient({ region: AWS_REGION })
-
+async function initializeSsmClient() {
+  if (!SSMClient) {
     const ssmModule = await import('@aws-sdk/client-ssm')
     SSMClient = ssmModule.SSMClient
     GetParameterCommand = ssmModule.GetParameterCommand
@@ -43,34 +25,39 @@ async function initializeAwsClients() {
   }
 }
 
-/**
- * Get AgentCore Runtime ARN from Parameter Store or environment variable
- */
-async function getAgentCoreRuntimeArn(): Promise<string> {
-  if (cachedRuntimeArn) {
-    return cachedRuntimeArn
+async function getAgentCoreRuntimeUrl(): Promise<string> {
+  if (cachedRuntimeUrl) {
+    return cachedRuntimeUrl
   }
 
-  // Try environment variable first
+  const envUrl = process.env.AGENTCORE_RUNTIME_URL
+  if (envUrl) {
+    console.log('[AgentCore] Using AGENTCORE_RUNTIME_URL from environment')
+    cachedRuntimeUrl = envUrl
+    return envUrl
+  }
+
+  // Fall back: build URL from ARN env var
   const envArn = process.env.AGENTCORE_RUNTIME_ARN
   if (envArn) {
-    console.log('[AgentCore] Using AGENTCORE_RUNTIME_ARN from environment')
-    cachedRuntimeArn = envArn
-    return envArn
+    const url = `https://bedrock-agentcore.${AWS_REGION}.amazonaws.com/runtimes/${encodeURIComponent(envArn)}/invocations?qualifier=DEFAULT`
+    console.log('[AgentCore] Built runtime URL from AGENTCORE_RUNTIME_ARN')
+    cachedRuntimeUrl = url
+    return url
   }
 
-  // Try Parameter Store
+  // Fall back: SSM Parameter Store
   try {
-    await initializeAwsClients()
-    const paramPath = `/${PROJECT_NAME}/${ENVIRONMENT}/agentcore/runtime-arn`
-    console.log(`[AgentCore] Loading Runtime ARN from Parameter Store: ${paramPath}`)
+    await initializeSsmClient()
+    const paramPath = `/${PROJECT_NAME}/${ENVIRONMENT}/agentcore/runtime-url`
+    console.log(`[AgentCore] Loading Runtime URL from Parameter Store: ${paramPath}`)
 
     const command = new GetParameterCommand({ Name: paramPath })
     const response = await ssmClient.send(command)
 
     if (response.Parameter?.Value) {
-      console.log('[AgentCore] Runtime ARN loaded from Parameter Store')
-      cachedRuntimeArn = response.Parameter.Value
+      console.log('[AgentCore] Runtime URL loaded from Parameter Store')
+      cachedRuntimeUrl = response.Parameter.Value
       return response.Parameter.Value
     }
   } catch (error) {
@@ -78,13 +65,10 @@ async function getAgentCoreRuntimeArn(): Promise<string> {
   }
 
   throw new Error(
-    'AGENTCORE_RUNTIME_ARN not configured. Please set environment variable or Parameter Store value.'
+    'AGENTCORE_RUNTIME_URL not configured. Set the environment variable or Parameter Store value.'
   )
 }
 
-/**
- * Invoke local AgentCore via HTTP POST (AG-UI body pass-through)
- */
 async function invokeLocalAgentCore(
   aguiBody: Record<string, any>,
   abortSignal?: AbortSignal
@@ -116,150 +100,67 @@ async function invokeLocalAgentCore(
   return response.body
 }
 
-/**
- * Invoke AWS Bedrock AgentCore Runtime (AG-UI body pass-through)
- */
 async function invokeAwsAgentCore(
   aguiBody: Record<string, any>,
   userId: string,
   sessionId: string,
+  authToken: string,
   abortSignal?: AbortSignal
 ): Promise<ReadableStream> {
-  await initializeAwsClients()
-  const runtimeArn = await getAgentCoreRuntimeArn()
+  const runtimeUrl = await getAgentCoreRuntimeUrl()
 
-  console.log('[AgentCore] Invoking AWS Bedrock AgentCore Runtime')
+  console.log('[AgentCore] Invoking AWS Bedrock AgentCore Runtime via fetch')
   console.log(`[AgentCore]    User: ${userId}, Session: ${sessionId}`)
-  console.log(`[AgentCore]    ARN: ${runtimeArn}`)
 
-  const command = new InvokeAgentRuntimeCommand({
-    agentRuntimeArn: runtimeArn,
-    qualifier: 'DEFAULT',
-    contentType: 'application/json',
-    accept: 'text/event-stream',
-    payload: Buffer.from(JSON.stringify(aguiBody)),
-    runtimeUserId: userId,
-    runtimeSessionId: sessionId,
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    'Accept': 'text/event-stream',
+    'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': sessionId,
+  }
+
+  if (authToken) {
+    headers['Authorization'] = authToken
+  }
+
+  const response = await fetch(runtimeUrl, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(aguiBody),
+    signal: abortSignal,
   })
 
-  const response = await agentCoreClient.send(command)
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`AgentCore Runtime returned ${response.status}: ${errorText}`)
+  }
 
   console.log('[AgentCore] AWS Runtime invoked successfully')
-  console.log(`[AgentCore]    Trace ID: ${response.traceId}`)
-  console.log(`[AgentCore]    Status Code: ${response.statusCode}`)
 
-  if (!response.response) {
+  if (!response.body) {
     throw new Error('No response stream received from AgentCore Runtime')
   }
 
-  // AWS SDK returns SdkStream (Node.js Readable stream or AsyncIterable)
-  // Convert to Web ReadableStream for uniform handling
-  const sdkStream = response.response
-
-  // Check if it's a Node.js Readable stream (has 'pipe' method)
-  if (typeof (sdkStream as any).pipe === 'function') {
-    // Node.js Readable stream -> Web ReadableStream
-    const nodeStream = sdkStream as any
-
-    return new ReadableStream({
-      start(controller) {
-        // Handle abort signal
-        if (abortSignal) {
-          abortSignal.addEventListener('abort', () => {
-            console.log('[AgentCore] Abort signal received, destroying Node.js stream')
-            nodeStream.destroy()
-            try {
-              controller.close()
-            } catch (e) {
-              // Controller might already be closed
-            }
-          })
-        }
-
-        nodeStream.on('data', (chunk: Uint8Array) => {
-          controller.enqueue(chunk)
-        })
-
-        nodeStream.on('end', () => {
-          controller.close()
-        })
-
-        nodeStream.on('error', (error: Error) => {
-          console.error('[AgentCore] Stream error:', error)
-          controller.error(error)
-        })
-      },
-
-      cancel() {
-        console.log('[AgentCore] Stream cancelled, destroying Node.js stream')
-        nodeStream.destroy()
-      }
-    })
-  }
-
-  // Otherwise, treat as AsyncIterable
-  let aborted = false
-
-  // Handle abort signal for AsyncIterable
-  if (abortSignal) {
-    abortSignal.addEventListener('abort', () => {
-      console.log('[AgentCore] Abort signal received for AsyncIterable stream')
-      aborted = true
-    })
-  }
-
-  return new ReadableStream({
-    async start(controller) {
-      try {
-        for await (const chunk of sdkStream as any) {
-          if (aborted) {
-            console.log('[AgentCore] Stream aborted, stopping iteration')
-            break
-          }
-          if (chunk) {
-            controller.enqueue(chunk)
-          }
-        }
-        controller.close()
-      } catch (error) {
-        if (aborted) {
-          console.log('[AgentCore] Stream aborted during iteration')
-          try {
-            controller.close()
-          } catch (e) {
-            // Controller might already be closed
-          }
-        } else {
-          console.error('[AgentCore] Error reading stream:', error)
-          controller.error(error)
-        }
-      }
-    },
-
-    cancel() {
-      console.log('[AgentCore] AsyncIterable stream cancelled')
-      aborted = true
-    }
-  })
+  return response.body
 }
 
 
 /**
  * Invoke AgentCore and stream the response.
  * Accepts an AG-UI body object which is passed through to the backend.
- * userId/sessionId are used only for AWS SDK session affinity.
+ * authToken is the Bearer token for JWT auth (AWS mode only).
  */
 export async function invokeAgentCoreRuntime(
   aguiBody: Record<string, any>,
   userId: string,
   sessionId: string,
+  authToken: string,
   abortSignal?: AbortSignal
 ): Promise<ReadableStream> {
   try {
     if (IS_LOCAL) {
       return await invokeLocalAgentCore(aguiBody, abortSignal)
     } else {
-      return await invokeAwsAgentCore(aguiBody, userId, sessionId, abortSignal)
+      return await invokeAwsAgentCore(aguiBody, userId, sessionId, authToken, abortSignal)
     }
   } catch (error) {
     console.error('[AgentCore] Failed to invoke Runtime:', error)
@@ -269,7 +170,7 @@ export async function invokeAgentCoreRuntime(
   }
 }
 
-export async function pingAgentCoreRuntime(sessionId?: string, userId?: string): Promise<{
+export async function pingAgentCoreRuntime(sessionId?: string, userId?: string, authToken?: string): Promise<{
   success: boolean
   latencyMs: number
   mode: 'local' | 'aws'
@@ -288,10 +189,8 @@ export async function pingAgentCoreRuntime(sessionId?: string, userId?: string):
       return { success: true, latencyMs, mode: 'local' }
     }
 
-    console.log('[AgentCore Warmup] AWS mode: initializing clients')
-    await initializeAwsClients()
-    const runtimeArn = await getAgentCoreRuntimeArn()
-    console.log(`[AgentCore Warmup] Runtime ARN: ${runtimeArn}`)
+    const runtimeUrl = await getAgentCoreRuntimeUrl()
+    console.log(`[AgentCore Warmup] Runtime URL: ${runtimeUrl}`)
 
     const warmupSessionId = sessionId || `warmup00_${Date.now().toString(36)}_${crypto.randomUUID().replace(/-/g, '')}`
     const warmupUserId = userId || 'anonymous'
@@ -306,18 +205,30 @@ export async function pingAgentCoreRuntime(sessionId?: string, userId?: string):
       state: { action: 'warmup', user_id: warmupUserId }
     }
 
-    const command = new InvokeAgentRuntimeCommand({
-      agentRuntimeArn: runtimeArn,
-      qualifier: 'DEFAULT',
-      contentType: 'application/json',
-      payload: Buffer.from(JSON.stringify(payload)),
-      runtimeSessionId: warmupSessionId,
-      runtimeUserId: warmupUserId,
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'X-Amzn-Bedrock-AgentCore-Runtime-Session-Id': warmupSessionId,
+    }
+
+    if (authToken) {
+      headers['Authorization'] = authToken
+    }
+
+    const response = await fetch(runtimeUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(30000),
     })
 
-    const response = await agentCoreClient.send(command)
     const latencyMs = Date.now() - startTime
-    console.log(`[AgentCore Warmup] AWS invoke success: ${latencyMs}ms, traceId=${response.traceId}`)
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Warmup returned ${response.status}: ${errorText}`)
+    }
+
+    console.log(`[AgentCore Warmup] AWS invoke success: ${latencyMs}ms`)
     return { success: true, latencyMs, mode: 'aws' }
   } catch (error) {
     const latencyMs = Date.now() - startTime
@@ -330,13 +241,10 @@ export async function pingAgentCoreRuntime(sessionId?: string, userId?: string):
   }
 }
 
-/**
- * Health check - validates AgentCore configuration
- */
 export async function validateAgentCoreConfig(): Promise<{
   configured: boolean
   url?: string
-  runtimeArn?: string
+  runtimeUrl?: string
   error?: string
 }> {
   try {
@@ -354,10 +262,10 @@ export async function validateAgentCoreConfig(): Promise<{
         url: AGENTCORE_URL,
       }
     } else {
-      const runtimeArn = await getAgentCoreRuntimeArn()
+      const runtimeUrl = await getAgentCoreRuntimeUrl()
       return {
         configured: true,
-        runtimeArn,
+        runtimeUrl,
       }
     }
   } catch (error) {

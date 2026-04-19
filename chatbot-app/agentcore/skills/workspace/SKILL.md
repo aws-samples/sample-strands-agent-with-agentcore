@@ -46,3 +46,14 @@ workspace_write("code-agent/data.xlsx", result["content"], encoding="base64")
 - Binary files (images, Office docs, PDF, etc.) return `encoding: "base64"`
 - `workspace_write` accepts both encodings — use `"base64"` for binary
 - Files written here are immediately available to all other skills in the session
+
+## UI Guidance (from tools-config)
+
+**Path conventions (userId/sessionId injected automatically):**
+- `code-agent/<file>` — files from the code agent
+- `documents/powerpoint/<file>` — PowerPoint
+- `documents/word/<file>` — Word
+- `documents/excel/<file>` — Excel
+- `documents/image/<file>` — images
+
+**Binary vs text:** images/PDFs/Office files are returned base64-encoded (`encoding: "base64"`); use the same encoding when writing them back.

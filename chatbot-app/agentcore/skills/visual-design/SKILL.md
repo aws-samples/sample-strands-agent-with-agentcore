@@ -117,3 +117,16 @@ Prefer thin/light fonts. Minimize text in designs.
 3. Verify sufficient color contrast
 4. If issues found, fix the code and regenerate
 5. Complete at least one fix-verify cycle before finishing
+
+## UI Guidance (from tools-config)
+
+**Tool Selection:**
+- generate_chart: Data charts/graphs (matplotlib, plotly, bokeh) → PNG
+- create_visual_design: Posters, infographics, artwork, flow diagrams (reportlab, Pillow, svgwrite) → PNG or PDF
+
+**Code Requirements:**
+- Charts: plt.savefig(filename, dpi=300, bbox_inches='tight')
+- PDF designs: canvas.save() (reportlab) or equivalent
+- Image designs: image.save(filename) (Pillow)
+- PNG: dpi=300+ recommended
+- PDF: A4 or Letter size recommended

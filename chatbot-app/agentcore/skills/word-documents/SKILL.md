@@ -120,3 +120,38 @@ Get page screenshots for visual inspection before editing.
 |-----------|------|----------|-------------|
 | `document_name` | str | Yes | Document name without extension |
 | `page_numbers` | list[int] | Yes | **1-based** page numbers to preview |
+
+## UI Guidance (from tools-config)
+
+**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).
+
+**When to Use:**
+- create_word_document: User asks to create/generate a NEW Word document
+- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document
+- list_my_word_documents: User asks what documents are available
+- read_word_document: User wants to download a document
+- preview_word_page: Check actual page appearance when editing (charts, images, complex layouts)
+
+**Before Modifying:** Always use preview_word_page first to see the current layout.
+
+**Page Setup:**
+- python-docx defaults to A4. For US Letter: `section.page_width = Inches(8.5); section.page_height = Inches(11)`
+- Set 1" margins: `section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(1)`
+
+**Professional Formatting:**
+- Font: Arial as default. Set via `style.font.name = 'Arial'`
+- Use proper heading styles for TOC compatibility: `document.add_heading('Title', level=1)` or `add_paragraph(style='Heading 1')`
+- Lists: use `add_paragraph(style='List Bullet')` or `add_paragraph(style='List Number')`. NEVER insert unicode bullet characters manually.
+
+**Formatting Preservation:**
+- ALWAYS preserve existing styles, fonts, colors
+- NEVER use paragraph.text = 'new text' (destroys formatting)
+- Use runs to modify text while preserving formatting
+
+**Filenames:** Letters, numbers, hyphens only (e.g., "sales-report.docx")
+
+**Available Libraries:** python-docx, matplotlib, pandas, numpy (seaborn NOT available)
+
+**Images:** If workspace has relevant images: `run.add_picture('file.png', width=Inches(6))`
+
+**QA:** Always use preview_word_page after creation to verify appearance.

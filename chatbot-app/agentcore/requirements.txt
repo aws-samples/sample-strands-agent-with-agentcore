@@ -6,7 +6,7 @@ fastapi==0.116.1
 uvicorn[standard]==0.35.0
 
 # Strands Agent Framework
-strands-agents[a2a]>=1.24.0
+strands-agents[a2a,otel]>=1.24.0
 strands-agents-tools[a2a_client]>=0.2.20
 
 # Voice Chat (BidiAgent)
@@ -26,12 +26,8 @@ boto3>=1.40.1
 httpx>=0.24.0
 anyio>=3.6.0
 
-# Web Search
-ddgs==9.10.0
-primp>=0.15.0  # Required by ddgs for browser impersonation (safari_18.2 profile)
-
 # OpenTelemetry (for observability)
-aws-opentelemetry-distro>=0.10.1
+aws-opentelemetry-distro>=0.17.0
 
 # Document processing
 pdf2image>=1.16.0
@@ -58,6 +54,9 @@ mypy-boto3-s3
 
 # AG-UI Protocol (agent-to-UI streaming standard)
 ag-ui-protocol>=0.1.13
+
+# Registry YAML loader
+PyYAML>=6.0
 
 # Testing
 pytest>=7.0.0

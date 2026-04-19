@@ -1,0 +1,16 @@
+name: wikipedia
+description: Wikipedia article search and retrieval (English only)
+tools:
+  - name: wikipedia_search
+    description: Search Wikipedia for articles. Returns up to 5 results with titles, snippets, and URLs.
+    input_type: object
+    input_description: Search parameters
+    properties:
+      - { name: query, type: string, description: Search query for Wikipedia articles, required: true }
+  - name: wikipedia_get_article
+    description: Get full content of a specific Wikipedia article by title.
+    input_type: object
+    input_description: Article retrieval parameters
+    properties:
+      - { name: title, type: string, description: Exact title of the Wikipedia article, required: true }
+      - { name: summary_only, type: boolean, description: "If true, return only summary; if false, return full text (default: false)" }

@@ -1,0 +1,7 @@
+name: tavily-search
+description: "AI-powered web search and content extraction"
+skill_md_path: tavily-search/SKILL.md
+source: gateway
+tools:
+  - tavily_search
+  - tavily_extract

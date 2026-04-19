@@ -210,6 +210,7 @@ class ToolFilterRegistry:
         log_prefix: str = "",
         auth_token: Optional[str] = None,
         session_id: Optional[str] = None,
+        api_keys: Optional[Dict[str, str]] = None,
     ) -> FilteredToolResult:
         """
         Filter and load tools from all sources.
@@ -275,7 +276,7 @@ class ToolFilterRegistry:
 
         # Process Gateway tools
         if gateway_tool_ids:
-            gateway_result = self._load_gateway_tools(gateway_tool_ids, log_prefix)
+            gateway_result = self._load_gateway_tools(gateway_tool_ids, log_prefix, auth_token=auth_token, api_keys=api_keys)
             if gateway_result.get("client"):
                 result.tools.append(gateway_result["client"])
                 result.clients["gateway"] = gateway_result["client"]
@@ -327,24 +328,17 @@ class ToolFilterRegistry:
     def _load_gateway_tools(
         self,
         tool_ids: List[str],
-        log_prefix: str
+        log_prefix: str,
+        auth_token: Optional[str] = None,
+        api_keys: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
-        """
-        Load Gateway MCP tools.
-
-        Args:
-            tool_ids: List of gateway tool IDs
-            log_prefix: Prefix for log messages
-
-        Returns:
-            Dict with "client" and/or "error"
-        """
+        """Load Gateway MCP tools."""
         factory = self._get_gateway_client_factory()
         if not factory:
             return {"error": "Gateway MCP client factory not available"}
 
         try:
-            client = factory(enabled_tool_ids=tool_ids)
+            client = factory(enabled_tool_ids=tool_ids, auth_token=auth_token, api_keys=api_keys)
             if client:
                 logger.debug(f"{log_prefix} Gateway MCP client created: {tool_ids}")
                 return {"client": client}
@@ -456,36 +450,14 @@ def filter_tools(
     log_prefix: str = "",
     auth_token: Optional[str] = None,
     session_id: Optional[str] = None,
+    api_keys: Optional[Dict[str, str]] = None,
 ) -> FilteredToolResult:
-    """
-    Convenience function to filter tools using the default registry.
-
-    Args:
-        enabled_tool_ids: List of tool IDs to enable
-        filters: Optional ToolFilters (allowed/rejected patterns)
-        log_prefix: Prefix for log messages
-        auth_token: Cognito JWT for MCP Runtime Bearer auth
-        session_id: Session ID for elicitation bridge registration
-
-    Returns:
-        FilteredToolResult with tools, metadata, clients, and errors
-
-    Example:
-        result = filter_tools(["calculator", "gateway_wikipedia_search"])
-        agent = Agent(tools=result.tools)
-
-        # Access gateway client for lifecycle management
-        gateway_client = result.clients.get("gateway")
-
-        # Check for any issues
-        if result.validation_errors:
-            for error in result.validation_errors:
-                logger.warning(error)
-    """
+    """Convenience function to filter tools using the default registry."""
     return get_tool_filter_registry().filter_tools(
         enabled_tool_ids=enabled_tool_ids,
         filters=filters,
         log_prefix=log_prefix,
         auth_token=auth_token,
         session_id=session_id,
+        api_keys=api_keys,
     )

@@ -14,7 +14,6 @@ from agent.config.prompt_builder import (
     build_text_system_prompt,
     build_voice_system_prompt,
     system_prompt_to_string,
-    load_tool_guidance,
     get_current_date_pacific,
     SystemContentBlock,
 )
@@ -33,7 +32,6 @@ __all__ = [
     "build_text_system_prompt",
     "build_voice_system_prompt",
     "system_prompt_to_string",
-    "load_tool_guidance",
     "get_current_date_pacific",
     "SystemContentBlock",
 ]

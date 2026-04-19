@@ -29,3 +29,24 @@ description: Manage GitHub issues, PRs, branches, and repositories via OAuth (3L
 - Before calling any write tool, explain exactly what will change (branch name, target files, PR details) and wait for user agreement.
 - For multi-file changes: create a branch → push all files in one `github_push_files` call → open PR.
 - Use `github_search_code` with `repo:owner/name` qualifier to scope searches to a specific repository.
+
+## UI Guidance (from tools-config)
+
+**GitHub Tool Usage:**
+- github_search_repos: Search GitHub repositories by keyword
+- github_get_repo: Get repository details (description, stars, language, topics)
+- github_list_issues: List issues (state: open|closed|all, filter by labels)
+- github_get_issue: Get a single issue with all comments
+- github_list_pulls: List pull requests
+- github_get_pull: Get a single PR with diff summary
+- github_get_file: Read file contents from a repo (specify ref/branch if needed)
+- github_search_code: Search code across GitHub (use repo:owner/name to scope)
+- github_create_branch: Create a new branch (write — requires approval)
+- github_push_files: Create or update files on a branch (write — requires approval)
+- github_create_pull_request: Open a pull request (write — requires approval)
+
+**Write workflow:**
+1. github_get_file to read existing files before modifying
+2. github_create_branch to create a feature branch
+3. github_push_files to commit all changes in one call
+4. github_create_pull_request to open a PR

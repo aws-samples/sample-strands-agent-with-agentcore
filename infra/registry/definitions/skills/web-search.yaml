@@ -1,0 +1,6 @@
+name: web-search
+description: "Search the web using DuckDuckGo for current information, news, and research topics."
+skill_md_path: web-search/SKILL.md
+source: gateway
+tools:
+  - ddg_web_search

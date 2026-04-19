@@ -69,3 +69,34 @@ Follow the **Text -> Map -> Text** sequence. Do NOT call `show_on_map` in parall
 3. **Text**: Explain the results
 
 **Multiple categories**: Use separate maps in sequence — never parallel.
+
+## Output Rules
+
+The map renders visually from the tool result — never echo or paraphrase the raw `map_data` JSON (type, center, zoom, markers, lat/lng) in your text response. Describe places in natural language only (names, ratings, brief notes). The user already sees the map; do not repeat its contents.
+
+## UI Guidance (from tools-config)
+
+**When to Use:**
+- ALWAYS call show_on_map after collecting location data - visual maps are the primary value
+- Use for: search results, directions, comparisons, or any location-based query
+
+**Response Pattern (DO NOT call show_on_map in parallel):**
+1. Text: Introduce what you'll show ("Here are the top restaurants:")
+2. show_on_map: Display the map
+3. Text: Explain the results ("These restaurants are rated 4.5+ stars")
+
+Example:
+- "Let me show you restaurants in Gangnam:" → show_on_map(restaurants) → "All 5 restaurants above have excellent reviews."
+- For multiple categories: Text → Map 1 → Text → Map 2 (sequential, not parallel)
+
+**Map Organization:**
+- Separate maps for different categories (restaurants vs hotels)
+- Show 1-5 most relevant places per map
+
+**Tool Selection:**
+- search_places: text queries | search_nearby_places: coordinates
+- Preserve place_id for details | Infer direction mode from context
+
+**Output Rules:**
+- The map is rendered visually by the UI from the tool result. NEVER echo, paraphrase, or include the raw map_data JSON (coordinates, markers, zoom, type) in your text response.
+- Describe locations in natural language only (names, ratings, brief notes). The user already sees the map — do not repeat its contents.

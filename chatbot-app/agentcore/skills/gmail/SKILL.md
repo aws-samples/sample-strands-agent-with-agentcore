@@ -81,3 +81,29 @@ Common queries:
 - Old unread: `"in:inbox is:unread older_than:14d"`
 - Promotions purge: `"category:promotions older_than:30d"`
 - From specific sender: `"from:noreply@example.com older_than:30d"`
+
+## UI Guidance (from tools-config)
+
+**Gmail Tool Usage:**
+- list_labels: Get all available labels before filtering emails
+- list_emails: Browse emails by label (INBOX, SENT, DRAFT, TRASH, etc.)
+- search_emails: Use Gmail query syntax (from:, to:, subject:, is:unread, has:attachment, after:, before:)
+- read_email: Get full email content with attachments
+- send_email: Send emails with optional CC, BCC, and HTML body
+- draft_email: Create drafts for later editing/sending
+- delete_email: Move to trash (permanent=True for permanent deletion)
+- bulk_delete_emails: Permanently delete multiple emails by query (requires user approval)
+- modify_email: Add/remove labels (mark read: remove UNREAD, archive: remove INBOX, star: add STARRED)
+- get_email_thread: View entire conversation thread
+
+**Bulk Deletion (bulk_delete_emails):**
+- Use for spam cleanup, old email purge, etc.
+- Always provide 'reason' parameter explaining the intent
+- Common queries: "is:spam older_than:7d", "in:inbox is:unread older_than:14d", "category:promotions older_than:30d"
+- WARNING: Permanently deletes emails - cannot be recovered
+
+**Common Operations:**
+- Mark as read: modify_email(id, remove_labels="UNREAD")
+- Archive: modify_email(id, remove_labels="INBOX")
+- Star: modify_email(id, add_labels="STARRED")
+- Mark important: modify_email(id, add_labels="IMPORTANT")

@@ -1,0 +1,18 @@
+name: code-agent
+description: Autonomous coding agent powered by Claude Agent SDK. Implements features, fixes bugs, refactors code, and runs tests.
+agent_card:
+  name: Code Agent
+  description: Autonomous coding agent. Implements features, fixes bugs, refactors code, and runs tests with full file system access.
+  url: https://placeholder
+  version: "1.0.0"
+  protocolVersion: "0.3.0"
+  preferredTransport: JSONRPC
+  capabilities:
+    streaming: true
+  defaultInputModes: ["text/plain"]
+  defaultOutputModes: ["text/plain"]
+  skills:
+    - id: implement_code
+      name: Implement Code
+      description: Implement features, fix bugs, refactor, and write tests across a codebase.
+      tags: [coding, implementation, refactoring, testing]

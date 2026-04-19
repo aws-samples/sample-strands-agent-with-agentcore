@@ -412,43 +412,22 @@ class TestFinanceLambdaTool:
 
 
 # ============================================================
-# Gateway SigV4 Auth Tests
+# Gateway JWT Bearer Auth Tests
 # ============================================================
 
-class TestGatewaySigV4Auth:
-    """Tests for Gateway SigV4 authentication."""
+class TestGatewayJWTAuth:
+    """Tests for Gateway JWT Bearer authentication."""
 
-    def test_sigv4_auth_headers_required(self):
-        """Test that SigV4 auth requires specific headers."""
-        required_headers = [
-            "Authorization",
-            "X-Amz-Date",
-            "X-Amz-Security-Token"  # For temporary credentials
-        ]
+    def test_bearer_auth_header(self):
+        """Test that Bearer token is set in Authorization header."""
+        from agent.gateway.mcp_client import BearerAuth
+        import httpx
 
-        # Mock signed request headers
-        signed_headers = {
-            "Authorization": "AWS4-HMAC-SHA256 Credential=...",
-            "X-Amz-Date": "20240115T120000Z",
-            "X-Amz-Security-Token": "token..."
-        }
-
-        for header in required_headers:
-            assert header in signed_headers
-
-    def test_region_extraction_from_gateway_url(self):
-        """Test extracting region from Gateway URL."""
-        gateway_url = "https://abc123.execute-api.us-west-2.amazonaws.com/prod"
-
-        # Extract region from URL
-        if "execute-api" in gateway_url:
-            parts = gateway_url.split(".")
-            region_idx = parts.index("execute-api") + 1
-            region = parts[region_idx]
-        else:
-            region = "us-west-2"  # Default
-
-        assert region == "us-west-2"
+        auth = BearerAuth("test-jwt-token")
+        request = httpx.Request("POST", "https://gateway.example.com")
+        flow = auth.auth_flow(request)
+        signed = next(flow)
+        assert signed.headers["Authorization"] == "Bearer test-jwt-token"
 
 
 # ============================================================

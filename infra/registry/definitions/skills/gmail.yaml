@@ -1,0 +1,15 @@
+name: gmail
+description: "Read, send, draft, delete, and organize Gmail emails"
+skill_md_path: gmail/SKILL.md
+source: mcp
+tools:
+  - list_labels
+  - list_emails
+  - search_emails
+  - read_email
+  - send_email
+  - draft_email
+  - delete_email
+  - bulk_delete_emails
+  - modify_email
+  - get_email_thread

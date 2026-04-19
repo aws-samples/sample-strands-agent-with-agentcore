@@ -192,7 +192,7 @@ export const CodeAgentDownloadButton = ({ sessionId }: CodeAgentDownloadButtonPr
       const authHeaders: Record<string, string> = {}
       try {
         const session = await fetchAuthSession()
-        const token = session.tokens?.idToken?.toString()
+        const token = session.tokens?.accessToken?.toString()
         if (token) authHeaders['Authorization'] = `Bearer ${token}`
       } catch { /* auth optional */ }
 

@@ -1,0 +1,6 @@
+name: url-fetcher
+description: "Fetch and extract text content from web page URLs."
+skill_md_path: url-fetcher/SKILL.md
+source: gateway
+tools:
+  - fetch_url_content

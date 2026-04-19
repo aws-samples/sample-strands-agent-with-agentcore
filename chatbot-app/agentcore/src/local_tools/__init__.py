@@ -1,20 +1,14 @@
 """Local tools for general-purpose tasks
 
-This package contains tools that don't require specific AWS services:
-- Web search
-- URL fetching and content extraction
-- Data visualization
+Web search and URL fetching now live in the Gateway web-search Lambda
+(agent-blueprint/agentcore-gateway-stack/lambda-functions/web-search).
 """
 
-from .web_search import ddg_web_search
-from .url_fetcher import fetch_url_content
 from .visualization import create_visualization
 from .excalidraw import create_excalidraw_diagram
 from .workspace import workspace_list, workspace_read, workspace_write
 
 __all__ = [
-    'ddg_web_search',
-    'fetch_url_content',
     'create_visualization',
     'create_excalidraw_diagram',
     'workspace_list',

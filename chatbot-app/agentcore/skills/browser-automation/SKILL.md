@@ -38,3 +38,20 @@ Prefer **web search or url_fetcher** for general information lookup, news, or pu
 - Use `text=True` to get full page text content (useful for reading article text)
 - Use `tables=True` to extract structured table data from the page
 - Use `links=True` to get all links on the page (up to 200)
+
+## UI Guidance (from tools-config)
+
+**Tool Selection:**
+- browser_act: UI interactions (click, type, scroll, form fill). Use starting_url to navigate and act in one call.
+- browser_get_page_info: Fast DOM inspection (<300ms). Use url param to navigate first; text/tables/links params for content extraction.
+- browser_manage_tabs: Switch, close, or create tabs.
+- browser_save_screenshot: Save milestone screenshots to workspace for documents.
+
+**browser_act Best Practice:**
+- Combine up to 3 predictable steps: "1. Type 'laptop' in search 2. Click search button 3. Click first result"
+- Use starting_url when opening a fresh page: browser_act(instruction='...', starting_url='https://...')
+- On failure: check the screenshot to see current state, then retry from that point
+
+**browser_get_page_info Best Practice:**
+- Use url param to navigate and inspect in one call: browser_get_page_info(url='https://...', tables=True)
+- Use text=True for full page text, tables=True for table data, links=True for all page links

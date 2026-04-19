@@ -1,0 +1,6 @@
+name: google-web-search
+description: "Google web search with integrated image results"
+skill_md_path: google-web-search/SKILL.md
+source: gateway
+tools:
+  - google_web_search

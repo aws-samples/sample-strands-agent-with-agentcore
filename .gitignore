@@ -146,6 +146,14 @@ cdk.out/
 .cdk.staging/
 cdk.context.json
 
+# Terraform
+.terraform/
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform.lock.hcl
+
 # Deployment files with sensitive info
 deployed-servers.txt
 **/deployed-servers.txt

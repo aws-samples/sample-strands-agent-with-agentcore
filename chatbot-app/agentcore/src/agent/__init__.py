@@ -3,7 +3,7 @@
 Submodules:
     - config/: Constants, prompts, swarm configuration
     - factory/: Session manager and agent factories
-    - gateway/: MCP client and SigV4 authentication
+    - gateway/: MCP client and JWT Bearer authentication
     - processor/: File and multimodal content processing
     - session/: Session managers and message stores
     - hooks/: Agent lifecycle hooks

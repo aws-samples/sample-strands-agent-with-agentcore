@@ -8,7 +8,7 @@ Architecture:
 - Local mode: Direct WebSocket to /voice/stream
 - Cloud mode: AgentCore Runtime routes WebSocket to /ws on container
   - URL format: wss://bedrock-agentcore.<region>.amazonaws.com/runtimes/<arn>/ws
-  - BFF generates SigV4 pre-signed URL for browser authentication
+  - BFF generates JWT-authenticated URL for browser WebSocket connection
 """
 
 import asyncio
@@ -46,44 +46,30 @@ def _get_param_from_request(websocket: WebSocket, header_suffix: str, query_para
     return query_param
 
 
-def _get_enabled_tools_from_request(websocket: WebSocket, query_param: Optional[str]) -> List[str]:
-    """Extract enabled_tools from custom header (cloud) or query param (local)."""
-    tools_json = _get_param_from_request(websocket, "enabled-tools", query_param)
-    if not tools_json:
-        return []
-    try:
-        return json.loads(tools_json)
-    except json.JSONDecodeError as e:
-        logger.warning(f"[Voice] Failed to parse enabled_tools: {e}")
-        return []
-
-
 @router.websocket("/voice/stream")
 async def voice_stream(
     websocket: WebSocket,
     session_id: Optional[str] = Query(None, description="Session ID (from BFF)"),
     user_id: Optional[str] = Query(None, description="User ID (from BFF)"),
-    enabled_tools: Optional[str] = Query(None, description="JSON array of enabled tool IDs"),
     auth_token: Optional[str] = Query(None, description="Cognito JWT for MCP Runtime 3LO"),
 ):
-    """WebSocket endpoint for real-time voice chat"""
+    """WebSocket endpoint for real-time voice chat.
+
+    Tool set is hardcoded (see factory.create_agent "voice" branch).
+    """
     await websocket.accept()
 
-    # Try headers/query params first (works in local mode)
     session_id = _get_param_from_request(websocket, "session-id", session_id)
     user_id = _get_param_from_request(websocket, "user-id", user_id)
-    tools_list = _get_enabled_tools_from_request(websocket, enabled_tools)
     auth_token = _get_param_from_request(websocket, "auth-token", auth_token)
 
-    # Always read config message from client (sent on WebSocket open)
-    # Required for auth_token which is NOT in query params, and also supplements
-    # any missing params in cloud mode (AgentCore Runtime proxy workaround)
+    # Config message supplies auth_token (not in query params) and supplements
+    # missing fields when AgentCore Runtime proxy drops query params.
     try:
         first_msg = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
         if first_msg.get("type") == "config":
             session_id = first_msg.get("session_id") or session_id
             user_id = first_msg.get("user_id") or user_id
-            tools_list = first_msg.get("enabled_tools") or tools_list
             auth_token = first_msg.get("auth_token") or auth_token
             logger.info(f"[Voice] Config received from client message")
     except Exception as e:
@@ -93,17 +79,22 @@ async def voice_stream(
         session_id = str(uuid.uuid4())
         logger.info(f"[Voice] Generated new session ID: {session_id}")
 
-    logger.info(f"[Voice] WebSocket connected: session={session_id}, user={user_id}, tools={len(tools_list)}, auth_token={'present' if auth_token else 'missing'}")
+    logger.info(
+        f"[Voice] WebSocket connected: session={session_id}, user={user_id}, "
+        f"auth_token={'present' if auth_token else 'missing'}"
+    )
 
     voice_agent = None
 
     try:
-        # Create voice agent (but don't start yet)
         VoiceAgentClass = _get_voice_agent_class()
         voice_agent = VoiceAgentClass(
             session_id=session_id,
             user_id=user_id,
-            enabled_tools=tools_list,
+            enabled_tools=[
+                "gateway_ddg_web_search",
+                "gateway_fetch_url_content",
+            ],
             auth_token=auth_token,
         )
 
@@ -282,20 +273,16 @@ async def ws_stream(
     websocket: WebSocket,
     session_id: Optional[str] = Query(None, description="Session ID"),
     user_id: Optional[str] = Query(None, description="User ID"),
-    enabled_tools: Optional[str] = Query(None, description="JSON array of enabled tool IDs"),
     auth_token: Optional[str] = Query(None, description="Cognito JWT for MCP Runtime 3LO"),
 ):
-    """
-    WebSocket endpoint for AgentCore Runtime (cloud mode)
+    """WebSocket endpoint for AgentCore Runtime (cloud mode).
 
-    AgentCore Runtime expects containers to implement WebSocket at /ws path on port 8080.
-    This endpoint mirrors /voice/stream for compatibility.
+    AgentCore Runtime proxies WebSocket to /ws on the container. Mirrors
+    /voice/stream.
     """
-    # Delegate to voice_stream implementation
     await voice_stream(
         websocket=websocket,
         session_id=session_id,
         user_id=user_id,
-        enabled_tools=enabled_tools,
         auth_token=auth_token,
     )

@@ -1,0 +1,7 @@
+name: wikipedia-search
+description: "Wikipedia article search and retrieval"
+skill_md_path: wikipedia-search/SKILL.md
+source: gateway
+tools:
+  - wikipedia_search
+  - wikipedia_get_article

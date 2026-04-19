@@ -106,8 +106,8 @@ new agentcore.CfnGatewayTarget(this, 'YourToolTarget', {
           "name": "YOUR_SCHEMA_NAME",  // Just the schema name
           "description": "Brief tool description"
         }
-      ],
-      "systemPromptGuidance": "Optional: Tell Claude when and how to use this tool. Example: Use this tool when the user asks about..."
+      ]
+      // Usage guidance for Claude lives in the skill's SKILL.md, not here.
     }
   ]
 }
@@ -256,8 +256,7 @@ new agentcore.CfnGatewayTarget(this, 'GetStockPriceTarget', {
     "id": "gateway_get_stock_price",
     "name": "get_stock_price",
     "description": "Get current stock price"
-  }],
-  "systemPromptGuidance": "Use this tool when users ask about current stock prices. Requires a valid stock ticker symbol."
+  }]
 }
 ```
 

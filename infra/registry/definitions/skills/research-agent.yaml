@@ -1,0 +1,4 @@
+name: research-agent
+description: "Multi-source web research with structured markdown reports and chart generation. Delegate when the user asks for a written research report, literature scan, or data-backed summary that needs citations."
+skill_md_path: research-agent/SKILL.md
+source: a2a

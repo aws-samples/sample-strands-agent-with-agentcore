@@ -1,0 +1,660 @@
+#!/bin/bash
+# Terraform deploy orchestrator.
+#
+# Usage:
+#   ./infra/scripts/deploy.sh [plan|apply|destroy|init] [-target=...]
+#
+# - Auto-bootstraps the S3 state bucket + DynamoDB lock table on first run.
+# - Derives backend config from PROJECT_NAME/AWS_REGION/AWS account id.
+# - Re-inits terraform if backend config changed.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INFRA_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+ENV_DIR="$INFRA_DIR/environments/dev"
+BOOTSTRAP_DIR="$INFRA_DIR/bootstrap"
+
+PROJECT_NAME="${PROJECT_NAME:-strands-agent-chatbot}"
+
+ACTION="${1:-apply}"
+shift || true
+
+# ------------------------------------------------------------
+# Interactive region selector (skipped if AWS_REGION is set)
+# ------------------------------------------------------------
+select_region() {
+  # Non-interactive override: when NON_INTERACTIVE=1 and AWS_REGION is set,
+  # skip the picker entirely.
+  if [ "${NON_INTERACTIVE:-0}" = "1" ] && [ -n "${AWS_REGION:-}" ]; then
+    echo ">>> Using AWS_REGION=$AWS_REGION (non-interactive)"
+    return
+  fi
+  echo ""
+  if [ -n "${AWS_REGION:-}" ]; then
+    echo "Current AWS_REGION=$AWS_REGION (press Enter to keep, or choose below to change)"
+  fi
+  echo "Select AWS Region:"
+  echo ""
+  echo "  1) us-east-1      (US East - N. Virginia)"
+  echo "  2) us-west-2      (US West - Oregon)               [default]"
+  echo "  3) ap-northeast-1 (Asia Pacific - Tokyo)"
+  echo "  4) ap-northeast-2 (Asia Pacific - Seoul)"
+  echo "  5) ap-southeast-1 (Asia Pacific - Singapore)"
+  echo "  6) eu-west-1      (Europe - Ireland)"
+  echo "  7) eu-central-1   (Europe - Frankfurt)"
+  echo "  8) Custom region"
+  echo ""
+  read -rp "Select region (1-8) [Enter to keep current]: " choice
+  if [ -z "$choice" ] && [ -n "${AWS_REGION:-}" ]; then
+    :
+  else
+    case "${choice:-2}" in
+      1) AWS_REGION="us-east-1" ;;
+      2) AWS_REGION="us-west-2" ;;
+      3) AWS_REGION="ap-northeast-1" ;;
+      4) AWS_REGION="ap-northeast-2" ;;
+      5) AWS_REGION="ap-southeast-1" ;;
+      6) AWS_REGION="eu-west-1" ;;
+      7) AWS_REGION="eu-central-1" ;;
+      8) read -rp "Enter region code: " AWS_REGION ;;
+      *) echo "Invalid choice"; exit 1 ;;
+    esac
+  fi
+  echo ""
+  echo ">>> Using AWS_REGION=$AWS_REGION"
+}
+
+select_region
+export AWS_REGION
+# AWS SDKs read AWS_DEFAULT_REGION with higher precedence than provider-level
+# region in some paths; pin both to avoid cross-region signing errors.
+export AWS_DEFAULT_REGION="$AWS_REGION"
+export TF_VAR_aws_region="$AWS_REGION"
+
+# State bucket was created in us-east-1 during the first bootstrap run.
+# Region of the state bucket is independent of where resources get deployed,
+# so we pin it here to avoid accidental bucket renames on region changes.
+STATE_REGION="us-east-1"
+
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+STATE_BUCKET="${PROJECT_NAME}-tfstate-${ACCOUNT_ID}-${STATE_REGION}"
+LOCK_TABLE="${PROJECT_NAME}-tflock"
+
+# ------------------------------------------------------------
+# API key prompts (only for apply; skipped if secret already exists)
+# Secrets live in AWS Secrets Manager. When a secret is absent, the
+# corresponding Lambda tool + Gateway target is automatically excluded
+# (see SKIP_* exports below, consumed as Terraform -var flags).
+# ------------------------------------------------------------
+SKIP_TAVILY=false
+SKIP_GOOGLE_SEARCH=false
+SKIP_GOOGLE_MAPS=false
+
+_secret_exists() {
+  aws secretsmanager describe-secret --secret-id "$1" --region "$AWS_REGION" >/dev/null 2>&1
+}
+
+_ensure_secret() {
+  local name="$1" desc="$2" value="$3"
+  aws secretsmanager create-secret \
+    --name "$name" --secret-string "$value" --description "$desc" \
+    --region "$AWS_REGION" >/dev/null 2>&1 \
+  || aws secretsmanager put-secret-value \
+       --secret-id "$name" --secret-string "$value" \
+       --region "$AWS_REGION" >/dev/null 2>&1
+}
+
+prompt_api_keys() {
+  [ "$ACTION" != "apply" ] && return 0
+
+  echo ""
+  echo "============================================"
+  echo "  Optional API keys (press Enter to skip)"
+  echo "  Skipping disables the matching tool."
+  echo "============================================"
+
+  # Tavily
+  if _secret_exists "${PROJECT_NAME}/mcp/tavily-api-key"; then
+    echo ""
+    echo "Tavily          : already configured"
+  else
+    echo ""
+    echo "Tavily (AI web search)  https://tavily.com/"
+    read -rp "  Tavily API Key: " key
+    if [ -n "${key:-}" ]; then
+      _ensure_secret "${PROJECT_NAME}/mcp/tavily-api-key" "Tavily API key" "$key"
+      echo "  -> stored"
+    else
+      SKIP_TAVILY=true
+      echo "  (skipped)"
+    fi
+  fi
+
+  # Google Custom Search
+  if _secret_exists "${PROJECT_NAME}/mcp/google-credentials"; then
+    echo ""
+    echo "Google Search   : already configured"
+  else
+    echo ""
+    echo "Google Custom Search  https://developers.google.com/custom-search/v1/overview"
+    read -rp "  Google API Key: " key
+    if [ -n "${key:-}" ]; then
+      read -rp "  Google Search Engine ID (cx): " cx
+      if [ -n "${cx:-}" ]; then
+        _ensure_secret "${PROJECT_NAME}/mcp/google-credentials" \
+          "Google Custom Search credentials" \
+          "{\"api_key\":\"$key\",\"search_engine_id\":\"$cx\"}"
+        echo "  -> stored"
+      else
+        SKIP_GOOGLE_SEARCH=true
+        echo "  (skipped — engine ID required)"
+      fi
+    else
+      SKIP_GOOGLE_SEARCH=true
+      echo "  (skipped)"
+    fi
+  fi
+
+  # Google Maps
+  if _secret_exists "${PROJECT_NAME}/mcp/google-maps-credentials"; then
+    echo ""
+    echo "Google Maps     : already configured"
+  else
+    echo ""
+    echo "Google Maps Platform  https://console.cloud.google.com/google/maps-apis"
+    echo "  Enable: Places API, Directions API, Geocoding API"
+    read -rp "  Google Maps API Key: " key
+    if [ -n "${key:-}" ]; then
+      _ensure_secret "${PROJECT_NAME}/mcp/google-maps-credentials" \
+        "Google Maps API key" "{\"api_key\":\"$key\"}"
+      echo "  -> stored"
+    else
+      SKIP_GOOGLE_MAPS=true
+      echo "  (skipped)"
+    fi
+  fi
+
+  # Google Maps Embed (frontend key — separate from server-side credentials).
+  # The Embed API requires the key in the browser, so it MUST be a distinct key
+  # restricted to Maps Embed API + your CloudFront domain in Google Cloud Console.
+  if _secret_exists "${PROJECT_NAME}/frontend/google-maps-embed-key"; then
+    echo ""
+    echo "Google Maps Embed: already configured"
+  else
+    echo ""
+    echo "Google Maps Embed API Key (frontend — exposed in browser bundle)"
+    echo "  Create a SEPARATE key in Google Cloud Console, restricted to:"
+    echo "    - API: Maps Embed API only"
+    echo "    - HTTP referrer: your CloudFront domain"
+    read -rp "  Google Maps Embed API Key (Enter to skip): " key
+    if [ -n "${key:-}" ]; then
+      _ensure_secret "${PROJECT_NAME}/frontend/google-maps-embed-key" \
+        "Google Maps Embed API key (frontend-exposed)" "$key"
+      echo "  -> stored"
+    else
+      echo "  (skipped — map will render placeholder)"
+    fi
+  fi
+  echo ""
+}
+
+prompt_api_keys
+
+# ------------------------------------------------------------
+# OAuth credential prompts (Google / GitHub / Notion)
+# Stored as JSON secret per provider; terraform reads them back and creates
+# aws_bedrockagentcore_oauth2_credential_provider resources. Skipping a
+# provider simply skips its resource.
+# ------------------------------------------------------------
+GOOGLE_OAUTH_CLIENT_ID=""
+GOOGLE_OAUTH_CLIENT_SECRET=""
+GITHUB_OAUTH_CLIENT_ID=""
+GITHUB_OAUTH_CLIENT_SECRET=""
+NOTION_OAUTH_CLIENT_ID=""
+NOTION_OAUTH_CLIENT_SECRET=""
+
+_load_oauth_secret() {
+  local secret_name="$1" id_var="$2" secret_var="$3"
+  local json
+  json=$(aws secretsmanager get-secret-value \
+    --secret-id "$secret_name" --region "$AWS_REGION" \
+    --query SecretString --output text 2>/dev/null || echo "")
+  if [ -n "$json" ]; then
+    local cid csec
+    cid=$(echo "$json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('client_id',''))" 2>/dev/null || echo "")
+    csec=$(echo "$json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('client_secret',''))" 2>/dev/null || echo "")
+    eval "$id_var=\"\$cid\""
+    eval "$secret_var=\"\$csec\""
+  fi
+}
+
+prompt_oauth_providers() {
+  [ "$ACTION" != "apply" ] && return 0
+
+  echo ""
+  echo "============================================"
+  echo "  Optional OAuth providers (press Enter to skip)"
+  echo "  Skipping disables the matching 3LO provider."
+  echo "============================================"
+
+  local gname="${PROJECT_NAME}/mcp/google-oauth"
+  if _secret_exists "$gname"; then
+    echo ""
+    echo "Google OAuth   : already configured"
+    _load_oauth_secret "$gname" GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET
+  else
+    echo ""
+    echo "Google OAuth (Gmail/Calendar 3LO)"
+    echo "  https://console.cloud.google.com/apis/credentials"
+    read -rp "  Google OAuth Client ID: " cid
+    if [ -n "${cid:-}" ]; then
+      read -rsp "  Google OAuth Client Secret: " csec; echo ""
+      if [ -n "${csec:-}" ]; then
+        _ensure_secret "$gname" "Google OAuth (3LO)" \
+          "{\"client_id\":\"$cid\",\"client_secret\":\"$csec\"}"
+        GOOGLE_OAUTH_CLIENT_ID="$cid"
+        GOOGLE_OAUTH_CLIENT_SECRET="$csec"
+        echo "  -> stored"
+      fi
+    else
+      echo "  (skipped)"
+    fi
+  fi
+
+  local hname="${PROJECT_NAME}/mcp/github-oauth"
+  if _secret_exists "$hname"; then
+    echo ""
+    echo "GitHub OAuth   : already configured"
+    _load_oauth_secret "$hname" GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET
+  else
+    echo ""
+    echo "GitHub OAuth"
+    echo "  https://github.com/settings/developers"
+    read -rp "  GitHub OAuth Client ID: " cid
+    if [ -n "${cid:-}" ]; then
+      read -rsp "  GitHub OAuth Client Secret: " csec; echo ""
+      if [ -n "${csec:-}" ]; then
+        _ensure_secret "$hname" "GitHub OAuth (3LO)" \
+          "{\"client_id\":\"$cid\",\"client_secret\":\"$csec\"}"
+        GITHUB_OAUTH_CLIENT_ID="$cid"
+        GITHUB_OAUTH_CLIENT_SECRET="$csec"
+        echo "  -> stored"
+      fi
+    else
+      echo "  (skipped)"
+    fi
+  fi
+
+  local nname="${PROJECT_NAME}/mcp/notion-oauth"
+  if _secret_exists "$nname"; then
+    echo ""
+    echo "Notion OAuth   : already configured"
+    _load_oauth_secret "$nname" NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET
+  else
+    echo ""
+    echo "Notion OAuth (Public integration)"
+    echo "  https://www.notion.so/my-integrations"
+    read -rp "  Notion OAuth Client ID: " cid
+    if [ -n "${cid:-}" ]; then
+      read -rsp "  Notion OAuth Client Secret: " csec; echo ""
+      if [ -n "${csec:-}" ]; then
+        _ensure_secret "$nname" "Notion OAuth (3LO)" \
+          "{\"client_id\":\"$cid\",\"client_secret\":\"$csec\"}"
+        NOTION_OAUTH_CLIENT_ID="$cid"
+        NOTION_OAUTH_CLIENT_SECRET="$csec"
+        echo "  -> stored"
+      fi
+    else
+      echo "  (skipped)"
+    fi
+  fi
+  echo ""
+}
+
+prompt_oauth_providers
+export TF_VAR_google_oauth_client_id="$GOOGLE_OAUTH_CLIENT_ID"
+export TF_VAR_google_oauth_client_secret="$GOOGLE_OAUTH_CLIENT_SECRET"
+export TF_VAR_github_oauth_client_id="$GITHUB_OAUTH_CLIENT_ID"
+export TF_VAR_github_oauth_client_secret="$GITHUB_OAUTH_CLIENT_SECRET"
+export TF_VAR_notion_oauth_client_id="$NOTION_OAUTH_CLIENT_ID"
+export TF_VAR_notion_oauth_client_secret="$NOTION_OAUTH_CLIENT_SECRET"
+
+# ------------------------------------------------------------
+# Nova Act Workflow (browser automation)
+# ------------------------------------------------------------
+# Resolved after the shared deploy venv is set up below.
+NOVA_ACT_WORKFLOW_NAME="${NOVA_ACT_WORKFLOW_NAME:-}"
+
+# ------------------------------------------------------------
+# Bootstrap state backend (one-time)
+# ------------------------------------------------------------
+# ------------------------------------------------------------
+# Registry Lambda build (bundles boto3 because the service is new and the
+# Lambda Python runtime boto3 may lag). Rebuilds only when index.py changes.
+# ------------------------------------------------------------
+# Shared isolated venv for deploy-time Python work (Nova Act + Lambda build).
+# Avoids conflicts with the user's global site-packages (nova-act, google-adk, ...).
+DEPLOY_VENV="$INFRA_DIR/.deploy-venv"
+ensure_deploy_venv() {
+  if [ ! -x "$DEPLOY_VENV/bin/python" ]; then
+    echo ">>> Setting up isolated deploy venv (boto3 >= 1.42.89)..."
+    python3 -m venv "$DEPLOY_VENV"
+    "$DEPLOY_VENV/bin/pip" install --quiet --upgrade pip
+    "$DEPLOY_VENV/bin/pip" install --quiet "boto3>=1.42.89"
+  fi
+}
+
+resolve_nova_act_workflow() {
+  [ -n "${NOVA_ACT_WORKFLOW_NAME:-}" ] && return 0
+  ensure_deploy_venv
+  local default_name
+  default_name="$(echo "$PROJECT_NAME" | tr '-' '_')_dev_workflow"
+  NOVA_ACT_WORKFLOW_NAME="$("$DEPLOY_VENV/bin/python" - "$default_name" <<'PY' 2>/tmp/nova-act-deploy.log || true
+import sys, boto3
+name = sys.argv[1]
+try:
+    c = boto3.client("nova-act", region_name="us-east-1")
+except Exception as e:
+    sys.stderr.write(f"boto3 nova-act client unavailable: {e}\n"); sys.exit(0)
+# Response: { workflowDefinitionSummaries: [{ workflowDefinitionName, status, ... }] }
+existing = []
+try:
+    for page in c.get_paginator("list_workflow_definitions").paginate():
+        existing.extend(page.get("workflowDefinitionSummaries", []))
+except Exception as e:
+    sys.stderr.write(f"list_workflow_definitions failed: {e}\n")
+
+# Prefer exact match on our default name; otherwise use the first ACTIVE one.
+match = next((w for w in existing if w.get("workflowDefinitionName") == name), None)
+if match:
+    print(match["workflowDefinitionName"], end=""); sys.exit(0)
+active = next((w for w in existing if w.get("status") == "ACTIVE"), None)
+if active:
+    print(active["workflowDefinitionName"], end=""); sys.exit(0)
+
+try:
+    c.create_workflow_definition(name=name)
+    print(name, end="")
+except c.exceptions.ConflictException:
+    # Race or stale list; treat as success.
+    print(name, end="")
+except Exception as e:
+    sys.stderr.write(f"create_workflow_definition failed: {e}\n")
+PY
+)"
+  if [ -n "$NOVA_ACT_WORKFLOW_NAME" ]; then
+    echo "Nova Act workflow: $NOVA_ACT_WORKFLOW_NAME"
+  else
+    echo "WARNING: Could not resolve or create a Nova Act workflow."
+    echo "  See /tmp/nova-act-deploy.log for details."
+  fi
+}
+
+build_registry_lambda() {
+  local dir="$INFRA_DIR/modules/registry/lambda"
+  local zip="$dir/registry-manager.zip"
+  local src="$dir/index.py"
+  if [ -f "$zip" ] && [ "$src" -ot "$zip" ]; then
+    return 0
+  fi
+  ensure_deploy_venv
+  echo ">>> Building registry-manager.zip..."
+  (
+    cd "$dir"
+    rm -rf build
+    mkdir build
+    "$DEPLOY_VENV/bin/pip" install --quiet \
+      --target build \
+      --python-version 3.14 \
+      --platform manylinux2014_x86_64 \
+      --only-binary=:all: \
+      --no-warn-conflicts \
+      "boto3>=1.42.89"
+    cp index.py build/
+    (cd build && zip -qr ../registry-manager.zip .)
+    rm -rf build
+  )
+}
+
+ensure_backend() {
+  if aws s3api head-bucket --bucket "$STATE_BUCKET" --region "$STATE_REGION" 2>/dev/null; then
+    return 0
+  fi
+
+  echo ">>> Bootstrapping Terraform state backend (bucket + lock table in $STATE_REGION)..."
+  (
+    cd "$BOOTSTRAP_DIR"
+    terraform init -input=false
+    terraform apply -auto-approve \
+      -var="project_name=${PROJECT_NAME}" \
+      -var="aws_region=${STATE_REGION}"
+  )
+}
+
+# ------------------------------------------------------------
+# terraform init with injected backend config
+# ------------------------------------------------------------
+tf_init() {
+  cd "$ENV_DIR"
+  terraform init -input=false -reconfigure \
+    -backend-config="bucket=${STATE_BUCKET}" \
+    -backend-config="dynamodb_table=${LOCK_TABLE}" \
+    -backend-config="region=${STATE_REGION}"
+}
+
+tf_init_if_needed() {
+  cd "$ENV_DIR"
+  if [ ! -d ".terraform" ] || [ ! -f ".terraform/terraform.tfstate" ]; then
+    tf_init
+    return
+  fi
+  # Re-run init to pick up newly added modules.
+  terraform init -input=false -upgrade=false >/dev/null 2>&1 || tf_init
+}
+
+# ------------------------------------------------------------
+# Clean up ROLLBACK_COMPLETE CFN stacks so the next apply isn't blocked.
+# CloudFormation refuses to update stacks stuck in ROLLBACK_COMPLETE — they
+# must be deleted first. Scoped to this project's registry stacks.
+# Also deletes any orphan AgentCore registry records from failed creates.
+# ------------------------------------------------------------
+clean_failed_registry_stacks() {
+  cd "$ENV_DIR"
+  local prefix="${PROJECT_NAME}-dev-"
+  # shellcheck disable=SC2016
+  local stacks
+  stacks=$(aws cloudformation list-stacks \
+    --region "$AWS_REGION" \
+    --stack-status-filter ROLLBACK_COMPLETE CREATE_FAILED DELETE_FAILED UPDATE_ROLLBACK_FAILED \
+    --query "StackSummaries[?starts_with(StackName, \`${prefix}\`)].StackName" \
+    --output text 2>/dev/null || true)
+  [ -z "$stacks" ] && return 0
+  echo ">>> Cleaning up failed CFN stacks: $stacks"
+  for s in $stacks; do
+    aws cloudformation delete-stack --stack-name "$s" --region "$AWS_REGION" 2>/dev/null || true
+    # Drop the tf state entry so the next apply recreates cleanly.
+    case "$s" in
+      ${prefix}registry)
+        terraform state rm module.registry.aws_cloudformation_stack.registry 2>/dev/null || true
+        ;;
+      ${prefix}record-*)
+        local key="${s#${prefix}record-}"
+        terraform state rm "module.registry.aws_cloudformation_stack.records[\"${key}\"]" 2>/dev/null || true
+        ;;
+    esac
+  done
+  # Orphan registries (CREATE_FAILED ones the service leaves behind).
+  "$DEPLOY_VENV/bin/python" - "$PROJECT_NAME" <<'PY' 2>/dev/null || true
+import sys, boto3, os
+project = sys.argv[1]
+c = boto3.client("bedrock-agentcore-control", region_name=os.environ["AWS_REGION"])
+try:
+    for r in c.list_registries().get("registries", []):
+        if r.get("name", "").startswith(f"{project}-") and "FAILED" in r.get("status", ""):
+            try:
+                c.delete_registry(registryId=r["registryId"])
+                print(f"Deleted orphan registry: {r['registryId']}")
+            except Exception as e:
+                print(f"Could not delete {r['registryId']}: {e}")
+except Exception as e:
+    print(f"list_registries failed: {e}")
+PY
+}
+
+# ------------------------------------------------------------
+# Reconcile Registry record descriptor_type drift.
+# Registry API rejects UpdateRegistryRecord when descriptor_type changes
+# ("X descriptor type can't have other descriptors"). When a YAML moves
+# between mcp/, a2a/, skills/, the next apply hits this. Detect drift by
+# comparing the existing stack's DescriptorType property with what the YAML
+# layout implies, and delete the stack (triggers CFN Delete -> Lambda
+# DeleteRegistryRecord) so terraform recreates with the new type.
+# ------------------------------------------------------------
+reconcile_registry_record_drift() {
+  cd "$ENV_DIR"
+  local prefix="${PROJECT_NAME}-dev-record-"
+  local defs="$INFRA_DIR/registry/definitions"
+
+  # bash 3.2 compatible: newline-separated "key=type" pairs instead of associative array.
+  local want=""
+  for f in "$defs"/mcp/*.yaml; do
+    [ -f "$f" ] || continue
+    want="${want}$(basename "$f" .yaml)-mcp-server=MCP"$'\n'
+  done
+  for f in "$defs"/a2a/*.yaml; do
+    [ -f "$f" ] || continue
+    want="${want}$(basename "$f" .yaml)=A2A"$'\n'
+  done
+  for f in "$defs"/skills/*.yaml; do
+    [ -f "$f" ] || continue
+    local k
+    k="$(basename "$f" .yaml)"
+    # a2a takes precedence — matches registry/main.tf _skill_records filter.
+    if printf '%s' "$want" | grep -qx "${k}=A2A"; then continue; fi
+    want="${want}${k}=AGENT_SKILLS"$'\n'
+  done
+
+  _lookup_desired() {
+    printf '%s' "$want" | awk -F= -v k="$1" '$1==k {print $2; exit}'
+  }
+
+  local stacks
+  stacks=$(aws cloudformation list-stacks \
+    --region "$AWS_REGION" \
+    --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE \
+    --query "StackSummaries[?starts_with(StackName, \`${prefix}\`)].StackName" \
+    --output text 2>/dev/null || true)
+  [ -z "$stacks" ] && return 0
+
+  for s in $stacks; do
+    local key="${s#${prefix}}"
+    local desired
+    desired="$(_lookup_desired "$key")"
+    [ -z "$desired" ] && continue
+
+    local current
+    current=$(aws cloudformation get-template \
+      --stack-name "$s" --region "$AWS_REGION" \
+      --query 'TemplateBody.Resources.Record.Properties.DescriptorType' \
+      --output text 2>/dev/null || echo "")
+
+    if [ -n "$current" ] && [ "$current" != "None" ] && [ "$current" != "$desired" ]; then
+      echo ">>> Registry record '$key': descriptor drift ($current -> $desired), recreating"
+      aws cloudformation delete-stack --stack-name "$s" --region "$AWS_REGION" 2>/dev/null || true
+      if ! aws cloudformation wait stack-delete-complete --stack-name "$s" --region "$AWS_REGION" 2>/dev/null; then
+        echo "  warn: delete wait failed for $s — check Lambda logs"
+      fi
+      terraform state rm "module.registry.aws_cloudformation_stack.records[\"${key}\"]" 2>/dev/null || true
+    fi
+  done
+}
+
+# ------------------------------------------------------------
+# Import pre-existing OAuth2 credential providers into state.
+# Runs before apply. AgentCore keeps providers account-wide, so a partial
+# destroy (or a tool deleting them out-of-band) can leave state empty while
+# AWS still holds them — causing "already exists" on the next apply.
+# ------------------------------------------------------------
+import_orphan_oauth_providers() {
+  cd "$ENV_DIR"
+  local name addr enabled
+  for p in google github notion; do
+    case "$p" in
+      google) name="google-oauth-provider"; enabled="$GOOGLE_OAUTH_CLIENT_ID" ;;
+      github) name="github-oauth-provider"; enabled="$GITHUB_OAUTH_CLIENT_ID" ;;
+      notion) name="notion-oauth-provider"; enabled="$NOTION_OAUTH_CLIENT_ID" ;;
+    esac
+    [ -z "$enabled" ] && continue
+    addr="module.oauth_providers.aws_bedrockagentcore_oauth2_credential_provider.${p}[0]"
+    # Already tracked — nothing to do.
+    if terraform state list 2>/dev/null | grep -qx "$addr"; then
+      continue
+    fi
+    # Best-effort probe: attempt import; ignore failure (resource may not exist).
+    if terraform import -var="aws_region=${AWS_REGION}" \
+        -var="enable_tavily=$([ "$SKIP_TAVILY" = true ] && echo false || echo true)" \
+        -var="enable_google_search=$([ "$SKIP_GOOGLE_SEARCH" = true ] && echo false || echo true)" \
+        -var="enable_google_maps=$([ "$SKIP_GOOGLE_MAPS" = true ] && echo false || echo true)" \
+        "$addr" "$name" >/dev/null 2>&1; then
+      echo ">>> Imported existing OAuth provider: $name"
+    fi
+  done
+}
+
+# ------------------------------------------------------------
+# Dispatch
+# ------------------------------------------------------------
+ensure_backend
+ensure_deploy_venv
+export DEPLOY_VENV_PYTHON="$DEPLOY_VENV/bin/python"
+resolve_nova_act_workflow
+export TF_VAR_nova_act_workflow_name="${NOVA_ACT_WORKFLOW_NAME:-}"
+build_registry_lambda
+
+# Sync registry YAMLs into the orchestrator build context so they end up
+# inside the runtime container image. See Dockerfile / registry loader.
+ORCH_DEFS_DEST="$INFRA_DIR/../chatbot-app/agentcore/registry_definitions"
+rm -rf "$ORCH_DEFS_DEST"
+mkdir -p "$ORCH_DEFS_DEST"
+cp -R "$INFRA_DIR/registry/definitions/." "$ORCH_DEFS_DEST/"
+
+case "$ACTION" in
+  init)
+    tf_init
+    ;;
+  plan)
+    tf_init_if_needed
+    cd "$ENV_DIR"
+    terraform plan -var="aws_region=${AWS_REGION}" \
+      -var="enable_tavily=$([ "$SKIP_TAVILY" = true ] && echo false || echo true)" \
+      -var="enable_google_search=$([ "$SKIP_GOOGLE_SEARCH" = true ] && echo false || echo true)" \
+      -var="enable_google_maps=$([ "$SKIP_GOOGLE_MAPS" = true ] && echo false || echo true)" \
+      "$@"
+    ;;
+  apply)
+    tf_init_if_needed
+    import_orphan_oauth_providers
+    clean_failed_registry_stacks
+    reconcile_registry_record_drift
+    cd "$ENV_DIR"
+    terraform apply -auto-approve -var="aws_region=${AWS_REGION}" \
+      -var="enable_tavily=$([ "$SKIP_TAVILY" = true ] && echo false || echo true)" \
+      -var="enable_google_search=$([ "$SKIP_GOOGLE_SEARCH" = true ] && echo false || echo true)" \
+      -var="enable_google_maps=$([ "$SKIP_GOOGLE_MAPS" = true ] && echo false || echo true)" \
+      "$@"
+    ;;
+  destroy)
+    tf_init_if_needed
+    cd "$ENV_DIR"
+    terraform destroy -auto-approve -var="aws_region=${AWS_REGION}" \
+      -var="enable_tavily=true" \
+      -var="enable_google_search=true" \
+      -var="enable_google_maps=true" \
+      "$@"
+    ;;
+  *)
+    echo "Unknown action: $ACTION (expected init|plan|apply|destroy)"
+    exit 1
+    ;;
+esac

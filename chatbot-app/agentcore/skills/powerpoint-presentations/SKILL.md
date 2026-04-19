@@ -286,3 +286,45 @@ Get slide screenshots for visual inspection.
 |-----------|------|----------|-------------|
 | `presentation_name` | str | Yes | Presentation to preview |
 | `slide_numbers` | list[int] | Yes | **1-based** slide numbers (not 0-based) |
+
+## UI Guidance (from tools-config)
+
+**Creating New Presentations:**
+- Use get_slide_design_reference() first to get design guidelines and color palettes
+- create_presentation slides format: [{"custom_code": "let slide = pres.addSlide(); slide.addText(...)"}]
+- Each custom_code snippet has `pres` in scope; create slides with pres.addSlide()
+- Color format: 6-digit hex WITHOUT '#' (e.g. '1E2761', not '#1E2761')
+
+**Editing Existing Presentations:**
+- Operations: set_text, replace_text, replace_image
+- Batch all edits in 1 call (parallel calls = data loss)
+- Output name must differ from source
+- preview_presentation_slides first to check layout
+
+**Design Philosophy (MANDATORY for new presentations):**
+- CRITICAL: Choose ONE palette for the ENTIRE presentation. All slides must use the same primary and accent colors. Do NOT mix palettes across slides.
+- Bold dominant background colors (60-70% slide coverage). NEVER use plain white backgrounds.
+- Available palettes: Midnight Executive (#1E2761/#408EC6), Teal Trust (#0A1A2A/#028090), Forest & Moss (#2C5F2D/#97BC62), Berry & Cream (#ECE2D0/#6D2E46), Coral Energy (#1A1A2E/#FF6F61), Ocean Gradient (#065A82/#1B9AAA), Charcoal Minimal (#1C1C1E/#E8E8E8), Cherry Bold (#150E11/#990011), Sage Calm (#2D3A2D/#8FB96A)
+- Dark slides for emphasis, lighter tints of the SAME palette for data slides.
+- Every slide must have visual elements (shapes, accent bars, icon circles) — no text-only slides.
+
+**Typography:**
+- Titles: 36-44pt bold (Georgia or Arial Black). Body: 14-16pt (Calibri). Stats: 48-120pt bold.
+- Font pairings: Georgia+Calibri (classic), Arial Black+Arial (modern), Calibri Bold+Calibri Light (corporate)
+- Left-align body text. Center only titles and stats.
+
+**Spacing:**
+- 0.5"+ margins from edges. 0.3-0.5" gaps between elements. 0.5"+ breathing room below titles.
+
+**Anti-Patterns (AVOID):**
+- Plain bullets on white background
+- Default PowerPoint blue (#4472C4)
+- Accent lines directly under titles
+- Text-only slides without visual elements
+- More than 4 bullet points per slide
+
+**QA:** Always use preview_presentation_slides after creation to verify appearance.
+
+**Rules:**
+- Names: letters, numbers, hyphens only
+- Indices: 0-based

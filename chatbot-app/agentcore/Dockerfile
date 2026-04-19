@@ -32,13 +32,17 @@ RUN pip install --no-cache-dir --no-deps nova-act==3.1.263
 COPY src/ ./src/
 COPY skills/ ./skills/
 
+# Registry YAML definitions — synced from infra/registry/definitions/ by
+# deploy.sh before each orchestrator build. This is the single source of truth
+# for MCP tool schemas, A2A agent cards, and skill catalogs.
+COPY registry_definitions/ ./registry_definitions/
+
 # Expose port (AgentCore Runtime will map this)
 EXPOSE 8080
 
 # Health check endpoint for AgentCore Runtime
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=5 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"
 
-# Run with OpenTelemetry auto-instrumentation (metrics disabled to suppress EMF logs)
-ENV OTEL_METRICS_EXPORTER=none
+# Run with OpenTelemetry auto-instrumentation
 CMD ["opentelemetry-instrument", "uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080", "--log-level", "info"]

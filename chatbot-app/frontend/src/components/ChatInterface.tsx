@@ -11,7 +11,6 @@ import { ChatMessage } from "@/components/chat/ChatMessage"
 import { AssistantTurn } from "@/components/chat/AssistantTurn"
 import { Greeting, PromptSuggestions } from "@/components/Greeting"
 import { ChatSidebar } from "@/components/ChatSidebar"
-import { ToolsDropdown } from "@/components/ToolsDropdown"
 import { InterruptApprovalModal } from "@/components/InterruptApprovalModal"
 import { SwarmProgress } from "@/components/SwarmProgress"
 import { Canvas } from "@/components/canvas"
@@ -170,10 +169,6 @@ export function ChatInterface() {
     codeProgress,
     respondToInterrupt,
     currentInterrupt,
-    swarmEnabled,
-    toggleSwarm: toggleSwarmHook,
-    skillsEnabled,
-    toggleSkills: toggleSkillsHook,
     swarmProgress,
     addVoiceToolExecution,
     updateVoiceMessage,
@@ -690,103 +685,33 @@ export function ChatInterface() {
     }
   }, [researchData, researchArtifactId, closeCanvas, addArtifact, sessionId, extractResearchContent, openArtifact])
 
-  // Toggle Research Agent
+  // Toggle Research Agent — when enabled, gate all other tools off so only
+  // research runs. When disabled, restore default tool set.
   const toggleResearchAgent = useCallback(async () => {
     const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
-    if (researchTool) {
-      const willBeEnabled = !researchTool.enabled
+    if (!researchTool) return
+    const willBeEnabled = !researchTool.enabled
 
-      // If enabling research, disable all other tools, swarm, and skills
-      if (willBeEnabled) {
-        toggleSwarmHook(false)
-        toggleSkillsHook(false)
-
-        // Disable all tools except research agent
-        const enabledTools = availableTools.filter(tool =>
-          tool.id !== 'agentcore_research-agent' && tool.enabled
-        )
-
-        for (const tool of enabledTools) {
-          const isDynamic = (tool as any).isDynamic === true
-          const nestedTools = (tool as any).tools || []
-
-          if (isDynamic && nestedTools.length > 0) {
-            for (const nestedTool of nestedTools) {
-              if (nestedTool.enabled) {
-                await toggleTool(nestedTool.id)
-              }
-            }
-          } else {
-            await toggleTool(tool.id)
-          }
-        }
-      }
-
-      await toggleTool(researchTool.id)
-      setIsResearchEnabled(willBeEnabled)
-    }
-  }, [availableTools, toggleTool, toggleSwarmHook, toggleSkillsHook])
-
-  // Toggle Skills Mode
-  const toggleSkillsMode = useCallback(async () => {
-    const willBeEnabled = !skillsEnabled
     if (willBeEnabled) {
-      // Disable swarm
-      toggleSwarmHook(false)
-
-      // Disable research
-      if (isResearchEnabled) {
-        const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
-        if (researchTool && researchTool.enabled) {
-          await toggleTool('agentcore_research-agent')
-          setIsResearchEnabled(false)
-        }
-      }
-
-      // Disable all enabled tools (except research agent which was already handled above)
       const enabledTools = availableTools.filter(tool =>
-        tool.enabled && tool.id !== 'agentcore_research-agent'
+        tool.id !== 'agentcore_research-agent' && tool.enabled
       )
       for (const tool of enabledTools) {
         const isDynamic = (tool as any).isDynamic === true
         const nestedTools = (tool as any).tools || []
-
         if (isDynamic && nestedTools.length > 0) {
           for (const nestedTool of nestedTools) {
-            if (nestedTool.enabled) {
-              await toggleTool(nestedTool.id)
-            }
+            if (nestedTool.enabled) await toggleTool(nestedTool.id)
           }
         } else {
           await toggleTool(tool.id)
         }
       }
     }
-    toggleSkillsHook(willBeEnabled)
-  }, [skillsEnabled, isResearchEnabled, availableTools, toggleTool, toggleSwarmHook, toggleSkillsHook])
 
-  // Handle tool toggle - disable research/skills if a non-research tool is toggled
-  const handleToggleTool = useCallback(async (toolId: string) => {
-    // If research is enabled and we're toggling a non-research tool, disable research
-    if (isResearchEnabled && toolId !== 'agentcore_research-agent') {
-      const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
-      if (researchTool && researchTool.enabled) {
-        await toggleTool('agentcore_research-agent')
-        setIsResearchEnabled(false)
-      }
-    }
-    // Disable skills mode when manually toggling tools
-    if (skillsEnabled) {
-      toggleSkillsHook(false)
-    }
-    await toggleTool(toolId)
-  }, [toggleTool, isResearchEnabled, skillsEnabled, availableTools, toggleSkillsHook])
-
-  // Toggle Swarm (using hook from useChat)
-  const toggleSwarm = useCallback((enabled?: boolean) => {
-    const newValue = enabled !== undefined ? enabled : !swarmEnabled
-    toggleSwarmHook(newValue)
-  }, [toggleSwarmHook, swarmEnabled])
+    await toggleTool(researchTool.id)
+    setIsResearchEnabled(willBeEnabled)
+  }, [availableTools, toggleTool])
 
   // Export conversation to text file
   const exportConversation = useCallback(() => {
@@ -1045,7 +970,7 @@ export function ChatInterface() {
 
         {/* Top Controls - Show when chat started */}
         {groupedMessages.length > 0 && (
-          <div className="sticky top-0 z-10 flex items-center justify-between p-4 bg-background/70 backdrop-blur-md border-b border-border/30 shadow-sm">
+          <div className="sticky top-0 z-10 flex items-center justify-between p-4 bg-background/80 backdrop-blur-xl border-b border-border/20 shadow-[0_1px_3px_rgba(0,0,0,0.04),0_4px_12px_rgba(0,0,0,0.03)]">
             <div className="flex items-center gap-3">
               <SidebarTrigger />
             </div>
@@ -1225,7 +1150,7 @@ export function ChatInterface() {
         {/* Greeting - Show when chat not started (not during loading) */}
         {groupedMessages.length === 0 && !isLoadingMessages && (
           <div className="mx-auto px-4 w-full md:max-w-4xl">
-            <div className="flex flex-col items-center justify-center mb-16 animate-fade-in">
+            <div className="flex flex-col items-center justify-center mb-12 animate-fade-in">
               <Greeting />
             </div>
           </div>
@@ -1238,9 +1163,7 @@ export function ChatInterface() {
           agentStatus={isCompacting ? 'compacting' : agentStatus}
           isVoiceActive={isVoiceActive}
           isVoiceSupported={isVoiceSupported}
-          swarmEnabled={swarmEnabled}
           isResearchEnabled={isResearchEnabled}
-          isSkillsEnabled={skillsEnabled}
           isCanvasOpen={isCanvasOpen}
           availableTools={availableTools}
           sessionId={sessionId}
@@ -1248,11 +1171,8 @@ export function ChatInterface() {
           onModelChange={updateModelConfig}
           onSendMessage={handleSendMessage}
           onStopGeneration={stopGeneration}
-          onToggleTool={handleToggleTool}
           onSetExclusiveTools={setExclusiveTools}
-          onToggleSwarm={toggleSwarm}
           onToggleResearch={toggleResearchAgent}
-          onToggleSkills={toggleSkillsMode}
           onConnectVoice={connectVoice}
           onDisconnectVoice={disconnectVoice}
           onExportConversation={exportConversation}
@@ -1264,7 +1184,7 @@ export function ChatInterface() {
 
         {/* Prompt Suggestions - Show only on empty chat */}
         {groupedMessages.length === 0 && !isLoadingMessages && (
-          <div className="mx-auto px-4 w-full md:max-w-4xl pb-4">
+          <div className="mx-auto px-4 w-full md:max-w-4xl pb-4 -mt-2">
             <PromptSuggestions onSelectPrompt={(prompt) => handleSendMessage(prompt, [])} />
           </div>
         )}

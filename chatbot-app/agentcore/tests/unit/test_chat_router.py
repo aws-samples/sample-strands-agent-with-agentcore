@@ -78,8 +78,8 @@ class TestAgentFactory:
     """Tests for the agent factory integration."""
 
     @patch('routers.chat.create_agent')
-    def test_creates_chat_agent_by_default(self, mock_factory):
-        """Test that normal mode creates ChatAgent."""
+    def test_defaults_to_skill_mode(self, mock_factory):
+        """With no request_type in state, the router should default to 'skill'."""
         from routers.chat import router
         from fastapi import FastAPI
 
@@ -100,32 +100,8 @@ class TestAgentFactory:
 
         mock_factory.assert_called_once()
         call_kwargs = mock_factory.call_args.kwargs
-        assert call_kwargs['request_type'] == "normal"
+        assert call_kwargs['request_type'] == "skill"
         assert call_kwargs['session_id'] == "test-session-123"
-
-    @patch('routers.chat.create_agent')
-    def test_creates_swarm_agent_for_swarm_mode(self, mock_factory):
-        """Test that swarm mode creates SwarmAgent."""
-        from routers.chat import router
-        from fastapi import FastAPI
-
-        mock_agent = MagicMock()
-        async def mock_stream(*args, **kwargs):
-            yield 'data: {"type": "complete"}\n\n'
-        mock_agent.stream_async = mock_stream
-        mock_factory.return_value = mock_agent
-
-        app = FastAPI()
-        app.include_router(router)
-        client = TestClient(app)
-
-        client.post(
-            "/invocations",
-            json=_agui_payload(request_type="swarm")
-        )
-
-        call_kwargs = mock_factory.call_args.kwargs
-        assert call_kwargs['request_type'] == "swarm"
 
 
 # ============================================================

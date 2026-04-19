@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { signIn, signUp, confirmSignUp, resetPassword, confirmResetPassword } from 'aws-amplify/auth'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -132,16 +131,24 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   // Sign In View
   if (view === 'signIn') {
     return (
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Welcome Back</CardTitle>
-          <CardDescription>Sign in to your AI assistant</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-5 h-12 w-12 rounded-xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/20">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Welcome back</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">Sign in to continue</p>
+        </div>
+
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
           <form onSubmit={handleSignIn}>
             <div className="flex flex-col gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</Label>
                 <Input
                   id="email"
                   type="email"
@@ -149,15 +156,16 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              <div className="grid gap-2">
+              <div className="grid gap-1.5">
                 <div className="flex items-center">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Password</Label>
                   <button
                     type="button"
                     onClick={() => { resetForm(); setView('forgotPassword') }}
-                    className="ml-auto text-sm text-muted-foreground hover:underline"
+                    className="ml-auto text-xs text-muted-foreground hover:text-primary transition-colors"
                   >
                     Forgot password?
                   </button>
@@ -168,43 +176,61 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Signing in...' : 'Sign In'}
+              {error && (
+                <div className="text-sm px-3 py-2.5 rounded-lg bg-destructive/10 text-destructive border border-destructive/20">
+                  {error}
+                </div>
+              )}
+              <Button type="submit" className="w-full h-11 mt-1 gradient-primary text-white font-medium shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all" disabled={loading}>
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Signing in...
+                  </span>
+                ) : 'Sign In'}
               </Button>
             </div>
           </form>
-        </CardContent>
-        <CardFooter className="flex-col gap-2">
-          <div className="text-sm text-muted-foreground">
-            Don&apos;t have an account?{' '}
-            <button
-              onClick={() => { resetForm(); setView('signUp') }}
-              className="text-primary hover:underline"
-            >
-              Sign up
-            </button>
-          </div>
-        </CardFooter>
-      </Card>
+        </div>
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
+          Don&apos;t have an account?{' '}
+          <button
+            onClick={() => { resetForm(); setView('signUp') }}
+            className="text-primary font-medium hover:underline transition-colors"
+          >
+            Sign up
+          </button>
+        </p>
+      </div>
     )
   }
 
   // Sign Up View
   if (view === 'signUp') {
     return (
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Create Account</CardTitle>
-          <CardDescription>Enter your details to get started</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-5 h-12 w-12 rounded-xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/20">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <line x1="19" y1="8" x2="19" y2="14" />
+              <line x1="22" y1="11" x2="16" y2="11" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Create account</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">Enter your details to get started</p>
+        </div>
+
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
           <form onSubmit={handleSignUp}>
             <div className="flex flex-col gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</Label>
                 <Input
                   id="email"
                   type="email"
@@ -212,65 +238,81 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="password">Password</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="password" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Password</Label>
                 <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="confirmPassword">Confirm Password</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="confirmPassword" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Confirm Password</Label>
                 <Input
                   id="confirmPassword"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Creating account...' : 'Sign Up'}
+              {error && (
+                <div className="text-sm px-3 py-2.5 rounded-lg bg-destructive/10 text-destructive border border-destructive/20">
+                  {error}
+                </div>
+              )}
+              <Button type="submit" className="w-full h-11 mt-1 gradient-primary text-white font-medium shadow-md shadow-primary/20 hover:shadow-lg hover:shadow-primary/30 transition-all" disabled={loading}>
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Creating account...
+                  </span>
+                ) : 'Sign Up'}
               </Button>
             </div>
           </form>
-        </CardContent>
-        <CardFooter className="flex-col gap-2">
-          <div className="text-sm text-muted-foreground">
-            Already have an account?{' '}
-            <button
-              onClick={() => { resetForm(); setView('signIn') }}
-              className="text-primary hover:underline"
-            >
-              Sign in
-            </button>
-          </div>
-        </CardFooter>
-      </Card>
+        </div>
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
+          Already have an account?{' '}
+          <button
+            onClick={() => { resetForm(); setView('signIn') }}
+            className="text-primary font-medium hover:underline transition-colors"
+          >
+            Sign in
+          </button>
+        </p>
+      </div>
     )
   }
 
   // Confirm Sign Up View (Email Verification)
   if (view === 'confirmSignUp') {
     return (
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Verify Email</CardTitle>
-          <CardDescription>
-            We sent a code to {email}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-5 h-12 w-12 rounded-xl bg-secondary/10 flex items-center justify-center">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
+              <rect width="20" height="16" x="2" y="4" rx="2" />
+              <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Verify email</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">We sent a code to {email}</p>
+        </div>
+
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
           <form onSubmit={handleConfirmSignUp}>
             <div className="flex flex-col gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="code">Verification Code</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="code" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Verification Code</Label>
                 <Input
                   id="code"
                   type="text"
@@ -278,40 +320,58 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   required
+                  className="h-11 text-center text-lg tracking-widest"
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Verifying...' : 'Verify'}
+              {error && (
+                <div className="text-sm px-3 py-2.5 rounded-lg bg-destructive/10 text-destructive border border-destructive/20">
+                  {error}
+                </div>
+              )}
+              <Button type="submit" className="w-full h-11 mt-1 gradient-primary text-white font-medium shadow-md shadow-primary/20 transition-all" disabled={loading}>
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Verifying...
+                  </span>
+                ) : 'Verify'}
               </Button>
             </div>
           </form>
-        </CardContent>
-        <CardFooter className="flex-col gap-2">
+        </div>
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
           <button
             onClick={() => { resetForm(); setView('signIn') }}
-            className="text-sm text-muted-foreground hover:underline"
+            className="text-primary font-medium hover:underline transition-colors"
           >
             Back to sign in
           </button>
-        </CardFooter>
-      </Card>
+        </p>
+      </div>
     )
   }
 
   // Forgot Password View
   if (view === 'forgotPassword') {
     return (
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Reset Password</CardTitle>
-          <CardDescription>Enter your email to receive a reset code</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-5 h-12 w-12 rounded-xl bg-secondary/10 flex items-center justify-center">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
+              <rect width="18" height="11" x="3" y="11" rx="2" ry="2" />
+              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Reset password</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">Enter your email to receive a reset code</p>
+        </div>
+
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
           <form onSubmit={handleForgotPassword}>
             <div className="flex flex-col gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="email" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</Label>
                 <Input
                   id="email"
                   type="email"
@@ -319,42 +379,57 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Sending...' : 'Send Reset Code'}
+              {error && (
+                <div className="text-sm px-3 py-2.5 rounded-lg bg-destructive/10 text-destructive border border-destructive/20">
+                  {error}
+                </div>
+              )}
+              <Button type="submit" className="w-full h-11 mt-1 gradient-primary text-white font-medium shadow-md shadow-primary/20 transition-all" disabled={loading}>
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Sending...
+                  </span>
+                ) : 'Send Reset Code'}
               </Button>
             </div>
           </form>
-        </CardContent>
-        <CardFooter className="flex-col gap-2">
+        </div>
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
           <button
             onClick={() => { resetForm(); setView('signIn') }}
-            className="text-sm text-muted-foreground hover:underline"
+            className="text-primary font-medium hover:underline transition-colors"
           >
             Back to sign in
           </button>
-        </CardFooter>
-      </Card>
+        </p>
+      </div>
     )
   }
 
   // Confirm Reset Password View
   if (view === 'confirmReset') {
     return (
-      <Card className="w-full max-w-sm">
-        <CardHeader className="text-center">
-          <CardTitle className="text-2xl">Set New Password</CardTitle>
-          <CardDescription>
-            Enter the code sent to {email}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+      <div className="w-full max-w-sm">
+        <div className="text-center mb-8">
+          <div className="mx-auto mb-5 h-12 w-12 rounded-xl bg-secondary/10 flex items-center justify-center">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
+              <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
+            </svg>
+          </div>
+          <h1 className="text-2xl font-semibold text-foreground tracking-tight">Set new password</h1>
+          <p className="text-sm text-muted-foreground mt-1.5">Enter the code sent to {email}</p>
+        </div>
+
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
           <form onSubmit={handleConfirmReset}>
             <div className="flex flex-col gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="code">Reset Code</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="code" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Reset Code</Label>
                 <Input
                   id="code"
                   type="text"
@@ -362,44 +437,57 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
                   value={code}
                   onChange={(e) => setCode(e.target.value)}
                   required
+                  className="h-11 text-center text-lg tracking-widest"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="password">New Password</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="password" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">New Password</Label>
                 <Input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="confirmPassword">Confirm New Password</Label>
+              <div className="grid gap-1.5">
+                <Label htmlFor="confirmPassword" className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Confirm New Password</Label>
                 <Input
                   id="confirmPassword"
                   type="password"
                   value={confirmPassword}
                   onChange={(e) => setConfirmPassword(e.target.value)}
                   required
+                  className="h-11"
                 />
               </div>
-              {error && <p className="text-sm text-red-500">{error}</p>}
-              <Button type="submit" className="w-full" disabled={loading}>
-                {loading ? 'Resetting...' : 'Reset Password'}
+              {error && (
+                <div className="text-sm px-3 py-2.5 rounded-lg bg-destructive/10 text-destructive border border-destructive/20">
+                  {error}
+                </div>
+              )}
+              <Button type="submit" className="w-full h-11 mt-1 gradient-primary text-white font-medium shadow-md shadow-primary/20 transition-all" disabled={loading}>
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="h-4 w-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                    Resetting...
+                  </span>
+                ) : 'Reset Password'}
               </Button>
             </div>
           </form>
-        </CardContent>
-        <CardFooter className="flex-col gap-2">
+        </div>
+
+        <p className="text-center text-sm text-muted-foreground mt-6">
           <button
             onClick={() => { resetForm(); setView('signIn') }}
-            className="text-sm text-muted-foreground hover:underline"
+            className="text-primary font-medium hover:underline transition-colors"
           >
             Back to sign in
           </button>
-        </CardFooter>
-      </Card>
+        </p>
+      </div>
     )
   }
 

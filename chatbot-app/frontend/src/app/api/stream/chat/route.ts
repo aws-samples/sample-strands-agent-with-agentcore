@@ -495,7 +495,7 @@ export async function POST(request: NextRequest) {
           }
 
           const agentStream = await invokeAgentCoreRuntime(
-            aguiBody, userId, sessionId, agentCoreAbortController.signal
+            aguiBody, userId, sessionId, authToken, agentCoreAbortController.signal
           )
           agentStarted = true
 

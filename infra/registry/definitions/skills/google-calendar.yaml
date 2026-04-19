@@ -1,0 +1,13 @@
+name: google-calendar
+description: "View, create, update, and delete calendar events"
+skill_md_path: google-calendar/SKILL.md
+source: mcp
+tools:
+  - list_calendars
+  - list_events
+  - get_event
+  - create_event
+  - update_event
+  - delete_event
+  - quick_add_event
+  - check_availability

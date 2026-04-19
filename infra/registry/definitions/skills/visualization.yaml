@@ -1,0 +1,3 @@
+name: visualization
+description: "Create interactive chart visualizations (bar, line, pie) from data."
+skill_md_path: visualization/SKILL.md

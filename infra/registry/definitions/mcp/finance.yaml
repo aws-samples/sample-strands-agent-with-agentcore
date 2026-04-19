@@ -1,0 +1,29 @@
+name: finance
+description: Stock quotes, history, news, and analysis
+tools:
+  - name: stock_quote
+    description: Get current stock quote with price, change, volume, and key metrics.
+    input_type: object
+    input_description: Stock quote parameters
+    properties:
+      - { name: symbol, type: string, description: "Stock ticker symbol (e.g., AAPL, MSFT, TSLA)", required: true }
+  - name: stock_history
+    description: Get historical stock price data (OHLCV) over a specified time period.
+    input_type: object
+    input_description: Historical data parameters
+    properties:
+      - { name: symbol, type: string, description: "Stock ticker symbol (e.g., AAPL, MSFT, TSLA)", required: true }
+      - { name: period, type: string, description: "Time period: 1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max (default: 1mo)" }
+  - name: financial_news
+    description: Get latest financial news articles for a stock symbol.
+    input_type: object
+    input_description: News parameters
+    properties:
+      - { name: symbol, type: string, description: "Stock ticker symbol (e.g., AAPL, MSFT, TSLA)", required: true }
+      - { name: count, type: integer, description: "Number of news articles to return (1-20, default: 5)" }
+  - name: stock_analysis
+    description: Get comprehensive stock analysis including valuation metrics, financial metrics, and analyst recommendations.
+    input_type: object
+    input_description: Analysis parameters
+    properties:
+      - { name: symbol, type: string, description: "Stock ticker symbol (e.g., AAPL, MSFT, TSLA)", required: true }

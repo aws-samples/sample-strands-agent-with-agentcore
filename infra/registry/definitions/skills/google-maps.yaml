@@ -1,0 +1,12 @@
+name: google-maps
+description: "Place search, directions, geocoding, and interactive maps"
+skill_md_path: google-maps/SKILL.md
+source: gateway
+tools:
+  - search_places
+  - search_nearby_places
+  - get_place_details
+  - get_directions
+  - geocode_address
+  - reverse_geocode
+  - show_on_map

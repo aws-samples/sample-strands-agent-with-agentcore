@@ -11,9 +11,12 @@ export async function POST(request: NextRequest) {
     const { userId } = extractUserFromRequest(request)
     const sessionId = body.sessionId
 
+    const authHeader = request.headers.get('authorization') || ''
+    const authToken = authHeader.startsWith('Bearer ') ? authHeader : ''
+
     console.log(`[Warmup API] Params: userId=${userId || 'none'}, sessionId=${sessionId || 'none'}`)
 
-    const result = await pingAgentCoreRuntime(sessionId, userId)
+    const result = await pingAgentCoreRuntime(sessionId, userId, authToken)
     const totalMs = Date.now() - startTime
 
     if (result.success) {

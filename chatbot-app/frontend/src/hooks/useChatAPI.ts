@@ -271,7 +271,7 @@ export const useChatAPI = ({
   const getAuthHeaders = async (): Promise<Record<string, string>> => {
     try {
       const session = await fetchAuthSession()
-      const token = session.tokens?.idToken?.toString()
+      const token = session.tokens?.accessToken?.toString()
 
       if (token) {
         return { 'Authorization': `Bearer ${token}` }
@@ -652,7 +652,10 @@ export const useChatAPI = ({
           state: {
             model_id: currentModelId,
             temperature: currentTemperature,
-            ...(requestType && { request_type: requestType }),
+            // Skill mode is the only mode (besides voice, handled elsewhere).
+            // Backend loads all Registry skills by default; enabled_skills stays
+            // unset until there's UI to filter individual skills.
+            request_type: "skill",
             ...(systemPrompt && { system_prompt: systemPrompt }),
             ...(selectedArtifactId && { selected_artifact_id: selectedArtifactId }),
           },

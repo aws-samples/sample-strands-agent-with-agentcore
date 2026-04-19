@@ -331,8 +331,10 @@ Users can enable/disable tools via UI sidebar. Selected tools are filtered befor
 - `enabled`: Default enabled state
 - `isDynamic`: Whether users can toggle on/off
 - `tools`: Sub-tools for grouped tool entries
-- `systemPromptGuidance`: Tool-specific instructions injected into system prompt
 - `usesCitation`: Whether tool results should include source citations
+
+Tool-specific usage guidance lives in the skill's `SKILL.md` (loaded on demand
+by `SkillChatAgent`), not in this config file.
 - `tags`: Used for smart tool recommendation
 
 ---

@@ -12,8 +12,17 @@
       "icon": "",
       "enabled": true,
       "isDynamic": false,
-      "displayName": { "running": "Calculating", "complete": "Calculated" },
-      "tags": ["math", "finance", "business", "report", "analysis"]
+      "displayName": {
+        "running": "Calculating",
+        "complete": "Calculated"
+      },
+      "tags": [
+        "math",
+        "finance",
+        "business",
+        "report",
+        "analysis"
+      ]
     },
     {
       "id": "create_excalidraw_diagram",
@@ -23,9 +32,17 @@
       "icon": "",
       "enabled": true,
       "isDynamic": false,
-      "displayName": { "running": "Creating Excalidraw diagram", "complete": "Created Excalidraw diagram" },
-      "systemPromptGuidance": "**Element Format:**\n- Required: type, x, y, id\n- Shapes (rectangle/ellipse/diamond): add width, height\n- Arrows/lines: add width, height, points [[0,0],[dx,dy]]\n- Text: add text, fontSize\n- Use label field on shapes for centered text\n- Connect shapes with arrow elements using points routing",
-      "tags": ["diagram", "flowchart", "architecture", "design", "visualization"]
+      "displayName": {
+        "running": "Creating Excalidraw diagram",
+        "complete": "Created Excalidraw diagram"
+      },
+      "tags": [
+        "diagram",
+        "flowchart",
+        "architecture",
+        "design",
+        "visualization"
+      ]
     },
     {
       "id": "create_visualization",
@@ -35,33 +52,17 @@
       "icon": "",
       "enabled": true,
       "isDynamic": false,
-      "displayName": { "running": "Creating chart", "complete": "Created chart" },
-      "systemPromptGuidance": "**Data Format:**\n- Bar/Line charts: [{\"x\": label, \"y\": value}]\n- Pie charts: [{\"segment\": name, \"value\": number}]\n- Optional colors: \"color\": \"hsl(210, 100%, 50%)\"",
-      "tags": ["report", "analysis", "business", "presentation", "data"]
-    },
-    {
-      "id": "ddg_web_search",
-      "name": "Web Search (DuckDuckGo)",
-      "description": "Search the web using DuckDuckGo",
-      "category": "search",
-      "icon": "",
-      "enabled": true,
-      "isDynamic": false,
-      "displayName": { "running": "Searching the web", "complete": "Searched the web" },
-      "usesCitation": true,
-      "tags": ["research", "information", "learning", "knowledge"]
-    },
-    {
-      "id": "fetch_url_content",
-      "name": "URL Fetcher",
-      "description": "Fetch and extract content from web URLs",
-      "category": "utilities",
-      "icon": "",
-      "enabled": true,
-      "isDynamic": false,
-      "displayName": { "running": "Fetching URL", "complete": "Fetched URL" },
-      "usesCitation": true,
-      "tags": ["scraping", "research", "data"]
+      "displayName": {
+        "running": "Creating chart",
+        "complete": "Created chart"
+      },
+      "tags": [
+        "report",
+        "analysis",
+        "business",
+        "presentation",
+        "data"
+      ]
     }
   ],
   "builtin_tools": [
@@ -73,21 +74,39 @@
       "icon": "",
       "enabled": true,
       "isDynamic": true,
-      "displayName": { "running": "Creating visual", "complete": "Created visual" },
-      "systemPromptGuidance": "**Tool Selection:**\n- generate_chart: Data charts/graphs (matplotlib, plotly, bokeh) → PNG\n- create_visual_design: Posters, infographics, artwork, flow diagrams (reportlab, Pillow, svgwrite) → PNG or PDF\n\n**Code Requirements:**\n- Charts: plt.savefig(filename, dpi=300, bbox_inches='tight')\n- PDF designs: canvas.save() (reportlab) or equivalent\n- Image designs: image.save(filename) (Pillow)\n- PNG: dpi=300+ recommended\n- PDF: A4 or Letter size recommended",
-      "tags": ["chart", "diagram", "design", "poster", "infographic", "visualization", "report", "presentation", "analysis"],
+      "displayName": {
+        "running": "Creating visual",
+        "complete": "Created visual"
+      },
+      "tags": [
+        "chart",
+        "diagram",
+        "design",
+        "poster",
+        "infographic",
+        "visualization",
+        "report",
+        "presentation",
+        "analysis"
+      ],
       "tools": [
         {
           "id": "generate_chart",
           "name": "Generate Chart",
           "description": "Generate data charts and graphs using matplotlib or plotly",
-          "displayName": { "running": "Generating chart", "complete": "Generated chart" }
+          "displayName": {
+            "running": "Generating chart",
+            "complete": "Generated chart"
+          }
         },
         {
           "id": "create_visual_design",
           "name": "Create Visual Design",
           "description": "Create posters, infographics, artwork, and flow diagrams",
-          "displayName": { "running": "Creating design", "complete": "Created design" }
+          "displayName": {
+            "running": "Creating design",
+            "complete": "Created design"
+          }
         }
       ]
     },
@@ -99,38 +118,57 @@
       "icon": "",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_word_document: User asks to create/generate a NEW Word document\n- modify_word_document: User asks to edit/modify/update an EXISTING document or add content to existing document\n- list_my_word_documents: User asks what documents are available\n- read_word_document: User wants to download a document\n- preview_word_page: Check actual page appearance when editing (charts, images, complex layouts)\n\n**Before Modifying:** Always use preview_word_page first to see the current layout.\n\n**Page Setup:**\n- python-docx defaults to A4. For US Letter: `section.page_width = Inches(8.5); section.page_height = Inches(11)`\n- Set 1\" margins: `section.top_margin = section.bottom_margin = section.left_margin = section.right_margin = Inches(1)`\n\n**Professional Formatting:**\n- Font: Arial as default. Set via `style.font.name = 'Arial'`\n- Use proper heading styles for TOC compatibility: `document.add_heading('Title', level=1)` or `add_paragraph(style='Heading 1')`\n- Lists: use `add_paragraph(style='List Bullet')` or `add_paragraph(style='List Number')`. NEVER insert unicode bullet characters manually.\n\n**Formatting Preservation:**\n- ALWAYS preserve existing styles, fonts, colors\n- NEVER use paragraph.text = 'new text' (destroys formatting)\n- Use runs to modify text while preserving formatting\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"sales-report.docx\")\n\n**Available Libraries:** python-docx, matplotlib, pandas, numpy (seaborn NOT available)\n\n**Images:** If workspace has relevant images: `run.add_picture('file.png', width=Inches(6))`\n\n**QA:** Always use preview_word_page after creation to verify appearance.",
-      "tags": ["report", "business", "document", "writing"],
+      "tags": [
+        "report",
+        "business",
+        "document",
+        "writing"
+      ],
       "tools": [
         {
           "id": "create_word_document",
           "name": "Create Document",
           "description": "Create new Word document from Markdown content",
-          "displayName": { "running": "Creating Word document", "complete": "Created Word document" }
+          "displayName": {
+            "running": "Creating Word document",
+            "complete": "Created Word document"
+          }
         },
         {
           "id": "modify_word_document",
           "name": "Modify Document",
           "description": "Edit existing Word document using python-docx code",
-          "displayName": { "running": "Modifying Word document", "complete": "Modified Word document" }
+          "displayName": {
+            "running": "Modifying Word document",
+            "complete": "Modified Word document"
+          }
         },
         {
           "id": "list_my_word_documents",
           "name": "List Documents",
           "description": "List all Word documents in workspace",
-          "displayName": { "running": "Listing documents", "complete": "Listed documents" }
+          "displayName": {
+            "running": "Listing documents",
+            "complete": "Listed documents"
+          }
         },
         {
           "id": "read_word_document",
           "name": "Read Document",
           "description": "Read and download document from workspace",
-          "displayName": { "running": "Reading document", "complete": "Read document" }
+          "displayName": {
+            "running": "Reading document",
+            "complete": "Read document"
+          }
         },
         {
           "id": "preview_word_page",
           "name": "Preview Pages",
           "description": "Agent-only: Get screenshots of multiple pages to inspect layout before editing",
-          "displayName": { "running": "Previewing pages", "complete": "Previewed pages" }
+          "displayName": {
+            "running": "Previewing pages",
+            "complete": "Previewed pages"
+          }
         }
       ]
     },
@@ -142,38 +180,58 @@
       "icon": "",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "**Sequential Execution Required:** Run modification tools sequentially, never in parallel (prevents race conditions on S3 file read/write).\n\n**When to Use:**\n- create_excel_spreadsheet: User asks to create/generate a NEW Excel spreadsheet\n- modify_excel_spreadsheet: User asks to edit/modify/update an EXISTING spreadsheet\n- list_my_excel_spreadsheets: User asks what spreadsheets are available\n- read_excel_spreadsheet: User wants to download or read spreadsheet contents\n- preview_excel_sheets: Check actual sheet appearance when editing\n\n**Before Modifying:** Always use preview_excel_sheets first to see the current layout.\n\n**CRITICAL — Formulas, Not Hardcoded Values:**\n- ALWAYS use Excel formulas. NEVER calculate in Python and hardcode the result.\n- Wrong: `ws['B10'] = total`. Right: `ws['B10'] = '=SUM(B2:B9)'`\n- Place assumptions in separate cells, reference them in formulas (e.g., =B5*(1+$B$6) not =B5*1.05)\n- Formulas are auto-recalculated via LibreOffice after save.\n- Avoid circular references.\n\n**Professional Formatting:**\n- Font: Arial for all cells unless existing template specifies otherwise\n- Negative numbers: parentheses format (1,234) not minus -1,234\n- Currency: $#,##0 format; specify units in headers (\"Revenue ($mm)\")\n- Percentages: 0.0% (one decimal)\n- Years: format as text (\"2024\" not \"2,024\")\n- Zeros: display as \"-\" using custom number format\n\n**Financial Model Color Coding (when applicable):**\n- Blue text (0,0,255): Hardcoded inputs and assumptions\n- Black text (0,0,0): All formulas and calculations\n- Green text (0,128,0): Links pulling from other worksheets\n- Yellow background (255,255,0): Key assumptions needing attention\n\n**Filenames:** Letters, numbers, hyphens only (e.g., \"Q4-sales.xlsx\")\n\n**Available Libraries:** openpyxl, matplotlib, pandas, numpy (seaborn NOT available)\n\n**Images:** `from openpyxl.drawing.image import Image; ws.add_image(Image('file.png'), 'E1')`\n\n**QA:** Always use preview_excel_sheets after creation to verify appearance.",
-      "tags": ["report", "business", "finance", "data", "analysis"],
+      "tags": [
+        "report",
+        "business",
+        "finance",
+        "data",
+        "analysis"
+      ],
       "tools": [
         {
           "id": "create_excel_spreadsheet",
           "name": "Create Spreadsheet",
           "description": "Create new Excel spreadsheet with openpyxl code",
-          "displayName": { "running": "Creating Excel spreadsheet", "complete": "Created Excel spreadsheet" }
+          "displayName": {
+            "running": "Creating Excel spreadsheet",
+            "complete": "Created Excel spreadsheet"
+          }
         },
         {
           "id": "modify_excel_spreadsheet",
           "name": "Modify Spreadsheet",
           "description": "Edit existing Excel spreadsheet using openpyxl code",
-          "displayName": { "running": "Modifying Excel spreadsheet", "complete": "Modified Excel spreadsheet" }
+          "displayName": {
+            "running": "Modifying Excel spreadsheet",
+            "complete": "Modified Excel spreadsheet"
+          }
         },
         {
           "id": "list_my_excel_spreadsheets",
           "name": "List Spreadsheets",
           "description": "List all Excel spreadsheets in workspace",
-          "displayName": { "running": "Listing spreadsheets", "complete": "Listed spreadsheets" }
+          "displayName": {
+            "running": "Listing spreadsheets",
+            "complete": "Listed spreadsheets"
+          }
         },
         {
           "id": "read_excel_spreadsheet",
           "name": "Read Spreadsheet",
           "description": "Read and download spreadsheet from workspace",
-          "displayName": { "running": "Reading spreadsheet", "complete": "Read spreadsheet" }
+          "displayName": {
+            "running": "Reading spreadsheet",
+            "complete": "Read spreadsheet"
+          }
         },
         {
           "id": "preview_excel_sheets",
           "name": "Preview Sheets",
           "description": "Agent-only: Get screenshots of sheets to inspect layout before editing",
-          "displayName": { "running": "Previewing sheets", "complete": "Previewed sheets" }
+          "displayName": {
+            "running": "Previewing sheets",
+            "complete": "Previewed sheets"
+          }
         }
       ]
     },
@@ -185,80 +243,120 @@
       "icon": "",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "**Creating New Presentations:**\n- Use get_slide_design_reference() first to get design guidelines and color palettes\n- create_presentation slides format: [{\"custom_code\": \"let slide = pres.addSlide(); slide.addText(...)\"}]\n- Each custom_code snippet has `pres` in scope; create slides with pres.addSlide()\n- Color format: 6-digit hex WITHOUT '#' (e.g. '1E2761', not '#1E2761')\n\n**Editing Existing Presentations:**\n- Operations: set_text, replace_text, replace_image\n- Batch all edits in 1 call (parallel calls = data loss)\n- Output name must differ from source\n- preview_presentation_slides first to check layout\n\n**Design Philosophy (MANDATORY for new presentations):**\n- CRITICAL: Choose ONE palette for the ENTIRE presentation. All slides must use the same primary and accent colors. Do NOT mix palettes across slides.\n- Bold dominant background colors (60-70% slide coverage). NEVER use plain white backgrounds.\n- Available palettes: Midnight Executive (#1E2761/#408EC6), Teal Trust (#0A1A2A/#028090), Forest & Moss (#2C5F2D/#97BC62), Berry & Cream (#ECE2D0/#6D2E46), Coral Energy (#1A1A2E/#FF6F61), Ocean Gradient (#065A82/#1B9AAA), Charcoal Minimal (#1C1C1E/#E8E8E8), Cherry Bold (#150E11/#990011), Sage Calm (#2D3A2D/#8FB96A)\n- Dark slides for emphasis, lighter tints of the SAME palette for data slides.\n- Every slide must have visual elements (shapes, accent bars, icon circles) — no text-only slides.\n\n**Typography:**\n- Titles: 36-44pt bold (Georgia or Arial Black). Body: 14-16pt (Calibri). Stats: 48-120pt bold.\n- Font pairings: Georgia+Calibri (classic), Arial Black+Arial (modern), Calibri Bold+Calibri Light (corporate)\n- Left-align body text. Center only titles and stats.\n\n**Spacing:**\n- 0.5\"+ margins from edges. 0.3-0.5\" gaps between elements. 0.5\"+ breathing room below titles.\n\n**Anti-Patterns (AVOID):**\n- Plain bullets on white background\n- Default PowerPoint blue (#4472C4)\n- Accent lines directly under titles\n- Text-only slides without visual elements\n- More than 4 bullet points per slide\n\n**QA:** Always use preview_presentation_slides after creation to verify appearance.\n\n**Rules:**\n- Names: letters, numbers, hyphens only\n- Indices: 0-based",
-      "tags": ["presentation", "business", "report", "pitch"],
+      "tags": [
+        "presentation",
+        "business",
+        "report",
+        "pitch"
+      ],
       "tools": [
         {
           "id": "get_slide_design_reference",
           "name": "Get Design Reference",
           "description": "Get design guidelines, color palettes, typography rules, and layout patterns for creating presentations",
-          "displayName": { "running": "Getting design reference", "complete": "Got design reference" }
+          "displayName": {
+            "running": "Getting design reference",
+            "complete": "Got design reference"
+          }
         },
         {
           "id": "list_my_powerpoint_presentations",
           "name": "List Presentations",
           "description": "List all PowerPoint presentations in workspace",
-          "displayName": { "running": "Listing presentations", "complete": "Listed presentations" }
+          "displayName": {
+            "running": "Listing presentations",
+            "complete": "Listed presentations"
+          }
         },
         {
           "id": "get_presentation_layouts",
           "name": "Get Layouts",
           "description": "Get all available slide layouts from presentation",
-          "displayName": { "running": "Getting layouts", "complete": "Got layouts" }
+          "displayName": {
+            "running": "Getting layouts",
+            "complete": "Got layouts"
+          }
         },
         {
           "id": "analyze_presentation",
           "name": "Analyze Presentation",
           "description": "Analyze presentation structure with detailed element IDs for editing",
-          "displayName": { "running": "Analyzing presentation", "complete": "Analyzed presentation" }
+          "displayName": {
+            "running": "Analyzing presentation",
+            "complete": "Analyzed presentation"
+          }
         },
         {
           "id": "create_presentation",
           "name": "Create Presentation",
           "description": "Create presentation from outline or blank (outline=None for blank)",
-          "displayName": { "running": "Creating presentation", "complete": "Created presentation" }
+          "displayName": {
+            "running": "Creating presentation",
+            "complete": "Created presentation"
+          }
         },
         {
           "id": "update_slide_content",
           "name": "Update Slides",
           "description": "Edit one or more slides in a single call using operations (set_text, replace_text, replace_image)",
-          "displayName": { "running": "Updating slides", "complete": "Updated slides" }
+          "displayName": {
+            "running": "Updating slides",
+            "complete": "Updated slides"
+          }
         },
         {
           "id": "add_slide",
           "name": "Add Slide",
           "description": "Add new slide at specified position with chosen layout",
-          "displayName": { "running": "Adding slide", "complete": "Added slide" }
+          "displayName": {
+            "running": "Adding slide",
+            "complete": "Added slide"
+          }
         },
         {
           "id": "delete_slides",
           "name": "Delete Slides",
           "description": "Delete one or more slides by indices",
-          "displayName": { "running": "Deleting slides", "complete": "Deleted slides" }
+          "displayName": {
+            "running": "Deleting slides",
+            "complete": "Deleted slides"
+          }
         },
         {
           "id": "move_slide",
           "name": "Move Slide",
           "description": "Move slide from one position to another",
-          "displayName": { "running": "Moving slide", "complete": "Moved slide" }
+          "displayName": {
+            "running": "Moving slide",
+            "complete": "Moved slide"
+          }
         },
         {
           "id": "duplicate_slide",
           "name": "Duplicate Slide",
           "description": "Copy slide to specified position",
-          "displayName": { "running": "Duplicating slide", "complete": "Duplicated slide" }
+          "displayName": {
+            "running": "Duplicating slide",
+            "complete": "Duplicated slide"
+          }
         },
         {
           "id": "update_slide_notes",
           "name": "Update Notes",
           "description": "Update speaker notes for a specific slide",
-          "displayName": { "running": "Updating notes", "complete": "Updated notes" }
+          "displayName": {
+            "running": "Updating notes",
+            "complete": "Updated notes"
+          }
         },
         {
           "id": "preview_presentation_slides",
           "name": "Preview Slides",
           "description": "Get slide screenshots for visual inspection before editing",
-          "displayName": { "running": "Previewing slides", "complete": "Previewed slides" }
+          "displayName": {
+            "running": "Previewing slides",
+            "complete": "Previewed slides"
+          }
         }
       ]
     },
@@ -270,37 +368,59 @@
       "icon": "",
       "enabled": true,
       "isDynamic": true,
-      "tags": ["code", "python", "data", "analysis", "ml", "visualization"],
+      "tags": [
+        "code",
+        "python",
+        "data",
+        "analysis",
+        "ml",
+        "visualization"
+      ],
       "tools": [
         {
           "id": "execute_code",
           "name": "Execute Code",
           "description": "Execute Python, JavaScript, or TypeScript code in a sandboxed environment",
-          "displayName": { "running": "Executing code", "complete": "Executed code" }
+          "displayName": {
+            "running": "Executing code",
+            "complete": "Executed code"
+          }
         },
         {
           "id": "execute_command",
           "name": "Execute Command",
           "description": "Execute shell commands (pip install, ls, curl, etc.)",
-          "displayName": { "running": "Executing command", "complete": "Executed command" }
+          "displayName": {
+            "running": "Executing command",
+            "complete": "Executed command"
+          }
         },
         {
           "id": "file_operations",
           "name": "File Operations",
           "description": "Read, write, list, or remove files in the sandbox",
-          "displayName": { "running": "Managing files", "complete": "Managed files" }
+          "displayName": {
+            "running": "Managing files",
+            "complete": "Managed files"
+          }
         },
         {
           "id": "ci_push_to_workspace",
           "name": "Push to Workspace",
           "description": "Save sandbox files to the shared workspace (S3)",
-          "displayName": { "running": "Saving to workspace", "complete": "Saved to workspace" }
+          "displayName": {
+            "running": "Saving to workspace",
+            "complete": "Saved to workspace"
+          }
         },
         {
           "id": "ci_pull_from_workspace",
           "name": "Pull from Workspace",
           "description": "Load workspace files into the sandbox",
-          "displayName": { "running": "Loading from workspace", "complete": "Loaded from workspace" }
+          "displayName": {
+            "running": "Loading from workspace",
+            "complete": "Loaded from workspace"
+          }
         }
       ]
     }
@@ -314,32 +434,48 @@
       "icon": "",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "**Tool Selection:**\n- browser_act: UI interactions (click, type, scroll, form fill). Use starting_url to navigate and act in one call.\n- browser_get_page_info: Fast DOM inspection (<300ms). Use url param to navigate first; text/tables/links params for content extraction.\n- browser_manage_tabs: Switch, close, or create tabs.\n- browser_save_screenshot: Save milestone screenshots to workspace for documents.\n\n**browser_act Best Practice:**\n- Combine up to 3 predictable steps: \"1. Type 'laptop' in search 2. Click search button 3. Click first result\"\n- Use starting_url when opening a fresh page: browser_act(instruction='...', starting_url='https://...')\n- On failure: check the screenshot to see current state, then retry from that point\n\n**browser_get_page_info Best Practice:**\n- Use url param to navigate and inspect in one call: browser_get_page_info(url='https://...', tables=True)\n- Use text=True for full page text, tables=True for table data, links=True for all page links",
-      "tags": ["shopping", "automation", "scraping", "research"],
+      "tags": [
+        "shopping",
+        "automation",
+        "scraping",
+        "research"
+      ],
       "tools": [
         {
           "id": "browser_act",
           "name": "Browser Action",
           "description": "Execute browser actions using natural language (click, type, scroll, select). Optional starting_url to navigate first.",
-          "displayName": { "running": "Performing browser action", "complete": "Performed browser action" }
+          "displayName": {
+            "running": "Performing browser action",
+            "complete": "Performed browser action"
+          }
         },
         {
           "id": "browser_get_page_info",
           "name": "Get Page Info",
           "description": "Get page structure and DOM data (fast, no AI). Optional url to navigate first; text/tables/links for content extraction.",
-          "displayName": { "running": "Getting page info", "complete": "Got page info" }
+          "displayName": {
+            "running": "Getting page info",
+            "complete": "Got page info"
+          }
         },
         {
           "id": "browser_manage_tabs",
           "name": "Manage Tabs",
           "description": "Switch, close, or create browser tabs (use get_page_info to view tabs)",
-          "displayName": { "running": "Managing tabs", "complete": "Managed tabs" }
+          "displayName": {
+            "running": "Managing tabs",
+            "complete": "Managed tabs"
+          }
         },
         {
           "id": "browser_save_screenshot",
           "name": "Save Screenshot",
           "description": "Save current page screenshot to workspace for document use",
-          "displayName": { "running": "Saving screenshot", "complete": "Saved screenshot" }
+          "displayName": {
+            "running": "Saving screenshot",
+            "complete": "Saved screenshot"
+          }
         }
       ]
     }
@@ -353,19 +489,31 @@
       "icon": "",
       "enabled": false,
       "isDynamic": true,
-      "tags": ["weather", "forecast", "travel", "planning", "outdoor"],
+      "tags": [
+        "weather",
+        "forecast",
+        "travel",
+        "planning",
+        "outdoor"
+      ],
       "tools": [
         {
           "id": "gateway_get_today_weather",
           "name": "Today's Weather",
           "description": "Get current weather and today's hourly forecast",
-          "displayName": { "running": "Checking weather", "complete": "Checked weather" }
+          "displayName": {
+            "running": "Checking weather",
+            "complete": "Checked weather"
+          }
         },
         {
           "id": "gateway_get_weather_forecast",
           "name": "Weather Forecast",
           "description": "Get multi-day weather forecast (up to 16 days)",
-          "displayName": { "running": "Getting forecast", "complete": "Got forecast" }
+          "displayName": {
+            "running": "Getting forecast",
+            "complete": "Got forecast"
+          }
         }
       ]
     },
@@ -377,31 +525,49 @@
       "icon": "",
       "enabled": false,
       "isDynamic": true,
-      "tags": ["stock", "finance", "trading", "investment", "business"],
+      "tags": [
+        "stock",
+        "finance",
+        "trading",
+        "investment",
+        "business"
+      ],
       "tools": [
         {
           "id": "gateway_stock_quote",
           "name": "Stock Quote",
           "description": "Get current stock quote with key metrics",
-          "displayName": { "running": "Getting stock quote", "complete": "Got stock quote" }
+          "displayName": {
+            "running": "Getting stock quote",
+            "complete": "Got stock quote"
+          }
         },
         {
           "id": "gateway_stock_history",
           "name": "Stock History",
           "description": "Get historical stock price data",
-          "displayName": { "running": "Getting stock history", "complete": "Got stock history" }
+          "displayName": {
+            "running": "Getting stock history",
+            "complete": "Got stock history"
+          }
         },
         {
           "id": "gateway_financial_news",
           "name": "Financial News",
           "description": "Get latest financial news articles",
-          "displayName": { "running": "Getting financial news", "complete": "Got financial news" }
+          "displayName": {
+            "running": "Getting financial news",
+            "complete": "Got financial news"
+          }
         },
         {
           "id": "gateway_stock_analysis",
           "name": "Stock Analysis",
           "description": "Get comprehensive stock analysis",
-          "displayName": { "running": "Analyzing stock", "complete": "Analyzed stock" }
+          "displayName": {
+            "running": "Analyzing stock",
+            "complete": "Analyzed stock"
+          }
         }
       ]
     },
@@ -414,19 +580,68 @@
       "enabled": false,
       "isDynamic": true,
       "usesCitation": true,
-      "tags": ["research", "academic", "science", "paper", "study"],
+      "tags": [
+        "research",
+        "academic",
+        "science",
+        "paper",
+        "study"
+      ],
       "tools": [
         {
           "id": "gateway_arxiv_search",
           "name": "Search Papers",
           "description": "Search scientific papers on ArXiv",
-          "displayName": { "running": "Searching ArXiv", "complete": "Searched ArXiv" }
+          "displayName": {
+            "running": "Searching ArXiv",
+            "complete": "Searched ArXiv"
+          }
         },
         {
           "id": "gateway_arxiv_get_paper",
           "name": "Get Paper",
           "description": "Get full paper content from ArXiv by paper ID",
-          "displayName": { "running": "Getting paper", "complete": "Got paper" }
+          "displayName": {
+            "running": "Getting paper",
+            "complete": "Got paper"
+          }
+        }
+      ]
+    },
+    {
+      "id": "gateway_web-search",
+      "name": "Web Search (DuckDuckGo)",
+      "description": "DuckDuckGo web search and URL fetching",
+      "category": "search",
+      "icon": "",
+      "enabled": false,
+      "isDynamic": true,
+      "usesCitation": true,
+      "tags": [
+        "research",
+        "information",
+        "learning",
+        "knowledge",
+        "scraping"
+      ],
+      "tools": [
+        {
+          "id": "gateway_ddg_web_search",
+          "name": "Web Search (DuckDuckGo)",
+          "description": "Search the web using DuckDuckGo",
+          "displayName": {
+            "running": "Searching the web",
+            "complete": "Searched the web"
+          }
+        },
+        {
+          "id": "gateway_fetch_url_content",
+          "name": "URL Fetcher",
+          "description": "Fetch and extract content from web URLs",
+          "displayName": {
+            "running": "Fetching URL",
+            "complete": "Fetched URL"
+          }
         }
       ]
     },
@@ -439,13 +654,22 @@
       "enabled": false,
       "isDynamic": true,
       "usesCitation": true,
-      "tags": ["research", "information", "learning", "shopping", "knowledge"],
+      "tags": [
+        "research",
+        "information",
+        "learning",
+        "shopping",
+        "knowledge"
+      ],
       "tools": [
         {
           "id": "gateway_google_web_search",
           "name": "Web Search (Google)",
           "description": "Search the web using Google Custom Search (includes image results)",
-          "displayName": { "running": "Searching the web", "complete": "Searched the web" }
+          "displayName": {
+            "running": "Searching the web",
+            "complete": "Searched the web"
+          }
         }
       ]
     },
@@ -457,75 +681,113 @@
       "icon": "",
       "enabled": false,
       "isDynamic": true,
-      "systemPromptGuidance": "**When to Use:**\n- ALWAYS call show_on_map after collecting location data - visual maps are the primary value\n- Use for: search results, directions, comparisons, or any location-based query\n\n**Response Pattern (DO NOT call show_on_map in parallel):**\n1. Text: Introduce what you'll show (\"Here are the top restaurants:\")\n2. show_on_map: Display the map\n3. Text: Explain the results (\"These restaurants are rated 4.5+ stars\")\n\nExample:\n- \"Let me show you restaurants in Gangnam:\" → show_on_map(restaurants) → \"All 5 restaurants above have excellent reviews.\"\n- For multiple categories: Text → Map 1 → Text → Map 2 (sequential, not parallel)\n\n**Map Organization:**\n- Separate maps for different categories (restaurants vs hotels)\n- Show 1-5 most relevant places per map\n\n**Tool Selection:**\n- search_places: text queries | search_nearby_places: coordinates\n- Preserve place_id for details | Infer direction mode from context",
-      "tags": ["travel", "navigation", "planning", "directions", "location"],
+      "tags": [
+        "travel",
+        "navigation",
+        "planning",
+        "directions",
+        "location"
+      ],
       "tools": [
         {
           "id": "gateway_search_places",
           "name": "Search Places",
           "description": "Search for places using text query (e.g., 'restaurants in New York')",
-          "displayName": { "running": "Searching places", "complete": "Found places" }
+          "displayName": {
+            "running": "Searching places",
+            "complete": "Found places"
+          }
         },
         {
           "id": "gateway_search_nearby_places",
           "name": "Nearby Places",
           "description": "Search for places near a specific location",
-          "displayName": { "running": "Searching nearby", "complete": "Found nearby places" }
+          "displayName": {
+            "running": "Searching nearby",
+            "complete": "Found nearby places"
+          }
         },
         {
           "id": "gateway_get_place_details",
           "name": "Place Details",
           "description": "Get detailed information about a place including reviews",
-          "displayName": { "running": "Getting place details", "complete": "Got place details" }
+          "displayName": {
+            "running": "Getting place details",
+            "complete": "Got place details"
+          }
         },
         {
           "id": "gateway_get_directions",
           "name": "Get Directions",
           "description": "Get directions between two locations with step-by-step instructions",
-          "displayName": { "running": "Getting directions", "complete": "Got directions" }
+          "displayName": {
+            "running": "Getting directions",
+            "complete": "Got directions"
+          }
         },
         {
           "id": "gateway_geocode_address",
           "name": "Geocode Address",
           "description": "Convert address to geographic coordinates",
-          "displayName": { "running": "Geocoding address", "complete": "Geocoded address" }
+          "displayName": {
+            "running": "Geocoding address",
+            "complete": "Geocoded address"
+          }
         },
         {
           "id": "gateway_reverse_geocode",
           "name": "Reverse Geocode",
           "description": "Convert geographic coordinates to address",
-          "displayName": { "running": "Reverse geocoding", "complete": "Reverse geocoded" }
+          "displayName": {
+            "running": "Reverse geocoding",
+            "complete": "Reverse geocoded"
+          }
         },
         {
           "id": "gateway_show_on_map",
           "name": "Show on Map",
           "description": "Display locations and routes on interactive Google Map",
-          "displayName": { "running": "Showing on map", "complete": "Showed on map" }
+          "displayName": {
+            "running": "Showing on map",
+            "complete": "Showed on map"
+          }
         }
       ]
     },
     {
       "id": "gateway_wikipedia-search",
       "name": "Wikipedia",
-      "description": "Wikipedia article search and retrieval",
+      "description": "Wikipedia article search and retrieval (English only)",
       "category": "knowledge",
       "icon": "",
       "enabled": false,
       "isDynamic": true,
       "usesCitation": true,
-      "tags": ["research", "knowledge", "learning", "education", "information"],
+      "tags": [
+        "research",
+        "knowledge",
+        "learning",
+        "education",
+        "information"
+      ],
       "tools": [
         {
           "id": "gateway_wikipedia_search",
           "name": "Search Articles",
           "description": "Search Wikipedia for articles",
-          "displayName": { "running": "Searching Wikipedia", "complete": "Searched Wikipedia" }
+          "displayName": {
+            "running": "Searching Wikipedia",
+            "complete": "Searched Wikipedia"
+          }
         },
         {
           "id": "gateway_wikipedia_get_article",
           "name": "Get Article",
           "description": "Get full content of a Wikipedia article",
-          "displayName": { "running": "Getting article", "complete": "Got article" }
+          "displayName": {
+            "running": "Getting article",
+            "complete": "Got article"
+          }
         }
       ]
     },
@@ -538,19 +800,30 @@
       "enabled": false,
       "isDynamic": true,
       "usesCitation": true,
-      "tags": ["research", "information", "learning", "analysis"],
+      "tags": [
+        "research",
+        "information",
+        "learning",
+        "analysis"
+      ],
       "tools": [
         {
           "id": "gateway_tavily_search",
           "name": "Web Search (Tavily)",
           "description": "AI-powered web search using Tavily",
-          "displayName": { "running": "Searching the web", "complete": "Searched the web" }
+          "displayName": {
+            "running": "Searching the web",
+            "complete": "Searched the web"
+          }
         },
         {
           "id": "gateway_tavily_extract",
           "name": "Content Extract",
           "description": "Extract clean content from web URLs",
-          "displayName": { "running": "Extracting content", "complete": "Extracted content" }
+          "displayName": {
+            "running": "Extracting content",
+            "complete": "Extracted content"
+          }
         }
       ]
     },
@@ -562,26 +835,39 @@
       "icon": "/tool-icons/s3.svg",
       "enabled": true,
       "isDynamic": true,
-      "systemPromptGuidance": "**Path conventions (userId/sessionId injected automatically):**\n- `code-agent/<file>` — files from the code agent\n- `documents/powerpoint/<file>` — PowerPoint\n- `documents/word/<file>` — Word\n- `documents/excel/<file>` — Excel\n- `documents/image/<file>` — images\n\n**Binary vs text:** images/PDFs/Office files are returned base64-encoded (`encoding: \"base64\"`); use the same encoding when writing them back.",
-      "tags": ["files", "storage", "code-agent", "documents"],
+      "tags": [
+        "files",
+        "storage",
+        "code-agent",
+        "documents"
+      ],
       "tools": [
         {
           "id": "workspace_list",
           "name": "List Files",
           "description": "List all files in the session workspace, optionally filtered by path prefix",
-          "displayName": { "running": "Listing workspace files", "complete": "Listed workspace files" }
+          "displayName": {
+            "running": "Listing workspace files",
+            "complete": "Listed workspace files"
+          }
         },
         {
           "id": "workspace_read",
           "name": "Read File",
           "description": "Read a file from the session workspace (text or base64 for binary)",
-          "displayName": { "running": "Reading file", "complete": "Read file" }
+          "displayName": {
+            "running": "Reading file",
+            "complete": "Read file"
+          }
         },
         {
           "id": "workspace_write",
           "name": "Write File",
           "description": "Write a file to the session workspace",
-          "displayName": { "running": "Writing file", "complete": "Written file" }
+          "displayName": {
+            "running": "Writing file",
+            "complete": "Written file"
+          }
         }
       ]
     }
@@ -595,9 +881,11 @@
       "icon": "",
       "enabled": false,
       "isDynamic": false,
-      "displayName": { "running": "Researching", "complete": "Researched" },
-      "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
-      "systemPromptGuidance": "**After completion:**\n- Research report is shown directly to user in Research Modal\n- Your response should only summarize key findings (2-3 sentences)\n- Do NOT repeat the full report content"
+      "displayName": {
+        "running": "Researching",
+        "complete": "Researched"
+      },
+      "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn"
     },
     {
       "id": "agentcore_code-agent",
@@ -607,9 +895,11 @@
       "icon": "",
       "enabled": false,
       "isDynamic": false,
-      "displayName": { "running": "Coding autonomously", "complete": "Coding complete" },
-      "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn",
-      "systemPromptGuidance": "**Code Agent:**\n- Delegate tasks that require reading, writing, or running code in an isolated workspace\n- Uploaded files are automatically available — do not encode them in the task\n- Session state (files + context) persists across turns\n- Use compact_session=True for long sessions; reset_session=True only when switching to an unrelated project\n- After completion: summarize which files changed and key outcomes (2-3 sentences)"
+      "displayName": {
+        "running": "Coding autonomously",
+        "complete": "Coding complete"
+      },
+      "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn"
     }
   ],
   "agentcore_runtime_mcp": [
@@ -622,68 +912,102 @@
       "enabled": false,
       "isDynamic": true,
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/mcp/mcp-3lo-runtime-arn",
-      "tags": ["email", "productivity", "gmail", "google"],
-      "systemPromptGuidance": "**Gmail Tool Usage:**\n- list_labels: Get all available labels before filtering emails\n- list_emails: Browse emails by label (INBOX, SENT, DRAFT, TRASH, etc.)\n- search_emails: Use Gmail query syntax (from:, to:, subject:, is:unread, has:attachment, after:, before:)\n- read_email: Get full email content with attachments\n- send_email: Send emails with optional CC, BCC, and HTML body\n- draft_email: Create drafts for later editing/sending\n- delete_email: Move to trash (permanent=True for permanent deletion)\n- bulk_delete_emails: Permanently delete multiple emails by query (requires user approval)\n- modify_email: Add/remove labels (mark read: remove UNREAD, archive: remove INBOX, star: add STARRED)\n- get_email_thread: View entire conversation thread\n\n**Bulk Deletion (bulk_delete_emails):**\n- Use for spam cleanup, old email purge, etc.\n- Always provide 'reason' parameter explaining the intent\n- Common queries: \"is:spam older_than:7d\", \"in:inbox is:unread older_than:14d\", \"category:promotions older_than:30d\"\n- WARNING: Permanently deletes emails - cannot be recovered\n\n**Common Operations:**\n- Mark as read: modify_email(id, remove_labels=\"UNREAD\")\n- Archive: modify_email(id, remove_labels=\"INBOX\")\n- Star: modify_email(id, add_labels=\"STARRED\")\n- Mark important: modify_email(id, add_labels=\"IMPORTANT\")",
+      "tags": [
+        "email",
+        "productivity",
+        "gmail",
+        "google"
+      ],
       "tools": [
         {
           "id": "mcp_list_labels",
           "name": "List Labels",
           "description": "List all Gmail labels (INBOX, SENT, custom labels, etc.)",
-          "displayName": { "running": "Listing labels", "complete": "Listed labels" }
+          "displayName": {
+            "running": "Listing labels",
+            "complete": "Listed labels"
+          }
         },
         {
           "id": "mcp_list_emails",
           "name": "List Emails",
           "description": "List emails by label (INBOX, SENT, DRAFT, TRASH, etc.)",
-          "displayName": { "running": "Listing emails", "complete": "Listed emails" }
+          "displayName": {
+            "running": "Listing emails",
+            "complete": "Listed emails"
+          }
         },
         {
           "id": "mcp_search_emails",
           "name": "Search Emails",
           "description": "Search Gmail using query syntax (from:, to:, subject:, is:unread, etc.)",
-          "displayName": { "running": "Searching emails", "complete": "Searched emails" }
+          "displayName": {
+            "running": "Searching emails",
+            "complete": "Searched emails"
+          }
         },
         {
           "id": "mcp_read_email",
           "name": "Read Email",
           "description": "Read a full email message by its ID",
-          "displayName": { "running": "Reading email", "complete": "Read email" }
+          "displayName": {
+            "running": "Reading email",
+            "complete": "Read email"
+          }
         },
         {
           "id": "mcp_send_email",
           "name": "Send Email",
           "description": "Send an email with optional CC, BCC, and HTML body",
-          "displayName": { "running": "Sending email", "complete": "Sent email" }
+          "displayName": {
+            "running": "Sending email",
+            "complete": "Sent email"
+          }
         },
         {
           "id": "mcp_draft_email",
           "name": "Draft Email",
           "description": "Create an email draft for later editing or sending",
-          "displayName": { "running": "Creating draft", "complete": "Created draft" }
+          "displayName": {
+            "running": "Creating draft",
+            "complete": "Created draft"
+          }
         },
         {
           "id": "mcp_delete_email",
           "name": "Delete Email",
           "description": "Delete an email (move to trash or permanent delete)",
-          "displayName": { "running": "Deleting email", "complete": "Deleted email" }
+          "displayName": {
+            "running": "Deleting email",
+            "complete": "Deleted email"
+          }
         },
         {
           "id": "mcp_bulk_delete_emails",
           "name": "Bulk Delete Emails",
           "description": "Permanently delete multiple emails by Gmail query (requires user approval)",
-          "displayName": { "running": "Deleting emails", "complete": "Deleted emails" }
+          "displayName": {
+            "running": "Deleting emails",
+            "complete": "Deleted emails"
+          }
         },
         {
           "id": "mcp_modify_email",
           "name": "Modify Email",
           "description": "Add/remove labels (mark read/unread, star, archive, etc.)",
-          "displayName": { "running": "Modifying email", "complete": "Modified email" }
+          "displayName": {
+            "running": "Modifying email",
+            "complete": "Modified email"
+          }
         },
         {
           "id": "mcp_get_email_thread",
           "name": "Get Thread",
           "description": "Get all messages in an email thread/conversation",
-          "displayName": { "running": "Getting thread", "complete": "Got thread" }
+          "displayName": {
+            "running": "Getting thread",
+            "complete": "Got thread"
+          }
         }
       ]
     },
@@ -696,56 +1020,85 @@
       "enabled": false,
       "isDynamic": true,
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/mcp/mcp-3lo-runtime-arn",
-      "tags": ["calendar", "productivity", "schedule", "google", "meetings"],
-      "systemPromptGuidance": "**Google Calendar Tool Usage:**\n- list_calendars: Get all user's calendars (primary, shared, subscribed)\n- list_events: List upcoming events with date range filters and search\n- get_event: Get detailed event information\n- create_event: Create new calendar events with attendees and reminders\n- update_event: Modify existing events (time, title, description, attendees)\n- delete_event: Remove events with optional notification to attendees\n- quick_add_event: Create event from natural language (e.g., 'Meeting with John tomorrow at 3pm')\n- check_availability: Query free/busy status for scheduling\n\n**Time Format:**\n- RFC3339 format: 2024-01-15T09:00:00Z (UTC) or 2024-01-15T09:00:00+09:00 (with timezone)\n- All-day events: use date format YYYY-MM-DD\n\n**Common Operations:**\n- Schedule meeting: create_event with attendees parameter\n- Find available time: check_availability before creating events\n- Quick scheduling: quick_add_event for natural language input\n- Reschedule: update_event with new start_time and end_time",
+      "tags": [
+        "calendar",
+        "productivity",
+        "schedule",
+        "google",
+        "meetings"
+      ],
       "tools": [
         {
           "id": "mcp_list_calendars",
           "name": "List Calendars",
           "description": "List all user's calendars (primary, shared, subscribed)",
-          "displayName": { "running": "Listing calendars", "complete": "Listed calendars" }
+          "displayName": {
+            "running": "Listing calendars",
+            "complete": "Listed calendars"
+          }
         },
         {
           "id": "mcp_list_events",
           "name": "List Events",
           "description": "List calendar events with date range and search filters",
-          "displayName": { "running": "Listing events", "complete": "Listed events" }
+          "displayName": {
+            "running": "Listing events",
+            "complete": "Listed events"
+          }
         },
         {
           "id": "mcp_get_event",
           "name": "Get Event",
           "description": "Get detailed information about a specific event",
-          "displayName": { "running": "Getting event", "complete": "Got event" }
+          "displayName": {
+            "running": "Getting event",
+            "complete": "Got event"
+          }
         },
         {
           "id": "mcp_create_event",
           "name": "Create Event",
           "description": "Create a new calendar event with attendees and reminders",
-          "displayName": { "running": "Creating event", "complete": "Created event" }
+          "displayName": {
+            "running": "Creating event",
+            "complete": "Created event"
+          }
         },
         {
           "id": "mcp_update_event",
           "name": "Update Event",
           "description": "Update an existing calendar event",
-          "displayName": { "running": "Updating event", "complete": "Updated event" }
+          "displayName": {
+            "running": "Updating event",
+            "complete": "Updated event"
+          }
         },
         {
           "id": "mcp_delete_event",
           "name": "Delete Event",
           "description": "Delete a calendar event with optional attendee notification",
-          "displayName": { "running": "Deleting event", "complete": "Deleted event" }
+          "displayName": {
+            "running": "Deleting event",
+            "complete": "Deleted event"
+          }
         },
         {
           "id": "mcp_quick_add_event",
           "name": "Quick Add Event",
           "description": "Create event from natural language text (e.g., 'Meeting tomorrow at 3pm')",
-          "displayName": { "running": "Adding event", "complete": "Added event" }
+          "displayName": {
+            "running": "Adding event",
+            "complete": "Added event"
+          }
         },
         {
           "id": "mcp_check_availability",
           "name": "Check Availability",
           "description": "Check free/busy status for scheduling meetings",
-          "displayName": { "running": "Checking availability", "complete": "Checked availability" }
+          "displayName": {
+            "running": "Checking availability",
+            "complete": "Checked availability"
+          }
         }
       ]
     },
@@ -758,74 +1111,113 @@
       "enabled": false,
       "isDynamic": true,
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/mcp/mcp-3lo-runtime-arn",
-      "tags": ["github", "git", "code", "repository", "pull-request", "issues"],
-      "systemPromptGuidance": "**GitHub Tool Usage:**\n- github_search_repos: Search GitHub repositories by keyword\n- github_get_repo: Get repository details (description, stars, language, topics)\n- github_list_issues: List issues (state: open|closed|all, filter by labels)\n- github_get_issue: Get a single issue with all comments\n- github_list_pulls: List pull requests\n- github_get_pull: Get a single PR with diff summary\n- github_get_file: Read file contents from a repo (specify ref/branch if needed)\n- github_search_code: Search code across GitHub (use repo:owner/name to scope)\n- github_create_branch: Create a new branch (write — requires approval)\n- github_push_files: Create or update files on a branch (write — requires approval)\n- github_create_pull_request: Open a pull request (write — requires approval)\n\n**Write workflow:**\n1. github_get_file to read existing files before modifying\n2. github_create_branch to create a feature branch\n3. github_push_files to commit all changes in one call\n4. github_create_pull_request to open a PR",
+      "tags": [
+        "github",
+        "git",
+        "code",
+        "repository",
+        "pull-request",
+        "issues"
+      ],
       "tools": [
         {
           "id": "mcp_github_search_repos",
           "name": "Search Repos",
           "description": "Search GitHub repositories by keyword",
-          "displayName": { "running": "Searching repos", "complete": "Searched repos" }
+          "displayName": {
+            "running": "Searching repos",
+            "complete": "Searched repos"
+          }
         },
         {
           "id": "mcp_github_get_repo",
           "name": "Get Repo",
           "description": "Get repository details (description, stars, language, topics)",
-          "displayName": { "running": "Getting repo", "complete": "Got repo" }
+          "displayName": {
+            "running": "Getting repo",
+            "complete": "Got repo"
+          }
         },
         {
           "id": "mcp_github_list_issues",
           "name": "List Issues",
           "description": "List issues in a repository (filter by state and labels)",
-          "displayName": { "running": "Listing issues", "complete": "Listed issues" }
+          "displayName": {
+            "running": "Listing issues",
+            "complete": "Listed issues"
+          }
         },
         {
           "id": "mcp_github_get_issue",
           "name": "Get Issue",
           "description": "Get a single issue with all comments",
-          "displayName": { "running": "Getting issue", "complete": "Got issue" }
+          "displayName": {
+            "running": "Getting issue",
+            "complete": "Got issue"
+          }
         },
         {
           "id": "mcp_github_list_pulls",
           "name": "List PRs",
           "description": "List pull requests in a repository",
-          "displayName": { "running": "Listing PRs", "complete": "Listed PRs" }
+          "displayName": {
+            "running": "Listing PRs",
+            "complete": "Listed PRs"
+          }
         },
         {
           "id": "mcp_github_get_pull",
           "name": "Get PR",
           "description": "Get a single pull request with diff summary",
-          "displayName": { "running": "Getting PR", "complete": "Got PR" }
+          "displayName": {
+            "running": "Getting PR",
+            "complete": "Got PR"
+          }
         },
         {
           "id": "mcp_github_get_file",
           "name": "Get File",
           "description": "Get file contents from a repository",
-          "displayName": { "running": "Reading file", "complete": "Read file" }
+          "displayName": {
+            "running": "Reading file",
+            "complete": "Read file"
+          }
         },
         {
           "id": "mcp_github_search_code",
           "name": "Search Code",
           "description": "Search code across GitHub repositories",
-          "displayName": { "running": "Searching code", "complete": "Searched code" }
+          "displayName": {
+            "running": "Searching code",
+            "complete": "Searched code"
+          }
         },
         {
           "id": "mcp_github_create_branch",
           "name": "Create Branch",
           "description": "Create a new branch in a repository (requires approval)",
-          "displayName": { "running": "Creating branch", "complete": "Created branch" }
+          "displayName": {
+            "running": "Creating branch",
+            "complete": "Created branch"
+          }
         },
         {
           "id": "mcp_github_push_files",
           "name": "Push Files",
           "description": "Create or update files on a branch (requires approval)",
-          "displayName": { "running": "Pushing files", "complete": "Pushed files" }
+          "displayName": {
+            "running": "Pushing files",
+            "complete": "Pushed files"
+          }
         },
         {
           "id": "mcp_github_create_pull_request",
           "name": "Create PR",
           "description": "Open a pull request (requires approval)",
-          "displayName": { "running": "Creating PR", "complete": "Created PR" }
+          "displayName": {
+            "running": "Creating PR",
+            "complete": "Created PR"
+          }
         }
       ]
     },
@@ -838,44 +1230,68 @@
       "enabled": false,
       "isDynamic": true,
       "runtime_arn_ssm": "/strands-agent-chatbot/dev/mcp/mcp-3lo-runtime-arn",
-      "tags": ["notion", "productivity", "notes", "database", "wiki", "knowledge"],
-      "systemPromptGuidance": "**Notion Tool Usage:**\n- notion_search: Search pages and databases. Use filter_type='database' to list databases.\n- notion_fetch: Read a page's full content as markdown (metadata + all blocks in one call).\n- notion_create_page: Create a new page with markdown content.\n- notion_update_page: Update page properties (not content — use notion_append_blocks for content).\n- notion_append_blocks: Add markdown content to an existing page.\n\n**Typical workflows:**\n- Find and read: notion_search → notion_fetch\n- Create from scratch: notion_create_page with content_markdown\n- Update content: notion_append_blocks with markdown\n\n**Markdown support in content_markdown/notion_append_blocks:**\n- Headings: # H1 / ## H2 / ### H3\n- Lists: - bullet / 1. numbered\n- To-do: - [ ] unchecked / - [x] checked\n- Code: ```python ... ```\n- Quote: > text\n- Divider: ---\n- Inline: **bold**, *italic*, `code`",
+      "tags": [
+        "notion",
+        "productivity",
+        "notes",
+        "database",
+        "wiki",
+        "knowledge"
+      ],
       "tools": [
         {
           "id": "mcp_notion_search",
           "name": "Search Notion",
           "description": "Search across all accessible Notion pages and databases",
-          "displayName": { "running": "Searching Notion", "complete": "Searched Notion" }
+          "displayName": {
+            "running": "Searching Notion",
+            "complete": "Searched Notion"
+          }
         },
         {
           "id": "mcp_notion_fetch",
           "name": "Fetch Page",
           "description": "Fetch a Notion page with full content as readable markdown",
-          "displayName": { "running": "Reading page", "complete": "Read page" }
+          "displayName": {
+            "running": "Reading page",
+            "complete": "Read page"
+          }
         },
         {
           "id": "mcp_notion_create_page",
           "name": "Create Page",
           "description": "Create a new page in a database or as child of another page",
-          "displayName": { "running": "Creating page", "complete": "Created page" }
+          "displayName": {
+            "running": "Creating page",
+            "complete": "Created page"
+          }
         },
         {
           "id": "mcp_notion_update_page",
           "name": "Update Page",
           "description": "Update Notion page properties (metadata and database fields)",
-          "displayName": { "running": "Updating page", "complete": "Updated page" }
+          "displayName": {
+            "running": "Updating page",
+            "complete": "Updated page"
+          }
         },
         {
           "id": "mcp_notion_update_block",
           "name": "Update Block",
           "description": "Replace the content of a specific block in a Notion page",
-          "displayName": { "running": "Updating block", "complete": "Updated block" }
+          "displayName": {
+            "running": "Updating block",
+            "complete": "Updated block"
+          }
         },
         {
           "id": "mcp_notion_append_blocks",
           "name": "Append Content",
           "description": "Append markdown content blocks to an existing Notion page",
-          "displayName": { "running": "Adding content", "complete": "Added content" }
+          "displayName": {
+            "running": "Adding content",
+            "complete": "Added content"
+          }
         }
       ]
     }

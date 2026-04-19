@@ -1,0 +1,9 @@
+name: google-search
+description: Google web search
+tools:
+  - name: google_web_search
+    description: Search the web using Google Custom Search API. Returns up to 5 high-quality results.
+    input_type: object
+    input_description: Search parameters
+    properties:
+      - { name: query, type: string, description: Search query string, required: true }

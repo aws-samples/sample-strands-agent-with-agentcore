@@ -82,8 +82,11 @@ export default function AuthWrapper({
   // Wait for Amplify config to load and auth check
   if (!isConfigured || isAuthenticated === null) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center gradient-subtle">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-8 w-8 rounded-full border-2 border-primary/40 border-t-primary animate-spin" />
+          <span className="text-sm text-muted-foreground tracking-wide">Loading...</span>
+        </div>
       </div>
     )
   }
@@ -91,8 +94,14 @@ export default function AuthWrapper({
   // Not authenticated - show login form
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <AuthForm onSuccess={() => setIsAuthenticated(true)} />
+      <div className="min-h-screen flex items-center justify-center gradient-subtle p-4 relative overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-1/4 -right-1/4 w-[600px] h-[600px] rounded-full bg-primary/[0.04] blur-3xl" />
+          <div className="absolute -bottom-1/4 -left-1/4 w-[500px] h-[500px] rounded-full bg-secondary/[0.04] blur-3xl" />
+        </div>
+        <div className="relative z-10 animate-fade-in">
+          <AuthForm onSuccess={() => setIsAuthenticated(true)} />
+        </div>
       </div>
     )
   }

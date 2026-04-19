@@ -1,55 +1,34 @@
 /**
  * Elicitation Complete API endpoint
- * Signals the backend that OAuth consent has completed.
- * The backend's elicitation bridge will unblock the waiting MCP tool.
+ *
+ * Writes the OAuth completion signal directly to the shared DynamoDB store
+ * that the orchestrator's elicitation_bridge reads. We do NOT call the
+ * orchestrator runtime here — the runtime only trusts user JWTs, and this
+ * request originates from a popup context where the Amplify session is
+ * sometimes not hydrated yet. The BFF (ECS task) has IAM permissions on the
+ * shared DynamoDB users table, so it can write the signal directly.
+ *
+ * Keeping the backend's /invocations handler for `elicitation_complete`
+ * is also fine for local/dev testing, but cloud traffic skips it.
  */
 import { NextRequest, NextResponse } from 'next/server'
-import { extractUserFromRequest, getSessionId } from '@/lib/auth-utils'
+import {
+  DynamoDBClient,
+  PutItemCommand,
+} from '@aws-sdk/client-dynamodb'
 
-// Check if running in local mode
-const IS_LOCAL = process.env.NEXT_PUBLIC_AGENTCORE_LOCAL === 'true'
-const AGENTCORE_URL = process.env.NEXT_PUBLIC_AGENTCORE_URL || 'http://localhost:8080'
-
-// AWS configuration
 const AWS_REGION = process.env.AWS_REGION || 'us-west-2'
-const PROJECT_NAME = process.env.PROJECT_NAME || 'strands-agent-chatbot'
-const ENVIRONMENT = process.env.ENVIRONMENT || 'dev'
+const TABLE_NAME = process.env.DYNAMODB_USERS_TABLE || 'strands-agent-chatbot-users-v2'
 
-// Cached runtime ARN
-let cachedRuntimeArn: string | null = null
+const dynamoClient = new DynamoDBClient({ region: AWS_REGION })
 
-async function getAgentCoreRuntimeArn(): Promise<string> {
-  if (cachedRuntimeArn) return cachedRuntimeArn
-
-  const envArn = process.env.AGENTCORE_RUNTIME_ARN
-  if (envArn) {
-    cachedRuntimeArn = envArn
-    return envArn
-  }
-
-  const { SSMClient, GetParameterCommand } = await import('@aws-sdk/client-ssm')
-  const ssmClient = new SSMClient({ region: AWS_REGION })
-  const paramPath = `/${PROJECT_NAME}/${ENVIRONMENT}/agentcore/runtime-arn`
-
-  const command = new GetParameterCommand({ Name: paramPath })
-  const response = await ssmClient.send(command)
-
-  if (response.Parameter?.Value) {
-    cachedRuntimeArn = response.Parameter.Value
-    return response.Parameter.Value
-  }
-
-  throw new Error('AGENTCORE_RUNTIME_ARN not configured')
-}
+const COMPLETION_TTL_SECONDS = 600
 
 export async function POST(request: NextRequest) {
   try {
-    const user = extractUserFromRequest(request)
-    const userId = user.userId
-
     const body = await request.json().catch(() => ({}))
-    const sessionId = body.sessionId
-    const elicitationId = body.elicitationId
+    const sessionId: string | undefined = body.sessionId
+    const elicitationId: string | undefined = body.elicitationId
 
     if (!sessionId) {
       return NextResponse.json(
@@ -58,53 +37,20 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`[Elicitation] Complete signal for session=${sessionId}, elicitationId=${elicitationId}`)
+    const eid = elicitationId || '__all__'
+    const now = Math.floor(Date.now() / 1000)
 
-    // AG-UI format elicitation complete payload
-    const payload = {
-      thread_id: sessionId,
-      run_id: crypto.randomUUID(),
-      messages: [],
-      tools: [],
-      context: [],
-      state: {
-        user_id: userId,
-        action: 'elicitation_complete',
-        elicitation_id: elicitationId || null
-      }
-    }
+    await dynamoClient.send(new PutItemCommand({
+      TableName: TABLE_NAME,
+      Item: {
+        userId: { S: `ELICIT#${sessionId}` },
+        sk: { S: `EID#${eid}` },
+        status: { S: 'completed' },
+        ttl: { N: String(now + COMPLETION_TTL_SECONDS) },
+      },
+    }))
 
-    if (IS_LOCAL) {
-      const response = await fetch(`${AGENTCORE_URL}/invocations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-
-      if (!response.ok) {
-        const errorText = await response.text()
-        console.error(`[Elicitation] Local AgentCore error: ${errorText}`)
-        return NextResponse.json(
-          { error: 'Failed to signal elicitation complete' },
-          { status: 500 }
-        )
-      }
-    } else {
-      const { BedrockAgentCoreClient, InvokeAgentRuntimeCommand } = await import('@aws-sdk/client-bedrock-agentcore')
-      const agentCoreClient = new BedrockAgentCoreClient({ region: AWS_REGION })
-      const runtimeArn = await getAgentCoreRuntimeArn()
-
-      const command = new InvokeAgentRuntimeCommand({
-        agentRuntimeArn: runtimeArn,
-        qualifier: 'DEFAULT',
-        contentType: 'application/json',
-        payload: Buffer.from(JSON.stringify(payload)),
-        runtimeUserId: userId,
-        runtimeSessionId: sessionId
-      })
-
-      await agentCoreClient.send(command)
-    }
+    console.log(`[Elicitation] Signalled in DynamoDB: session=${sessionId}, eid=${eid}`)
 
     return NextResponse.json({ success: true })
 

@@ -116,7 +116,7 @@ if (!messages || messages.length === 0) {
         const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
         try {
           const session = await fetchAuthSession()
-          const token = session.tokens?.idToken?.toString()
+          const token = session.tokens?.accessToken?.toString()
           if (token) {
             authHeaders['Authorization'] = `Bearer ${token}`
           }

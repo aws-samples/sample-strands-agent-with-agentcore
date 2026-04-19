@@ -215,3 +215,12 @@ Only use this when requirements are already fully resolved and you need explicit
   <acceptance_criteria>Commands that must pass: pytest, mypy, etc.</acceptance_criteria>
 </task>
 ```
+
+## UI Guidance (from tools-config)
+
+**Code Agent:**
+- Delegate tasks that require reading, writing, or running code in an isolated workspace
+- Uploaded files are automatically available — do not encode them in the task
+- Session state (files + context) persists across turns
+- Use compact_session=True for long sessions; reset_session=True only when switching to an unrelated project
+- After completion: summarize which files changed and key outcomes (2-3 sentences)

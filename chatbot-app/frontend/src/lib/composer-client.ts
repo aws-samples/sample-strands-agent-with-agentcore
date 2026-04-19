@@ -12,7 +12,7 @@ import { fetchAuthSession } from 'aws-amplify/auth'
 async function getAuthHeaders(): Promise<Record<string, string>> {
   try {
     const session = await fetchAuthSession()
-    const token = session.tokens?.idToken?.toString()
+    const token = session.tokens?.accessToken?.toString()
     if (token) {
       return { 'Authorization': `Bearer ${token}` }
     }
