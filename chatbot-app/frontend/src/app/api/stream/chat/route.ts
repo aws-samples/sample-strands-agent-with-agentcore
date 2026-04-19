@@ -33,7 +33,8 @@ async function resizeImageIfNeeded(
     return { buffer, resized: false }
   }
 
-  console.log(`[BFF] Image ${filename} is ${(buffer.length / 1024 / 1024).toFixed(2)}MB, resizing...`)
+  const safeName = filename.replace(/[^\w.\-]/g, '_').slice(0, 100)
+  console.log(`[BFF] Image ${safeName} is ${(buffer.length / 1024 / 1024).toFixed(2)}MB, resizing...`)
 
   // Determine output format (convert to jpeg for better compression, keep png for transparency)
   const isPng = contentType === 'image/png'
@@ -96,11 +97,11 @@ async function resizeImageIfNeeded(
       }
     }
 
-    console.log(`[BFF] Resized ${filename}: ${(buffer.length / 1024 / 1024).toFixed(2)}MB -> ${(result.length / 1024 / 1024).toFixed(2)}MB (quality: ${quality})`)
+    console.log(`[BFF] Resized ${safeName}: ${(buffer.length / 1024 / 1024).toFixed(2)}MB -> ${(result.length / 1024 / 1024).toFixed(2)}MB (quality: ${quality})`)
     return { buffer: result, resized: true }
 
   } catch (error) {
-    console.error(`[BFF] Failed to resize image ${filename}:`, error)
+    console.error(`[BFF] Failed to resize image ${safeName}:`, error)
     return { buffer, resized: false }
   }
 }
