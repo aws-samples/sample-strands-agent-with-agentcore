@@ -29,6 +29,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}))
     const sessionId: string | undefined = body.sessionId
     const elicitationId: string | undefined = body.elicitationId
+    const oauthSessionUri: string | undefined = body.oauthSessionUri
 
     if (!sessionId) {
       return NextResponse.json(
@@ -40,14 +41,19 @@ export async function POST(request: NextRequest) {
     const eid = elicitationId || '__all__'
     const now = Math.floor(Date.now() / 1000)
 
+    const item: Record<string, any> = {
+      userId: { S: `ELICIT#${sessionId}` },
+      sk: { S: `EID#${eid}` },
+      status: { S: 'completed' },
+      ttl: { N: String(now + COMPLETION_TTL_SECONDS) },
+    }
+    if (oauthSessionUri) {
+      item.oauthSessionUri = { S: oauthSessionUri }
+    }
+
     await dynamoClient.send(new PutItemCommand({
       TableName: TABLE_NAME,
-      Item: {
-        userId: { S: `ELICIT#${sessionId}` },
-        sk: { S: `EID#${eid}` },
-        status: { S: 'completed' },
-        ttl: { N: String(now + COMPLETION_TTL_SECONDS) },
-      },
+      Item: item,
     }))
 
     console.log(`[Elicitation] Signalled in DynamoDB: session=${sessionId}, eid=${eid}`)

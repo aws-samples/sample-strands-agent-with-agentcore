@@ -562,7 +562,12 @@ class ClaudeCodeExecutor(AgentExecutor):
         session_id = metadata.get("session_id", str(uuid.uuid4()))
         user_id = metadata.get("user_id", "default_user")
 
-        logger.info(f"[ClaudeCodeExecutor] session={session_id}, user={user_id}")
+        # Use model_id from orchestrator payload if provided
+        model_id = metadata.get("model_id")
+        if model_id:
+            os.environ["ANTHROPIC_MODEL"] = model_id
+
+        logger.info(f"[ClaudeCodeExecutor] session={session_id}, user={user_id}, model={model_id or os.environ.get('ANTHROPIC_MODEL', 'default')}")
         logger.info(f"[ClaudeCodeExecutor] task={task_text[:200]}")
 
         # --- Per-session workspace directory ---

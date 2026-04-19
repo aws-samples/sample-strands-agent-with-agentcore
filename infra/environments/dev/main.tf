@@ -218,8 +218,7 @@ module "runtime_code_agent" {
   artifact_bucket_name = aws_s3_bucket.artifacts.id
 
   extra_env_vars = {
-    ANTHROPIC_MODEL     = "us.anthropic.claude-sonnet-4-6"
-    CODE_INTERPRETER_ID = module.agentcore_shared.code_interpreter_id
+    CLAUDE_CODE_USE_BEDROCK = "1"
   }
 
   depends_on = [module.auth, aws_s3_bucket.artifacts, module.agentcore_shared]
@@ -600,16 +599,19 @@ print(wi, end='')
       echo "Workload Identity: $WI_ARN"
       echo "Callback URL: $CALLBACK_URL"
 
+      # Extract workload identity name from ARN (last segment after /)
+      WI_NAME=$(echo "$WI_ARN" | grep -o '[^/]*$')
+
       # Update Workload Identity with allowed callback URLs
       python3 -c "
 import boto3
 client = boto3.client('bedrock-agentcore-control', region_name='$REGION')
 client.update_workload_identity(
-    workloadIdentityArn='$WI_ARN',
+    name='$WI_NAME',
     allowedResourceOauth2ReturnUrls=['$CALLBACK_URL']
 )
-print('Workload Identity updated successfully')
-" 2>/dev/null || echo "WARNING: Failed to update Workload Identity"
+print('Workload Identity updated successfully: $WI_NAME')
+"
     EOT
   }
 

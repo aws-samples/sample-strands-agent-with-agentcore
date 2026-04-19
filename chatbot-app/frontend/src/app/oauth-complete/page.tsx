@@ -2,154 +2,70 @@
 
 import { useEffect, useState, useRef } from 'react'
 
-/**
- * OAuth Completion Page
- *
- * This page handles the callback after a user completes Google OAuth consent.
- * AgentCore redirects here with a session_id query parameter that we need to
- * use to complete the 3LO flow by calling CompleteResourceTokenAuth.
- *
- * Without this step, the token is never stored in Token Vault, causing an
- * infinite loop where the user is repeatedly asked for consent.
- */
 export default function OAuthCompletePage() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading')
   const [message, setMessage] = useState('Completing authorization...')
   const hasRun = useRef(false)
 
   useEffect(() => {
-    // Prevent double execution in React Strict Mode
     if (hasRun.current) return
     hasRun.current = true
 
-    const completeOAuth = async () => {
-      // Use window.location.search directly to avoid useSearchParams hydration issues
-      const urlParams = new URLSearchParams(window.location.search)
-      const sessionId = urlParams.get('session_id')
+    const urlParams = new URLSearchParams(window.location.search)
+    const oauthSessionUri = urlParams.get('session_id')
 
-      console.log(`[OAuth] URL: ${window.location.href}`)
-      console.log(`[OAuth] session_id: ${sessionId}`)
+    console.log(`[OAuth] Callback received, session_id: ${oauthSessionUri}`)
 
-      if (!sessionId) {
-        console.log('[OAuth] No session_id in URL')
-        setStatus('error')
-        setMessage('No session_id found in URL. Please try the authorization again.')
-        return
+    if (!oauthSessionUri) {
+      setStatus('error')
+      setMessage('No session_id found in URL. Please try the authorization again.')
+      return
+    }
+
+    // Read pending OAuth context saved by the parent window before opening this popup.
+    // Cross-origin OAuth redirects null out window.opener, so we cannot rely on postMessage.
+    let pending: { sessionId?: string; elicitationId?: string } = {}
+    try {
+      const raw = localStorage.getItem('oauth_pending')
+      if (raw) {
+        pending = JSON.parse(raw)
+        localStorage.removeItem('oauth_pending')
+      }
+    } catch { /* ignore parse errors */ }
+
+    const signalCompletion = async () => {
+      if (pending.sessionId) {
+        try {
+          await fetch('/api/stream/elicitation-complete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: pending.sessionId,
+              elicitationId: pending.elicitationId,
+              oauthSessionUri,
+            }),
+          })
+        } catch (e) {
+          console.error('[OAuth] Failed to signal via BFF:', e)
+        }
       }
 
-      // Check if this session_id was already processed (prevents duplicate API calls)
-      const processedKey = `oauth_processed_${sessionId}`
-      if (sessionStorage.getItem(processedKey)) {
-        console.log('[OAuth] Session already processed, showing success')
-        setStatus('success')
-        setMessage('Authorization completed! This window will close automatically.')
-        // Notify parent window
-        if (window.opener && !window.opener.closed) {
-          try {
-            window.opener.postMessage(
-              { type: 'oauth_elicitation_complete', sessionId },
-              window.location.origin
-            )
-          } catch (e) {
-            console.warn('[OAuth] Could not notify parent window:', e)
-          }
+      if (window.opener && !window.opener.closed) {
+        try {
+          window.opener.postMessage(
+            { type: 'oauth_elicitation_complete', sessionId: oauthSessionUri },
+            window.location.origin
+          )
+        } catch (e) {
+          console.warn('[OAuth] Could not notify parent window:', e)
         }
-        setTimeout(() => window.close(), 2000)
-        return
-      }
-
-      console.log(`[OAuth] Completing 3LO flow with session_id: ${sessionId}`)
-
-      try {
-        // Get auth token from localStorage (Cognito stores with complex key pattern)
-        // Pattern: CognitoIdentityServiceProvider.{clientId}.{userId}.idToken
-        let authToken = localStorage.getItem('authToken') || ''
-
-        if (!authToken) {
-          // Search for Cognito idToken in localStorage
-          const cognitoTokenKey = Object.keys(localStorage).find(key => key.endsWith('.idToken'))
-          if (cognitoTokenKey) {
-            authToken = localStorage.getItem(cognitoTokenKey) || ''
-            console.log(`[OAuth] Found Cognito token with key: ${cognitoTokenKey}`)
-          }
-        }
-        console.log(`[OAuth] Auth token present: ${!!authToken}, length: ${authToken.length}`)
-
-        const response = await fetch('/api/oauth/complete', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': authToken ? `Bearer ${authToken}` : ''
-          },
-          body: JSON.stringify({ session_id: sessionId })
-        })
-
-        console.log(`[OAuth] API response status: ${response.status}`)
-
-        if (!response.ok) {
-          const error = await response.json()
-          console.error('[OAuth] API error:', error)
-          throw new Error(error.details || error.error || 'Unknown error')
-        }
-
-        const result = await response.json()
-        console.log('[OAuth] Flow completed successfully:', result)
-
-        // Mark this session as processed to prevent duplicate calls
-        sessionStorage.setItem(processedKey, 'true')
-
-        setStatus('success')
-        setMessage(result.message || 'Authorization completed! This window will close automatically.')
-
-        // Notify parent window that OAuth is complete
-        if (window.opener && !window.opener.closed) {
-          try {
-            window.opener.postMessage(
-              { type: 'oauth_elicitation_complete', sessionId },
-              window.location.origin
-            )
-            console.log('[OAuth] Notified parent window of elicitation completion')
-          } catch (e) {
-            console.warn('[OAuth] Could not notify parent window:', e)
-          }
-        }
-
-        // Auto-close after a short delay
-        setTimeout(() => {
-          window.close()
-        }, 2000)
-
-      } catch (error) {
-        console.error('[OAuth] Error completing flow:', error)
-        const errorMessage = error instanceof Error ? error.message : String(error)
-
-        // "Invalid request" often means the session was already processed successfully
-        // This can happen due to page refresh or double navigation
-        if (errorMessage.includes('Invalid request') || errorMessage.includes('Invalid or expired session')) {
-          console.log('[OAuth] Session likely already processed, treating as success')
-          sessionStorage.setItem(processedKey, 'true')
-          setStatus('success')
-          setMessage('Authorization completed! This window will close automatically.')
-          if (window.opener && !window.opener.closed) {
-            try {
-              window.opener.postMessage(
-                { type: 'oauth_elicitation_complete', sessionId },
-                window.location.origin
-              )
-            } catch (e) {
-              console.warn('[OAuth] Could not notify parent window:', e)
-            }
-          }
-          setTimeout(() => window.close(), 2000)
-          return
-        }
-
-        setStatus('error')
-        setMessage(`Authorization failed: ${errorMessage}`)
       }
     }
 
-    completeOAuth()
+    signalCompletion()
+    setStatus('success')
+    setMessage('Authorization completed! This window will close automatically.')
+    setTimeout(() => window.close(), 1500)
   }, [])
 
   return (
@@ -162,25 +78,19 @@ export default function OAuthCompletePage() {
               Completing Authorization
             </h1>
             <p className="text-gray-600 dark:text-gray-400">
-              Please wait while we complete the connection to your Google account...
+              Please wait...
             </p>
           </>
         )}
 
         {status === 'success' && (
           <>
-            <div className="text-green-500 text-5xl mb-4">✓</div>
+            <div className="text-green-500 text-5xl mb-4">&#10003;</div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
               Authorization Successful
             </h1>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               {message}
-            </p>
-            <p className="text-sm text-blue-600 dark:text-blue-400">
-              Your request will continue automatically.
-            </p>
-            <p className="text-sm text-gray-500 dark:text-gray-500">
-              This window will close automatically...
             </p>
             <button
               onClick={() => window.close()}
@@ -193,15 +103,12 @@ export default function OAuthCompletePage() {
 
         {status === 'error' && (
           <>
-            <div className="text-red-500 text-5xl mb-4">✕</div>
+            <div className="text-red-500 text-5xl mb-4">&#10005;</div>
             <h1 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
               Authorization Failed
             </h1>
             <p className="text-red-600 dark:text-red-400 mb-4">
               {message}
-            </p>
-            <p className="text-gray-600 dark:text-gray-400 text-sm mb-4">
-              Please close this window and try again. If the problem persists, contact support.
             </p>
             <button
               onClick={() => window.close()}

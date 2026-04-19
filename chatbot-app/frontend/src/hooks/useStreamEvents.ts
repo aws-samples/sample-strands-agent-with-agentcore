@@ -1037,6 +1037,7 @@ export const useStreamEvents = ({
 
     console.log(`[OAuth Elicitation] Authorization required for ${serviceName}:`, ev.authUrl)
 
+    const chatSessionId = sessionId
     setSessionState(prev => ({
       ...prev,
       pendingOAuth: {
@@ -1046,6 +1047,15 @@ export const useStreamEvents = ({
         elicitationId: ev.elicitationId,
       }
     }))
+
+    // Persist pending OAuth context so the popup can signal completion
+    // even when window.opener is lost after cross-origin OAuth redirects.
+    try {
+      localStorage.setItem('oauth_pending', JSON.stringify({
+        sessionId: chatSessionId,
+        elicitationId: ev.elicitationId,
+      }))
+    } catch { /* quota exceeded — postMessage fallback still works */ }
 
     // Auto-open OAuth popup
     const popup = window.open(
@@ -1064,7 +1074,7 @@ export const useStreamEvents = ({
         } : null
       }))
     }
-  }, [setSessionState])
+  }, [setSessionState, sessionId])
 
   // Swarm Mode event handlers
   const isCodeAgentExec = (t: ToolExecution) =>

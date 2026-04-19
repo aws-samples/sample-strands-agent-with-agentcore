@@ -377,6 +377,8 @@ resource "aws_iam_role_policy" "orchestrator_extra" {
           "bedrock-agentcore:GetAgentCard",
           "bedrock-agentcore:GetAgentRuntime",
           "bedrock-agentcore:GetAgentRuntimeEndpoint",
+          "bedrock-agentcore:CompleteResourceTokenAuth",
+          "secretsmanager:GetSecretValue",
         ]
         Resource = "*"
       },

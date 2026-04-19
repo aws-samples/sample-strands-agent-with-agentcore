@@ -451,7 +451,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         await fetch('/api/stream/elicitation-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ sessionId, elicitationId }),
+          body: JSON.stringify({ sessionId, elicitationId, oauthSessionUri: event.data.sessionId }),
         })
       } catch (error) {
         console.error('[useChat] Failed to signal elicitation complete:', error)

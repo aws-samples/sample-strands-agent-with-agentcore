@@ -408,7 +408,7 @@ class ToolFilterRegistry:
                 from agent.mcp.elicitation_bridge import (
                     OAuthElicitationBridge, register_bridge,
                 )
-                elicitation_bridge = OAuthElicitationBridge(session_id)
+                elicitation_bridge = OAuthElicitationBridge(session_id, auth_token=auth_token)
                 register_bridge(session_id, elicitation_bridge)
                 logger.debug(f"{log_prefix} Elicitation bridge created for session {session_id}")
 

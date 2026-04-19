@@ -131,7 +131,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   // Sign In View
   if (view === 'signIn') {
     return (
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="mx-auto mb-5 h-12 w-12 rounded-xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/20">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
@@ -212,7 +212,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   // Sign Up View
   if (view === 'signUp') {
     return (
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="mx-auto mb-5 h-12 w-12 rounded-xl gradient-primary flex items-center justify-center shadow-lg shadow-primary/20">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-white">
@@ -296,7 +296,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   // Confirm Sign Up View (Email Verification)
   if (view === 'confirmSignUp') {
     return (
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="mx-auto mb-5 h-12 w-12 rounded-xl bg-secondary/10 flex items-center justify-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
@@ -355,7 +355,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   // Forgot Password View
   if (view === 'forgotPassword') {
     return (
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="mx-auto mb-5 h-12 w-12 rounded-xl bg-secondary/10 flex items-center justify-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
@@ -414,7 +414,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
   // Confirm Reset Password View
   if (view === 'confirmReset') {
     return (
-      <div className="w-full max-w-sm">
+      <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <div className="mx-auto mb-5 h-12 w-12 rounded-xl bg-secondary/10 flex items-center justify-center">
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-secondary">
