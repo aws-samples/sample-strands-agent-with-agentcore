@@ -1,11 +1,12 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.11.0"
 
-  # Backend config (bucket, dynamodb_table, region) is injected by
+  # Backend config (bucket, region) is injected by
   # infra/scripts/deploy.sh via -backend-config flags.
   backend "s3" {
-    key     = "dev/terraform.tfstate"
-    encrypt = true
+    key          = "dev/terraform.tfstate"
+    encrypt      = true
+    use_lockfile = true
   }
 
   required_providers {

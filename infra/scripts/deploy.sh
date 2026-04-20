@@ -4,7 +4,7 @@
 # Usage:
 #   ./infra/scripts/deploy.sh [plan|apply|destroy|init] [-target=...]
 #
-# - Auto-bootstraps the S3 state bucket + DynamoDB lock table on first run.
+# - Auto-bootstraps the S3 state bucket on first run (S3 native locking).
 # - Derives backend config from PROJECT_NAME/AWS_REGION/AWS account id.
 # - Re-inits terraform if backend config changed.
 
@@ -79,7 +79,6 @@ STATE_REGION="us-east-1"
 
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 STATE_BUCKET="${PROJECT_NAME}-tfstate-${ACCOUNT_ID}-${STATE_REGION}"
-LOCK_TABLE="${PROJECT_NAME}-tflock"
 
 # ------------------------------------------------------------
 # API key prompts (only for apply; skipped if secret already exists)
@@ -422,7 +421,7 @@ ensure_backend() {
     return 0
   fi
 
-  echo ">>> Bootstrapping Terraform state backend (bucket + lock table in $STATE_REGION)..."
+  echo ">>> Bootstrapping Terraform state backend (bucket only; S3 native locking) in $STATE_REGION..."
   (
     cd "$BOOTSTRAP_DIR"
     terraform init -input=false
@@ -439,7 +438,6 @@ tf_init() {
   cd "$ENV_DIR"
   terraform init -input=false -reconfigure \
     -backend-config="bucket=${STATE_BUCKET}" \
-    -backend-config="dynamodb_table=${LOCK_TABLE}" \
     -backend-config="region=${STATE_REGION}"
 }
 
