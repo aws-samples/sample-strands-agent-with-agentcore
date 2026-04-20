@@ -141,7 +141,7 @@ resource "aws_iam_role_policy" "registry_manager" {
 resource "aws_lambda_function" "registry_manager" {
   function_name    = local.function_name
   filename         = "${path.module}/lambda/registry-manager.zip"
-  source_code_hash = filemd5("${path.module}/lambda/index.py")
+  source_code_hash = filemd5("${path.module}/lambda/registry-manager.zip")
   handler          = "index.lambda_handler"
   runtime          = "python3.14"
   timeout          = 300
@@ -279,22 +279,23 @@ resource "aws_cloudformation_stack" "records_a2a" {
   depends_on = [aws_cloudformation_stack.registry]
 }
 
-# --- Skills Records Stack ---
+# --- Skills Records Stacks (one stack per record) ---
+# Bundled SKILL.md content exceeds CFN's 51,200-byte inline template limit.
 resource "aws_cloudformation_stack" "records_skills" {
-  count = length(local.skill_records) > 0 ? 1 : 0
-  name  = "${var.project_name}-${var.environment}-records-skills"
+  for_each = local.skill_records
+  name     = "${var.project_name}-${var.environment}-record-${each.key}"
 
   template_body = jsonencode({
     AWSTemplateFormatVersion = "2010-09-09"
     Resources = {
-      for k, _ in local.skill_records : "Record${replace(replace(k, "-", ""), "_", "")}" => {
+      Record = {
         Type = "Custom::AgentCoreRegistryRecord"
-        Properties = local._record_properties[k]
+        Properties = local._record_properties[each.key]
       }
     }
     Outputs = {
-      for k, _ in local.skill_records : "RecordId${replace(replace(k, "-", ""), "_", "")}" => {
-        Value = { "Fn::GetAtt" = ["Record${replace(replace(k, "-", ""), "_", "")}", "RecordId"] }
+      RecordId = {
+        Value = { "Fn::GetAtt" = ["Record", "RecordId"] }
       }
     }
   })

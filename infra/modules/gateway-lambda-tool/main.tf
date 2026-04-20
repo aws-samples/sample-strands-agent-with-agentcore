@@ -19,6 +19,10 @@ locals {
 resource "null_resource" "build" {
   triggers = {
     source_hash = local.source_hash
+    # Force rebuild when the .build output directory has been wiped out of band
+    # (branch switch, manual cleanup). Without this, data.archive_file below
+    # fails at plan time because null_resource.build doesn't rerun on hash alone.
+    build_present = fileexists("${local.build_dir}/lambda_function.py") ? "present" : "missing"
   }
 
   provisioner "local-exec" {

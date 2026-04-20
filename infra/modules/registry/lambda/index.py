@@ -107,14 +107,33 @@ def handle_registry(event, props):
     elif request_type == "Delete":
         registry_id = event["PhysicalResourceId"]
         try:
-            records = client.list_registry_records(registryId=registry_id).get("registryRecords", [])
-            for r in records:
-                try:
-                    rec_id = r.get("recordId") or r.get("recordArn", "").split("/")[-1]
-                    client.delete_registry_record(registryId=registry_id, recordId=rec_id)
-                    logger.info(f"Deleted record: {rec_id}")
-                except Exception as e:
-                    logger.warning(f"Failed to delete record: {e}")
+            # ListRegistryRecords returns [] unless a status filter is supplied,
+            # so iterate over every status to catch all records.
+            statuses = [
+                "DRAFT", "PENDING_APPROVAL", "APPROVED", "REJECTED",
+                "DEPRECATED", "CREATING", "UPDATING", "CREATE_FAILED", "UPDATE_FAILED",
+            ]
+            seen = set()
+            for status in statuses:
+                token = None
+                while True:
+                    kwargs = {"registryId": registry_id, "status": status, "maxResults": 100}
+                    if token:
+                        kwargs["nextToken"] = token
+                    resp = client.list_registry_records(**kwargs)
+                    for r in resp.get("registryRecords", []):
+                        rec_id = r.get("recordId") or r.get("recordArn", "").split("/")[-1]
+                        if not rec_id or rec_id in seen:
+                            continue
+                        seen.add(rec_id)
+                        try:
+                            client.delete_registry_record(registryId=registry_id, recordId=rec_id)
+                            logger.info(f"Deleted record: {rec_id}")
+                        except Exception as e:
+                            logger.warning(f"Failed to delete record {rec_id}: {e}")
+                    token = resp.get("nextToken")
+                    if not token:
+                        break
 
             client.delete_registry(registryId=registry_id)
             logger.info(f"Deleted registry: {registry_id}")

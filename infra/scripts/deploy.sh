@@ -77,6 +77,10 @@ export TF_VAR_aws_region="$AWS_REGION"
 # so we pin it here to avoid accidental bucket renames on region changes.
 STATE_REGION="us-east-1"
 
+if ! aws sts get-caller-identity --query Account --output text >/dev/null 2>&1; then
+  echo "ERROR: Cannot reach AWS APIs. Check your network connection and credentials."
+  exit 1
+fi
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 STATE_BUCKET="${PROJECT_NAME}-tfstate-${ACCOUNT_ID}-${STATE_REGION}"
 LOCK_TABLE="${PROJECT_NAME}-tflock"
@@ -488,8 +492,8 @@ clean_failed_registry_stacks() {
         terraform state rm 'module.registry.aws_cloudformation_stack.records_skills[0]' 2>/dev/null || true
         ;;
       ${prefix}record-*)
-        # Legacy per-record stacks (from before batching) — clean up state if present
         local key="${s#${prefix}record-}"
+        terraform state rm "module.registry.aws_cloudformation_stack.records_skills[\"${key}\"]" 2>/dev/null || true
         terraform state rm "module.registry.aws_cloudformation_stack.records[\"${key}\"]" 2>/dev/null || true
         ;;
     esac
@@ -545,23 +549,6 @@ reconcile_registry_record_drift() {
     esac
   done
 
-  # Also clean up any legacy per-record stacks from before batching
-  local legacy_prefix="${PROJECT_NAME}-dev-record-"
-  local legacy_stacks
-  legacy_stacks=$(aws cloudformation list-stacks \
-    --region "$AWS_REGION" \
-    --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE \
-    --query "StackSummaries[?starts_with(StackName, \`${legacy_prefix}\`)].StackName" \
-    --output text 2>/dev/null || true)
-
-  if [ -n "$legacy_stacks" ]; then
-    echo ">>> Cleaning legacy per-record stacks (migrated to batched stacks)"
-    for s in $legacy_stacks; do
-      aws cloudformation delete-stack --stack-name "$s" --region "$AWS_REGION" 2>/dev/null || true
-      local key="${s#${legacy_prefix}}"
-      terraform state rm "module.registry.aws_cloudformation_stack.records[\"${key}\"]" 2>/dev/null || true
-    done
-  fi
 }
 
 # ------------------------------------------------------------
