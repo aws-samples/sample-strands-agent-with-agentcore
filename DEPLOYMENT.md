@@ -8,7 +8,7 @@ Complete deployment instructions for the AgentCore-based chatbot platform.
 - **AWS CLI** configured with credentials
 - **Docker** installed and running
 - **Node.js** and **Python** installed
-- **Terraform** >= 1.5
+- **Terraform** >= 1.11.0 (required for S3 native state locking via `use_lockfile`)
 - **AgentCore** enabled in your AWS account region
 
 ## Architecture Overview
@@ -267,6 +267,51 @@ cd infra/environments/dev
 terraform force-unlock LOCK-ID
 ```
 
+### Migrating from DynamoDB-based locking
+
+Older deployments used a DynamoDB `${project}-tflock` table for state locking. This repo now uses S3 native locking (`use_lockfile = true`), which requires Terraform >= 1.11. Existing deployments should cut over in two phases.
+
+**Phase 1 — dual-lock (all operators upgrade to TF >= 1.11):**
+
+Temporarily edit `infra/environments/dev/backend.tf` locally to keep both locks active while the team upgrades:
+
+```hcl
+backend "s3" {
+  key            = "dev/terraform.tfstate"
+  encrypt        = true
+  use_lockfile   = true
+  dynamodb_table = "strands-agent-chatbot-tflock"  # temporary, keep during rollout
+}
+```
+
+Run `terraform init -reconfigure` in `infra/environments/dev/`. Confirm `plan`/`apply` works. Leave this in place until every operator is on TF >= 1.11.
+
+**Phase 2 — cutover (drop DynamoDB):**
+
+1. Pull the new shipped `backend.tf` (S3-only, no `dynamodb_table`).
+2. `./infra/scripts/deploy.sh init` — runs `terraform init -reconfigure` against the existing state.
+3. `cd infra/bootstrap && terraform init && terraform apply` — this destroys `aws_dynamodb_table.tflock`. No manual `aws dynamodb delete-table` call is required.
+
+### Rolling back state
+
+The bootstrap bucket has versioning enabled, so any prior `terraform.tfstate` object version can be restored in place:
+
+```bash
+# List prior versions of the state object
+aws s3api list-object-versions \
+  --bucket "${PROJECT_NAME}-tfstate-${ACCOUNT_ID}-us-east-1" \
+  --prefix dev/terraform.tfstate
+
+# Restore a specific versionId as the current object
+aws s3api copy-object \
+  --bucket "${PROJECT_NAME}-tfstate-${ACCOUNT_ID}-us-east-1" \
+  --key dev/terraform.tfstate \
+  --copy-source "${PROJECT_NAME}-tfstate-${ACCOUNT_ID}-us-east-1/dev/terraform.tfstate?versionId=VERSION_ID"
+
+# Confirm drift against live infra
+cd infra/environments/dev && terraform plan
+```
+
 ### Local Development Issues
 
 ```bash
@@ -367,7 +412,7 @@ The Terraform infrastructure is organized as:
 
 ```
 infra/
-+-- bootstrap/             # S3 state bucket + DynamoDB lock (one-time)
++-- bootstrap/             # S3 state bucket (one-time)
 +-- environments/dev/      # Root module wiring all components
 +-- modules/
 |   +-- auth               # Cognito (pool, clients, resource server)

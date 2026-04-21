@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.11.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -34,7 +34,6 @@ data "aws_caller_identity" "current" {}
 
 locals {
   state_bucket = "${var.project_name}-tfstate-${data.aws_caller_identity.current.account_id}-${var.aws_region}"
-  lock_table   = "${var.project_name}-tflock"
 }
 
 resource "aws_s3_bucket" "tfstate" {
@@ -66,31 +65,16 @@ resource "aws_s3_bucket_public_access_block" "tfstate" {
   restrict_public_buckets = true
 }
 
-resource "aws_dynamodb_table" "tflock" {
-  name         = local.lock_table
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-}
-
 output "state_bucket" {
   value = aws_s3_bucket.tfstate.bucket
-}
-
-output "lock_table" {
-  value = aws_dynamodb_table.tflock.name
 }
 
 output "backend_hcl" {
   description = "Paste into environments/*/backend.tf"
   value       = <<-EOT
-    bucket         = "${aws_s3_bucket.tfstate.bucket}"
-    dynamodb_table = "${aws_dynamodb_table.tflock.name}"
-    region         = "${var.aws_region}"
-    encrypt        = true
+    bucket       = "${aws_s3_bucket.tfstate.bucket}"
+    region       = "${var.aws_region}"
+    encrypt      = true
+    use_lockfile = true
   EOT
 }
