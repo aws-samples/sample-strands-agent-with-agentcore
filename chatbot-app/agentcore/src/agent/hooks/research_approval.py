@@ -23,38 +23,22 @@ class ResearchApprovalHook(HookProvider):
         """Request user approval before executing A2A agent tools"""
         tool_name = event.tool_use.get("name", "")
 
-        if tool_name not in ["research_agent", "browser_use_agent"]:
+        if tool_name != "research_agent":
             return
 
         tool_input = event.tool_use.get("input", {})
+        plan = tool_input.get("plan", "No plan provided")
+        logger.debug(f"Requesting approval for research_agent")
 
-        if tool_name == "research_agent":
-            plan = tool_input.get("plan", "No plan provided")
-            logger.debug(f"Requesting approval for research_agent")
-
-            approval = event.interrupt(
-                f"{self.app_name}-research-approval",
-                reason={
-                    "tool_name": tool_name,
-                    "plan": plan,
-                    "plan_preview": plan[:200] + "..." if len(plan) > 200 else plan
-                }
-            )
-            action = "research"
-
-        elif tool_name == "browser_use_agent":
-            task = tool_input.get("task", "No task provided")
-            logger.debug(f"Requesting approval for browser_use_agent")
-
-            approval = event.interrupt(
-                f"{self.app_name}-browser-approval",
-                reason={
-                    "tool_name": tool_name,
-                    "task": task,
-                    "task_preview": task[:200] + "..." if len(task) > 200 else task,
-                }
-            )
-            action = "browser automation"
+        approval = event.interrupt(
+            f"{self.app_name}-research-approval",
+            reason={
+                "tool_name": tool_name,
+                "plan": plan,
+                "plan_preview": plan[:200] + "..." if len(plan) > 200 else plan
+            }
+        )
+        action = "research"
 
         if approval and approval.lower() in ["y", "yes", "approve", "approved"]:
             logger.debug(f"{action.capitalize()} approved by user")

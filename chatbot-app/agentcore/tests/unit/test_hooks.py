@@ -65,23 +65,6 @@ class TestResearchApprovalHook:
         call_args = mock_event.interrupt.call_args
         assert "chatbot-research-approval" in call_args[0][0]
 
-    def test_interrupts_browser_use_agent(self, mock_event):
-        """Test hook interrupts browser_use_agent tool."""
-        from agent.hooks import ResearchApprovalHook
-        hook = ResearchApprovalHook()
-
-        mock_event.tool_use = {
-            "name": "browser_use_agent",
-            "input": {"task": "Navigate to Amazon"}
-        }
-        mock_event.interrupt.return_value = "approved"
-
-        hook.request_approval(mock_event)
-
-        mock_event.interrupt.assert_called_once()
-        call_args = mock_event.interrupt.call_args
-        assert "chatbot-browser-approval" in call_args[0][0]
-
     def test_approved_response_continues(self, mock_event):
         """Test approved response allows tool execution."""
         from agent.hooks import ResearchApprovalHook
@@ -158,25 +141,6 @@ class TestResearchApprovalHook:
         call_args = mock_event.interrupt.call_args
         reason = call_args[1]["reason"]
         assert reason["plan"] == plan
-
-    def test_interrupt_reason_contains_task(self, mock_event):
-        """Test interrupt reason includes browser task."""
-        from agent.hooks import ResearchApprovalHook
-        hook = ResearchApprovalHook()
-
-        task = "Navigate to Amazon and search for headphones"
-        mock_event.tool_use = {
-            "name": "browser_use_agent",
-            "input": {"task": task}
-        }
-        mock_event.interrupt.return_value = "approved"
-
-        hook.request_approval(mock_event)
-
-        call_args = mock_event.interrupt.call_args
-        reason = call_args[1]["reason"]
-        assert reason["task"] == task
-
 
 class TestResolveToolCall:
     """Tests for the shared resolve_tool_call utility."""

@@ -102,13 +102,10 @@ resource "null_resource" "nova_act_workflow" {
       except Exception as e:
           print(f"boto3 nova-act client unavailable: {e}", file=sys.stderr); sys.exit(2)
       try:
-          wfs = c.list_workflow_definitions().get("workflowDefinitions", [])
-          if any(w.get("name") == "$NAME" for w in wfs):
-              print("Nova Act workflow '$NAME' already exists"); sys.exit(0)
-      except Exception as e:
-          print(f"list failed: {e}", file=sys.stderr)
-      c.create_workflow_definition(name="$NAME")
-      print("Created Nova Act workflow '$NAME'")
+          c.create_workflow_definition(name="$NAME")
+          print("Created Nova Act workflow '$NAME'")
+      except c.exceptions.ConflictException:
+          print("Nova Act workflow '$NAME' already exists")
       PY
     EOT
   }

@@ -6,9 +6,7 @@ import { NextRequest } from 'next/server'
 import { invokeAgentCoreRuntime } from '@/lib/agentcore-runtime-client'
 import { extractUserFromRequest, getSessionId, ensureSessionExists } from '@/lib/auth-utils'
 import { createDefaultHookManager } from '@/lib/chat-hooks'
-import { getSystemPrompt } from '@/lib/system-prompts'
 import sharp from 'sharp'
-// Note: browser-session-poller is dynamically imported when browser-use-agent is enabled
 
 // Maximum image size in bytes — must stay well under AgentCore Memory's
 // CreateEvent payload limit. Raw bytes become ~33% larger in base64.
@@ -263,7 +261,7 @@ export async function POST(request: NextRequest) {
     let modelConfig = {
       model_id: defaultModelId,
       temperature: temperature ?? 0.5,
-      system_prompt: getSystemPrompt(),
+      system_prompt: "",
       caching_enabled: defaultModelId.toLowerCase().includes('claude')
     }
 
@@ -315,7 +313,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Use default system prompt (prompt selection feature removed)
-    const basePrompt = getSystemPrompt()
+    const basePrompt = ""
 
     // Add current date to system prompt (at the end)
     const currentDate = getCurrentDatePacific()

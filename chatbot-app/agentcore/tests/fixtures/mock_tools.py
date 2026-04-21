@@ -102,51 +102,6 @@ class MockStreamingTool(MockTool):
             yield chunk
 
 
-class MockBrowserTool(MockTool):
-    """
-    Mock browser automation tool for testing browser-related flows.
-    """
-
-    def __init__(
-        self,
-        browser_session_id: str = "mock-browser-session-123",
-        browser_id: str = "mock-browser-456",
-        **kwargs
-    ):
-        super().__init__(name="browser_use_agent", **kwargs)
-        self.browser_session_id = browser_session_id
-        self.browser_id = browser_id
-
-    def stream(
-        self,
-        tool_use: Dict[str, Any],
-        invocation_state: Dict[str, Any],
-        **kwargs
-    ) -> Generator[Dict[str, Any], None, None]:
-        """Stream browser tool events including session info."""
-        self.call_count += 1
-        self.last_input = tool_use.get("input", {})
-
-        # Emit browser session detected event
-        yield {
-            "type": "browser_session_detected",
-            "browserSessionId": self.browser_session_id,
-            "browserId": self.browser_id,
-            "message": "Browser session started"
-        }
-
-        # Emit some browser steps
-        for i in range(3):
-            yield {
-                "type": "browser_step",
-                "stepNumber": i + 1,
-                "content": f"Step {i + 1}: Mock browser action"
-            }
-
-        # Final result
-        yield f"Browser task completed: {tool_use.get('input', {}).get('task', 'unknown task')}"
-
-
 class MockResearchTool(MockTool):
     """
     Mock research agent tool for testing HITL approval flows.

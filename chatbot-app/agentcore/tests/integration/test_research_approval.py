@@ -385,16 +385,3 @@ class TestFrontendInterruptContract:
         assert "plan" in research_reason
         assert isinstance(research_reason["plan"], str)
 
-    def test_interrupt_reason_structure_for_browser(self):
-        """Test browser interrupt reason has task and max_steps fields."""
-        # Frontend accesses: interrupt.reason?.task, interrupt.reason?.max_steps
-        browser_reason = {
-            "tool_name": "browser_use_agent",
-            "task": "Navigate to Amazon.com and search for wireless headphones",
-            "max_steps": 15
-        }
-
-        assert "task" in browser_reason
-        assert "max_steps" in browser_reason
-        assert isinstance(browser_reason["task"], str)
-        assert isinstance(browser_reason["max_steps"], int)

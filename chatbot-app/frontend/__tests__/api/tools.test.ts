@@ -43,19 +43,7 @@ const sampleToolsConfig = {
       ]
     }
   ],
-  browser_automation: [
-    {
-      id: 'browser_use_tools',
-      name: 'Browser Use',
-      description: 'Browser automation',
-      category: 'Automation',
-      icon: '🌐',
-      isDynamic: true,
-      tools: [
-        { id: 'browser_use_agent', name: 'Browser Agent', description: 'Automated browsing' }
-      ]
-    }
-  ],
+  browser_automation: [],
   gateway_targets: [
     {
       id: 'google_maps_tools',
@@ -241,14 +229,6 @@ describe('Tools API', () => {
       expect(anyToolEnabled).toBe(true)
     })
 
-    it('should handle browser automation with nested tools', () => {
-      const enabledToolIds = ['browser_use_agent']
-
-      const browserGroup = sampleToolsConfig.browser_automation[0]
-      const anyToolEnabled = browserGroup.tools?.some(tool => enabledToolIds.includes(tool.id))
-
-      expect(anyToolEnabled).toBe(true)
-    })
   })
 
   describe('User Authentication', () => {

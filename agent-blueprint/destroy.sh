@@ -301,7 +301,7 @@ destroy_agentcore_a2a() {
     cd agentcore-runtime-a2a-stack
 
     # Agents excluded from deployment/destruction
-    EXCLUDED_AGENTS=("browser-use-agent")
+    EXCLUDED_AGENTS=()
 
     # List available A2A agents
     A2A_AGENTS=()

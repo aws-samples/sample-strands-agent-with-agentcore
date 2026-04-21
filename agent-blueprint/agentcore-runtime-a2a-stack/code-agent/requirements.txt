@@ -16,7 +16,7 @@ httpx>=0.24.0
 anyio>=3.6.0
 
 # A2A SDK for agent-to-agent communication
-a2a-sdk>=0.3.20
+a2a-sdk>=0.3.20,<1.0.0
 
 # OpenTelemetry (for observability)
 aws-opentelemetry-distro>=0.10.1

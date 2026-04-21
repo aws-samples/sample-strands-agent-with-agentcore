@@ -74,22 +74,22 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "dev")
 WORKSPACE_BASE = os.getenv("WORKSPACE_BASE", "/tmp/workspaces")
 
 
-def _resolve_document_bucket() -> str:
-    """Get document bucket name from env var, falling back to SSM."""
-    bucket = os.getenv("DOCUMENT_BUCKET", "")
+def _resolve_artifact_bucket() -> str:
+    """Get artifact bucket name from env var, falling back to SSM."""
+    bucket = os.getenv("ARTIFACT_BUCKET", "")
     if bucket:
         return bucket
     try:
         import boto3
         ssm = boto3.client("ssm", region_name=AWS_REGION)
-        resp = ssm.get_parameter(Name=f"/{PROJECT_NAME}/{ENVIRONMENT}/agentcore/document-bucket")
+        resp = ssm.get_parameter(Name=f"/{PROJECT_NAME}/{ENVIRONMENT}/agentcore/artifact-bucket")
         return resp["Parameter"]["Value"]
     except Exception as e:
-        logger.warning(f"[Config] Could not resolve DOCUMENT_BUCKET from SSM: {e}")
+        logger.warning(f"[Config] Could not resolve ARTIFACT_BUCKET from SSM: {e}")
         return ""
 
 
-DOCUMENT_BUCKET = _resolve_document_bucket()
+ARTIFACT_BUCKET = _resolve_artifact_bucket()
 
 # ~/.claude/ — where Claude Code CLI stores session .jsonl files
 CLAUDE_HOME = Path.home() / ".claude"
@@ -332,24 +332,24 @@ def _restore_dir_from_s3(local_dir: Path, bucket: str, s3_prefix: str, s3_client
 
 def restore_session(user_id: str, session_id: str, workspace: Path) -> Optional[str]:
     """Restore workspace + ~/.claude/ from S3. Returns sdk_session_id if previously saved."""
-    if not DOCUMENT_BUCKET:
+    if not ARTIFACT_BUCKET:
         return None
 
     s3 = _s3()
 
     # 1. Restore workspace files
-    n = _restore_dir_from_s3(workspace, DOCUMENT_BUCKET, _workspace_s3_prefix(user_id, session_id), s3)
+    n = _restore_dir_from_s3(workspace, ARTIFACT_BUCKET, _workspace_s3_prefix(user_id, session_id), s3)
     if n:
         logger.info(f"[S3 restore] Workspace: {n} files")
 
     # 2. Restore ~/.claude/ (contains session .jsonl for resume=)
-    n = _restore_dir_from_s3(CLAUDE_HOME, DOCUMENT_BUCKET, _claude_home_s3_prefix(user_id, session_id), s3)
+    n = _restore_dir_from_s3(CLAUDE_HOME, ARTIFACT_BUCKET, _claude_home_s3_prefix(user_id, session_id), s3)
     if n:
         logger.info(f"[S3 restore] Claude home: {n} files")
 
     # 3. Retrieve sdk_session_id saved from previous run
     try:
-        resp = s3.get_object(Bucket=DOCUMENT_BUCKET, Key=_sdk_session_id_s3_key(user_id, session_id))
+        resp = s3.get_object(Bucket=ARTIFACT_BUCKET, Key=_sdk_session_id_s3_key(user_id, session_id))
         sdk_session_id = resp["Body"].read().decode("utf-8").strip()
         logger.info(f"[S3 restore] sdk_session_id: {sdk_session_id}")
         return sdk_session_id
@@ -362,25 +362,25 @@ def restore_session(user_id: str, session_id: str, workspace: Path) -> Optional[
 
 def sync_session(user_id: str, session_id: str, workspace: Path, sdk_session_id: Optional[str]) -> None:
     """Sync workspace + ~/.claude/ to S3 after task completion."""
-    if not DOCUMENT_BUCKET:
+    if not ARTIFACT_BUCKET:
         return
 
     s3 = _s3()
 
     # 1. Sync workspace files
-    n = _sync_dir_to_s3(workspace, DOCUMENT_BUCKET, _workspace_s3_prefix(user_id, session_id), s3)
+    n = _sync_dir_to_s3(workspace, ARTIFACT_BUCKET, _workspace_s3_prefix(user_id, session_id), s3)
     logger.info(f"[S3 sync] Workspace: {n} files")
 
     # 2. Sync ~/.claude/ so session .jsonl survives container restarts
     if CLAUDE_HOME.exists():
-        n = _sync_dir_to_s3(CLAUDE_HOME, DOCUMENT_BUCKET, _claude_home_s3_prefix(user_id, session_id), s3)
+        n = _sync_dir_to_s3(CLAUDE_HOME, ARTIFACT_BUCKET, _claude_home_s3_prefix(user_id, session_id), s3)
         logger.info(f"[S3 sync] Claude home: {n} files")
 
     # 3. Save sdk_session_id for next run
     if sdk_session_id:
         try:
             s3.put_object(
-                Bucket=DOCUMENT_BUCKET,
+                Bucket=ARTIFACT_BUCKET,
                 Key=_sdk_session_id_s3_key(user_id, session_id),
                 Body=sdk_session_id.encode("utf-8"),
                 ContentType="text/plain",
@@ -397,7 +397,7 @@ def _clear_session_history(user_id: str, session_id: str) -> None:
     the user may want to start a new conversation about the same codebase.
     Also clears ~/.claude/ locally so no stale session files remain.
     """
-    if not DOCUMENT_BUCKET:
+    if not ARTIFACT_BUCKET:
         return
 
     s3 = _s3()
@@ -406,17 +406,17 @@ def _clear_session_history(user_id: str, session_id: str) -> None:
     claude_prefix = _claude_home_s3_prefix(user_id, session_id)
     try:
         paginator = s3.get_paginator("list_objects_v2")
-        for page in paginator.paginate(Bucket=DOCUMENT_BUCKET, Prefix=claude_prefix + "/"):
+        for page in paginator.paginate(Bucket=ARTIFACT_BUCKET, Prefix=claude_prefix + "/"):
             objects = [{"Key": o["Key"]} for o in page.get("Contents", [])]
             if objects:
-                s3.delete_objects(Bucket=DOCUMENT_BUCKET, Delete={"Objects": objects})
+                s3.delete_objects(Bucket=ARTIFACT_BUCKET, Delete={"Objects": objects})
         logger.info(f"[S3 reset] Cleared Claude session history")
     except Exception as e:
         logger.warning(f"[S3 reset] Could not clear Claude session history: {e}")
 
     # Delete stored sdk_session_id
     try:
-        s3.delete_object(Bucket=DOCUMENT_BUCKET, Key=_sdk_session_id_s3_key(user_id, session_id))
+        s3.delete_object(Bucket=ARTIFACT_BUCKET, Key=_sdk_session_id_s3_key(user_id, session_id))
     except Exception as e:
         logger.warning(f"[S3 reset] Could not delete sdk_session_id: {e}")
 

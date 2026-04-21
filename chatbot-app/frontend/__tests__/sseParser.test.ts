@@ -343,30 +343,6 @@ describe('sseParser', () => {
       expect(interruptEvent.interrupts[0].name).toBe('chatbot-research-approval')
     })
 
-    it('should parse browser approval interrupt event', () => {
-      const interruptData = {
-        type: 'interrupt',
-        interrupts: [{
-          id: 'chatbot-browser-001',
-          name: 'chatbot-browser-approval',
-          reason: {
-            tool_name: 'browser_use_agent',
-            task: 'Navigate to Amazon and search for headphones',
-            max_steps: 15
-          }
-        }]
-      }
-
-      const chunk = `data: ${JSON.stringify(interruptData)}\n\n`
-      const result = parseSSEChunk(chunk)
-
-      expect(result.events).toHaveLength(1)
-      expect(result.events[0].type).toBe('interrupt')
-
-      const event = result.events[0] as any
-      expect(event.interrupts[0].name).toBe('chatbot-browser-approval')
-      expect(event.interrupts[0].reason.max_steps).toBe(15)
-    })
 
     it('should allow legacy interrupt event (falls through to default, always valid)', () => {
       // interrupt is a legacy/custom type — validator allows all unknown types

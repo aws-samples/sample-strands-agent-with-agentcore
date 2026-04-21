@@ -101,7 +101,6 @@ class TestToolFilterRegistry:
     def test_classify_a2a_tool(self, registry):
         """Should classify A2A tools by prefix."""
         assert registry.classify_tool_id("agentcore_research-agent") == "a2a"
-        assert registry.classify_tool_id("agentcore_browser-use-agent") == "a2a"
 
     def test_classify_unknown_tool(self, registry):
         """Should return 'unknown' for unrecognized tools."""

@@ -83,13 +83,6 @@ def mock_streaming_tool():
 
 
 @pytest.fixture
-def mock_browser_tool():
-    """Create a mock browser tool."""
-    from tests.fixtures.mock_tools import MockBrowserTool
-    return MockBrowserTool()
-
-
-@pytest.fixture
 def sample_assistant_message():
     """Sample assistant message for testing."""
     return {

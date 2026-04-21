@@ -59,23 +59,6 @@ Example plan:
 """,
         "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
     },
-    "agentcore_browser-use-agent": {
-        "name": "Browser Use Agent",
-        "description": """Autonomous browser automation that executes multi-step web tasks.
-
-Args:
-    task: Clear description of what to accomplish. Agent decides navigation steps automatically.
-
-Returns:
-    Text summary of completed actions and extracted information.
-
-Examples:
-    "Go to example.com and find the main product price"
-    "Search GitHub for top Python repos and get the star count"
-    "Navigate to AWS pricing page and extract compute costs"
-""",
-        "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/browser-use-agent-runtime-arn",
-    },
     "agentcore_code-agent": {
         "name": "Code Agent",
         "description": """Autonomous coding agent that implements features, fixes bugs, refactors code, and runs tests.
@@ -451,7 +434,7 @@ def create_a2a_tool(agent_id: str):
     Create a direct callable tool for the A2A agent
 
     Args:
-        agent_id: Tool ID (e.g., "agentcore_research-agent", "agentcore_browser-use-agent")
+        agent_id: Tool ID (e.g., "agentcore_research-agent", "agentcore_code-agent")
 
     Returns:
         Strands tool function, or None if not found
@@ -572,40 +555,6 @@ def create_a2a_tool(agent_id: str):
         tool_impl.__doc__ = agent_description
         agent_tool = tool(context=True)(tool_impl)
         agent_tool._skill_name = "code-agent"
-
-    elif "browser" in agent_id:
-        # Browser Use Agent - task parameter only
-        # Uses async generator to stream browser_session_arn immediately for Live View
-        async def tool_impl(task: str, tool_context: ToolContext = None) -> AsyncGenerator[Dict[str, Any], None]:
-            session_id, user_id, model_id, _auth_token = extract_context(tool_context)
-
-            # Prepare metadata (max_steps handled internally by agent)
-            metadata = {
-                "session_id": session_id,
-                "user_id": user_id,
-                "source": "main_agent",
-                "model_id": model_id,
-            }
-
-            # Stream events from A2A agent
-            async for event in send_a2a_message(agent_id, task, session_id, region, metadata=metadata, auth_token=_auth_token):
-                # Store browser_session_arn and browser_id in invocation_state for frontend access
-                if isinstance(event, dict):
-                    if event.get("type") == "browser_session_detected":
-                        browser_session_id = event.get("browserSessionId")
-                        browser_id = event.get("browserId")
-                        if browser_session_id and tool_context:
-                            tool_context.invocation_state['browser_session_arn'] = browser_session_id
-                            tool_context.invocation_state['browser_id'] = browser_id
-
-                yield event
-
-        # Set correct function name and docstring BEFORE decorating
-        tool_impl.__name__ = correct_name
-        tool_impl.__doc__ = agent_description
-
-        # Apply decorator with context support
-        agent_tool = tool(context=True)(tool_impl)
 
     else:
         # Research Agent (default) - plan parameter

@@ -438,7 +438,7 @@ async function sendResponse(event, status, data, reason) {
         ANTHROPIC_MODEL: anthropicModel,
         OTEL_PYTHON_DISABLED_INSTRUMENTATIONS: 'boto,botocore',
         // S3 bucket for syncing workspace output after each task
-        DOCUMENT_BUCKET: documentBucketName,
+        ARTIFACT_BUCKET: documentBucketName,
         // DynamoDB table for out-of-band stop signal polling
         DYNAMODB_USERS_TABLE: `${projectName}-users-v2`,
         // Forces CloudFormation to detect a change on every deploy,
