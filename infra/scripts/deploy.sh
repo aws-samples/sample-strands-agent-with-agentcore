@@ -30,6 +30,18 @@ select_region() {
     echo ">>> Using AWS_REGION=$AWS_REGION (non-interactive)"
     return
   fi
+
+  # Auto-detect region from existing Terraform state.
+  if [ -z "${AWS_REGION:-}" ] && [ -d "$ENV_DIR/.terraform" ]; then
+    local detected
+    detected=$(cd "$ENV_DIR" && terraform output -raw aws_region 2>/dev/null || true)
+    if [ -n "$detected" ]; then
+      AWS_REGION="$detected"
+      echo ">>> Detected AWS_REGION=$AWS_REGION from existing deployment"
+      return
+    fi
+  fi
+
   echo ""
   if [ -n "${AWS_REGION:-}" ]; then
     echo "Current AWS_REGION=$AWS_REGION (press Enter to keep, or choose below to change)"
@@ -322,6 +334,52 @@ export TF_VAR_github_oauth_client_id="$GITHUB_OAUTH_CLIENT_ID"
 export TF_VAR_github_oauth_client_secret="$GITHUB_OAUTH_CLIENT_SECRET"
 export TF_VAR_notion_oauth_client_id="$NOTION_OAUTH_CLIENT_ID"
 export TF_VAR_notion_oauth_client_secret="$NOTION_OAUTH_CLIENT_SECRET"
+
+# ------------------------------------------------------------
+# Channel adapters (Telegram, WhatsApp)
+# Token stored in Secrets Manager; enable_telegram flag drives deployment.
+# ------------------------------------------------------------
+ENABLE_TELEGRAM=false
+TELEGRAM_BOT_TOKEN=""
+
+prompt_channels() {
+  [ "$ACTION" != "apply" ] && return 0
+
+  echo ""
+  echo "============================================"
+  echo "  Channel adapters (press Enter to skip)"
+  echo "============================================"
+
+  # Telegram
+  local secret_name="${PROJECT_NAME}/telegram/bot-token"
+  if _secret_exists "$secret_name"; then
+    TELEGRAM_BOT_TOKEN=$(aws secretsmanager get-secret-value \
+      --secret-id "$secret_name" --region "$AWS_REGION" \
+      --query SecretString --output text 2>/dev/null || echo "")
+    if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+      ENABLE_TELEGRAM=true
+      echo ""
+      echo "Telegram bot    : already configured"
+    fi
+  else
+    echo ""
+    echo "Telegram Bot  https://t.me/BotFather"
+    read -rp "  Bot Token (from BotFather): " token
+    if [ -n "${token:-}" ]; then
+      _ensure_secret "$secret_name" "Telegram Bot API token" "$token"
+      TELEGRAM_BOT_TOKEN="$token"
+      ENABLE_TELEGRAM=true
+      echo "  -> stored"
+    else
+      echo "  (skipped — Telegram adapter will not be deployed)"
+    fi
+  fi
+  echo ""
+}
+
+prompt_channels
+export TF_VAR_enable_telegram="$ENABLE_TELEGRAM"
+export TF_VAR_telegram_bot_token="$TELEGRAM_BOT_TOKEN"
 
 # ------------------------------------------------------------
 # Nova Act Workflow (browser automation)

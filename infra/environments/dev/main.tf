@@ -212,7 +212,7 @@ module "runtime_code_agent" {
   dockerfile_path = "Dockerfile"
 
   cognito_issuer_url      = module.auth.issuer_url
-  cognito_allowed_clients = [module.auth.app_client_id, module.auth.web_client_id]
+  cognito_allowed_clients = [module.auth.app_client_id, module.auth.web_client_id, module.auth.m2m_client_id]
 
   artifact_bucket_arn  = aws_s3_bucket.artifacts.arn
   artifact_bucket_name = aws_s3_bucket.artifacts.id
@@ -240,7 +240,7 @@ module "runtime_research_agent" {
   dockerfile_path = "Dockerfile"
 
   cognito_issuer_url      = module.auth.issuer_url
-  cognito_allowed_clients = [module.auth.app_client_id, module.auth.web_client_id]
+  cognito_allowed_clients = [module.auth.app_client_id, module.auth.web_client_id, module.auth.m2m_client_id]
 
   artifact_bucket_arn  = aws_s3_bucket.artifacts.arn
   artifact_bucket_name = aws_s3_bucket.artifacts.id
@@ -272,7 +272,7 @@ module "runtime_orchestrator" {
   dockerfile_path = "Dockerfile"
 
   cognito_issuer_url      = module.auth.issuer_url
-  cognito_allowed_clients = [module.auth.app_client_id, module.auth.web_client_id]
+  cognito_allowed_clients = [module.auth.app_client_id, module.auth.web_client_id, module.auth.m2m_client_id]
 
   gateway_url = module.gateway.gateway_url
   memory_id   = module.memory.memory_id
@@ -656,4 +656,33 @@ except Exception:
   }
 
   depends_on = [module.oauth_providers]
+}
+
+# ============================================================
+# WhatsApp Adapter (optional — Baileys / WhatsApp Web)
+# ============================================================
+
+module "telegram" {
+  source = "../../modules/telegram"
+  count  = var.enable_telegram ? 1 : 0
+
+  project_name = var.project_name
+  environment  = var.environment
+  aws_region   = var.aws_region
+  account_id   = local.account_id
+  repo_root    = local.root_dir
+
+  vpc_id     = data.aws_vpc.default.id
+  subnet_ids = data.aws_subnets.default.ids
+
+  runtime_invocation_url = module.runtime_orchestrator.runtime_invocation_url
+  cognito_domain_url     = module.auth.domain_url
+  m2m_client_id          = module.auth.m2m_client_id
+  m2m_client_secret      = module.auth.m2m_client_secret
+  telegram_bot_token     = var.telegram_bot_token
+  allowed_user_ids       = var.telegram_allowed_user_ids
+  owner_user_id          = var.telegram_owner_user_id
+  artifact_bucket_arn    = aws_s3_bucket.artifacts.arn
+
+  depends_on = [module.runtime_orchestrator, module.auth]
 }

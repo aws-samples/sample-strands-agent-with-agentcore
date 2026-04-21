@@ -1,0 +1,26 @@
+{
+  "name": "telegram-adapter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1033.0",
+    "@aws-sdk/client-s3": "^3.1033.0",
+    "@aws-sdk/lib-dynamodb": "^3.1033.0",
+    "@grammyjs/runner": "^2.0.3",
+    "@grammyjs/transformer-throttler": "^1.2.1",
+    "grammy": "^1.42.0",
+    "marked": "^18.0.2",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3"
+  }
+}

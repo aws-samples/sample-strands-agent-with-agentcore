@@ -85,3 +85,28 @@ variable "network_mode" {
     error_message = "network_mode must be PUBLIC, VPC_CREATE, or VPC_EXISTING"
   }
 }
+
+variable "enable_telegram" {
+  description = "Deploy Telegram bot adapter (ECS Fargate)."
+  type        = bool
+  default     = false
+}
+
+variable "telegram_bot_token" {
+  description = "Telegram Bot API token from BotFather."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "telegram_allowed_user_ids" {
+  description = "Comma-separated Telegram user IDs for allowlist (empty = allow all)."
+  type        = string
+  default     = ""
+}
+
+variable "telegram_owner_user_id" {
+  description = "Cognito user ID to link Telegram sessions with web identity."
+  type        = string
+  default     = ""
+}

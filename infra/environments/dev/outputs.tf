@@ -1,3 +1,7 @@
+output "aws_region" {
+  value = var.aws_region
+}
+
 output "cognito_user_pool_id" {
   value = module.auth.user_pool_id
 }
