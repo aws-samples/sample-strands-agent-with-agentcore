@@ -25,7 +25,7 @@ from email.mime.multipart import MIMEMultipart
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import Context
-from agentcore_oauth import OAuthHelper, get_token_with_elicitation
+from agentcore_oauth import OAuthHelper, call_with_oauth_retry
 
 logger = logging.getLogger(__name__)
 
@@ -228,17 +228,11 @@ def register_gmail_tools(mcp):
         """
         logger.debug("[Tool] list_labels called")
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_gmail_api_get(access_token, "labels")
             labels = data.get("labels", [])
-
             system_labels = []
             user_labels = []
-
             for label in labels:
                 label_info = {
                     "id": label.get("id", ""),
@@ -249,15 +243,15 @@ def register_gmail_tools(mcp):
                     system_labels.append(label_info)
                 else:
                     user_labels.append(label_info)
-
             result = {
                 "system_labels": sorted(system_labels, key=lambda x: x["name"]),
                 "user_labels": sorted(user_labels, key=lambda x: x["name"]),
                 "total_count": len(labels),
             }
-
             return json.dumps(result, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error listing labels: {e}")
             return f"Error listing labels: {str(e)}"
@@ -278,19 +272,13 @@ def register_gmail_tools(mcp):
         """
         max_results = max(1, min(100, max_results))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             params = {
                 "labelIds": label,
                 "maxResults": max_results,
                 "includeSpamTrash": include_spam_trash,
             }
-
             list_data = await call_gmail_api_get(access_token, "messages", params=params)
-
             messages = list_data.get("messages", [])
             if not messages:
                 return f"No emails found in {label}"
@@ -318,9 +306,10 @@ def register_gmail_tools(mcp):
                     )
                 except Exception as e:
                     results.append({"id": msg_id, "error": str(e)})
-
             return json.dumps(results, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error listing emails: {e}")
             return f"Error listing emails: {str(e)}"
@@ -338,17 +327,12 @@ def register_gmail_tools(mcp):
         """
         max_results = max(1, min(50, max_results))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             list_data = await call_gmail_api_get(
                 access_token,
                 "messages",
                 params={"q": query, "maxResults": max_results},
             )
-
             messages = list_data.get("messages", [])
             if not messages:
                 return f"No emails found for query: {query}"
@@ -376,9 +360,10 @@ def register_gmail_tools(mcp):
                     )
                 except Exception as e:
                     results.append({"id": msg_id, "error": str(e)})
-
             return json.dumps(results, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error searching emails: {e}")
             return f"Error searching emails: {str(e)}"
@@ -392,22 +377,16 @@ def register_gmail_tools(mcp):
         Args:
             message_id: The Gmail message ID (obtained from search_emails or list_emails).
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             msg = await call_gmail_api_get(
                 access_token,
                 f"messages/{message_id}",
                 params={"format": "full"},
             )
-
             payload = msg.get("payload", {})
             hdrs = _parse_headers(payload.get("headers", []))
             body = _extract_body(payload)
             attachments = _extract_attachments(payload)
-
             result = {
                 "id": msg.get("id", ""),
                 "threadId": msg.get("threadId", ""),
@@ -420,9 +399,10 @@ def register_gmail_tools(mcp):
                 "body": body,
                 "attachments": attachments,
             }
-
             return json.dumps(result, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error reading email: {e}")
             return f"Error reading email: {str(e)}"
@@ -451,11 +431,7 @@ def register_gmail_tools(mcp):
             in_reply_to: Message-ID to reply to (for threading). Optional.
             html_body: HTML version of the email body. Optional.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             raw_message = _create_email_message(
                 to=to,
                 subject=subject,
@@ -466,13 +442,11 @@ def register_gmail_tools(mcp):
                 in_reply_to=in_reply_to,
                 html_body=html_body,
             )
-
             result = await call_gmail_api_post(
                 access_token,
                 "messages/send",
                 data={"raw": raw_message},
             )
-
             return json.dumps(
                 {
                     "success": True,
@@ -485,6 +459,8 @@ def register_gmail_tools(mcp):
                 indent=2,
             )
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error sending email: {e}")
             return f"Error sending email: {str(e)}"
@@ -515,11 +491,7 @@ def register_gmail_tools(mcp):
             in_reply_to: Message-ID to reply to (for threading). Optional.
             html_body: HTML version of the email body. Optional.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             raw_message = _create_email_message(
                 to=to,
                 subject=subject,
@@ -530,13 +502,11 @@ def register_gmail_tools(mcp):
                 in_reply_to=in_reply_to,
                 html_body=html_body,
             )
-
             result = await call_gmail_api_post(
                 access_token,
                 "drafts",
                 data={"message": {"raw": raw_message}},
             )
-
             draft_info = result.get("message", {})
             return json.dumps(
                 {
@@ -550,6 +520,8 @@ def register_gmail_tools(mcp):
                 indent=2,
             )
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error creating draft: {e}")
             return f"Error creating draft: {str(e)}"
@@ -564,11 +536,7 @@ def register_gmail_tools(mcp):
             message_id: The Gmail message ID to delete.
             permanent: If True, permanently deletes the email. If False (default), moves to Trash.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             if permanent:
                 await call_gmail_api_delete(access_token, f"messages/{message_id}")
                 return json.dumps(
@@ -580,23 +548,24 @@ def register_gmail_tools(mcp):
                     ensure_ascii=False,
                     indent=2,
                 )
-            else:
-                result = await call_gmail_api_post(
-                    access_token,
-                    f"messages/{message_id}/trash",
-                    data={},
-                )
-                return json.dumps(
-                    {
-                        "success": True,
-                        "message": "Email moved to Trash",
-                        "message_id": result.get("id", message_id),
-                        "labelIds": result.get("labelIds", []),
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            result = await call_gmail_api_post(
+                access_token,
+                f"messages/{message_id}/trash",
+                data={},
+            )
+            return json.dumps(
+                {
+                    "success": True,
+                    "message": "Email moved to Trash",
+                    "message_id": result.get("id", message_id),
+                    "labelIds": result.get("labelIds", []),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error deleting email: {e}")
             return f"Error deleting email: {str(e)}"
@@ -622,17 +591,12 @@ def register_gmail_tools(mcp):
         """
         max_delete = max(1, min(100, max_delete))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             list_data = await call_gmail_api_get(
                 access_token,
                 "messages",
                 params={"q": query, "maxResults": max_delete},
             )
-
             messages = list_data.get("messages", [])
             if not messages:
                 return json.dumps(
@@ -651,7 +615,6 @@ def register_gmail_tools(mcp):
                 "messages/batchDelete",
                 data={"ids": message_ids},
             )
-
             return json.dumps(
                 {
                     "success": True,
@@ -664,6 +627,8 @@ def register_gmail_tools(mcp):
                 indent=2,
             )
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error bulk deleting emails: {e}")
             return f"Error bulk deleting emails: {str(e)}"
@@ -690,33 +655,27 @@ def register_gmail_tools(mcp):
             add_labels: Comma-separated label IDs to add (e.g., "STARRED,IMPORTANT").
             remove_labels: Comma-separated label IDs to remove (e.g., "UNREAD,INBOX").
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        add_list = [l.strip() for l in add_labels.split(",")] if add_labels else []
+        remove_list = [l.strip() for l in remove_labels.split(",")] if remove_labels else []
 
-            add_list = [l.strip() for l in add_labels.split(",")] if add_labels else []
-            remove_list = [l.strip() for l in remove_labels.split(",")] if remove_labels else []
+        if not add_list and not remove_list:
+            return json.dumps(
+                {"success": False, "message": "No labels specified to add or remove"},
+                ensure_ascii=False,
+                indent=2,
+            )
 
-            if not add_list and not remove_list:
-                return json.dumps(
-                    {"success": False, "message": "No labels specified to add or remove"},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-
+        async def _do(access_token):
             data = {}
             if add_list:
                 data["addLabelIds"] = add_list
             if remove_list:
                 data["removeLabelIds"] = remove_list
-
             result = await call_gmail_api_post(
                 access_token,
                 f"messages/{message_id}/modify",
                 data=data,
             )
-
             return json.dumps(
                 {
                     "success": True,
@@ -730,6 +689,8 @@ def register_gmail_tools(mcp):
                 indent=2,
             )
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error modifying email: {e}")
             return f"Error modifying email: {str(e)}"
@@ -741,20 +702,14 @@ def register_gmail_tools(mcp):
         Args:
             thread_id: The Gmail thread ID (obtained from read_email or search_emails).
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             thread = await call_gmail_api_get(
                 access_token,
                 f"threads/{thread_id}",
                 params={"format": "metadata", "metadataHeaders": "Subject,From,To,Date"},
             )
-
             messages = thread.get("messages", [])
             results = []
-
             for msg in messages:
                 hdrs = _parse_headers(msg.get("payload", {}).get("headers", []))
                 results.append(
@@ -768,7 +723,6 @@ def register_gmail_tools(mcp):
                         "labelIds": msg.get("labelIds", []),
                     }
                 )
-
             return json.dumps(
                 {
                     "thread_id": thread_id,
@@ -779,6 +733,8 @@ def register_gmail_tools(mcp):
                 indent=2,
             )
 
+        try:
+            return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
         except Exception as e:
             logger.error(f"[Tool] Error getting thread: {e}")
             return f"Error getting thread: {str(e)}"

@@ -125,7 +125,7 @@ class OAuthHelper:
         logger.info(f"[OAuth] Scopes: {scopes}")
         logger.info(f"[OAuth] Callback URL: {self.callback_url}")
 
-    async def get_access_token(self) -> TokenResult:
+    async def get_access_token(self, force: bool = False) -> TokenResult:
         """Get OAuth access token from AgentCore Token Vault.
 
         This method bypasses the @requires_access_token decorator and directly
@@ -133,6 +133,12 @@ class OAuthHelper:
         1. Avoids SDK polling mechanism that blocks for up to 10 minutes
         2. Returns TokenResult with auth_url when consent is needed
         3. Solves the N+1 token request problem
+
+        Args:
+            force: When True, pass forceAuthentication=true to Identity so it
+                always starts a new 3LO flow, even if a cached token exists.
+                Use this after the provider returns 401/403 on a cached token
+                (Vault cannot detect server-side revocations on its own).
 
         Returns:
             TokenResult: Contains either token (cache hit) or auth_url (consent needed)
@@ -157,6 +163,7 @@ class OAuthHelper:
                 oauth2Flow="USER_FEDERATION",
                 workloadIdentityToken=workload_token,
                 resourceOauth2ReturnUrl=self.callback_url,
+                forceAuthentication=force,
             )
         except Exception as e:
             logger.error(f"[OAuth] Failed to get token from Identity service: {e}")
@@ -186,6 +193,7 @@ async def get_token_with_elicitation(
     ctx,
     oauth: OAuthHelper,
     service_name: str,
+    force: bool = False,
 ) -> Optional[str]:
     """Get OAuth token, using MCP elicit_url() if user consent is needed.
 
@@ -199,13 +207,15 @@ async def get_token_with_elicitation(
         ctx: FastMCP Context (provides elicit_url())
         oauth: OAuthHelper instance for the service
         service_name: Human-readable name (e.g., "Gmail", "Google Calendar")
+        force: Start a fresh 3LO flow even if a cached token exists. Used by
+            call_with_oauth_retry() after the provider rejects a cached token.
 
     Returns:
         Access token string, or None if user declined/cancelled
     """
     from mcp.server.elicitation import AcceptedUrlElicitation
 
-    result = await oauth.get_access_token()
+    result = await oauth.get_access_token(force=force)
 
     if result.token:
         return result.token
@@ -223,3 +233,54 @@ async def get_token_with_elicitation(
             return result2.token
 
     return None
+
+
+# ── Auth-aware API call wrapper ──────────────────────────────────────────
+
+async def call_with_oauth_retry(
+    ctx,
+    oauth: "OAuthHelper",
+    service_name: str,
+    api_call,
+):
+    """Run an API call with automatic re-auth on 401/403.
+
+    AgentCore Token Vault cannot detect provider-side token revocations;
+    a cached token may silently fail at the external API. When that happens,
+    we force a fresh 3LO flow (forceAuthentication=True) and retry once.
+
+    Args:
+        ctx: FastMCP Context
+        oauth: OAuthHelper for the service
+        service_name: Human-readable name used in elicitation prompt
+        api_call: async callable taking a single `access_token` argument and
+            performing the provider API call (raises httpx.HTTPStatusError
+            on HTTP errors).
+
+    Returns:
+        Whatever api_call returns, or the string
+        "Authorization was declined by the user." if the user cancelled.
+
+    Raises:
+        Anything api_call raises other than 401/403 propagates unchanged.
+    """
+    import httpx
+
+    token = await get_token_with_elicitation(ctx, oauth, service_name)
+    if token is None:
+        return "Authorization was declined by the user."
+
+    try:
+        return await api_call(token)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code not in (401, 403):
+            raise
+        logger.warning(
+            f"[OAuth] {service_name} returned {e.response.status_code} on cached token; "
+            f"forcing re-authentication"
+        )
+
+    token = await get_token_with_elicitation(ctx, oauth, service_name, force=True)
+    if token is None:
+        return "Authorization was declined by the user."
+    return await api_call(token)

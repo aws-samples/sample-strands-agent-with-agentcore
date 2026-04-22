@@ -25,7 +25,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 from mcp.server.fastmcp import Context
-from agentcore_oauth import OAuthHelper, get_token_with_elicitation
+from agentcore_oauth import OAuthHelper, call_with_oauth_retry
 
 logger = logging.getLogger(__name__)
 
@@ -157,16 +157,11 @@ def register_github_tools(mcp):
         """
         page_size = max(1, min(100, page_size))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_github_api_get(
                 access_token, "search/repositories",
                 params={"q": query, "per_page": page_size},
             )
-
             results = []
             for repo in data.get("items", []):
                 results.append({
@@ -178,12 +173,13 @@ def register_github_tools(mcp):
                     "updated_at": repo.get("updated_at"),
                     "topics": repo.get("topics", []),
                 })
-
             return json.dumps({
                 "total_count": data.get("total_count", 0),
                 "results": results,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error searching repos: {e}")
             return f"Error searching repositories: {str(e)}"
@@ -204,15 +200,10 @@ def register_github_tools(mcp):
         except ValueError as e:
             return str(e)
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_github_api_get(
                 access_token, f"repos/{owner}/{repo_name}",
             )
-
             result = {
                 "full_name": data.get("full_name"),
                 "description": data.get("description"),
@@ -228,9 +219,10 @@ def register_github_tools(mcp):
                 "license": data.get("license", {}).get("spdx_id") if data.get("license") else None,
                 "visibility": data.get("visibility"),
             }
-
             return json.dumps(result, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error getting repo: {e}")
             return f"Error getting repository: {str(e)}"
@@ -258,23 +250,16 @@ def register_github_tools(mcp):
 
         page_size = max(1, min(100, page_size))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             params = {"state": state, "per_page": page_size}
             if labels:
                 params["labels"] = labels
-
             data = await call_github_api_get(
                 access_token, f"repos/{owner}/{repo_name}/issues",
                 params=params,
             )
-
             results = []
             for issue in data:
-                # Skip pull requests (GitHub API returns PRs in issues endpoint)
                 if issue.get("pull_request"):
                     continue
                 results.append({
@@ -288,12 +273,13 @@ def register_github_tools(mcp):
                     "updated_at": issue.get("updated_at"),
                     "comments": issue.get("comments"),
                 })
-
             return json.dumps({
                 "total_count": len(results),
                 "issues": results,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error listing issues: {e}")
             return f"Error listing issues: {str(e)}"
@@ -315,15 +301,10 @@ def register_github_tools(mcp):
         except ValueError as e:
             return str(e)
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_github_api_get(
                 access_token, f"repos/{owner}/{repo_name}/issues/{number}",
             )
-
             result = {
                 "number": data.get("number"),
                 "title": data.get("title"),
@@ -339,9 +320,10 @@ def register_github_tools(mcp):
                 "updated_at": data.get("updated_at"),
                 "closed_at": data.get("closed_at"),
             }
-
             return json.dumps(result, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error getting issue: {e}")
             return f"Error getting issue: {str(e)}"
@@ -367,16 +349,11 @@ def register_github_tools(mcp):
 
         page_size = max(1, min(100, page_size))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_github_api_get(
                 access_token, f"repos/{owner}/{repo_name}/pulls",
                 params={"state": state, "per_page": page_size},
             )
-
             results = []
             for pr in data:
                 results.append({
@@ -392,12 +369,13 @@ def register_github_tools(mcp):
                     "updated_at": pr.get("updated_at"),
                     "merged_at": pr.get("merged_at"),
                 })
-
             return json.dumps({
                 "total_count": len(results),
                 "pull_requests": results,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error listing pull requests: {e}")
             return f"Error listing pull requests: {str(e)}"
@@ -419,15 +397,10 @@ def register_github_tools(mcp):
         except ValueError as e:
             return str(e)
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_github_api_get(
                 access_token, f"repos/{owner}/{repo_name}/pulls/{number}",
             )
-
             result = {
                 "number": data.get("number"),
                 "title": data.get("title"),
@@ -452,9 +425,10 @@ def register_github_tools(mcp):
                 "merged_at": data.get("merged_at"),
                 "closed_at": data.get("closed_at"),
             }
-
             return json.dumps(result, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error getting pull request: {e}")
             return f"Error getting pull request: {str(e)}"
@@ -480,21 +454,14 @@ def register_github_tools(mcp):
         except ValueError as e:
             return str(e)
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             params = {}
             if ref:
                 params["ref"] = ref
-
             data = await call_github_api_get(
                 access_token, f"repos/{owner}/{repo_name}/contents/{path}",
                 params=params if params else None,
             )
-
-            # Directory listing
             if isinstance(data, list):
                 entries = []
                 for item in data:
@@ -510,15 +477,12 @@ def register_github_tools(mcp):
                     "entries": entries,
                 }, ensure_ascii=False, indent=2)
 
-            # File content
             content = data.get("content", "")
             encoding = data.get("encoding", "")
-
             if encoding == "base64":
                 decoded = base64.b64decode(content).decode("utf-8", errors="replace")
             else:
                 decoded = content
-
             result = {
                 "type": "file",
                 "path": data.get("path"),
@@ -527,9 +491,10 @@ def register_github_tools(mcp):
                 "sha": data.get("sha"),
                 "content": decoded,
             }
-
             return json.dumps(result, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error getting file: {e}")
             return f"Error getting file: {str(e)}"
@@ -549,16 +514,11 @@ def register_github_tools(mcp):
         """
         page_size = max(1, min(100, page_size))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_github_api_get(
                 access_token, "search/code",
                 params={"q": query, "per_page": page_size},
             )
-
             results = []
             for item in data.get("items", []):
                 results.append({
@@ -568,12 +528,13 @@ def register_github_tools(mcp):
                     "html_url": item.get("html_url"),
                     "sha": item.get("sha"),
                 })
-
             return json.dumps({
                 "total_count": data.get("total_count", 0),
                 "results": results,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error searching code: {e}")
             return f"Error searching code: {str(e)}"
@@ -602,36 +563,32 @@ def register_github_tools(mcp):
         except ValueError as e:
             return str(e)
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
-            # Get the SHA of the source branch
-            if from_branch is None:
+        async def _do(access_token):
+            src = from_branch
+            if src is None:
                 repo_data = await call_github_api_get(
                     access_token, f"repos/{owner}/{repo_name}",
                 )
-                from_branch = repo_data.get("default_branch", "main")
+                src = repo_data.get("default_branch", "main")
 
             ref_data = await call_github_api_get(
-                access_token, f"repos/{owner}/{repo_name}/git/ref/heads/{from_branch}",
+                access_token, f"repos/{owner}/{repo_name}/git/ref/heads/{src}",
             )
             sha = ref_data.get("object", {}).get("sha")
 
-            # Create the new branch
             data = await call_github_api_post(
                 access_token, f"repos/{owner}/{repo_name}/git/refs",
                 data={"ref": f"refs/heads/{branch}", "sha": sha},
             )
-
             return json.dumps({
                 "success": True,
-                "message": f"Branch '{branch}' created from '{from_branch}'",
+                "message": f"Branch '{branch}' created from '{src}'",
                 "ref": data.get("ref"),
                 "sha": sha,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error creating branch: {e}")
             return f"Error creating branch: {str(e)}"
@@ -674,29 +631,21 @@ def register_github_tools(mcp):
         if not isinstance(files, list) or not files:
             return "Error: files_json must be a non-empty JSON array"
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             pushed = []
             for file_entry in files:
                 path = file_entry.get("path", "")
                 content = file_entry.get("content", "")
-
                 if not path:
                     continue
 
-                # Base64-encode the content
                 encoded = base64.b64encode(content.encode("utf-8")).decode("ascii")
-
                 body = {
                     "message": message,
                     "content": encoded,
                     "branch": branch,
                 }
 
-                # Try to get existing file SHA for updates
                 try:
                     existing = await call_github_api_get(
                         access_token,
@@ -706,14 +655,13 @@ def register_github_tools(mcp):
                     if isinstance(existing, dict) and existing.get("sha"):
                         body["sha"] = existing["sha"]
                 except Exception:
-                    pass  # File doesn't exist yet, creating new
+                    pass
 
                 data = await call_github_api_put(
                     access_token,
                     f"repos/{owner}/{repo_name}/contents/{path}",
                     data=body,
                 )
-
                 pushed.append({
                     "path": path,
                     "sha": data.get("content", {}).get("sha"),
@@ -726,6 +674,8 @@ def register_github_tools(mcp):
                 "files": pushed,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error pushing files: {e}")
             return f"Error pushing files: {str(e)}"
@@ -763,11 +713,7 @@ def register_github_tools(mcp):
         except ValueError as e:
             return str(e)
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _github_oauth, "GitHub")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_github_api_post(
                 access_token, f"repos/{owner}/{repo_name}/pulls",
                 data={
@@ -778,7 +724,6 @@ def register_github_tools(mcp):
                     "draft": draft,
                 },
             )
-
             result = {
                 "success": True,
                 "number": data.get("number"),
@@ -789,9 +734,10 @@ def register_github_tools(mcp):
                 "base": data.get("base", {}).get("ref"),
                 "draft": data.get("draft"),
             }
-
             return json.dumps(result, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _github_oauth, "GitHub", _do)
         except Exception as e:
             logger.error(f"[Tool] Error creating pull request: {e}")
             return f"Error creating pull request: {str(e)}"

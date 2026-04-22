@@ -22,7 +22,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 
 from agentcore_context_middleware import AgentCoreContextMiddleware
-from agentcore_oauth import OAuthHelper, get_token_with_elicitation
+from agentcore_oauth import OAuthHelper, call_with_oauth_retry
 
 # Setup logger
 logger = logging.getLogger(__name__)
@@ -55,9 +55,9 @@ _gmail_oauth = OAuthHelper(
 
 
 # ── Gmail API Callers ─────────────────────────────────────────────────
-# These functions take access_token as a parameter (no decorator).
-# Each tool calls get_token_with_elicitation() once at the start,
-# then passes the token to these helpers. This solves N+1 token requests.
+# Tools wrap their API calls in call_with_oauth_retry() which forces a
+# fresh 3LO flow on 401/403 (AgentCore Vault cannot detect provider-side
+# revocations).
 
 # Shared HTTP client for connection pooling
 _http_client: Optional[httpx.AsyncClient] = None
@@ -242,21 +242,11 @@ async def list_labels(ctx: Context) -> str:
     """
     logger.debug("[Tool] list_labels called")
 
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
-        logger.debug("[Tool] Calling Gmail API for labels...")
+    async def _do(access_token):
         data = await call_gmail_api_get(access_token, "labels")
-        logger.debug(f"[Tool] Gmail API response received: {len(data.get('labels', []))} labels")
         labels = data.get("labels", [])
-
-        # Categorize labels
         system_labels = []
         user_labels = []
-
         for label in labels:
             label_info = {
                 "id": label.get("id", ""),
@@ -267,15 +257,15 @@ async def list_labels(ctx: Context) -> str:
                 system_labels.append(label_info)
             else:
                 user_labels.append(label_info)
-
         result = {
             "system_labels": sorted(system_labels, key=lambda x: x["name"]),
             "user_labels": sorted(user_labels, key=lambda x: x["name"]),
             "total_count": len(labels),
         }
-
         return json.dumps(result, ensure_ascii=False, indent=2)
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error listing labels: {e}")
         return f"Error listing labels: {str(e)}"
@@ -297,25 +287,17 @@ async def list_emails(
     """
     max_results = max(1, min(100, max_results))
 
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
+    async def _do(access_token):
         params = {
             "labelIds": label,
             "maxResults": max_results,
             "includeSpamTrash": include_spam_trash,
         }
-
         list_data = await call_gmail_api_get(access_token, "messages", params=params)
-
         messages = list_data.get("messages", [])
         if not messages:
             return f"No emails found in {label}"
 
-        # Fetch metadata for each message (reusing the same token)
         results = []
         for msg_stub in messages:
             msg_id = msg_stub["id"]
@@ -339,9 +321,10 @@ async def list_emails(
                 )
             except Exception as e:
                 results.append({"id": msg_id, "error": str(e)})
-
         return json.dumps(results, ensure_ascii=False, indent=2)
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error listing emails: {e}")
         return f"Error listing emails: {str(e)}"
@@ -360,23 +343,16 @@ async def search_emails(query: str, max_results: int = 10, ctx: Context = None) 
     """
     max_results = max(1, min(50, max_results))
 
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
+    async def _do(access_token):
         list_data = await call_gmail_api_get(
             access_token,
             "messages",
             params={"q": query, "maxResults": max_results},
         )
-
         messages = list_data.get("messages", [])
         if not messages:
             return f"No emails found for query: {query}"
 
-        # Fetch each message's metadata (reusing the same token)
         results = []
         for msg_stub in messages:
             msg_id = msg_stub["id"]
@@ -400,9 +376,10 @@ async def search_emails(query: str, max_results: int = 10, ctx: Context = None) 
                 )
             except Exception as e:
                 results.append({"id": msg_id, "error": str(e)})
-
         return json.dumps(results, ensure_ascii=False, indent=2)
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error searching emails: {e}")
         return f"Error searching emails: {str(e)}"
@@ -417,23 +394,16 @@ async def read_email(message_id: str, ctx: Context = None) -> str:
     Args:
         message_id: The Gmail message ID (obtained from search_emails or list_emails).
     """
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
+    async def _do(access_token):
         msg = await call_gmail_api_get(
             access_token,
             f"messages/{message_id}",
             params={"format": "full"},
         )
-
         payload = msg.get("payload", {})
         hdrs = _parse_headers(payload.get("headers", []))
         body = _extract_body(payload)
         attachments = _extract_attachments(payload)
-
         result = {
             "id": msg.get("id", ""),
             "threadId": msg.get("threadId", ""),
@@ -446,9 +416,10 @@ async def read_email(message_id: str, ctx: Context = None) -> str:
             "body": body,
             "attachments": attachments,
         }
-
         return json.dumps(result, ensure_ascii=False, indent=2)
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error reading email: {e}")
         return f"Error reading email: {str(e)}"
@@ -478,12 +449,7 @@ async def send_email(
         in_reply_to: Message-ID to reply to (for threading). Optional.
         html_body: HTML version of the email body. Optional.
     """
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
+    async def _do(access_token):
         raw_message = _create_email_message(
             to=to,
             subject=subject,
@@ -494,13 +460,11 @@ async def send_email(
             in_reply_to=in_reply_to,
             html_body=html_body,
         )
-
         result = await call_gmail_api_post(
             access_token,
             "messages/send",
             data={"raw": raw_message},
         )
-
         return json.dumps(
             {
                 "success": True,
@@ -513,6 +477,8 @@ async def send_email(
             indent=2,
         )
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error sending email: {e}")
         return f"Error sending email: {str(e)}"
@@ -544,12 +510,7 @@ async def draft_email(
         in_reply_to: Message-ID to reply to (for threading). Optional.
         html_body: HTML version of the email body. Optional.
     """
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
+    async def _do(access_token):
         raw_message = _create_email_message(
             to=to,
             subject=subject,
@@ -560,13 +521,11 @@ async def draft_email(
             in_reply_to=in_reply_to,
             html_body=html_body,
         )
-
         result = await call_gmail_api_post(
             access_token,
             "drafts",
             data={"message": {"raw": raw_message}},
         )
-
         draft_info = result.get("message", {})
         return json.dumps(
             {
@@ -580,6 +539,8 @@ async def draft_email(
             indent=2,
         )
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error creating draft: {e}")
         return f"Error creating draft: {str(e)}"
@@ -595,14 +556,8 @@ async def delete_email(message_id: str, permanent: bool = False, ctx: Context = 
         message_id: The Gmail message ID to delete.
         permanent: If True, permanently deletes the email. If False (default), moves to Trash.
     """
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
+    async def _do(access_token):
         if permanent:
-            # Permanently delete
             await call_gmail_api_delete(access_token, f"messages/{message_id}")
             return json.dumps(
                 {
@@ -613,24 +568,24 @@ async def delete_email(message_id: str, permanent: bool = False, ctx: Context = 
                 ensure_ascii=False,
                 indent=2,
             )
-        else:
-            # Move to Trash
-            result = await call_gmail_api_post(
-                access_token,
-                f"messages/{message_id}/trash",
-                data={},
-            )
-            return json.dumps(
-                {
-                    "success": True,
-                    "message": "Email moved to Trash",
-                    "message_id": result.get("id", message_id),
-                    "labelIds": result.get("labelIds", []),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+        result = await call_gmail_api_post(
+            access_token,
+            f"messages/{message_id}/trash",
+            data={},
+        )
+        return json.dumps(
+            {
+                "success": True,
+                "message": "Email moved to Trash",
+                "message_id": result.get("id", message_id),
+                "labelIds": result.get("labelIds", []),
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error deleting email: {e}")
         return f"Error deleting email: {str(e)}"
@@ -669,19 +624,12 @@ async def bulk_delete_emails(
     """
     max_delete = max(1, min(100, max_delete))
 
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
-        # Search for emails matching the query
+    async def _do(access_token):
         list_data = await call_gmail_api_get(
             access_token,
             "messages",
             params={"q": query, "maxResults": max_delete},
         )
-
         messages = list_data.get("messages", [])
         if not messages:
             return json.dumps(
@@ -694,14 +642,12 @@ async def bulk_delete_emails(
                 indent=2,
             )
 
-        # Use batchDelete for permanent deletion
         message_ids = [msg["id"] for msg in messages]
         await call_gmail_api_post(
             access_token,
             "messages/batchDelete",
             data={"ids": message_ids},
         )
-
         return json.dumps(
             {
                 "success": True,
@@ -714,6 +660,8 @@ async def bulk_delete_emails(
             indent=2,
         )
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error bulk deleting emails: {e}")
         return f"Error bulk deleting emails: {str(e)}"
@@ -743,35 +691,27 @@ async def modify_email(
         add_labels: Comma-separated label IDs to add (e.g., "STARRED,IMPORTANT").
         remove_labels: Comma-separated label IDs to remove (e.g., "UNREAD,INBOX").
     """
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
+    add_list = [l.strip() for l in add_labels.split(",")] if add_labels else []
+    remove_list = [l.strip() for l in remove_labels.split(",")] if remove_labels else []
 
-        # Parse label lists
-        add_list = [l.strip() for l in add_labels.split(",")] if add_labels else []
-        remove_list = [l.strip() for l in remove_labels.split(",")] if remove_labels else []
+    if not add_list and not remove_list:
+        return json.dumps(
+            {"success": False, "message": "No labels specified to add or remove"},
+            ensure_ascii=False,
+            indent=2,
+        )
 
-        if not add_list and not remove_list:
-            return json.dumps(
-                {"success": False, "message": "No labels specified to add or remove"},
-                ensure_ascii=False,
-                indent=2,
-            )
-
+    async def _do(access_token):
         data = {}
         if add_list:
             data["addLabelIds"] = add_list
         if remove_list:
             data["removeLabelIds"] = remove_list
-
         result = await call_gmail_api_post(
             access_token,
             f"messages/{message_id}/modify",
             data=data,
         )
-
         return json.dumps(
             {
                 "success": True,
@@ -785,6 +725,8 @@ async def modify_email(
             indent=2,
         )
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error modifying email: {e}")
         return f"Error modifying email: {str(e)}"
@@ -797,21 +739,14 @@ async def get_email_thread(thread_id: str, ctx: Context = None) -> str:
     Args:
         thread_id: The Gmail thread ID (obtained from read_email or search_emails).
     """
-    try:
-        # Get OAuth token (once per tool call)
-        access_token = await get_token_with_elicitation(ctx, _gmail_oauth, "Gmail")
-        if access_token is None:
-            return "Authorization was declined by the user."
-
+    async def _do(access_token):
         thread = await call_gmail_api_get(
             access_token,
             f"threads/{thread_id}",
             params={"format": "metadata", "metadataHeaders": "Subject,From,To,Date"},
         )
-
         messages = thread.get("messages", [])
         results = []
-
         for msg in messages:
             hdrs = _parse_headers(msg.get("payload", {}).get("headers", []))
             results.append(
@@ -825,7 +760,6 @@ async def get_email_thread(thread_id: str, ctx: Context = None) -> str:
                     "labelIds": msg.get("labelIds", []),
                 }
             )
-
         return json.dumps(
             {
                 "thread_id": thread_id,
@@ -836,6 +770,8 @@ async def get_email_thread(thread_id: str, ctx: Context = None) -> str:
             indent=2,
         )
 
+    try:
+        return await call_with_oauth_retry(ctx, _gmail_oauth, "Gmail", _do)
     except Exception as e:
         logger.error(f"[Tool] Error getting thread: {e}")
         return f"Error getting thread: {str(e)}"

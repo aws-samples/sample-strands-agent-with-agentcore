@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import Context
-from agentcore_oauth import OAuthHelper, get_token_with_elicitation
+from agentcore_oauth import OAuthHelper, call_with_oauth_retry
 
 logger = logging.getLogger(__name__)
 
@@ -202,14 +202,9 @@ def register_calendar_tools(mcp):
         """
         logger.debug("[Tool] list_calendars called")
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             data = await call_calendar_api_get(access_token, "users/me/calendarList")
             calendars = data.get("items", [])
-
             results = []
             for cal in calendars:
                 results.append({
@@ -221,12 +216,13 @@ def register_calendar_tools(mcp):
                     "backgroundColor": cal.get("backgroundColor", ""),
                     "timeZone": cal.get("timeZone", ""),
                 })
-
             return json.dumps({
                 "calendars": results,
                 "total_count": len(results),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error listing calendars: {e}")
             return f"Error listing calendars: {str(e)}"
@@ -253,24 +249,17 @@ def register_calendar_tools(mcp):
         """
         max_results = max(1, min(100, max_results))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             params = {
                 "maxResults": max_results,
-                "singleEvents": True,  # Expand recurring events
+                "singleEvents": True,
                 "orderBy": "startTime",
                 "showDeleted": show_deleted,
             }
-
-            # Default time_min to now if not specified
             if time_min:
                 params["timeMin"] = time_min
             else:
                 params["timeMin"] = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-
             if time_max:
                 params["timeMax"] = time_max
             if query:
@@ -281,16 +270,16 @@ def register_calendar_tools(mcp):
                 f"calendars/{calendar_id}/events",
                 params=params
             )
-
             events = data.get("items", [])
             results = [_format_event_response(event) for event in events]
-
             return json.dumps({
                 "calendar_id": calendar_id,
                 "events": results,
                 "total_count": len(results),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error listing events: {e}")
             return f"Error listing events: {str(e)}"
@@ -307,19 +296,15 @@ def register_calendar_tools(mcp):
             event_id: The event ID (obtained from list_events).
             calendar_id: Calendar ID containing the event. Default: primary.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             event = await call_calendar_api_get(
                 access_token,
                 f"calendars/{calendar_id}/events/{event_id}"
             )
+            return json.dumps(_format_event_response(event), ensure_ascii=False, indent=2)
 
-            result = _format_event_response(event)
-            return json.dumps(result, ensure_ascii=False, indent=2)
-
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error getting event: {e}")
             return f"Error getting event: {str(e)}"
@@ -352,45 +337,40 @@ def register_calendar_tools(mcp):
             all_day: If True, creates an all-day event (use date format YYYY-MM-DD). Default: False.
             reminder_minutes: Comma-separated reminder times in minutes (e.g., "10,30,60"). Optional.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        attendee_list = None
+        if attendees:
+            attendee_list = [e.strip() for e in attendees.split(",") if e.strip()]
 
-            # Parse attendees
-            attendee_list = None
-            if attendees:
-                attendee_list = [e.strip() for e in attendees.split(",") if e.strip()]
+        reminder_list = None
+        if reminder_minutes:
+            reminder_list = [int(m.strip()) for m in reminder_minutes.split(",") if m.strip()]
 
-            # Parse reminders
-            reminder_list = None
-            if reminder_minutes:
-                reminder_list = [int(m.strip()) for m in reminder_minutes.split(",") if m.strip()]
+        event_body = _build_event_body(
+            summary=summary,
+            start_time=start_time,
+            end_time=end_time,
+            description=description,
+            location=location,
+            attendees=attendee_list,
+            timezone=timezone,
+            all_day=all_day,
+            reminders_minutes=reminder_list,
+        )
 
-            event_body = _build_event_body(
-                summary=summary,
-                start_time=start_time,
-                end_time=end_time,
-                description=description,
-                location=location,
-                attendees=attendee_list,
-                timezone=timezone,
-                all_day=all_day,
-                reminders_minutes=reminder_list,
-            )
-
+        async def _do(access_token):
             result = await call_calendar_api_post(
                 access_token,
                 f"calendars/{calendar_id}/events",
                 data=event_body
             )
-
             return json.dumps({
                 "success": True,
                 "message": "Event created successfully",
                 "event": _format_event_response(result),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error creating event: {e}")
             return f"Error creating event: {str(e)}"
@@ -423,18 +403,12 @@ def register_calendar_tools(mcp):
             attendees: New comma-separated attendee emails (replaces existing). Optional.
             timezone: New timezone. Optional.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
-            # First, get the existing event
+        async def _do(access_token):
             existing = await call_calendar_api_get(
                 access_token,
                 f"calendars/{calendar_id}/events/{event_id}"
             )
 
-            # Update fields
             if summary is not None:
                 existing["summary"] = summary
             if description is not None:
@@ -442,7 +416,6 @@ def register_calendar_tools(mcp):
             if location is not None:
                 existing["location"] = location
 
-            # Handle time updates
             if start_time is not None:
                 tz = timezone or existing.get("start", {}).get("timeZone", "UTC")
                 if "date" in existing.get("start", {}):
@@ -457,7 +430,6 @@ def register_calendar_tools(mcp):
                 else:
                     existing["end"] = {"dateTime": end_time, "timeZone": tz}
 
-            # Handle attendees (replace if specified)
             if attendees is not None:
                 if attendees:
                     existing["attendees"] = [
@@ -471,13 +443,14 @@ def register_calendar_tools(mcp):
                 f"calendars/{calendar_id}/events/{event_id}",
                 data=existing
             )
-
             return json.dumps({
                 "success": True,
                 "message": "Event updated successfully",
                 "event": _format_event_response(result),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error updating event: {e}")
             return f"Error updating event: {str(e)}"
@@ -496,18 +469,12 @@ def register_calendar_tools(mcp):
             calendar_id: Calendar ID containing the event. Default: primary.
             send_notifications: Send cancellation notifications to attendees. Default: False.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        endpoint = f"calendars/{calendar_id}/events/{event_id}"
+        if send_notifications:
+            endpoint += "?sendUpdates=all"
 
-            # Build endpoint with query param
-            endpoint = f"calendars/{calendar_id}/events/{event_id}"
-            if send_notifications:
-                endpoint += "?sendUpdates=all"
-
+        async def _do(access_token):
             await call_calendar_api_delete(access_token, endpoint)
-
             return json.dumps({
                 "success": True,
                 "message": "Event deleted successfully",
@@ -515,6 +482,8 @@ def register_calendar_tools(mcp):
                 "notifications_sent": send_notifications,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error deleting event: {e}")
             return f"Error deleting event: {str(e)}"
@@ -537,17 +506,12 @@ def register_calendar_tools(mcp):
             text: Natural language description of the event.
             calendar_id: Calendar ID to create event in. Default: primary.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
+        async def _do(access_token):
             result = await call_calendar_api_post(
                 access_token,
                 f"calendars/{calendar_id}/events/quickAdd",
                 params={"text": text}
             )
-
             return json.dumps({
                 "success": True,
                 "message": "Event created from text",
@@ -555,6 +519,8 @@ def register_calendar_tools(mcp):
                 "event": _format_event_response(result),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error quick adding event: {e}")
             return f"Error quick adding event: {str(e)}"
@@ -578,35 +544,27 @@ def register_calendar_tools(mcp):
             calendars: Comma-separated calendar IDs to check. Default: primary calendar.
             timezone: Timezone for the query. Default: UTC.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _calendar_oauth, "Google Calendar")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        calendar_ids = ["primary"]
+        if calendars:
+            calendar_ids = [c.strip() for c in calendars.split(",") if c.strip()]
 
-            # Parse calendar IDs
-            calendar_ids = ["primary"]
-            if calendars:
-                calendar_ids = [c.strip() for c in calendars.split(",") if c.strip()]
+        request_body = {
+            "timeMin": time_min,
+            "timeMax": time_max,
+            "timeZone": timezone,
+            "items": [{"id": cal_id} for cal_id in calendar_ids],
+        }
 
-            request_body = {
-                "timeMin": time_min,
-                "timeMax": time_max,
-                "timeZone": timezone,
-                "items": [{"id": cal_id} for cal_id in calendar_ids],
-            }
-
+        async def _do(access_token):
             data = await call_calendar_api_post(
                 access_token,
                 "freeBusy",
                 data=request_body
             )
-
-            # Format response
             calendars_result = {}
             for cal_id, cal_data in data.get("calendars", {}).items():
                 busy_slots = cal_data.get("busy", [])
                 errors = cal_data.get("errors", [])
-
                 calendars_result[cal_id] = {
                     "busy_slots": [
                         {"start": slot.get("start"), "end": slot.get("end")}
@@ -615,7 +573,6 @@ def register_calendar_tools(mcp):
                     "busy_count": len(busy_slots),
                     "errors": errors,
                 }
-
             return json.dumps({
                 "time_range": {
                     "start": time_min,
@@ -625,6 +582,8 @@ def register_calendar_tools(mcp):
                 "calendars": calendars_result,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _calendar_oauth, "Google Calendar", _do)
         except Exception as e:
             logger.error(f"[Tool] Error checking availability: {e}")
             return f"Error checking availability: {str(e)}"

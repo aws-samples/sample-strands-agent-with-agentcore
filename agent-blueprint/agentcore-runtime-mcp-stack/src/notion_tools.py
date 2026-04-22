@@ -18,7 +18,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import Context
-from agentcore_oauth import OAuthHelper, get_token_with_elicitation
+from agentcore_oauth import OAuthHelper, call_with_oauth_retry
 
 logger = logging.getLogger(__name__)
 
@@ -445,32 +445,28 @@ def register_notion_tools(mcp):
         """
         page_size = max(1, min(100, page_size))
 
-        try:
-            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        body: Dict[str, Any] = {"page_size": page_size}
+        if query:
+            body["query"] = query
+        if filter_type in ("page", "database"):
+            body["filter"] = {"value": filter_type, "property": "object"}
 
-            body: Dict[str, Any] = {"page_size": page_size}
-            if query:
-                body["query"] = query
-            if filter_type in ("page", "database"):
-                body["filter"] = {"value": filter_type, "property": "object"}
-
+        async def _do(access_token):
             data = await call_notion_api_post(access_token, "search", body)
-
             results = []
             for item in data.get("results", []):
                 if item.get("object") == "page":
                     results.append(_format_page_summary(item))
                 elif item.get("object") == "database":
                     results.append(_format_database_summary(item))
-
             return json.dumps({
                 "results": results,
                 "total_count": len(results),
                 "has_more": data.get("has_more", False),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _notion_oauth, "Notion", _do)
         except Exception as e:
             logger.error(f"[Tool] Error searching Notion: {e}")
             return f"Error searching Notion: {str(e)}"
@@ -493,12 +489,7 @@ def register_notion_tools(mcp):
                                (e.g. <!-- id:abc-123 -->) so you can target
                                specific blocks with notion_update_block. Default False.
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
-            if access_token is None:
-                return "Authorization was declined by the user."
-
-            # Fetch page metadata and first batch of blocks concurrently
+        async def _do(access_token):
             page, blocks_data = await asyncio.gather(
                 call_notion_api_get(access_token, f"pages/{page_id}"),
                 call_notion_api_get(access_token, f"blocks/{page_id}/children",
@@ -525,12 +516,12 @@ def register_notion_tools(mcp):
                 "",
             ]
             lines.append(content_md if content_md else "*(empty page)*")
-
             if has_more:
                 lines.append("\n\n*(content truncated — page has additional blocks)*")
-
             return "\n".join(lines)
 
+        try:
+            return await call_with_oauth_retry(ctx, _notion_oauth, "Notion", _do)
         except Exception as e:
             logger.error(f"[Tool] Error fetching page: {e}")
             return f"Error fetching page: {str(e)}"
@@ -558,39 +549,34 @@ def register_notion_tools(mcp):
                               Supports: # headings, - bullets, 1. numbered, - [ ] to-do,
                               ```code```, > quotes, **bold**, *italic*, `code`
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        if parent_type == "database":
+            parent = {"database_id": parent_id}
+        elif parent_type == "workspace":
+            parent = {"type": "workspace", "workspace": True}
+        else:
+            parent = {"page_id": parent_id}
 
-            if parent_type == "database":
-                parent = {"database_id": parent_id}
-            elif parent_type == "workspace":
-                parent = {"type": "workspace", "workspace": True}
-            else:
-                parent = {"page_id": parent_id}
+        properties: Dict[str, Any] = {"title": {"title": _build_rich_text(title)}}
 
-            properties: Dict[str, Any] = {"title": {"title": _build_rich_text(title)}}
+        if properties_json:
+            try:
+                extra_props = json.loads(properties_json)
+                properties.update(extra_props)
+            except json.JSONDecodeError:
+                return "Error: properties_json is not valid JSON"
 
-            if properties_json:
-                try:
-                    extra_props = json.loads(properties_json)
-                    properties.update(extra_props)
-                except json.JSONDecodeError:
-                    return "Error: properties_json is not valid JSON"
+        body: Dict[str, Any] = {
+            "parent": parent,
+            "properties": properties,
+        }
 
-            body: Dict[str, Any] = {
-                "parent": parent,
-                "properties": properties,
-            }
+        if content_markdown:
+            children = _markdown_to_blocks(content_markdown)
+            if children:
+                body["children"] = children
 
-            if content_markdown:
-                children = _markdown_to_blocks(content_markdown)
-                if children:
-                    body["children"] = children
-
+        async def _do(access_token):
             page = await call_notion_api_post(access_token, "pages", body)
-
             return json.dumps({
                 "success": True,
                 "message": "Page created successfully",
@@ -599,6 +585,8 @@ def register_notion_tools(mcp):
                 "title": title,
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _notion_oauth, "Notion", _do)
         except Exception as e:
             logger.error(f"[Tool] Error creating page: {e}")
             return f"Error creating page: {str(e)}"
@@ -622,21 +610,16 @@ def register_notion_tools(mcp):
             archived: Set to True to archive, False to unarchive. Optional.
         """
         try:
-            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
-            if access_token is None:
-                return "Authorization was declined by the user."
+            properties = json.loads(properties_json)
+        except json.JSONDecodeError:
+            return "Error: properties_json is not valid JSON"
 
-            try:
-                properties = json.loads(properties_json)
-            except json.JSONDecodeError:
-                return "Error: properties_json is not valid JSON"
+        body: Dict[str, Any] = {"properties": properties}
+        if archived is not None:
+            body["archived"] = archived
 
-            body: Dict[str, Any] = {"properties": properties}
-            if archived is not None:
-                body["archived"] = archived
-
+        async def _do(access_token):
             page = await call_notion_api_patch(access_token, f"pages/{page_id}", body)
-
             return json.dumps({
                 "success": True,
                 "message": "Page updated successfully",
@@ -644,6 +627,8 @@ def register_notion_tools(mcp):
                 "url": page.get("url"),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _notion_oauth, "Notion", _do)
         except Exception as e:
             logger.error(f"[Tool] Error updating page: {e}")
             return f"Error updating page: {str(e)}"
@@ -671,26 +656,20 @@ def register_notion_tools(mcp):
             content_markdown: New content as a single markdown line or block.
                               Example: "## New Heading" or "- [x] Completed task"
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        blocks = _markdown_to_blocks(content_markdown)
+        if not blocks:
+            return "Error: content_markdown produced no blocks"
 
-            blocks = _markdown_to_blocks(content_markdown)
-            if not blocks:
-                return "Error: content_markdown produced no blocks"
+        new_block = blocks[0]
+        block_type = new_block.get("type")
+        block_content = new_block.get(block_type, {})
 
-            # Use only the first block
-            new_block = blocks[0]
-            block_type = new_block.get("type")
-            block_content = new_block.get(block_type, {})
-
+        async def _do(access_token):
             data = await call_notion_api_patch(
                 access_token,
                 f"blocks/{block_id}",
                 {block_type: block_content},
             )
-
             return json.dumps({
                 "success": True,
                 "message": f"Block updated successfully",
@@ -698,6 +677,8 @@ def register_notion_tools(mcp):
                 "type": data.get("type"),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _notion_oauth, "Notion", _do)
         except Exception as e:
             logger.error(f"[Tool] Error updating block: {e}")
             return f"Error updating block: {str(e)}"
@@ -719,31 +700,27 @@ def register_notion_tools(mcp):
                               Supports: # headings, - bullets, 1. numbered, - [ ] to-do,
                               ```lang code```, > quotes, **bold**, *italic*, `code`
         """
-        try:
-            access_token = await get_token_with_elicitation(ctx, _notion_oauth, "Notion")
-            if access_token is None:
-                return "Authorization was declined by the user."
+        children = _markdown_to_blocks(content_markdown)
+        if not children:
+            return json.dumps({
+                "success": False,
+                "message": "No content to append",
+            }, ensure_ascii=False, indent=2)
 
-            children = _markdown_to_blocks(content_markdown)
-
-            if not children:
-                return json.dumps({
-                    "success": False,
-                    "message": "No content to append",
-                }, ensure_ascii=False, indent=2)
-
+        async def _do(access_token):
             await call_notion_api_patch(
                 access_token,
                 f"blocks/{page_id}/children",
                 {"children": children},
             )
-
             return json.dumps({
                 "success": True,
                 "message": f"Appended {len(children)} blocks to page",
                 "blocks_added": len(children),
             }, ensure_ascii=False, indent=2)
 
+        try:
+            return await call_with_oauth_retry(ctx, _notion_oauth, "Notion", _do)
         except Exception as e:
             logger.error(f"[Tool] Error appending blocks: {e}")
             return f"Error appending blocks: {str(e)}"
