@@ -147,6 +147,7 @@ resource "aws_ssm_parameter" "m2m_client_id" {
   value = aws_cognito_user_pool_client.m2m.id
 }
 
+
 resource "aws_ssm_parameter" "issuer_url" {
   name  = "/${var.project_name}/${var.environment}/auth/issuer-url"
   type  = "String"

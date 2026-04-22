@@ -111,6 +111,27 @@ skills/
 
 ---
 
+## Claude Desktop 3P (Cowork) Integration
+
+Claude Desktop in 3P mode can connect directly to the AgentCore Gateway as an MCP connector,
+giving Cowork access to the same 23 Gateway tools (web search, arXiv, finance, weather, maps, Wikipedia, etc.)
+used by the chatbot agents.
+
+Authentication uses Cognito user identity (authorization_code + PKCE flow) with automatic token refresh,
+so per-user identity propagates to Lambda tools.
+
+<img src="docs/images/cowork-ac-gateway.png" alt="Cowork AgentCore Gateway" width="800">
+
+```bash
+cd cowork
+./setup.sh    # Cognito login + configure managedMcpServers
+# Restart Cowork
+```
+
+See [cowork/README.md](cowork/README.md) for setup modes, token lifecycle, and known limitations.
+
+---
+
 ## Multi-Protocol Tool Architecture
 
 | Tool Category | Protocol | Examples | Authentication |
@@ -252,6 +273,7 @@ sample-strands-agent-chatbot/
 ├── chatbot-app/
 │   ├── frontend/          # Next.js UI + BFF
 │   └── agentcore/         # Python backend (Strands Agent)
+├── cowork/                # Claude Desktop 3P ↔ AgentCore Gateway connector
 ├── infra/                 # Terraform infrastructure
 │   ├── modules/           # Reusable modules (auth, runtime, gateway, chat, ...)
 │   ├── environments/dev/  # Environment configuration

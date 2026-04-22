@@ -11,6 +11,11 @@ module "auth" {
   project_name = var.project_name
   environment  = var.environment
   aws_region   = var.aws_region
+
+  callback_urls = concat(
+    ["http://localhost:3000/api/auth/callback"],
+    var.enable_cowork ? var.cowork_sidecar_callback_urls : [],
+  )
 }
 
 module "memory" {

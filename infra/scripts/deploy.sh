@@ -382,6 +382,32 @@ export TF_VAR_enable_telegram="$ENABLE_TELEGRAM"
 export TF_VAR_telegram_bot_token="$TELEGRAM_BOT_TOKEN"
 
 # ------------------------------------------------------------
+# Cowork Gateway integration
+# ------------------------------------------------------------
+ENABLE_COWORK=false
+
+prompt_cowork() {
+  [ "$ACTION" != "apply" ] && return 0
+
+  echo ""
+  echo "============================================"
+  echo "  Cowork (Claude Desktop 3P) integration"
+  echo "============================================"
+  read -rp "  Enable Cowork Gateway connector? (y/N): " answer
+  if [[ "${answer:-}" =~ ^[Yy] ]]; then
+    ENABLE_COWORK=true
+    echo "  -> Cognito app_client will include sidecar callback URL"
+    echo "  -> Run: cd cowork && ./setup.sh  (after deploy)"
+  else
+    echo "  (skipped)"
+  fi
+  echo ""
+}
+
+prompt_cowork
+export TF_VAR_enable_cowork="$ENABLE_COWORK"
+
+# ------------------------------------------------------------
 # Nova Act Workflow (browser automation)
 # ------------------------------------------------------------
 # Resolved after the shared deploy venv is set up below.
