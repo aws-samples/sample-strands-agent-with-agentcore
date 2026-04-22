@@ -4,6 +4,8 @@ Connect Cowork (Claude Desktop 3P) to the AgentCore Gateway's MCP tools.
 
 ## Architecture
 
+<img src="../docs/images/cowork-connector-setup.png" alt="Cowork Connector Setup" width="900">
+
 ```
 Cowork (3P mode, Bedrock inference)
   ↓ Streamable HTTP + Bearer JWT (via managedMcpServers)
@@ -26,7 +28,28 @@ Cognito tokens from `~/.cowork-sidecar/tokens.json` and auto-refreshes on expiry
 
 - Infrastructure deployed with `enable_cowork = true`
 - A Cognito user account (same pool as the chat app)
-- Cowork (Claude Desktop in 3P mode with Bedrock inference configured)
+
+### One-time Cowork 3P setup (before `./setup.sh`)
+
+`managedMcpServers` requires `inferenceProvider` to be set. Without it, MCP
+servers from configLibrary are silently ignored.
+
+1. **Download Claude Desktop**: https://claude.com/download
+2. **Get a Bedrock API key**: AWS Console → Bedrock → API keys →
+   Create long-term API key. Note the key value and region (e.g. `us-west-2`).
+   IAM policy must include `bedrock:CallWithBearerToken`.
+3. **Enable Developer Mode**: Claude Desktop → Help → Troubleshooting →
+   Enable Developer Mode.
+4. **Open 3P configuration**: Menu bar → Developer → Configure third-party inference.
+5. **Configure Bedrock** (Connection tab):
+   - Inference provider: `bedrock`
+   - Region: your Bedrock region
+   - Bearer token: paste your Bedrock API key
+6. **Click "Apply locally"**. The app restarts.
+
+This writes `inferenceProvider`, `inferenceBedrockRegion`, and
+`inferenceBedrockBearerToken` to `~/Library/Application Support/Claude-3p/configLibrary/<id>.json`.
+`setup.sh` later adds `managedMcpServers` to the same profile.
 
 ## Setup
 
