@@ -1,8 +1,4 @@
-"""
-Compacting Session Manager for Long Context Optimization
-
-Simplified two-feature compaction with DynamoDB checkpoint persistence.
-"""
+"""Compacting Session Manager for Long Context Optimization."""
 
 import copy
 import json
@@ -28,59 +24,46 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CompactionState:
-    """
-    Compaction state stored in DynamoDB session metadata.
+    """Compaction state stored in agent.state["compaction"].
 
-    Simplified state tracking:
     - checkpoint: Message index to load from (0 = load all)
     - summary: Summary of messages before checkpoint
-    - lastInputTokens: For tracking token growth
     """
-    checkpoint: int = 0                      # Message index to load from (0 = load all)
-    summary: Optional[str] = None            # Compressed history summary
-    lastInputTokens: int = 0                 # Last turn's actual input tokens
-    updatedAt: Optional[str] = None          # Last update timestamp
+    checkpoint: int = 0
+    summary: Optional[str] = None
+    updatedAt: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for DynamoDB storage."""
         return {
             "checkpoint": self.checkpoint,
             "summary": self.summary,
-            "lastInputTokens": self.lastInputTokens,
             "updatedAt": self.updatedAt
         }
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "CompactionState":
-        """Create from DynamoDB data."""
         if not data:
             return cls()
-        # DynamoDB returns numbers as Decimal, so convert to int
         return cls(
             checkpoint=int(data.get("checkpoint", 0)),
             summary=data.get("summary"),
-            lastInputTokens=int(data.get("lastInputTokens", 0)),
             updatedAt=data.get("updatedAt")
         )
 
 
 class CompactingSessionManager(AgentCoreMemorySessionManager):
-    """
-    Session manager with token-based context compaction.
+    """Session manager with token-based context compaction.
 
-    Compaction state is persisted in DynamoDB session metadata, enabling:
+    Compaction state is persisted in agent.state["compaction"], enabling:
     - Stateless operation across server restarts
     - Accurate token-based threshold triggering
     - Efficient checkpoint-based message loading
+    - No DynamoDB dependency for compaction
 
     Flow:
-    1. initialize(): Load compaction state, apply if enabled
-    2. After turn: Update lastInputTokens, trigger compaction if threshold exceeded
+    1. initialize(): Load compaction state from agent.state, apply if enabled
+    2. After turn: Check context size, trigger compaction if threshold exceeded
     """
-
-    # DynamoDB table for compaction state (lazy initialized, shared across instances)
-    _dynamodb_table = None
-    _dynamodb_table_name: Optional[str] = None
 
     def __init__(
         self,
@@ -220,87 +203,22 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         filtered = [block for block in content if is_valid_block(block)]
         return {**message, "content": filtered}
 
-    def _get_dynamodb_table(self):
-        """Lazy initialization of DynamoDB table."""
-        if CompactingSessionManager._dynamodb_table is None:
-            import boto3
-            project_name = os.environ.get('PROJECT_NAME', 'strands-agent-chatbot')
-            CompactingSessionManager._dynamodb_table_name = f"{project_name}-users-v2"
-            dynamodb = boto3.resource('dynamodb', region_name=self.region_name)
-            CompactingSessionManager._dynamodb_table = dynamodb.Table(
-                CompactingSessionManager._dynamodb_table_name
-            )
-            logger.debug(f"DynamoDB table initialized: {CompactingSessionManager._dynamodb_table_name}")
-        return CompactingSessionManager._dynamodb_table
+    def load_compaction_state(self, agent: "Agent") -> CompactionState:
+        """Load compaction state from agent.state."""
+        data = agent.state.get("compaction")
+        if data:
+            state = CompactionState.from_dict(data)
+            if state.checkpoint > 0:
+                logger.debug(f"Compaction state loaded from agent.state: checkpoint={state.checkpoint}")
+            return state
+        return CompactionState()
 
-    def _get_session_key(self) -> dict:
-        """Get DynamoDB key for session operations."""
-        return {
-            'userId': self.user_id,
-            'sk': f'SESSION#{self.session_id}'
-        }
-
-    def load_compaction_state(self) -> CompactionState:
-        """
-        Load compaction state from DynamoDB session metadata.
-
-        Returns:
-            CompactionState object (default state if not found or error)
-        """
-        if not self.user_id:
-            logger.debug("No user_id set, returning default compaction state")
-            return CompactionState()
-
-        try:
-            table = self._get_dynamodb_table()
-            response = table.get_item(
-                Key=self._get_session_key(),
-                ProjectionExpression='compaction'
-            )
-
-            if 'Item' in response and 'compaction' in response['Item']:
-                state = CompactionState.from_dict(response['Item']['compaction'])
-                if state.checkpoint > 0:
-                    logger.debug(
-                        f" Compaction state loaded: "
-                        f"checkpoint={state.checkpoint}, lastTokens={state.lastInputTokens:,}"
-                    )
-                return state
-
-            return CompactionState()
-
-        except Exception as e:
-            logger.warning(f"Error loading compaction state: {e}")
-            return CompactionState()
-
-    def save_compaction_state(self, state: CompactionState) -> None:
-        """
-        Save compaction state to DynamoDB session metadata.
-
-        Args:
-            state: CompactionState to save
-        """
-        if not self.user_id:
-            logger.debug("No user_id set, skipping compaction state save")
-            return
-
-        try:
-            state.updatedAt = datetime.now(timezone.utc).isoformat()
-            table = self._get_dynamodb_table()
-            table.update_item(
-                Key=self._get_session_key(),
-                UpdateExpression='SET compaction = :state',
-                ExpressionAttributeValues={
-                    ':state': state.to_dict()
-                }
-            )
-            logger.debug(
-                f" Compaction state saved: "
-                f"checkpoint={state.checkpoint}, lastTokens={state.lastInputTokens:,}"
-            )
-
-        except Exception as e:
-            logger.error(f"Error setting checkpoint: {e}")
+    def save_compaction_state(self, state: CompactionState, agent: "Agent") -> None:
+        """Save compaction state to agent.state and sync to storage."""
+        state.updatedAt = datetime.now(timezone.utc).isoformat()
+        agent.state.set("compaction", state.to_dict())
+        self.sync_agent(agent)
+        logger.debug(f"Compaction state saved to agent.state: checkpoint={state.checkpoint}")
 
     def _get_summarization_strategy_id(self) -> Optional[str]:
         """
@@ -722,7 +640,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
                 }
             else:
                 # Full compaction mode
-                self.compaction_state = self.load_compaction_state()
+                self.compaction_state = self.load_compaction_state(agent)
                 conv_manager_offset = agent.conversation_manager.removed_message_count
                 checkpoint = self.compaction_state.checkpoint
                 effective_offset = max(conv_manager_offset, checkpoint)
@@ -777,89 +695,66 @@ Please continue the conversation with this context in mind.
         # Mark that we have an existing agent
         self.has_existing_agent = True
 
-    def update_after_turn(self, input_tokens: int, agent_id: str) -> None:
-        """
-        Update compaction state after turn completion.
+    def update_after_turn(self, input_tokens: int, agent_id: str, agent: "Agent") -> None:
+        """Update compaction state after turn completion.
 
-        Called after agent response with actual input token count.
-        Uses cached valid cutoff points from initialize() - no additional Session Memory query.
-
-        Flow:
-        - Always update lastInputTokens
-        - If input_tokens > token_threshold:
-          - Use cached valid cutoff points to find checkpoint
-          - Generate summary from cached messages
-          - Update checkpoint + save to DynamoDB
-
-        In metrics_only mode, only tracks tokens without triggering compaction or saving state.
+        Called after agent response with the last LLM call's context size.
+        Uses cached valid cutoff points from initialize().
 
         Args:
-            input_tokens: Actual input tokens from this turn
+            input_tokens: Context size from the last LLM call (not accumulated)
             agent_id: Agent ID (for logging)
+            agent: Agent instance (for persisting state)
         """
         if self.compaction_state is None:
             self.compaction_state = CompactionState()
 
-        # Update lastInputTokens (for metrics tracking)
-        self.compaction_state.lastInputTokens = input_tokens
-
-        # In metrics_only mode, skip compaction logic and DynamoDB save
         if self.metrics_only:
-            logger.debug(f" Metrics-only: context_tokens={input_tokens:,} (no compaction)")
+            logger.debug(f"Metrics-only: context_tokens={input_tokens:,} (no compaction)")
             return
 
-        # Check if checkpoint should be set or updated
         if input_tokens > self.token_threshold:
-            logger.info(f" Threshold exceeded: {input_tokens:,} > {self.token_threshold:,}")
-            logger.info(f" Cached cutoff points: {len(self._valid_cutoff_message_ids)}, protected_turns: {self.protected_turns}")
+            logger.info(f"Threshold exceeded: {input_tokens:,} > {self.token_threshold:,}")
 
-            # Use cached valid cutoff points from initialize()
-            if not self._valid_cutoff_message_ids:
-                logger.info(" No valid cutoff points cached, skipping checkpoint update")
-                self.save_compaction_state(self.compaction_state)
-                return
+            # Always recompute cutoff points from current agent.messages
+            # Cache from initialize() becomes stale as new messages are appended
+            self._valid_cutoff_message_ids = []
+            self._all_messages_for_summary = []
+            for idx, msg in enumerate(agent.messages):
+                self._all_messages_for_summary.append(msg)
+                if msg.get('role') == 'user' and not self._has_tool_result(msg):
+                    self._valid_cutoff_message_ids.append(idx)
 
             total_turns = len(self._valid_cutoff_message_ids)
-
-            # Need at least protected_turns + 1 turns to make a cutoff
             if total_turns <= self.protected_turns:
                 logger.debug(
-                    f" Only {total_turns} turns available (need > {self.protected_turns}), "
+                    f"Only {total_turns} turns available (need > {self.protected_turns}), "
                     f"keeping all messages"
                 )
-                self.save_compaction_state(self.compaction_state)
+                self.save_compaction_state(self.compaction_state, agent)
                 return
 
-            # Keep last N turns, checkpoint at the start of (N+1)th turn from end
             new_checkpoint = self._valid_cutoff_message_ids[-(self.protected_turns)]
             current_checkpoint = self.compaction_state.checkpoint
 
-            logger.info(f" Cutoff IDs: {self._valid_cutoff_message_ids}, new_checkpoint={new_checkpoint}, current={current_checkpoint}")
-
-            # Only update if new checkpoint is further ahead
             if new_checkpoint > current_checkpoint:
                 logger.info(
-                    f" Checkpoint update: {input_tokens:,} tokens > {self.token_threshold:,} threshold, "
-                    f"checkpoint {current_checkpoint} → {new_checkpoint}"
+                    f"Checkpoint update: {input_tokens:,} tokens > {self.token_threshold:,} threshold, "
+                    f"checkpoint {current_checkpoint} -> {new_checkpoint}"
                 )
 
-                # Generate summary for messages before checkpoint
-                # New summary REPLACES existing summary (no accumulation)
                 messages_to_summarize = self._all_messages_for_summary[:new_checkpoint] if self._all_messages_for_summary else []
-
                 summary = self._generate_summary_for_compaction(messages_to_summarize)
 
-                # Update compaction state
                 self.compaction_state.checkpoint = new_checkpoint
                 self.compaction_state.summary = summary
 
                 logger.debug(
-                    f" Checkpoint updated: {new_checkpoint}, "
+                    f"Checkpoint updated: {new_checkpoint}, "
                     f"summary_length={len(summary) if summary else 0}"
                 )
 
-        # Save state to DynamoDB
-        self.save_compaction_state(self.compaction_state)
+        self.save_compaction_state(self.compaction_state, agent)
 
     def _generate_summary_for_compaction(self, messages: List[Dict]) -> Optional[str]:
         """

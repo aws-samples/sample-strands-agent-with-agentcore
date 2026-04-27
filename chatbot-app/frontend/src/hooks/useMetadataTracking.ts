@@ -120,7 +120,8 @@ export const useMetadataTracking = () => {
 }
 
 /**
- * Helper function to save latency, token usage, and documents metadata to storage
+ * Save documents metadata to DynamoDB.
+ * Token usage and latency are now persisted by the SDK via message.metadata — no DynamoDB write needed.
  */
 async function saveMetadata(
   sessionId: string,
@@ -130,12 +131,12 @@ async function saveMetadata(
   tokenUsage?: TokenUsage,
   documents?: Array<{ filename: string; tool_type: string }>
 ) {
-  // Convert temporary messageId (timestamp-based) to persistent format
-  // Persistent IDs start with 'msg-' and are stored in conversation history
+  // Only save documents to DynamoDB (token usage + latency now from SDK message.metadata)
+  if (!documents || documents.length === 0) return
+
   let persistentMessageId = messageId
 
   if (!messageId.startsWith('msg-')) {
-    // Timestamp-based ID - need to look up the actual persistent ID from history
     try {
       const historyAuthHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
       try {
@@ -168,22 +169,8 @@ async function saveMetadata(
     }
   }
 
-  const metadata: any = {
-    latency: {
-      timeToFirstToken: ttft,
-      endToEndLatency: e2e,
-    },
-  }
+  const metadata: any = { documents }
 
-  if (tokenUsage) {
-    metadata.tokenUsage = tokenUsage
-  }
-
-  if (documents && documents.length > 0) {
-    metadata.documents = documents
-  }
-
-  // Get auth token
   const authHeaders: Record<string, string> = { 'Content-Type': 'application/json' }
   try {
     const session = await fetchAuthSession()

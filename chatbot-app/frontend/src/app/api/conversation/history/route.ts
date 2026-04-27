@@ -225,10 +225,20 @@ export async function GET(request: NextRequest) {
             continue
           }
 
-          const message = {
+          const message: any = {
             ...parsed.message,
             id: event.eventId || `msg-${sessionId}-${msgIndex}`,
             timestamp: event.eventTime || new Date().toISOString()
+          }
+          // Extract SDK-persisted metadata (usage + metrics) from message.metadata
+          if (parsed.message.metadata?.usage) {
+            message.tokenUsage = parsed.message.metadata.usage
+          }
+          if (parsed.message.metadata?.metrics) {
+            message.latencyMetrics = {
+              serverLatencyMs: parsed.message.metadata.metrics.latencyMs,
+              serverTTFBMs: parsed.message.metadata.metrics.timeToFirstByteMs,
+            }
           }
           msgIndex++
           messages.push(message)
@@ -248,10 +258,19 @@ export async function GET(request: NextRequest) {
               const blobMessageData = JSON.parse(blobParsed[0])
 
               if (blobMessageData?.message) {
-                const message = {
+                const message: any = {
                   ...blobMessageData.message,
                   id: event.eventId || `msg-${sessionId}-${msgIndex}`,
                   timestamp: event.eventTime || new Date().toISOString()
+                }
+                if (blobMessageData.message.metadata?.usage) {
+                  message.tokenUsage = blobMessageData.message.metadata.usage
+                }
+                if (blobMessageData.message.metadata?.metrics) {
+                  message.latencyMetrics = {
+                    serverLatencyMs: blobMessageData.message.metadata.metrics.latencyMs,
+                    serverTTFBMs: blobMessageData.message.metadata.metrics.timeToFirstByteMs,
+                  }
                 }
                 msgIndex++
                 messages.push(message)
@@ -279,20 +298,19 @@ export async function GET(request: NextRequest) {
       sessionMetadata = session?.metadata
     }
 
-    // Merge message metadata (latency, tokenUsage, feedback, documents, etc.) with messages
+    // Merge DynamoDB metadata with messages (overrides SDK metadata for backward compat)
     if (sessionMetadata?.messages) {
       messages = messages.map(msg => {
         const messageMetadata = sessionMetadata.messages[msg.id]
         if (messageMetadata) {
           return {
             ...msg,
-            // Merge latency metadata if available
-            ...(messageMetadata.latency && { latencyMetrics: messageMetadata.latency }),
-            // Merge token usage if available
-            ...(messageMetadata.tokenUsage && { tokenUsage: messageMetadata.tokenUsage }),
-            // Merge feedback if available
+            // DynamoDB tokenUsage overrides SDK-extracted value (old sessions)
+            ...(messageMetadata.tokenUsage ? { tokenUsage: messageMetadata.tokenUsage } : {}),
+            // DynamoDB latency merged with SDK server metrics
+            ...(messageMetadata.latency && { latencyMetrics: { ...msg.latencyMetrics, ...messageMetadata.latency } }),
+            // Feedback and documents: DynamoDB only
             ...(messageMetadata.feedback && { feedback: messageMetadata.feedback }),
-            // Merge documents if available (for Word/PPT download buttons)
             ...(messageMetadata.documents && { documents: messageMetadata.documents }),
           }
         }

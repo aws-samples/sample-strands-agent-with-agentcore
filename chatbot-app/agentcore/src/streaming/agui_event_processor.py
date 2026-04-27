@@ -606,6 +606,20 @@ class AGUIStreamEventProcessor:
                     logger.debug(f"[Final Result] Emitting complete event and closing stream")
                     yield self.formatter.format_event("complete", message=result_text, images=images, usage=usage)
                     logger.debug(f"[Final Result] Complete event emitted, stream ended")
+
+                    # Trigger compaction update using last LLM call's context size
+                    session_manager = invocation_state.get("session_manager") if invocation_state else None
+                    if session_manager and hasattr(session_manager, 'update_after_turn'):
+                        context_size = (
+                            getattr(agent.event_loop_metrics, 'latest_context_size', None)
+                            or self.last_llm_input_tokens
+                        )
+                        if context_size:
+                            try:
+                                session_manager.update_after_turn(context_size, agent.agent_id, agent)
+                            except Exception as e:
+                                logger.warning(f"[Compaction] update_after_turn failed: {e}")
+
                     stream_completed_normally = True
                     return
 
