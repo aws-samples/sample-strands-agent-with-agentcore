@@ -7,7 +7,6 @@ Gateway uses CUSTOM_JWT inbound auth — the orchestrator forwards the user's JW
 import logging
 import os
 import httpx
-import boto3
 from typing import Optional, List, Callable, Any
 from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp import MCPClient
@@ -40,24 +39,12 @@ class FilteredMCPClient(MCPClient):
         client_factory: Callable[[], Any],
         enabled_tool_ids: List[str],
         prefix: str = "gateway",
-        api_keys: Optional[dict] = None,
         elicitation_callback=None,
     ):
-        """
-        Initialize filtered MCP client.
-
-        Args:
-            client_factory: Factory function to create MCP client transport
-            enabled_tool_ids: List of tool IDs that should be enabled
-            prefix: Prefix used for tool IDs (default: 'gateway')
-            api_keys: User-specific API keys for external services
-            elicitation_callback: MCP elicitation callback for OAuth consent flows
-        """
         super().__init__(client_factory, elicitation_callback=elicitation_callback)
         self.enabled_tool_ids = enabled_tool_ids
         self.prefix = prefix
         self._session_started = False
-        self.api_keys = api_keys  # User-specific API keys
         logger.debug(f"FilteredMCPClient created with {len(enabled_tool_ids)} enabled tool IDs")
 
     def __enter__(self):
@@ -177,41 +164,22 @@ class FilteredMCPClient(MCPClient):
             actual_name = self._tool_name_map[name]
             logger.debug(f"Restoring full tool name for Gateway: {name} → {actual_name}")
 
-        # Inject user API keys into arguments (Lambda will extract these)
-        if self.api_keys:
-            arguments = {**arguments, '__user_api_keys': self.api_keys}
-            logger.debug("Injected user API keys into tool arguments")
-
         return super().call_tool_sync(tool_use_id, actual_name, arguments, **kwargs)
 
 
-def get_gateway_url_from_ssm(
-    project_name: str = "strands-agent-chatbot",
-    environment: str = "dev",
-    region: str = "us-west-2"
-) -> Optional[str]:
-    """
-    Retrieve Gateway URL from SSM Parameter Store.
+def get_gateway_url() -> Optional[str]:
+    """Retrieve Gateway URL from AgentCore Registry."""
+    from registry.client import get_registry_client
 
-    Args:
-        project_name: Project name for SSM parameter path
-        environment: Environment name (dev, prod, etc.)
-        region: AWS region
-
-    Returns:
-        Gateway URL or None if not found
-    """
-    try:
-        ssm = boto3.client('ssm', region_name=region)
-        response = ssm.get_parameter(
-            Name=f'/{project_name}/{environment}/mcp/gateway-url'
-        )
-        gateway_url = response['Parameter']['Value']
-        logger.debug(f"Gateway URL retrieved from SSM: {gateway_url}")
-        return gateway_url
-    except Exception as e:
-        logger.debug(f"Failed to get Gateway URL from SSM: {e}")
+    client = get_registry_client()
+    if not client:
+        logger.debug("Registry client not available, cannot resolve Gateway URL")
         return None
+
+    url = client.get_gateway_url()
+    if url:
+        logger.debug(f"Gateway URL from Registry: {url}")
+    return url
 
 
 def _make_gateway_auth(auth_token: Optional[str] = None) -> Optional[httpx.Auth]:
@@ -228,7 +196,7 @@ def create_gateway_mcp_client(
 ) -> Optional[MCPClient]:
     """Create MCP client for AgentCore Gateway with JWT Bearer authentication."""
     if not gateway_url:
-        gateway_url = get_gateway_url_from_ssm()
+        gateway_url = get_gateway_url()
         if not gateway_url:
             logger.debug("Gateway URL not available. Gateway tools will not be loaded.")
             return None
@@ -246,7 +214,6 @@ def create_gateway_mcp_client(
 def create_filtered_gateway_client(
     enabled_tool_ids: List[str],
     prefix: str = "gateway",
-    api_keys: Optional[dict] = None,
     auth_token: Optional[str] = None,
 ) -> Optional[FilteredMCPClient]:
     """Create Gateway MCP client with tool filtering and JWT Bearer auth."""
@@ -256,7 +223,7 @@ def create_filtered_gateway_client(
         logger.debug("No Gateway tools enabled")
         return None
 
-    gateway_url = get_gateway_url_from_ssm()
+    gateway_url = get_gateway_url()
     if not gateway_url:
         logger.debug("Gateway URL not available. Gateway tools will not be loaded.")
         return None
@@ -268,8 +235,7 @@ def create_filtered_gateway_client(
     mcp_client = FilteredMCPClient(
         lambda: streamablehttp_client(gateway_url, auth=auth),
         enabled_tool_ids=gateway_tool_ids,
-        prefix=prefix,
-        api_keys=api_keys
+        prefix=prefix
     )
 
     logger.debug(f"FilteredMCPClient created: {gateway_url}")
@@ -281,15 +247,13 @@ GATEWAY_ENABLED = os.environ.get('GATEWAY_MCP_ENABLED', 'true').lower() == 'true
 
 def get_gateway_client_if_enabled(
     enabled_tool_ids: Optional[List[str]] = None,
-    api_keys: Optional[dict] = None,
     auth_token: Optional[str] = None,
 ) -> Optional[MCPClient]:
-    """Get Gateway MCP client if enabled via environment variable."""
     if not GATEWAY_ENABLED:
         logger.debug("Gateway MCP is disabled via GATEWAY_MCP_ENABLED=false")
         return None
 
     if enabled_tool_ids:
-        return create_filtered_gateway_client(enabled_tool_ids, api_keys=api_keys, auth_token=auth_token)
+        return create_filtered_gateway_client(enabled_tool_ids, auth_token=auth_token)
     else:
         return create_gateway_mcp_client(auth_token=auth_token)

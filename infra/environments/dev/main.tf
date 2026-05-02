@@ -519,6 +519,19 @@ module "registry" {
   environment  = var.environment
   aws_region   = var.aws_region
   repo_root    = local.root_dir
+
+  gateway_url          = module.gateway.gateway_url
+  gateway_role_arn     = module.gateway.gateway_role_arn
+  mcp_runtime_url      = module.runtime_mcp_3lo.runtime_invocation_url
+  mcp_runtime_role_arn = module.runtime_mcp_3lo.execution_role_arn
+  a2a_runtime_urls = {
+    "code-agent"     = module.runtime_code_agent.runtime_invocation_url
+    "research-agent" = module.runtime_research_agent.runtime_invocation_url
+  }
+  a2a_runtime_role_arns = {
+    "code-agent"     = module.runtime_code_agent.execution_role_arn
+    "research-agent" = module.runtime_research_agent.execution_role_arn
+  }
 }
 
 module "oauth_providers" {

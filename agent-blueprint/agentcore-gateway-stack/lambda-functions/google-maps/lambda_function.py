@@ -62,23 +62,10 @@ def lambda_handler(event, context):
         return error_response(str(e))
 
 
-def get_google_maps_client(user_api_key: Optional[str] = None) -> Optional[googlemaps.Client]:
-    """
-    Get Google Maps client with API key from Secrets Manager (with caching)
-
-    Args:
-        user_api_key: Optional user-provided API key (takes priority)
-
-    Returns googlemaps.Client instance
-    """
+def get_google_maps_client() -> Optional[googlemaps.Client]:
+    """Get Google Maps client with API key from Secrets Manager (with caching)."""
     global _credentials_cache, _gmaps_client
 
-    # If user provides their own key, create a new client (don't use cache)
-    if user_api_key:
-        logger.info("Creating Google Maps client with user-provided API key")
-        return googlemaps.Client(key=user_api_key)
-
-    # Return cached client if available
     if _gmaps_client:
         return _gmaps_client
 
@@ -123,13 +110,6 @@ def get_google_maps_client(user_api_key: Optional[str] = None) -> Optional[googl
         return None
 
 
-def _extract_user_maps_api_key(params: Dict[str, Any]) -> Optional[str]:
-    """Extract user-provided Google Maps API key from params"""
-    user_api_keys = params.pop('__user_api_keys', None)
-    if user_api_keys and user_api_keys.get('google_maps_api_key'):
-        logger.info("Using user-provided Google Maps API key")
-        return user_api_keys['google_maps_api_key']
-    return None
 
 
 def search_places(params: Dict[str, Any]) -> Dict[str, Any]:
@@ -138,8 +118,7 @@ def search_places(params: Dict[str, Any]) -> Dict[str, Any]:
 
     Uses Places API Text Search
     """
-    user_api_key = _extract_user_maps_api_key(params)
-    gmaps = get_google_maps_client(user_api_key)
+    gmaps = get_google_maps_client()
     if not gmaps:
         return error_response("Failed to initialize Google Maps client")
 
@@ -212,8 +191,7 @@ def search_nearby_places(params: Dict[str, Any]) -> Dict[str, Any]:
 
     Uses Places API Nearby Search
     """
-    user_api_key = _extract_user_maps_api_key(params)
-    gmaps = get_google_maps_client(user_api_key)
+    gmaps = get_google_maps_client()
     if not gmaps:
         return error_response("Failed to initialize Google Maps client")
 
@@ -290,8 +268,7 @@ def get_place_details(params: Dict[str, Any]) -> Dict[str, Any]:
 
     Uses Places API Place Details
     """
-    user_api_key = _extract_user_maps_api_key(params)
-    gmaps = get_google_maps_client(user_api_key)
+    gmaps = get_google_maps_client()
     if not gmaps:
         return error_response("Failed to initialize Google Maps client")
 
@@ -374,8 +351,7 @@ def get_directions(params: Dict[str, Any]) -> Dict[str, Any]:
 
     Uses Directions API
     """
-    user_api_key = _extract_user_maps_api_key(params)
-    gmaps = get_google_maps_client(user_api_key)
+    gmaps = get_google_maps_client()
     if not gmaps:
         return error_response("Failed to initialize Google Maps client")
 
@@ -456,8 +432,7 @@ def geocode_address(params: Dict[str, Any]) -> Dict[str, Any]:
 
     Uses Geocoding API
     """
-    user_api_key = _extract_user_maps_api_key(params)
-    gmaps = get_google_maps_client(user_api_key)
+    gmaps = get_google_maps_client()
     if not gmaps:
         return error_response("Failed to initialize Google Maps client")
 
@@ -516,8 +491,7 @@ def reverse_geocode(params: Dict[str, Any]) -> Dict[str, Any]:
 
     Uses Reverse Geocoding API
     """
-    user_api_key = _extract_user_maps_api_key(params)
-    gmaps = get_google_maps_client(user_api_key)
+    gmaps = get_google_maps_client()
     if not gmaps:
         return error_response("Failed to initialize Google Maps client")
 

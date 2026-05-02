@@ -2,6 +2,7 @@ name: financial-news
 description: "Stock quotes, price history, financial news, and analysis"
 skill_md_path: financial-news/SKILL.md
 source: gateway
+sourceRecord: finance
 tools:
   - stock_quote
   - stock_history

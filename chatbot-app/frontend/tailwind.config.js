@@ -17,7 +17,7 @@ module.exports = {
     },
     extend: {
       fontFamily: {
-        sans: ['Lato', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+        sans: ['var(--font-manrope)', 'Pretendard Variable', 'Pretendard', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
       },
       fontSize: {
         // Semantic font sizes - use these instead of text-xs, text-sm, etc.

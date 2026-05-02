@@ -2,3 +2,4 @@ name: code-agent
 description: "Autonomous coding agent. Delegate any task that involves understanding, writing, or running code — from a GitHub issue, a bug report, or a user request. It explores, implements, and verifies on its own."
 skill_md_path: code-agent/SKILL.md
 source: a2a
+sourceRecord: code-agent

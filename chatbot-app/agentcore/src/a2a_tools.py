@@ -12,7 +12,6 @@ import logging
 import os
 import asyncio
 from typing import Optional, Dict, Any, AsyncGenerator
-from urllib.parse import quote
 from uuid import uuid4
 from strands.tools import tool
 from strands.types.tools import ToolContext
@@ -57,7 +56,6 @@ Example plan:
     - Market Overview
     - Key Players"
 """,
-        "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/research-agent-runtime-arn",
     },
     "agentcore_code-agent": {
         "name": "Code Agent",
@@ -75,13 +73,12 @@ Examples:
     "Refactor the database module to use async/await throughout"
     "Implement a REST endpoint for user profile updates in src/api/users.py"
 """,
-        "runtime_arn_ssm": "/strands-agent-chatbot/dev/a2a/code-agent-runtime-arn",
     },
 }
 
 # Global cache
 _cache = {
-    'agent_arns': {},
+    'agent_urls': {},
     'agent_cards': {},
     'http_client': None
 }
@@ -128,25 +125,28 @@ AGENT_TIMEOUT = 2400    # 2400s (40 minutes) per agent call
 # Helper Functions
 # ============================================================
 
-def get_cached_agent_arn(agent_id: str, region: str = "us-west-2") -> Optional[str]:
-    """Get and cache agent ARN from SSM"""
-    if agent_id not in _cache['agent_arns']:
+def get_cached_agent_url(agent_id: str) -> Optional[str]:
+    """Get and cache A2A agent invocation URL from Registry."""
+    if agent_id not in _cache['agent_urls']:
         if agent_id not in A2A_AGENTS_CONFIG:
             return None
 
-        config = A2A_AGENTS_CONFIG[agent_id]
-        ssm_param = config['runtime_arn_ssm']
-
-        try:
-            ssm = boto3.client('ssm', region_name=region)
-            response = ssm.get_parameter(Name=ssm_param)
-            _cache['agent_arns'][agent_id] = response['Parameter']['Value']
-            logger.info(f"Cached ARN for {agent_id}: {_cache['agent_arns'][agent_id]}")
-        except Exception as e:
-            logger.error(f"Failed to get ARN for {agent_id}: {e}")
+        from registry.client import get_registry_client
+        client = get_registry_client()
+        if not client:
+            logger.error(f"Registry client not available for {agent_id}")
             return None
 
-    return _cache['agent_arns'][agent_id]
+        agent_name = agent_id.replace("agentcore_", "")
+        url = client.get_a2a_endpoint_url(agent_name)
+        if not url:
+            logger.error(f"No Registry endpoint for A2A agent {agent_name}")
+            return None
+
+        _cache['agent_urls'][agent_id] = url
+        logger.info(f"Cached URL for {agent_id}: {url[:60]}...")
+
+    return _cache['agent_urls'][agent_id]
 
 
 def get_http_client(region: str = "us-west-2", auth_token: Optional[str] = None):
@@ -216,24 +216,17 @@ async def send_a2a_message(
         # e.g. LOCAL_RESEARCH_AGENT_URL, LOCAL_CODE_AGENT_URL, LOCAL_BROWSER_USE_AGENT_URL
         env_key = "LOCAL_" + agent_id.replace("agentcore_", "").replace("-", "_").upper() + "_URL"
         local_runtime_url = os.environ.get(env_key) or os.environ.get('LOCAL_RESEARCH_AGENT_URL')
-        agent_arn = None
-
         if local_runtime_url:
-            # Local testing: use localhost URL
             runtime_url = local_runtime_url
             logger.debug(f"Local test mode ({agent_id}): {runtime_url}")
         else:
-            # Production: use AgentCore Runtime
-            agent_arn = get_cached_agent_arn(agent_id, region)
-            if not agent_arn:
+            runtime_url = get_cached_agent_url(agent_id)
+            if not runtime_url:
                 yield {
                     "status": "error",
-                    "content": [{"text": f"Error: Could not find agent ARN for {agent_id}"}]
+                    "content": [{"text": f"Error: Could not resolve endpoint for {agent_id}"}]
                 }
                 return
-
-            escaped_arn = quote(agent_arn, safe='')
-            runtime_url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{escaped_arn}/invocations/"
 
         logger.debug(f"Invoking A2A agent {agent_id}")
 
@@ -449,11 +442,10 @@ def create_a2a_tool(agent_id: str):
 
     logger.debug(f"Creating A2A tool: {agent_id}")
 
-    # Preload ARN into cache
     region = os.environ.get('AWS_REGION', 'us-west-2')
-    agent_arn = get_cached_agent_arn(agent_id, region)
-    if not agent_arn:
-        logger.error(f"Failed to get ARN for {agent_id}")
+    agent_url = get_cached_agent_url(agent_id)
+    if not agent_url:
+        logger.error(f"Failed to get endpoint for {agent_id}")
         return None
 
     # Helper function to extract context

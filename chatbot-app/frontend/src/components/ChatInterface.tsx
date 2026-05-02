@@ -197,11 +197,6 @@ export function ChatInterface() {
     let total = 0
 
     availableTools.forEach(tool => {
-      // Exclude Research Agent from count
-      if (tool.id === 'agentcore_research-agent') {
-        return
-      }
-
       const isDynamic = (tool as any).isDynamic === true
       const nestedTools = (tool as any).tools || []
 
@@ -225,7 +220,6 @@ export function ChatInterface() {
   const stableSessionId = useMemo(() => sessionId || undefined, [sessionId])
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([])
-  const [isResearchEnabled, setIsResearchEnabled] = useState<boolean>(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   // Agent executions (research)
@@ -503,14 +497,6 @@ export function ChatInterface() {
   })
 
 
-  // Sync Research Agent state with availableTools
-  useEffect(() => {
-    const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
-    if (researchTool) {
-      setIsResearchEnabled(researchTool.enabled)
-    }
-  }, [availableTools])
-
   // Reset research state when a new research starts
   // This allows the second research in the same session to show the HITL modal
   const prevAgentStatusRef = useRef<string | null>(null)
@@ -684,34 +670,6 @@ export function ChatInterface() {
       }
     }
   }, [researchData, researchArtifactId, closeCanvas, addArtifact, sessionId, extractResearchContent, openArtifact])
-
-  // Toggle Research Agent — when enabled, gate all other tools off so only
-  // research runs. When disabled, restore default tool set.
-  const toggleResearchAgent = useCallback(async () => {
-    const researchTool = availableTools.find(tool => tool.id === 'agentcore_research-agent')
-    if (!researchTool) return
-    const willBeEnabled = !researchTool.enabled
-
-    if (willBeEnabled) {
-      const enabledTools = availableTools.filter(tool =>
-        tool.id !== 'agentcore_research-agent' && tool.enabled
-      )
-      for (const tool of enabledTools) {
-        const isDynamic = (tool as any).isDynamic === true
-        const nestedTools = (tool as any).tools || []
-        if (isDynamic && nestedTools.length > 0) {
-          for (const nestedTool of nestedTools) {
-            if (nestedTool.enabled) await toggleTool(nestedTool.id)
-          }
-        } else {
-          await toggleTool(tool.id)
-        }
-      }
-    }
-
-    await toggleTool(researchTool.id)
-    setIsResearchEnabled(willBeEnabled)
-  }, [availableTools, toggleTool])
 
   // Export conversation to text file
   const exportConversation = useCallback(() => {
@@ -1163,7 +1121,6 @@ export function ChatInterface() {
           agentStatus={isCompacting ? 'compacting' : agentStatus}
           isVoiceActive={isVoiceActive}
           isVoiceSupported={isVoiceSupported}
-          isResearchEnabled={isResearchEnabled}
           isCanvasOpen={isCanvasOpen}
           availableTools={availableTools}
           sessionId={sessionId}
@@ -1172,7 +1129,6 @@ export function ChatInterface() {
           onSendMessage={handleSendMessage}
           onStopGeneration={stopGeneration}
           onSetExclusiveTools={setExclusiveTools}
-          onToggleResearch={toggleResearchAgent}
           onConnectVoice={connectVoice}
           onDisconnectVoice={disconnectVoice}
           onExportConversation={exportConversation}

@@ -5,6 +5,7 @@ import { detectBackendUrl } from '@/utils/chat'
 import { useStreamEvents } from './useStreamEvents'
 import { useChatAPI, SessionPreferences } from './useChatAPI'
 import { usePolling, hasOngoingA2ATools, A2A_TOOLS_REQUIRING_POLLING } from './usePolling'
+import { useConnector } from './useConnector'
 import { getApiUrl } from '@/config/environment'
 import { generateSessionId } from '@/config/session'
 import { fetchAuthSession } from 'aws-amplify/auth'
@@ -117,6 +118,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   // Per-session model state (not written to global profile on session switch)
   const [currentModelId, setCurrentModelId] = useState(DEFAULT_PREFERENCES.lastModel!)
   const [currentTemperature, setCurrentTemperature] = useState(0.5)
+
+  // Connector: skill-level enable/disable
+  const { enabledSkills } = useConnector()
 
   // Ref to hold session-specific enabled tools for re-application after loadTools
   const sessionEnabledToolsRef = useRef<string[] | null>(null)
@@ -244,6 +248,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     onSessionCreated: handleSessionCreated,
     currentModelId,
     currentTemperature,
+    enabledSkills,
   })
 
   // Initialize polling with apiLoadSession (now available)

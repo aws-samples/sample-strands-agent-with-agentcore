@@ -377,7 +377,6 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
     request_type = "skill"
     auth_token = None
     selected_artifact_id = None
-    api_keys = None
     if input_data.state and isinstance(input_data.state, dict):
         model_id = input_data.state.get("model_id")
         temperature = input_data.state.get("temperature")
@@ -387,7 +386,6 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         request_type = input_data.state.get("request_type", "skill")
         auth_token = input_data.state.get("auth_token")
         selected_artifact_id = input_data.state.get("selected_artifact_id")
-        api_keys = input_data.state.get("api_keys")
         raw_skills = input_data.state.get("enabled_skills")
         if isinstance(raw_skills, list):
             enabled_skills = [str(s) for s in raw_skills]
@@ -408,7 +406,6 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
             system_prompt=system_prompt,
             caching_enabled=caching_enabled,
             compaction_enabled=compaction_enabled,
-            api_keys=api_keys,
             auth_token=auth_token,
         )
 

@@ -26,7 +26,7 @@ export function useChatSessions({ sessionId, onNewChat }: UseChatSessionsProps) 
     setIsLoadingSessions(true);
     try {
       const data = await apiGet<{ success: boolean; sessions: ChatSession[] }>(
-        'session/list?limit=20&status=active'
+        'session/list?limit=100&status=active'
       );
 
       if (data.success && data.sessions) {

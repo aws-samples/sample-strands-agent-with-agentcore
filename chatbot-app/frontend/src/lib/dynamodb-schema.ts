@@ -95,6 +95,7 @@ export interface UserPreferences {
   // Tool Configuration
   enabledTools?: string[] // Array of tool IDs
   disabledTools?: string[] // Array of tool IDs to explicitly disable
+  disabledSkills?: string[] // Skill names the user has opted out of
 
   // API Keys for external services
   apiKeys?: UserApiKeys

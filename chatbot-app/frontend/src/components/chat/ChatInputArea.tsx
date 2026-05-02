@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { Upload, Send, Square, Loader2, Mic, FlaskConical } from "lucide-react"
+import { Upload, Send, Square, Loader2, Mic } from "lucide-react"
 import { FilePreview } from "@/components/ui/file-preview"
 import { AnimatePresence } from "framer-motion"
 import { VoiceAnimation } from "@/components/VoiceAnimation"
@@ -22,7 +22,6 @@ interface ChatInputAreaProps {
   agentStatus: AgentStatus
   isVoiceActive: boolean
   isVoiceSupported: boolean
-  isResearchEnabled: boolean
   isCanvasOpen: boolean
   availableTools: Tool[]
   sessionId: string | null
@@ -31,7 +30,6 @@ interface ChatInputAreaProps {
   onSendMessage: (text: string, files: File[]) => Promise<void>
   onStopGeneration: () => void
   onSetExclusiveTools: (toolIds: string[]) => void
-  onToggleResearch: () => void
   onConnectVoice: () => Promise<void>
   onDisconnectVoice: () => void
   onExportConversation: () => void
@@ -55,7 +53,6 @@ export function ChatInputArea({
   agentStatus,
   isVoiceActive,
   isVoiceSupported,
-  isResearchEnabled,
   isCanvasOpen,
   availableTools,
   sessionId,
@@ -64,7 +61,6 @@ export function ChatInputArea({
   onSendMessage,
   onStopGeneration,
   onSetExclusiveTools,
-  onToggleResearch,
   onConnectVoice,
   onDisconnectVoice,
   onExportConversation,
@@ -517,29 +513,6 @@ export function ChatInputArea({
                   </TooltipContent>
                 </Tooltip>
 
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={onToggleResearch}
-                      disabled={isVoiceActive}
-                      className={`h-9 w-9 p-0 transition-all duration-200 ${
-                        isResearchEnabled
-                          ? 'bg-blue-500/15 hover:bg-blue-500/25 text-blue-500'
-                          : isVoiceActive
-                          ? 'opacity-40 cursor-not-allowed'
-                          : 'hover:bg-muted-foreground/10 text-muted-foreground'
-                      }`}
-                    >
-                      <FlaskConical className="w-4 h-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{isResearchEnabled ? 'Research mode (click to disable)' : 'Enable Research mode'}</p>
-                  </TooltipContent>
-                </Tooltip>
 
               </div>
             </TooltipProvider>

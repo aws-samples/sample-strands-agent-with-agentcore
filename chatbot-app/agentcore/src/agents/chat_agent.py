@@ -72,29 +72,11 @@ class ChatAgent(BaseAgent):
         compaction_enabled: Optional[bool] = None,
         use_null_conversation_manager: Optional[bool] = None,
         agent_id: Optional[str] = None,
-        api_keys: Optional[Dict[str, str]] = None,
         auth_token: Optional[str] = None,
     ):
-        """
-        Initialize ChatAgent with specific configuration
-
-        Args:
-            session_id: Session identifier for message persistence
-            user_id: User identifier for cross-session preferences (defaults to session_id)
-            enabled_tools: List of tool IDs to enable. If None, all tools are enabled.
-            model_id: Bedrock model ID to use
-            temperature: Model temperature (0.0 - 1.0)
-            system_prompt: System prompt text
-            caching_enabled: Whether to enable prompt caching
-            compaction_enabled: Whether to enable context compaction (default: True)
-            use_null_conversation_manager: Use NullConversationManager instead of default SlidingWindow (default: False)
-            api_keys: User-specific API keys for external services
-        """
-        # Initialize Strands agent placeholder
         self.agent = None
         self.use_null_conversation_manager = use_null_conversation_manager if use_null_conversation_manager is not None else False
-        self.api_keys = api_keys  # User-specific API keys
-        self.auth_token = auth_token  # Cognito JWT for MCP Runtime 3LO
+        self.auth_token = auth_token
 
         super().__init__(
             session_id=session_id,
@@ -106,7 +88,6 @@ class ChatAgent(BaseAgent):
             caching_enabled=caching_enabled,
             compaction_enabled=compaction_enabled,
             auth_token=auth_token,
-            api_keys=api_keys,
         )
 
         # Create Strands agent after base initialization

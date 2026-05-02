@@ -389,6 +389,21 @@ ENABLE_COWORK=false
 prompt_cowork() {
   [ "$ACTION" != "apply" ] && return 0
 
+  if [ -n "${TF_VAR_enable_cowork:-}" ]; then
+    ENABLE_COWORK="$TF_VAR_enable_cowork"
+    echo "  Cowork: using TF_VAR_enable_cowork=$ENABLE_COWORK"
+    return 0
+  fi
+
+  # Check current terraform state for previously deployed value
+  local current
+  current=$(terraform -chdir="$ENV_DIR" output -raw enable_cowork 2>/dev/null || echo "")
+  if [ "$current" = "true" ]; then
+    ENABLE_COWORK=true
+    echo "  Cowork: already enabled (from terraform state)"
+    return 0
+  fi
+
   echo ""
   echo "============================================"
   echo "  Cowork (Claude Desktop 3P) integration"
@@ -675,12 +690,8 @@ resolve_nova_act_workflow
 export TF_VAR_nova_act_workflow_name="${NOVA_ACT_WORKFLOW_NAME:-}"
 build_registry_lambda
 
-# Sync registry YAMLs into the orchestrator build context so they end up
-# inside the runtime container image. See Dockerfile / registry loader.
-ORCH_DEFS_DEST="$INFRA_DIR/../chatbot-app/agentcore/registry_definitions"
-rm -rf "$ORCH_DEFS_DEST"
-mkdir -p "$ORCH_DEFS_DEST"
-cp -R "$INFRA_DIR/registry/definitions/." "$ORCH_DEFS_DEST/"
+# Registry definitions are no longer copied into the container image.
+# The app discovers skills and endpoints via the AgentCore Registry API.
 
 case "$ACTION" in
   init)
@@ -720,6 +731,28 @@ case "$ACTION" in
     echo "  Cognito App Client:  $(terraform output -raw cognito_app_client_id 2>/dev/null || echo 'N/A')"
     echo "  Memory ID:           $(terraform output -raw memory_id 2>/dev/null || echo 'N/A')"
     echo ""
+
+    # Print OAuth callback URLs (must be registered in each provider's console)
+    local has_oauth=false
+    for provider in google-oauth-provider github-oauth-provider notion-oauth-provider; do
+      local cb
+      cb=$("$DEPLOY_VENV/bin/python" -c "
+import boto3
+try:
+    r = boto3.client('bedrock-agentcore-control', region_name='$AWS_REGION').get_oauth2_credential_provider(name='$provider')
+    print(r.get('callbackUrl', ''))
+except: pass
+" 2>/dev/null)
+      if [ -n "$cb" ]; then
+        if [ "$has_oauth" = false ]; then
+          echo "OAuth Callback URIs (register in each provider's console):"
+          has_oauth=true
+        fi
+        echo "  $provider: $cb"
+      fi
+    done
+    [ "$has_oauth" = true ] && echo ""
+
     echo "  Run 'cd infra/environments/dev && terraform output' for all outputs."
     echo ""
     ;;

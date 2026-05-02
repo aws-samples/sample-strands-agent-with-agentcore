@@ -49,27 +49,34 @@ locals {
     )
   }
 
-  # MCP records get "-mcp-server" suffix; A2A and AGENT_SKILLS use the bare
-  # name. A skill YAML that shares a basename with an A2A definition is used
-  # only for its SKILL.md content — the record uses the A2A descriptor.
-  _mcp_records   = { for k, v in local.mcp_defs : "${k}-mcp-server" => v }
-  _a2a_records   = { for k, v in local.a2a_defs : k => v }
-  _skill_records = {
-    for k, v in local.skill_defs : k => v
-    if !contains(keys(local.a2a_defs), k)
+  # Only AGENT_SKILLS records are registered. Endpoint URLs are embedded
+  # directly in each skill's _meta.endpointUrl instead of separate MCP/A2A
+  # records — avoids sync auth issues (Gateway uses CUSTOM_JWT, not IAM).
+  _skill_records = local.skill_defs
+
+  # A2A skills also get AGENT_SKILLS records (with SKILL.md from skill_defs
+  # that share the same basename). Merge A2A metadata into the skill record.
+  _a2a_skill_overrides = {
+    for k, v in local.a2a_defs : k => v
+    if contains(keys(local.skill_defs), k)
   }
 
-  all_records = merge(local._mcp_records, local._a2a_records, local._skill_records)
-
   records_to_register = {
-    for k, v in local.all_records : k => v
+    for k, v in local._skill_records : k => v
     if length(var.enabled_components) == 0 || contains(var.enabled_components, k)
   }
 
-  # Split records by type for batched stacks
-  mcp_records = { for k, v in local.records_to_register : k => v if v.descriptor_type == "MCP" }
-  a2a_records = { for k, v in local.records_to_register : k => v if v.descriptor_type == "A2A" }
-  skill_records = { for k, v in local.records_to_register : k => v if v.descriptor_type == "AGENT_SKILLS" }
+  skill_records = local.records_to_register
+
+  # Resolve endpoint URL per skill based on source type
+  _skill_endpoint_url = {
+    for k, v in local.records_to_register : k => (
+      lookup(v, "source", "builtin") == "gateway" ? var.gateway_url :
+      lookup(v, "source", "builtin") == "mcp"     ? var.mcp_runtime_url :
+      lookup(v, "source", "builtin") == "a2a"      ? lookup(var.a2a_runtime_urls, k, "") :
+      ""
+    )
+  }
 }
 
 # ============================================================
@@ -191,92 +198,25 @@ resource "aws_cloudformation_stack" "registry" {
 # Helper: build CFN resource properties for a single record
 locals {
   _record_properties = {
-    for k, v in local.records_to_register : k => merge(
-      {
-        ServiceToken      = aws_lambda_function.registry_manager.arn
-        Action            = "MANAGE_RECORD"
-        RegistryId        = aws_cloudformation_stack.registry.outputs["RegistryId"]
-        RecordName        = k
-        RecordDescription = v.description
-        RecordVersion     = "1.0.0"
-        DescriptorType    = v.descriptor_type
-      },
-      v.descriptor_type == "AGENT_SKILLS" ? {
-        SkillMdContent = v.skill_md
-      } : {},
-      v.descriptor_type == "A2A" ? {
-        AgentCardJson = jsonencode(v.agent_card)
-      } : {},
-      v.descriptor_type == "MCP" ? {
-        ServerName        = "${var.project_name}/${lookup(lookup(v, "server", {}), "name", "${v.name}-mcp-server")}"
-        ServerDescription = v.description
-        DisplayName       = lookup(v, "display_name", v.name)
-        ToolsJson         = jsonencode({ tools = [
-          for t in v.tools : {
-            name        = t.name
-            description = t.description
-            inputSchema = {
-              type        = t.input_type
-              description = lookup(t, "input_description", null)
-              properties = {
-                for p in t.properties : p.name => merge(
-                  { type = p.type },
-                  lookup(p, "description", null) == null ? {} : { description = p.description }
-                )
-              }
-              required = [for p in t.properties : p.name if lookup(p, "required", false)]
-            }
-          }
-        ] })
-      } : {}
-    )
+    for k, v in local.records_to_register : k => {
+      ServiceToken      = aws_lambda_function.registry_manager.arn
+      Action            = "MANAGE_RECORD"
+      RegistryId        = aws_cloudformation_stack.registry.outputs["RegistryId"]
+      RecordName        = k
+      RecordDescription = v.description
+      RecordVersion     = "1.0.0"
+      DescriptorType    = "AGENT_SKILLS"
+      SkillMdContent    = v.skill_md
+      SkillDefinitionJson = jsonencode({
+        _meta = {
+          source       = lookup(v, "source", "builtin")
+          sourceRecord = lookup(v, "sourceRecord", null)
+          tools        = lookup(v, "tools", [])
+          endpointUrl  = lookup(local._skill_endpoint_url, k, "")
+        }
+      })
+    }
   }
-}
-
-# --- MCP Records Stack ---
-resource "aws_cloudformation_stack" "records_mcp" {
-  count = length(local.mcp_records) > 0 ? 1 : 0
-  name  = "${var.project_name}-${var.environment}-records-mcp"
-
-  template_body = jsonencode({
-    AWSTemplateFormatVersion = "2010-09-09"
-    Resources = {
-      for k, _ in local.mcp_records : "Record${replace(replace(k, "-", ""), "_", "")}" => {
-        Type = "Custom::AgentCoreRegistryRecord"
-        Properties = local._record_properties[k]
-      }
-    }
-    Outputs = {
-      for k, _ in local.mcp_records : "RecordId${replace(replace(k, "-", ""), "_", "")}" => {
-        Value = { "Fn::GetAtt" = ["Record${replace(replace(k, "-", ""), "_", "")}", "RecordId"] }
-      }
-    }
-  })
-
-  depends_on = [aws_cloudformation_stack.registry]
-}
-
-# --- A2A Records Stack ---
-resource "aws_cloudformation_stack" "records_a2a" {
-  count = length(local.a2a_records) > 0 ? 1 : 0
-  name  = "${var.project_name}-${var.environment}-records-a2a"
-
-  template_body = jsonencode({
-    AWSTemplateFormatVersion = "2010-09-09"
-    Resources = {
-      for k, _ in local.a2a_records : "Record${replace(replace(k, "-", ""), "_", "")}" => {
-        Type = "Custom::AgentCoreRegistryRecord"
-        Properties = local._record_properties[k]
-      }
-    }
-    Outputs = {
-      for k, _ in local.a2a_records : "RecordId${replace(replace(k, "-", ""), "_", "")}" => {
-        Value = { "Fn::GetAtt" = ["Record${replace(replace(k, "-", ""), "_", "")}", "RecordId"] }
-      }
-    }
-  })
-
-  depends_on = [aws_cloudformation_stack.registry]
 }
 
 # --- Skills Records Stacks (one stack per record) ---

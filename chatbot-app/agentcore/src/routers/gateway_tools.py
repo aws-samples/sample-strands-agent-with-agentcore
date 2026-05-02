@@ -119,9 +119,9 @@ async def get_gateway_status() -> Dict[str, Any]:
         }
     """
     try:
-        from agent.gateway.mcp_client import get_gateway_url_from_ssm
+        from agent.gateway.mcp_client import get_gateway_url
 
-        gateway_url = get_gateway_url_from_ssm()
+        gateway_url = get_gateway_url()
 
         if gateway_url:
             return {

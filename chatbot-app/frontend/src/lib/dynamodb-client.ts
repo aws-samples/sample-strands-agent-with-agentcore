@@ -184,6 +184,34 @@ export async function updateUserEnabledTools(
   }
 }
 
+/**
+ * Get disabled skills for a user
+ */
+export async function getUserDisabledSkills(userId: string): Promise<string[]> {
+  try {
+    const profile = await getUserProfile(userId)
+    return profile?.preferences?.disabledSkills || []
+  } catch (error) {
+    console.error('[DynamoDB] Error getting disabled skills:', error)
+    return []
+  }
+}
+
+/**
+ * Update disabled skills for a user
+ */
+export async function updateUserDisabledSkills(
+  userId: string,
+  disabledSkills: string[]
+): Promise<void> {
+  try {
+    await updateUserPreferences(userId, { disabledSkills })
+  } catch (error) {
+    console.error('[DynamoDB] Error updating disabled skills:', error)
+    throw error
+  }
+}
+
 // ============================================================
 // Session Operations
 // ============================================================

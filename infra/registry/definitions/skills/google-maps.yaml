@@ -2,6 +2,7 @@ name: google-maps
 description: "Place search, directions, geocoding, and interactive maps"
 skill_md_path: google-maps/SKILL.md
 source: gateway
+sourceRecord: google-maps
 tools:
   - search_places
   - search_nearby_places

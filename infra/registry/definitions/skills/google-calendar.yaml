@@ -2,6 +2,7 @@ name: google-calendar
 description: "View, create, update, and delete calendar events"
 skill_md_path: google-calendar/SKILL.md
 source: mcp
+sourceRecord: mcp-3lo
 tools:
   - list_calendars
   - list_events

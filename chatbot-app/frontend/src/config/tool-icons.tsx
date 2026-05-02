@@ -167,7 +167,7 @@ function resolveIconId(toolId: string, map: Record<string, any>): string | null 
  * Skill name → representative tool ID mapping.
  * Used to resolve icons for skill_dispatcher / skill_executor.
  */
-const skillToToolId: Record<string, string> = {
+export const skillToToolId: Record<string, string> = {
   'web-search': 'ddg_web_search',
   'url-fetcher': 'fetch_url_content',
   'visualization': 'create_visualization',
@@ -189,6 +189,10 @@ const skillToToolId: Record<string, string> = {
   'notion': 'mcp_notion',
   'github': 'mcp_github',
   'excalidraw': 'create_excalidraw_diagram',
+  'workspace': 'workspace_tools',
+  'code-agent': 'agentcore_code-agent',
+  'research-agent': 'agentcore_research-agent',
+  'doc-coauthoring': 'word_document_tools',
 };
 
 /**

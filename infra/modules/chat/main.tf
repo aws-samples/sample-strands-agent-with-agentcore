@@ -4,14 +4,14 @@ locals {
   frontend_dir    = "${var.repo_root}/${var.frontend_rel_path}"
   s3_source_key   = "frontend-source.zip"
 
-  # Exclude volatile dirs/files from hash. "inconsistent result" from filesha1
-  # means a file changed mid-plan — usually build artifacts or IDE-managed caches.
-  frontend_files = [
-    for f in fileset(local.frontend_dir, "**") : f
-    if !can(regex("(^|/)(node_modules|\\.next|\\.turbo|\\.cache|\\.git|__tests__|coverage|playwright-report|test-results|dist|build|\\.DS_Store)(/|$)", f))
-    && !can(regex("\\.(log|tsbuildinfo|swp|swo)$", f))
-    && !can(regex("(^|/)\\..*\\.sw[a-z]$", f))
-  ]
+  # Hash only source files that affect the build — avoids fileset scanning
+  # node_modules/.next which can trigger "inconsistent result" errors.
+  frontend_files = concat(
+    [for f in fileset(local.frontend_dir, "src/**") : f],
+    [for f in fileset(local.frontend_dir, "public/**") : f],
+    [for f in fileset(local.frontend_dir, "*.{json,js,ts,mjs,cjs}") : f],
+    [for f in fileset(local.frontend_dir, "Dockerfile") : f],
+  )
 
   source_hash = sha1(join("", [
     for f in local.frontend_files : try(filesha1("${local.frontend_dir}/${f}"), "")
@@ -289,6 +289,7 @@ resource "aws_iam_role_policy" "ecs_task" {
           "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:code-interpreter-custom/*",
           "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:workload-identity-directory/*",
           "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:token-vault/*",
+          "arn:aws:bedrock-agentcore:${var.aws_region}:${var.account_id}:registry/*",
         ]
       },
       {

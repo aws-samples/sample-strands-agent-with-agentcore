@@ -34,27 +34,11 @@ class BaseAgent(ABC):
         caching_enabled: Optional[bool] = None,
         compaction_enabled: Optional[bool] = None,
         auth_token: Optional[str] = None,
-        api_keys: Optional[Dict[str, str]] = None,
     ):
-        """
-        Initialize base agent with common configuration
-
-        Args:
-            session_id: Session identifier for message persistence
-            user_id: User identifier (defaults to session_id)
-            enabled_tools: List of tool IDs to enable
-            model_id: Bedrock model ID to use
-            temperature: Model temperature (0.0 - 1.0)
-            system_prompt: Additional system prompt to append (e.g., artifact context)
-            caching_enabled: Whether to enable prompt caching
-            compaction_enabled: Whether to enable context compaction
-            api_keys: User-specific API keys for external services
-        """
         self.session_id = session_id
         self.user_id = user_id or session_id
         self.enabled_tools = enabled_tools
         self.auth_token = auth_token
-        self.api_keys = api_keys
         self.gateway_client = None  # Gateway MCP client for lifecycle management
 
         # Model configuration
@@ -98,7 +82,6 @@ class BaseAgent(ABC):
             log_prefix=f"[{self.__class__.__name__}]",
             auth_token=self.auth_token,
             session_id=self.session_id,
-            api_keys=self.api_keys,
         )
 
         # Store gateway client for lifecycle management

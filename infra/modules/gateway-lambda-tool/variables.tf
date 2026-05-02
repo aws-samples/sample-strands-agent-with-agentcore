@@ -62,3 +62,9 @@ variable "upload_to_s3" {
   type        = bool
   default     = false
 }
+
+variable "pip_command" {
+  description = "Command to invoke pip (e.g. pip, pip3, python3 -m pip)"
+  type        = string
+  default     = "python3 -m pip"
+}

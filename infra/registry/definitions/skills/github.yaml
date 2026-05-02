@@ -2,6 +2,7 @@ name: github
 description: "Manage GitHub issues, PRs, branches, and repositories via OAuth (3LO). For reading issues or PR details, not for deep code analysis — delegate that to code-agent."
 skill_md_path: github/SKILL.md
 source: mcp
+sourceRecord: mcp-3lo
 tools:
   - github_search_repos
   - github_get_repo

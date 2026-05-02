@@ -43,7 +43,20 @@ const sampleToolsConfig = {
       ]
     }
   ],
-  browser_automation: [],
+  browser_automation: [
+    {
+      id: 'browser_use',
+      name: 'Browser Automation',
+      description: 'Automate browser actions',
+      category: 'Automation',
+      icon: '🌐',
+      isDynamic: true,
+      tools: [
+        { id: 'browser_navigate', name: 'Navigate', description: 'Navigate to URL' },
+        { id: 'browser_click', name: 'Click', description: 'Click element' }
+      ]
+    }
+  ],
   gateway_targets: [
     {
       id: 'google_maps_tools',

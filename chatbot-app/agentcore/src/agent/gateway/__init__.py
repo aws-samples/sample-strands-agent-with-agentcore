@@ -6,7 +6,7 @@ from agent.gateway.mcp_client import (
     create_gateway_mcp_client,
     create_filtered_gateway_client,
     get_gateway_client_if_enabled,
-    get_gateway_url_from_ssm,
+    get_gateway_url,
 )
 
 __all__ = [
@@ -15,5 +15,5 @@ __all__ = [
     "create_gateway_mcp_client",
     "create_filtered_gateway_client",
     "get_gateway_client_if_enabled",
-    "get_gateway_url_from_ssm",
+    "get_gateway_url",
 ]

@@ -1,0 +1,127 @@
+[
+  {
+    "name": "arxiv-search",
+    "description": "Search and retrieve scientific papers from ArXiv",
+    "source": "gateway"
+  },
+  {
+    "name": "browser-automation",
+    "description": "Web browser automation for tasks requiring UI interaction, login-protected pages, or human-like browsing when APIs are insufficient.",
+    "source": "builtin"
+  },
+  {
+    "name": "code-agent",
+    "description": "Autonomous coding agent. Delegate any task that involves understanding, writing, or running code \u2014 from a GitHub issue, a bug report, or a user request. It explores, implements, and verifies on its own.",
+    "source": "a2a"
+  },
+  {
+    "name": "code-interpreter",
+    "description": "Test and prototype code in a sandboxed environment. Use for debugging, verifying logic, or installing packages.",
+    "source": "builtin"
+  },
+  {
+    "name": "doc-coauthoring",
+    "description": "Guide users through a structured workflow for co-authoring documentation. Use when user wants to write documentation, proposals, technical specs, decision docs, or similar structured content. This workflow helps users efficiently transfer context, refine content through iteration, and verify the doc works for readers. Trigger when user mentions writing docs, creating proposals, drafting specs, or similar documentation tasks.",
+    "source": "builtin"
+  },
+  {
+    "name": "excalidraw",
+    "description": "Create hand-drawn style diagrams and flowcharts using Excalidraw",
+    "source": "builtin"
+  },
+  {
+    "name": "excel-spreadsheets",
+    "description": "Create, modify, and manage Excel spreadsheets.",
+    "source": "builtin"
+  },
+  {
+    "name": "financial-news",
+    "description": "Stock quotes, price history, financial news, and analysis",
+    "source": "gateway"
+  },
+  {
+    "name": "github",
+    "description": "Manage GitHub issues, PRs, branches, and repositories via OAuth (3LO). For reading issues or PR details, not for deep code analysis \u2014 delegate that to code-agent.",
+    "source": "mcp"
+  },
+  {
+    "name": "gmail",
+    "description": "Read, send, draft, delete, and organize Gmail emails",
+    "source": "mcp"
+  },
+  {
+    "name": "google-calendar",
+    "description": "View, create, update, and delete calendar events",
+    "source": "mcp"
+  },
+  {
+    "name": "google-maps",
+    "description": "Place search, directions, geocoding, and interactive maps",
+    "source": "gateway"
+  },
+  {
+    "name": "google-web-search",
+    "description": "Google web search with integrated image results",
+    "source": "gateway"
+  },
+  {
+    "name": "notion",
+    "description": "Search, read, create, and update Notion pages and databases. Supports knowledge capture, meeting prep, research documentation, and spec-to-task workflows.",
+    "source": "mcp"
+  },
+  {
+    "name": "powerpoint-presentations",
+    "description": "Create, modify, and manage PowerPoint presentations.",
+    "source": "builtin"
+  },
+  {
+    "name": "research-agent",
+    "description": "Deep research with structured reports and charts. ONLY use when the user explicitly requests research/analysis, or needs data visualization with charts, or quantitative/comparative analysis across multiple sources. Do NOT use for simple questions or quick lookups.",
+    "source": "a2a"
+  },
+  {
+    "name": "tavily-search",
+    "description": "AI-powered web search and content extraction",
+    "source": "gateway"
+  },
+  {
+    "name": "url-fetcher",
+    "description": "Fetch and extract text content from web page URLs.",
+    "source": "gateway"
+  },
+  {
+    "name": "visual-design",
+    "description": "Use this skill any time the user needs a visual output as an image",
+    "source": "builtin"
+  },
+  {
+    "name": "visualization",
+    "description": "Create interactive chart visualizations (bar, line, pie) from data.",
+    "source": "builtin"
+  },
+  {
+    "name": "weather",
+    "description": "Current weather and multi-day forecasts worldwide",
+    "source": "gateway"
+  },
+  {
+    "name": "web-search",
+    "description": "Search the web using DuckDuckGo for current information, news, and research topics.",
+    "source": "gateway"
+  },
+  {
+    "name": "wikipedia-search",
+    "description": "Wikipedia article search and retrieval",
+    "source": "gateway"
+  },
+  {
+    "name": "word-documents",
+    "description": "Create, modify, and manage Word documents.",
+    "source": "builtin"
+  },
+  {
+    "name": "workspace",
+    "description": "Read and write files in the shared session workspace. Use this to access files created by any skill \u2014 code-agent outputs, office documents, images, and more. All within the same isolated session.",
+    "source": "builtin"
+  }
+]

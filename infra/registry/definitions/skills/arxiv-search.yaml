@@ -2,6 +2,7 @@ name: arxiv-search
 description: "Search and retrieve scientific papers from ArXiv"
 skill_md_path: arxiv-search/SKILL.md
 source: gateway
+sourceRecord: arxiv
 tools:
   - arxiv_search
   - arxiv_get_paper

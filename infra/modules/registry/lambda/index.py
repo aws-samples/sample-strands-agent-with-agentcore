@@ -144,74 +144,41 @@ def handle_registry(event, props):
         return {"PhysicalResourceId": registry_id}
 
 
+def _wait_for_record(registry_id, record_id, transient_status, max_wait=60):
+    """Poll until record leaves a transient status (CREATING/UPDATING)."""
+    start = time.time()
+    while time.time() - start < max_wait:
+        try:
+            rec = client.get_registry_record(registryId=registry_id, recordId=record_id)
+            if rec.get("status", "") != transient_status:
+                return rec.get("status", "")
+        except Exception:
+            pass
+        time.sleep(5)
+    return transient_status
+
+
 def handle_record(event, props):
-    """Manage RegistryRecord lifecycle."""
+    """Manage AGENT_SKILLS RegistryRecord lifecycle."""
     request_type = event["RequestType"]
     registry_id = props["RegistryId"]
     name = props["RecordName"]
     description = props.get("RecordDescription", "")
     record_version = props.get("RecordVersion", "1.0.0")
-    descriptor_type = props.get("DescriptorType", "MCP")
 
-    # Build descriptors based on type
-    if descriptor_type == "AGENT_SKILLS":
-        skill_md_content = props.get("SkillMdContent", "")
-        descriptors = {
-            "agentSkills": {
-                "skillMd": {
-                    "inlineContent": skill_md_content,
-                },
-            }
+    skill_md_content = props.get("SkillMdContent", "")
+    skill_def_json = props.get("SkillDefinitionJson", "")
+
+    descriptors = {
+        "agentSkills": {
+            "skillMd": {"inlineContent": skill_md_content},
         }
-    elif descriptor_type == "A2A":
-        agent_card_json = props.get("AgentCardJson", "{}")
-        descriptors = {
-            "a2a": {
-                "agentCard": {
-                    "inlineContent": agent_card_json,
-                },
-            }
+    }
+    if skill_def_json:
+        descriptors["agentSkills"]["skillDefinition"] = {
+            "schemaVersion": "0.1.0",
+            "inlineContent": skill_def_json,
         }
-    else:
-        server_name = props.get("ServerName", name)
-        server_description = props.get("ServerDescription", description)
-        display_name = props.get("DisplayName", name)
-        tools_json = props.get("ToolsJson", "")
-
-        mcp_server_schema = json.dumps({
-            "name": server_name,
-            "description": server_description[:100],
-            "version": record_version,
-            "title": display_name,
-        })
-
-        if tools_json:
-            mcp_tool_schema = tools_json
-        else:
-            mcp_tool_schema = json.dumps({
-                "tools": [{
-                    "name": name,
-                    "description": description,
-                    "inputSchema": {
-                        "type": "object",
-                        "properties": {"query": {"type": "string", "description": "Natural language query"}},
-                        "required": ["query"],
-                    },
-                }]
-            })
-
-        descriptors = {
-            "mcp": {
-                "server": {
-                    "schemaVersion": "2025-12-11",
-                    "inlineContent": mcp_server_schema,
-                },
-                "tools": {
-                    "inlineContent": mcp_tool_schema,
-                },
-            }
-        }
-    logger.info(f"Descriptors payload: {json.dumps(descriptors, indent=2)}")
 
     if request_type == "Create":
         resp = client.create_registry_record(
@@ -219,69 +186,58 @@ def handle_record(event, props):
             name=name,
             description=description,
             recordVersion=record_version,
-            descriptorType=descriptor_type,
+            descriptorType="AGENT_SKILLS",
             descriptors=descriptors,
         )
         record_arn = resp.get("recordArn", "")
         record_id = record_arn.split("/")[-1] if record_arn else resp.get("recordId", "")
-        logger.info(f"Created record: {record_id} ({name}, arn={record_arn})")
+        logger.info(f"Created record: {record_id} ({name})")
 
-        for _ in range(12):
-            try:
-                rec = client.get_registry_record(registryId=registry_id, recordId=record_id)
-                if rec.get("status", "") != "CREATING":
-                    break
-            except Exception:
-                pass
-            time.sleep(5)
+        _wait_for_record(registry_id, record_id, "CREATING")
 
         try:
             client.submit_registry_record_for_approval(
-                registryId=registry_id,
-                recordId=record_id,
+                registryId=registry_id, recordId=record_id,
             )
             logger.info(f"Submitted record {record_id} for approval")
         except Exception as e:
             logger.warning(f"Submit for approval failed: {e}")
 
-        return {
-            "PhysicalResourceId": record_id,
-            "RecordId": record_id,
-        }
+        return {"PhysicalResourceId": record_id, "RecordId": record_id}
 
     elif request_type == "Update":
         record_id = event["PhysicalResourceId"]
-        if descriptor_type == "AGENT_SKILLS":
-            update_descriptors = {"optionalValue": {
-                "agentSkills": {"optionalValue": {
-                    "skillMd": {"optionalValue": descriptors["agentSkills"]["skillMd"]},
-                }},
-            }}
-        elif descriptor_type == "A2A":
-            update_descriptors = {"optionalValue": {
-                "a2a": {"optionalValue": {
-                    "agentCard": descriptors["a2a"]["agentCard"],
-                }},
-            }}
-        else:
-            update_descriptors = {"optionalValue": {
-                "mcp": {"optionalValue": {
-                    "server": {"optionalValue": descriptors["mcp"]["server"]},
-                    "tools": {"optionalValue": descriptors["mcp"]["tools"]},
-                }},
-            }}
+
+        update_skills = {
+            "skillMd": {"optionalValue": descriptors["agentSkills"]["skillMd"]},
+        }
+        if "skillDefinition" in descriptors["agentSkills"]:
+            update_skills["skillDefinition"] = {
+                "optionalValue": descriptors["agentSkills"]["skillDefinition"]
+            }
+
         client.update_registry_record(
             registryId=registry_id,
             recordId=record_id,
             description={"optionalValue": description},
             recordVersion=record_version,
-            descriptors=update_descriptors,
+            descriptors={"optionalValue": {
+                "agentSkills": {"optionalValue": update_skills},
+            }},
         )
         logger.info(f"Updated record: {record_id}")
-        return {
-            "PhysicalResourceId": record_id,
-            "RecordId": record_id,
-        }
+
+        _wait_for_record(registry_id, record_id, "UPDATING")
+
+        try:
+            client.submit_registry_record_for_approval(
+                registryId=registry_id, recordId=record_id,
+            )
+            logger.info(f"Submitted record {record_id} for approval")
+        except Exception as e:
+            logger.warning(f"Submit for approval failed: {e}")
+
+        return {"PhysicalResourceId": record_id, "RecordId": record_id}
 
     elif request_type == "Delete":
         record_id = event["PhysicalResourceId"]

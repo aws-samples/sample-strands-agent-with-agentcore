@@ -210,7 +210,6 @@ class ToolFilterRegistry:
         log_prefix: str = "",
         auth_token: Optional[str] = None,
         session_id: Optional[str] = None,
-        api_keys: Optional[Dict[str, str]] = None,
     ) -> FilteredToolResult:
         """
         Filter and load tools from all sources.
@@ -276,7 +275,7 @@ class ToolFilterRegistry:
 
         # Process Gateway tools
         if gateway_tool_ids:
-            gateway_result = self._load_gateway_tools(gateway_tool_ids, log_prefix, auth_token=auth_token, api_keys=api_keys)
+            gateway_result = self._load_gateway_tools(gateway_tool_ids, log_prefix, auth_token=auth_token)
             if gateway_result.get("client"):
                 result.tools.append(gateway_result["client"])
                 result.clients["gateway"] = gateway_result["client"]
@@ -330,7 +329,6 @@ class ToolFilterRegistry:
         tool_ids: List[str],
         log_prefix: str,
         auth_token: Optional[str] = None,
-        api_keys: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Load Gateway MCP tools."""
         factory = self._get_gateway_client_factory()
@@ -338,7 +336,7 @@ class ToolFilterRegistry:
             return {"error": "Gateway MCP client factory not available"}
 
         try:
-            client = factory(enabled_tool_ids=tool_ids, auth_token=auth_token, api_keys=api_keys)
+            client = factory(enabled_tool_ids=tool_ids, auth_token=auth_token)
             if client:
                 logger.debug(f"{log_prefix} Gateway MCP client created: {tool_ids}")
                 return {"client": client}
@@ -450,14 +448,11 @@ def filter_tools(
     log_prefix: str = "",
     auth_token: Optional[str] = None,
     session_id: Optional[str] = None,
-    api_keys: Optional[Dict[str, str]] = None,
 ) -> FilteredToolResult:
-    """Convenience function to filter tools using the default registry."""
     return get_tool_filter_registry().filter_tools(
         enabled_tool_ids=enabled_tool_ids,
         filters=filters,
         log_prefix=log_prefix,
         auth_token=auth_token,
         session_id=session_id,
-        api_keys=api_keys,
     )

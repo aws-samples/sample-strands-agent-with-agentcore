@@ -1,24 +1,29 @@
 ---
 name: research-agent
-description: Multi-source web research with structured markdown reports and chart generation. Delegate when the user asks for a written research report, literature scan, or data-backed summary that needs citations.
+description: Deep research with structured reports and charts. ONLY use when the user explicitly requests research/analysis, or needs data visualization with charts, or quantitative/comparative analysis across multiple sources. Do NOT use for simple questions or quick lookups.
 ---
 
 # Research Agent
 
-Autonomous research agent that plans, searches across the web, synthesizes findings, and returns a structured markdown report with citations and (optionally) charts. Use it when the user's question requires consulting multiple sources and producing a readable artifact — not for quick factual lookups.
+Autonomous research agent that plans, searches across the web, synthesizes findings, and returns a structured markdown report with citations and charts.
 
-## When to use
+## When to use — ALL of these require explicit user intent or clear analytical need
 
-- Market scans, literature reviews, competitive analyses, technology surveys
-- Multi-section reports that need headings, bullet lists, and citations
-- Questions where the user explicitly wants a report, briefing, or write-up
-- Tasks that benefit from a chart or two derived from the researched numbers
+- The user explicitly asks for "research", "report", "analysis", "deep dive", or "investigate"
+- The user needs data visualization — charts, graphs, trend plots
+- Quantitative or comparative analysis across multiple data points (market sizing, benchmarking, statistical comparisons)
+- Multi-section structured reports (literature reviews, competitive analyses, technology surveys)
 
-## When NOT to use
+## When NOT to use — default to simpler tools first
 
-- A single factual answer that one `wikipedia_search` or `google_web_search` call would resolve — use those tools directly
-- Code-related tasks → use the `code-agent` skill
-- Browser automation on a specific site → use the `browser-automation` skill
+- General conversation, Q&A, or factual questions — answer directly
+- A single lookup that `wikipedia_search` or `google_web_search` can resolve
+- Summarizing a single article or URL — use `fetch_url_content` instead
+- Code-related tasks — use the `code-agent` skill
+- Browser automation — use the `browser-automation` skill
+- Email, calendar, or other tool-based tasks — use the appropriate skill directly
+
+**Important**: When in doubt, do NOT delegate to research-agent. Use `google_web_search` or other tools directly. Only escalate to research-agent when the task clearly requires multi-source synthesis, structured reporting, or chart generation.
 
 ## How to invoke
 

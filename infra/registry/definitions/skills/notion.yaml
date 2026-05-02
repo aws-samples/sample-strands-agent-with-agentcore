@@ -2,6 +2,7 @@ name: notion
 description: "Search, read, create, and update Notion pages and databases. Supports knowledge capture, meeting prep, research documentation, and spec-to-task workflows."
 skill_md_path: notion/SKILL.md
 source: mcp
+sourceRecord: mcp-3lo
 tools:
   - notion_search
   - notion_fetch

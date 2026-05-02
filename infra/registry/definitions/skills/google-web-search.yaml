@@ -2,5 +2,6 @@ name: google-web-search
 description: "Google web search with integrated image results"
 skill_md_path: google-web-search/SKILL.md
 source: gateway
+sourceRecord: google-search
 tools:
   - google_web_search

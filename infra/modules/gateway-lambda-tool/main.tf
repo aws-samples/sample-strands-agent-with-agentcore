@@ -34,11 +34,11 @@ resource "null_resource" "build" {
       if [ -f "${local.src_dir}/requirements.txt" ]; then
         # Binary-only on ARM64 Linux for compiled deps; fall back to any-platform
         # for pure-Python deps that only ship as sdist (e.g., sgmllib3k).
-        pip install -q --upgrade --target "${local.build_dir}" \
+        ${var.pip_command} install -q --upgrade --target "${local.build_dir}" \
           --platform manylinux2014_aarch64 --implementation cp --python-version 3.13 \
           --only-binary=:all: \
           -r "${local.src_dir}/requirements.txt" \
-        || pip install -q --upgrade --target "${local.build_dir}" \
+        || ${var.pip_command} install -q --upgrade --target "${local.build_dir}" \
           --prefer-binary \
           -r "${local.src_dir}/requirements.txt"
       fi

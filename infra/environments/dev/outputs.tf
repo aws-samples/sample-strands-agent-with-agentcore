@@ -82,6 +82,10 @@ output "chat_cognito_login_url" {
   value = module.chat.cognito_login_url
 }
 
+output "enable_cowork" {
+  value = var.enable_cowork
+}
+
 # ============================================================
 # Cowork connection values (only when enable_cowork = true)
 # ============================================================

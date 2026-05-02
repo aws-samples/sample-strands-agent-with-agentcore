@@ -169,6 +169,7 @@ interface UseChatAPIProps {
   setSessionId: React.Dispatch<React.SetStateAction<string>>
   currentModelId: string  // Per-session model ID from useChat state
   currentTemperature: number  // Per-session temperature from useChat state
+  enabledSkills?: string[]  // Skill names to enable (undefined = all)
 }
 
 // Session preferences returned when loading a session
@@ -205,6 +206,7 @@ export const useChatAPI = ({
   setSessionId,
   currentModelId,
   currentTemperature,
+  enabledSkills,
 }: UseChatAPIProps) => {
 
   const abortRef = useRef<{ unsubscribe: () => void } | null>(null)
@@ -585,15 +587,6 @@ export const useChatAPI = ({
         ? [...enabledToolIds]
         : [...enabledToolIds, ...gatewayToolIds]
 
-      // Tool Gating: If research_agent is enabled, disable all other tools
-      const hasResearchAgent = allEnabledToolIds.includes('agentcore_research-agent')
-
-      if (hasResearchAgent) {
-        // Only allow research_agent, disable all others
-        allEnabledToolIds = ['agentcore_research-agent']
-        logger.info(`🔒 Tool gating: Research Agent active - all other tools disabled`)
-      }
-
       // Add additional tools (e.g., artifact editor when artifact is selected)
       if (additionalTools && additionalTools.length > 0) {
         additionalTools.forEach(toolId => {
@@ -652,10 +645,8 @@ export const useChatAPI = ({
           state: {
             model_id: currentModelId,
             temperature: currentTemperature,
-            // Skill mode is the only mode (besides voice, handled elsewhere).
-            // Backend loads all Registry skills by default; enabled_skills stays
-            // unset until there's UI to filter individual skills.
             request_type: "skill",
+            ...(enabledSkills && { enabled_skills: enabledSkills }),
             ...(systemPrompt && { system_prompt: systemPrompt }),
             ...(selectedArtifactId && { selected_artifact_id: selectedArtifactId }),
           },
@@ -914,7 +905,7 @@ export const useChatAPI = ({
 
       onError?.(errorMessage)
     }
-  }, [handleStreamEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature, reconnect])
+  }, [handleStreamEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature, enabledSkills, reconnect])
   // sessionId removed from dependency array - using sessionIdRef.current instead
 
   /**
