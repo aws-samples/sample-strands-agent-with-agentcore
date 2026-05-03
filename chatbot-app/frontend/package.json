@@ -70,7 +70,7 @@
     "swr": "^2.3.4",
     "tailwind-merge": "^2.0.0",
     "tailwindcss-animate": "^1.0.7",
-    "uuid": "^13.0.0",
+    "uuid": "^14.0.0",
     "vaul": "^1.1.2"
   },
   "overrides": {
