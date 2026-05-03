@@ -1,7 +1,6 @@
 import { Artifact } from '@/types/artifact'
 
 interface ArtifactContextResult {
-  additionalTools?: string[]
   artifactContext?: string
 }
 
@@ -21,7 +20,6 @@ export function buildArtifactContext(artifact: Artifact | undefined): ArtifactCo
       : artifact.content
 
     return {
-      additionalTools: ['update_artifact'],
       artifactContext: `# ARTIFACT CONTEXT
 
 The user currently has a document artifact open:

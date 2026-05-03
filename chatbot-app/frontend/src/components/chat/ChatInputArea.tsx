@@ -11,9 +11,7 @@ import { AnimatePresence } from "framer-motion"
 import { VoiceAnimation } from "@/components/VoiceAnimation"
 import { ModelConfigDialog } from "@/components/ModelConfigDialog"
 import { SlashCommandPopover } from "@/components/chat/SlashCommandPopover"
-import { ToolSuggestionsPopover } from "@/components/chat/ToolSuggestionsPopover"
-import { filterCommands, SlashCommand, parseToolCommand, getToolSuggestions, matchTools } from "@/components/chat/slashCommands"
-import { Tool } from "@/types/chat"
+import { filterCommands, SlashCommand } from "@/components/chat/slashCommands"
 import { AgentStatus } from "@/types/events"
 
 interface ChatInputAreaProps {
@@ -23,13 +21,11 @@ interface ChatInputAreaProps {
   isVoiceActive: boolean
   isVoiceSupported: boolean
   isCanvasOpen: boolean
-  availableTools: Tool[]
   sessionId: string | null
   currentModelId?: string
   onModelChange?: (modelId: string) => void
   onSendMessage: (text: string, files: File[]) => Promise<void>
   onStopGeneration: () => void
-  onSetExclusiveTools: (toolIds: string[]) => void
   onConnectVoice: () => Promise<void>
   onDisconnectVoice: () => void
   onExportConversation: () => void
@@ -54,13 +50,11 @@ export function ChatInputArea({
   isVoiceActive,
   isVoiceSupported,
   isCanvasOpen,
-  availableTools,
   sessionId,
   currentModelId,
   onModelChange,
   onSendMessage,
   onStopGeneration,
-  onSetExclusiveTools,
   onConnectVoice,
   onDisconnectVoice,
   onExportConversation,
@@ -77,50 +71,24 @@ export function ChatInputArea({
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0)
   const [inputRect, setInputRect] = useState<DOMRect | null>(null)
 
-  // Tool suggestions for /tool command
-  const [toolSuggestions, setToolSuggestions] = useState<Tool[]>([])
-  const [selectedToolIndex, setSelectedToolIndex] = useState(0)
-
-  // Border glow effect when tool is activated
-  const [toolActivated, setToolActivated] = useState(false)
-
-  // Slash command and tool autocomplete
+  // Slash command autocomplete
   useEffect(() => {
     const trimmed = inputMessage.trim()
-    if (trimmed.startsWith('/tool ')) {
-      // Show tool suggestions
-      const suggestions = getToolSuggestions(trimmed, availableTools)
-      setToolSuggestions(suggestions)
-      setSelectedToolIndex(0)
-      setSlashCommands([])
-      if (textareaRef.current) {
-        setInputRect(textareaRef.current.getBoundingClientRect())
-      }
-    } else if (trimmed.startsWith('/')) {
-      // Show slash commands
+    if (trimmed.startsWith('/')) {
       const filtered = filterCommands(trimmed)
       setSlashCommands(filtered)
       setSelectedCommandIndex(0)
-      setToolSuggestions([])
       if (textareaRef.current) {
         setInputRect(textareaRef.current.getBoundingClientRect())
       }
     } else {
       setSlashCommands([])
-      setToolSuggestions([])
     }
-  }, [inputMessage, availableTools])
+  }, [inputMessage])
 
 
   const handleSlashCommand = useCallback((command: SlashCommand) => {
     setSlashCommands([])
-
-    // For /tool command, just clear the slash command and keep the input for tool selection
-    if (command.name === '/tool') {
-      setInputMessage('/tool ')
-      return
-    }
-
     setInputMessage('')
 
     switch (command.name) {
@@ -136,77 +104,6 @@ export function ChatInputArea({
     }
   }, [onExportConversation, onNewChat, onCompact, setInputMessage])
 
-  const handleToolSuggestionSelect = useCallback((tool: Tool) => {
-    const trimmed = inputMessage.trim()
-    const afterTool = trimmed.slice(5).trim() // Remove '/tool'
-
-    let newInput: string
-    if (!afterTool) {
-      // First tool
-      newInput = `/tool ${tool.name}, `
-    } else {
-      // Find position of last comma
-      const lastCommaIndex = afterTool.lastIndexOf(',')
-      if (lastCommaIndex === -1) {
-        // No comma yet, replace entire input
-        newInput = `/tool ${tool.name}, `
-      } else {
-        // Replace text after last comma
-        const beforeLastComma = afterTool.slice(0, lastCommaIndex + 1)
-        newInput = `/tool ${beforeLastComma} ${tool.name}, `
-      }
-    }
-
-    setInputMessage(newInput)
-    setToolSuggestions([])
-  }, [inputMessage])
-
-  const handleExecuteToolCommand = useCallback(() => {
-    const trimmed = inputMessage.trim()
-    const afterTool = trimmed.slice(5).trim()
-
-    if (!afterTool) {
-      setInputMessage('')
-      return
-    }
-
-    const toolQueries = parseToolCommand(trimmed) || []
-    if (toolQueries.length === 0) {
-      setInputMessage('')
-      return
-    }
-
-    // Match each query to actual tools
-    const matchedToolIds: string[] = []
-    for (const query of toolQueries) {
-      // Exact name match first
-      let tool = availableTools.find(t =>
-        t.name.toLowerCase() === query.toLowerCase()
-      )
-      // Fuzzy match fallback
-      if (!tool) {
-        const matches = matchTools(query, availableTools)
-        if (matches.length > 0) tool = matches[0]
-      }
-      if (tool) matchedToolIds.push(tool.id)
-    }
-
-    if (matchedToolIds.length === 0) {
-      setInputMessage('')
-      return
-    }
-
-    // Disable all tools, then enable only matched ones (single state update)
-    onSetExclusiveTools(matchedToolIds)
-
-    // Trigger border glow
-    setToolActivated(true)
-    setTimeout(() => setToolActivated(false), 1000)
-
-    setInputMessage('')
-    setToolSuggestions([])
-  }, [inputMessage, availableTools, onSetExclusiveTools])
-
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || [])
     setSelectedFiles(prev => [...prev, ...files])
@@ -218,38 +115,6 @@ export function ChatInputArea({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    // Handle /tool command execution with Enter (even if suggestions are showing)
-    if (inputMessage.trim().startsWith('/tool ') && e.key === "Enter" && !e.shiftKey) {
-      if (isComposingRef.current) return
-      e.preventDefault()
-      handleExecuteToolCommand()
-      return
-    }
-
-    // Handle tool suggestions navigation
-    if (toolSuggestions.length > 0) {
-      if (e.key === "ArrowDown") {
-        e.preventDefault()
-        setSelectedToolIndex(prev => prev < toolSuggestions.length - 1 ? prev + 1 : 0)
-        return
-      }
-      if (e.key === "ArrowUp") {
-        e.preventDefault()
-        setSelectedToolIndex(prev => prev > 0 ? prev - 1 : toolSuggestions.length - 1)
-        return
-      }
-      if (e.key === "Tab") {
-        e.preventDefault()
-        handleToolSuggestionSelect(toolSuggestions[selectedToolIndex])
-        return
-      }
-      if (e.key === "Escape") {
-        e.preventDefault()
-        setToolSuggestions([])
-        return
-      }
-    }
-
     // Handle slash commands navigation
     if (slashCommands.length > 0) {
       if (e.key === "ArrowDown") {
@@ -360,7 +225,7 @@ export function ChatInputArea({
       {/* Input Area */}
       <div className="mx-auto px-4 pb-4 md:pb-6 w-full md:max-w-4xl">
         <div className={`chat-input-container bg-muted/40 dark:bg-zinc-900 rounded-2xl p-3 border border-border/50 shadow-sm ${
-          toolActivated ? 'tool-activated-glow' : ''
+          ''
         }`}>
           <form
             onSubmit={async (e) => {
@@ -530,15 +395,6 @@ export function ChatInputArea({
         selectedIndex={selectedCommandIndex}
         onSelect={handleSlashCommand}
         onClose={() => setSlashCommands([])}
-        anchorRect={inputRect}
-      />
-
-      {/* Tool Suggestions Autocomplete */}
-      <ToolSuggestionsPopover
-        tools={toolSuggestions}
-        selectedIndex={selectedToolIndex}
-        onSelect={handleToolSuggestionSelect}
-        onClose={() => setToolSuggestions([])}
         anchorRect={inputRect}
       />
     </>

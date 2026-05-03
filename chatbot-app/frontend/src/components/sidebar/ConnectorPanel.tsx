@@ -111,8 +111,9 @@ export function ConnectorPanel({ onBack }: ConnectorPanelProps) {
 
       <div className="px-4 pb-2 flex-shrink-0">
         <h2 className="text-[14px] font-semibold text-sidebar-foreground">Connectors</h2>
-        <p className="text-[11px] text-sidebar-foreground/40 mt-0.5">
-          Toggle skills off to exclude from agent
+        <p className="text-[11px] text-sidebar-foreground/40 mt-0.5 leading-relaxed">
+          Skills are loaded on demand — no need to select upfront.
+          Disable any you don't want the agent to use.
         </p>
       </div>
 

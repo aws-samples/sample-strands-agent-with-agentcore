@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { ChatInterface } from '@/components/ChatInterface'
-import type { Message, Tool } from '@/types/chat'
+import type { Message } from '@/types/chat'
 import type { AgentStatus } from '@/types/events'
 
 // Type for grouped messages
@@ -20,7 +20,6 @@ const mockUseChat: {
   isConnected: boolean
   isTyping: boolean
   agentStatus: AgentStatus
-  availableTools: Tool[]
   currentToolExecutions: any[]
   currentReasoning: any
   showProgressPanel: boolean
@@ -28,11 +27,8 @@ const mockUseChat: {
   sendMessage: ReturnType<typeof vi.fn>
   stopGeneration: ReturnType<typeof vi.fn>
   newChat: ReturnType<typeof vi.fn>
-  toggleTool: ReturnType<typeof vi.fn>
-  refreshTools: ReturnType<typeof vi.fn>
   sessionId: string | null
   loadSession: ReturnType<typeof vi.fn>
-  onGatewayToolsChange: ReturnType<typeof vi.fn>
   browserSession: { sessionId: string | null; browserId: string | null } | null
   browserProgress: any
   respondToInterrupt: ReturnType<typeof vi.fn>
@@ -45,7 +41,6 @@ const mockUseChat: {
   isConnected: true,
   isTyping: false,
   agentStatus: 'idle',
-  availableTools: [],
   currentToolExecutions: [],
   currentReasoning: null,
   showProgressPanel: false,
@@ -53,11 +48,8 @@ const mockUseChat: {
   sendMessage: vi.fn(),
   stopGeneration: vi.fn(),
   newChat: vi.fn().mockResolvedValue(undefined),
-  toggleTool: vi.fn().mockResolvedValue(undefined),
-  refreshTools: vi.fn().mockResolvedValue(undefined),
   sessionId: null,
   loadSession: vi.fn().mockResolvedValue(undefined),
-  onGatewayToolsChange: vi.fn(),
   browserSession: null,
   browserProgress: undefined,
   respondToInterrupt: vi.fn().mockResolvedValue(undefined),

@@ -24,58 +24,6 @@ from agent.gateway.mcp_client import BearerAuth
 
 logger = logging.getLogger(__name__)
 
-# ============================================================
-# A2A Agent Configuration Registry
-# ============================================================
-
-A2A_AGENTS_CONFIG = {
-    "agentcore_research-agent": {
-        "name": "Research Agent",
-        "description": """Multi-source web research with structured markdown reports and chart generation.
-
-Args:
-    plan: Research plan with objectives, topics, and desired report structure.
-
-Returns:
-    Detailed markdown report with citations and charts (displayed directly to user).
-
-Example plan:
-    "Research Plan: AI Market 2026
-
-    Objectives:
-    - Market size and growth trends
-    - Key players and market share
-
-    Topics:
-    1. Global AI market statistics
-    2. Leading companies
-    3. Investment trends
-
-    Structure:
-    - Executive Summary
-    - Market Overview
-    - Key Players"
-""",
-    },
-    "agentcore_code-agent": {
-        "name": "Code Agent",
-        "description": """Autonomous coding agent that implements features, fixes bugs, refactors code, and runs tests.
-
-Args:
-    task: Clear description of the coding task. Be specific about files, requirements, and expected outcome.
-
-Returns:
-    Summary of completed work including files changed and actions taken.
-
-Examples:
-    "Add input validation to src/auth.py and write unit tests for it"
-    "Fix the failing tests in tests/test_api.py - error: AssertionError on line 42"
-    "Refactor the database module to use async/await throughout"
-    "Implement a REST endpoint for user profile updates in src/api/users.py"
-""",
-    },
-}
-
 # Global cache
 _cache = {
     'agent_urls': {},
@@ -128,9 +76,6 @@ AGENT_TIMEOUT = 2400    # 2400s (40 minutes) per agent call
 def get_cached_agent_url(agent_id: str) -> Optional[str]:
     """Get and cache A2A agent invocation URL from Registry."""
     if agent_id not in _cache['agent_urls']:
-        if agent_id not in A2A_AGENTS_CONFIG:
-            return None
-
         from registry.client import get_registry_client
         client = get_registry_client()
         if not client:
@@ -432,13 +377,16 @@ def create_a2a_tool(agent_id: str):
     Returns:
         Strands tool function, or None if not found
     """
-    if agent_id not in A2A_AGENTS_CONFIG:
+    from registry.client import get_registry_client
+    client = get_registry_client()
+    skill_name = agent_id.replace("agentcore_", "")
+    skill = client.get_a2a_skill(skill_name) if client else None
+    if not skill:
         logger.warning(f"Unknown A2A agent: {agent_id}")
         return None
 
-    config = A2A_AGENTS_CONFIG[agent_id]
-    agent_name = config['name']
-    agent_description = config['description']
+    agent_name = skill.name
+    agent_description = skill.description
 
     logger.debug(f"Creating A2A tool: {agent_id}")
 
@@ -546,7 +494,7 @@ def create_a2a_tool(agent_id: str):
         tool_impl.__name__ = correct_name
         tool_impl.__doc__ = agent_description
         agent_tool = tool(context=True)(tool_impl)
-        agent_tool._skill_name = "code-agent"
+        agent_tool._skill_name = skill_name
 
     else:
         # Research Agent (default) - plan parameter
@@ -639,6 +587,7 @@ def create_a2a_tool(agent_id: str):
 
         # Now apply the decorator to get the tool
         agent_tool = tool(context=True)(tool_impl)
+        agent_tool._skill_name = skill_name
 
     logger.debug(f"A2A tool created: {agent_tool.__name__}")
     return agent_tool

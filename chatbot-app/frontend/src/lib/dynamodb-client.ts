@@ -151,40 +151,6 @@ export async function updateUserPreferences(
 }
 
 /**
- * Get enabled tools for a user
- */
-export async function getUserEnabledTools(userId: string): Promise<string[]> {
-  try {
-    const profile = await getUserProfile(userId)
-
-    if (!profile || !profile.preferences) {
-      return []
-    }
-
-    return profile.preferences.enabledTools || []
-  } catch (error) {
-    console.error('[DynamoDB] Error getting enabled tools:', error)
-    return []
-  }
-}
-
-/**
- * Update enabled tools for a user
- */
-export async function updateUserEnabledTools(
-  userId: string,
-  enabledTools: string[]
-): Promise<void> {
-  try {
-    await updateUserPreferences(userId, { enabledTools })
-    console.log(`[DynamoDB] Enabled tools updated for ${userId}:`, enabledTools)
-  } catch (error) {
-    console.error('[DynamoDB] Error updating enabled tools:', error)
-    throw error
-  }
-}
-
-/**
  * Get disabled skills for a user
  */
 export async function getUserDisabledSkills(userId: string): Promise<string[]> {

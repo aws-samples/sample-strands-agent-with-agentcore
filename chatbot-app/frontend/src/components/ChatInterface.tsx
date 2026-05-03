@@ -150,15 +150,12 @@ export function ChatInterface() {
     isConnected,
     isTyping,
     agentStatus,
-    availableTools,
     currentReasoning,
     sendMessage,
     stopGeneration,
     newChat,
     compactSession,
     truncateFromMessage,
-    toggleTool,
-    setExclusiveTools,
     sessionId,
     isLoadingMessages,
     isCompacting,
@@ -190,31 +187,6 @@ export function ChatInterface() {
     onExcalidrawCreated: handleExcalidrawCreated,
     onSessionLoaded: () => reloadFromStorageRef.current?.(),
   })
-
-  // Calculate tool counts considering nested tools in dynamic groups (excluding Research Agent)
-  const { enabledCount, totalCount } = useMemo(() => {
-    let enabled = 0
-    let total = 0
-
-    availableTools.forEach(tool => {
-      const isDynamic = (tool as any).isDynamic === true
-      const nestedTools = (tool as any).tools || []
-
-      if (isDynamic && nestedTools.length > 0) {
-        // For dynamic tools, count nested tools
-        total += nestedTools.length
-        enabled += nestedTools.filter((nt: any) => nt.enabled).length
-      } else {
-        // For regular tools, count the tool itself
-        total += 1
-        if (tool.enabled) {
-          enabled += 1
-        }
-      }
-    })
-
-    return { enabledCount: enabled, totalCount: total }
-  }, [availableTools])
 
   // Stable sessionId reference to prevent unnecessary re-renders
   const stableSessionId = useMemo(() => sessionId || undefined, [sessionId])
@@ -448,27 +420,6 @@ export function ChatInterface() {
   }, [openArtifact, artifacts])
 
 
-  // Get enabled tool IDs for voice chat (including nested tools from dynamic groups)
-  const enabledToolIds = useMemo(() => {
-    const ids: string[] = []
-    availableTools.forEach(tool => {
-      // Check if this is a grouped tool with nested tools (isDynamic)
-      if ((tool as any).isDynamic && (tool as any).tools) {
-        // Add enabled nested tools
-        const nestedTools = (tool as any).tools || []
-        nestedTools.forEach((nestedTool: any) => {
-          if (nestedTool.enabled) {
-            ids.push(nestedTool.id)
-          }
-        })
-      } else if (tool.enabled) {
-        // Add regular enabled tools
-        ids.push(tool.id)
-      }
-    })
-    return ids
-  }, [availableTools])
-
   // Callback to refresh session list when voice creates a new session
   const refreshSessionList = useCallback(() => {
     if (typeof (window as any).__refreshSessionList === 'function') {
@@ -487,7 +438,7 @@ export function ChatInterface() {
     forceDisconnectVoice,
   } = useVoiceIntegration({
     sessionId,
-    enabledToolIds,
+    enabledToolIds: [],
     agentStatus,
     addVoiceToolExecution,
     updateVoiceMessage,
@@ -769,9 +720,9 @@ export function ChatInterface() {
     const selectedArtifact = selectedArtifactId
       ? artifacts.find(a => a.id === selectedArtifactId)
       : undefined
-    const { additionalTools, artifactContext } = buildArtifactContext(selectedArtifact)
+    const { artifactContext } = buildArtifactContext(selectedArtifact)
 
-    await sendMessage(text, files, additionalTools, artifactContext, selectedArtifactId)
+    await sendMessage(text, files, artifactContext, selectedArtifactId)
   }
 
   // Interrupt approval handlers (for browser interrupts - research is handled via useEffect/Canvas)
@@ -1042,7 +993,6 @@ export function ChatInterface() {
                       <AssistantTurn
                         messages={group.messages}
                         currentReasoning={currentReasoning}
-                        availableTools={availableTools}
                         sessionId={stableSessionId}
                         onOpenResearchArtifact={handleOpenResearchArtifact}
                         onOpenWordArtifact={handleOpenWordArtifact}
@@ -1122,13 +1072,11 @@ export function ChatInterface() {
           isVoiceActive={isVoiceActive}
           isVoiceSupported={isVoiceSupported}
           isCanvasOpen={isCanvasOpen}
-          availableTools={availableTools}
           sessionId={sessionId}
           currentModelId={currentModelId}
           onModelChange={updateModelConfig}
           onSendMessage={handleSendMessage}
           onStopGeneration={stopGeneration}
-          onSetExclusiveTools={setExclusiveTools}
           onConnectVoice={connectVoice}
           onDisconnectVoice={disconnectVoice}
           onExportConversation={exportConversation}

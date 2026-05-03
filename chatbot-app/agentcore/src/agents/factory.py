@@ -13,7 +13,7 @@ def create_agent(
     request_type: Optional[str],
     session_id: str,
     user_id: Optional[str] = None,
-    enabled_skills: Optional[List[str]] = None,
+    disabled_skills: Optional[List[str]] = None,
     model_id: Optional[str] = None,
     temperature: Optional[float] = None,
     system_prompt: Optional[str] = None,
@@ -32,7 +32,7 @@ def create_agent(
         return SkillChatAgent(
             session_id=session_id,
             user_id=user_id,
-            enabled_skills=enabled_skills,
+            disabled_skills=disabled_skills,
             model_id=model_id,
             temperature=temperature,
             system_prompt=system_prompt,

@@ -44,7 +44,8 @@ def _run_async(coro):
 
 
 _SKILL_STREAM_TYPES = ("code_step", "code_todo_update", "code_result_meta",
-                       "code_agent_started", "code_agent_heartbeat")
+                       "code_agent_started", "code_agent_heartbeat",
+                       "research_step", "research_progress")
 
 
 async def _consume_async_generator(agen, session_id=None):

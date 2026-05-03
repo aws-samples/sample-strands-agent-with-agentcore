@@ -18,8 +18,6 @@ vi.mock('@/hooks/useStreamEvents', () => ({
 
 vi.mock('@/hooks/useChatAPI', () => ({
   useChatAPI: vi.fn(() => ({
-    loadTools: vi.fn().mockResolvedValue(undefined),
-    toggleTool: vi.fn().mockResolvedValue(undefined),
     newChat: vi.fn().mockResolvedValue(true),
     sendMessage: vi.fn().mockResolvedValue(undefined),
     cleanup: vi.fn(),
@@ -202,18 +200,6 @@ describe('useChat Hook - State Management', () => {
 
   afterEach(() => {
     vi.useRealTimers()
-  })
-
-  describe('Available Tools', () => {
-    it('should initialize with empty available tools', async () => {
-      const { result } = renderHook(() => useChat())
-
-      await act(async () => {
-        await vi.runAllTimersAsync()
-      })
-
-      expect(result.current.availableTools).toEqual([])
-    })
   })
 
   describe('Current Tool Executions', () => {

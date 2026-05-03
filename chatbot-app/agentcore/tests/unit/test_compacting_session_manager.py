@@ -83,7 +83,6 @@ class TestCompactionState:
 
         assert state.checkpoint == 0
         assert state.summary is None
-        assert state.lastInputTokens == 0
         assert state.updatedAt is None
 
     def test_compaction_state_with_values(self):
@@ -93,40 +92,35 @@ class TestCompactionState:
         state = CompactionState(
             checkpoint=50,
             summary="Previous conversation summary",
-            lastInputTokens=75000,
             updatedAt="2024-01-01T00:00:00Z"
         )
 
         assert state.checkpoint == 50
         assert state.summary == "Previous conversation summary"
-        assert state.lastInputTokens == 75000
         assert state.updatedAt == "2024-01-01T00:00:00Z"
 
     def test_compaction_state_to_dict(self):
-        """Should convert to dictionary for DynamoDB storage"""
+        """Should convert to dictionary for storage"""
         from agent.session.compacting_session_manager import CompactionState
 
         state = CompactionState(
             checkpoint=30,
             summary="Test summary",
-            lastInputTokens=50000
         )
 
         result = state.to_dict()
 
         assert result["checkpoint"] == 30
         assert result["summary"] == "Test summary"
-        assert result["lastInputTokens"] == 50000
         assert "updatedAt" in result
 
     def test_compaction_state_from_dict(self):
-        """Should create from DynamoDB data"""
+        """Should create from stored data"""
         from agent.session.compacting_session_manager import CompactionState
 
         data = {
             "checkpoint": 25,
             "summary": "Loaded summary",
-            "lastInputTokens": 80000,
             "updatedAt": "2024-01-15T12:00:00Z"
         }
 
@@ -134,7 +128,6 @@ class TestCompactionState:
 
         assert state.checkpoint == 25
         assert state.summary == "Loaded summary"
-        assert state.lastInputTokens == 80000
         assert state.updatedAt == "2024-01-15T12:00:00Z"
 
     def test_compaction_state_from_dict_none(self):
@@ -145,7 +138,6 @@ class TestCompactionState:
 
         assert state.checkpoint == 0
         assert state.summary is None
-        assert state.lastInputTokens == 0
 
     def test_compaction_state_from_dict_empty(self):
         """Should handle empty dictionary"""
@@ -187,7 +179,7 @@ class TestThresholdLogic:
         """When checkpoint exists, it can be updated forward if tokens exceed threshold again"""
         from agent.session.compacting_session_manager import CompactionState
 
-        state = CompactionState(checkpoint=50, lastInputTokens=150000)
+        state = CompactionState(checkpoint=50)
         input_tokens = 200000
         threshold = 100000
         new_checkpoint = 80
@@ -1218,7 +1210,7 @@ class TestModeSelectionLogic:
         """checkpoint == 0 -> Load all messages, apply truncation"""
         from agent.session.compacting_session_manager import CompactionState
 
-        state = CompactionState(checkpoint=0, lastInputTokens=30_000)
+        state = CompactionState(checkpoint=0)
 
         # Determine mode based on checkpoint only
         if state.checkpoint > 0:
@@ -1232,7 +1224,7 @@ class TestModeSelectionLogic:
         """checkpoint > 0 -> Load from checkpoint, apply truncation"""
         from agent.session.compacting_session_manager import CompactionState
 
-        state = CompactionState(checkpoint=50, lastInputTokens=150_000)
+        state = CompactionState(checkpoint=50)
 
         # Determine mode based on checkpoint only
         if state.checkpoint > 0:
@@ -1296,9 +1288,8 @@ class TestTwoFeatureCompaction:
 class TestUpdateAfterTurnLogic:
     """Test update_after_turn() triggering logic
 
-    New API: update_after_turn(input_tokens, agent_id)
-    - Uses cached _valid_cutoff_message_ids from initialize()
-    - Uses cached _all_messages_for_summary for summary generation
+    API: update_after_turn(input_tokens, agent_id, agent)
+    - Recomputes cutoff points from agent.messages
     """
 
     @pytest.fixture
@@ -1322,27 +1313,32 @@ class TestUpdateAfterTurnLogic:
             )
             manager.compaction_state = CompactionState()
             manager.config = config
-            # Initialize cached values (normally set by initialize())
             manager._valid_cutoff_message_ids = []
             manager._all_messages_for_summary = []
 
             return manager
 
-    def test_updates_last_input_tokens(self, manager):
-        """Should always update lastInputTokens"""
-        # Set up cached cutoff points (simulating initialize())
-        manager._valid_cutoff_message_ids = [0]
+    def _make_mock_agent(self, messages):
+        """Create a mock agent with messages."""
+        agent = MagicMock()
+        agent.messages = messages
+        return agent
+
+    def test_updates_state_below_threshold(self, manager):
+        """Below threshold should not set checkpoint"""
+        agent = self._make_mock_agent([
+            {"role": "user", "content": [{"text": "q1"}]},
+            {"role": "assistant", "content": [{"text": "a1"}]},
+        ])
 
         with patch.object(manager, 'save_compaction_state'):
-            manager.update_after_turn(750, 'test-agent')
+            manager.update_after_turn(500, 'test-agent', agent)  # Below threshold
 
-        assert manager.compaction_state.lastInputTokens == 750
+        assert manager.compaction_state.checkpoint == 0
 
     def test_triggers_checkpoint_above_threshold(self, manager):
         """Should trigger checkpoint when tokens exceed threshold"""
-        # Simulate 3 turns: indices 0, 2, 4 are user text messages
-        manager._valid_cutoff_message_ids = [0, 2, 4]
-        manager._all_messages_for_summary = [
+        messages = [
             {"role": "user", "content": [{"text": "msg1"}]},
             {"role": "assistant", "content": [{"text": "resp1"}]},
             {"role": "user", "content": [{"text": "msg2"}]},
@@ -1350,21 +1346,24 @@ class TestUpdateAfterTurnLogic:
             {"role": "user", "content": [{"text": "msg3"}]},
             {"role": "assistant", "content": [{"text": "resp3"}]},
         ]
+        agent = self._make_mock_agent(messages)
 
         with patch.object(manager, 'save_compaction_state'):
             with patch.object(manager, '_generate_summary_for_compaction', return_value="Test summary"):
-                manager.update_after_turn(1500, 'test-agent')  # Above threshold
+                manager.update_after_turn(1500, 'test-agent', agent)
 
-        # With protected_turns=2 and cutoff_ids=[0,2,4], new_checkpoint = cutoff_ids[-2] = 2
         assert manager.compaction_state.checkpoint == 2
         assert manager.compaction_state.summary == "Test summary"
 
     def test_does_not_trigger_below_threshold(self, manager):
         """Should not trigger checkpoint when tokens below threshold"""
-        manager._valid_cutoff_message_ids = [0]
+        agent = self._make_mock_agent([
+            {"role": "user", "content": [{"text": "q1"}]},
+            {"role": "assistant", "content": [{"text": "a1"}]},
+        ])
 
         with patch.object(manager, 'save_compaction_state'):
-            manager.update_after_turn(500, 'test-agent')  # Below threshold
+            manager.update_after_turn(500, 'test-agent', agent)
 
         assert manager.compaction_state.checkpoint == 0
 
@@ -1377,9 +1376,7 @@ class TestUpdateAfterTurnLogic:
             summary="Existing summary"
         )
 
-        # More turns added: indices 0, 2, 4, 6 are user text messages
-        manager._valid_cutoff_message_ids = [0, 2, 4, 6]
-        manager._all_messages_for_summary = [
+        messages = [
             {"role": "user", "content": [{"text": "msg1"}]},
             {"role": "assistant", "content": [{"text": "resp1"}]},
             {"role": "user", "content": [{"text": "msg2"}]},
@@ -1389,12 +1386,12 @@ class TestUpdateAfterTurnLogic:
             {"role": "user", "content": [{"text": "msg4"}]},
             {"role": "assistant", "content": [{"text": "resp4"}]},
         ]
+        agent = self._make_mock_agent(messages)
 
         with patch.object(manager, 'save_compaction_state'):
             with patch.object(manager, '_generate_summary_for_compaction', return_value="Updated summary"):
-                manager.update_after_turn(2000, 'test-agent')  # Above threshold
+                manager.update_after_turn(2000, 'test-agent', agent)
 
-        # With protected_turns=2 and cutoff_ids=[0,2,4,6], new_checkpoint = cutoff_ids[-2] = 4
         assert manager.compaction_state.checkpoint == 4
         assert manager.compaction_state.summary == "Updated summary"
 
@@ -1407,35 +1404,43 @@ class TestUpdateAfterTurnLogic:
             summary="Existing summary"
         )
 
-        # Only 2 turns available, protected_turns=2 means no checkpoint update possible
-        manager._valid_cutoff_message_ids = [0, 2]
+        messages = [
+            {"role": "user", "content": [{"text": "msg1"}]},
+            {"role": "assistant", "content": [{"text": "resp1"}]},
+            {"role": "user", "content": [{"text": "msg2"}]},
+            {"role": "assistant", "content": [{"text": "resp2"}]},
+        ]
+        agent = self._make_mock_agent(messages)
 
         with patch.object(manager, 'save_compaction_state'):
-            manager.update_after_turn(2000, 'test-agent')  # Above threshold
+            manager.update_after_turn(2000, 'test-agent', agent)
 
-        # Should keep existing checkpoint since total_turns <= protected_turns
         assert manager.compaction_state.checkpoint == 50
         assert manager.compaction_state.summary == "Existing summary"
 
     def test_skips_checkpoint_when_insufficient_turns(self, manager):
         """Should skip checkpoint when total turns <= protected_turns"""
-        manager._valid_cutoff_message_ids = [0, 2]  # Only 2 turns
-        manager.protected_turns = 2  # Need > 2 turns to checkpoint
+        manager.protected_turns = 2
+
+        messages = [
+            {"role": "user", "content": [{"text": "msg1"}]},
+            {"role": "assistant", "content": [{"text": "resp1"}]},
+            {"role": "user", "content": [{"text": "msg2"}]},
+            {"role": "assistant", "content": [{"text": "resp2"}]},
+        ]
+        agent = self._make_mock_agent(messages)
 
         with patch.object(manager, 'save_compaction_state'):
-            manager.update_after_turn(2000, 'test-agent')  # Above threshold
+            manager.update_after_turn(2000, 'test-agent', agent)
 
-        # Should not set checkpoint (only 2 turns <= protected_turns=2)
         assert manager.compaction_state.checkpoint == 0
 
 
 class TestEndToEndScenarios:
     """End-to-end scenario tests for two-feature compaction
 
-    Tests use the new API:
-    - update_after_turn(input_tokens, agent_id) - no messages parameter
-    - Uses cached _valid_cutoff_message_ids from initialize()
-    - Uses _all_messages_for_summary for summary generation
+    API: update_after_turn(input_tokens, agent_id, agent)
+    - Recomputes cutoff points from agent.messages
     """
 
     @pytest.fixture
@@ -1460,48 +1465,33 @@ class TestEndToEndScenarios:
             )
             manager.compaction_state = CompactionState()
             manager.config = config
-            # Initialize cached values (normally set by initialize())
             manager._valid_cutoff_message_ids = []
             manager._all_messages_for_summary = []
 
             return manager
 
+    def _make_mock_agent(self, messages):
+        agent = MagicMock()
+        agent.messages = messages
+        return agent
+
     def test_scenario_below_threshold(self, manager):
         """Scenario: Tokens below threshold - no checkpoint set"""
-        # Initial state
         assert manager.compaction_state.checkpoint == 0
-        assert manager.compaction_state.lastInputTokens == 0
 
-        # Set up cached cutoff points (simulating initialize())
-        manager._valid_cutoff_message_ids = [0]
+        agent = self._make_mock_agent([
+            {"role": "user", "content": [{"text": "q1"}]},
+            {"role": "assistant", "content": [{"text": "a1"}]},
+        ])
 
         with patch.object(manager, 'save_compaction_state'):
-            manager.update_after_turn(600, 'test-agent')  # Below threshold
+            manager.update_after_turn(600, 'test-agent', agent)
 
-        # State should track tokens but not set checkpoint
-        assert manager.compaction_state.lastInputTokens == 600
-        assert manager.compaction_state.checkpoint == 0  # No checkpoint set
+        assert manager.compaction_state.checkpoint == 0
 
     def test_scenario_above_threshold_sets_checkpoint(self, manager):
         """Scenario: Tokens exceed threshold - checkpoint gets set"""
-        from agent.session.compacting_session_manager import CompactionState
-
-        manager.compaction_state = CompactionState(lastInputTokens=700)
-
-        # Set up cached cutoff points: indices 0 and 2 are user text messages
-        manager._valid_cutoff_message_ids = [0, 2]
-        manager._all_messages_for_summary = [
-            {"role": "user", "content": [{"text": "q1"}]},
-            {"role": "assistant", "content": [{"text": "a1"}]},
-            {"role": "user", "content": [{"text": "q2"}]},
-            {"role": "assistant", "content": [{"text": "a2"}]},
-        ]
-
-        # With protected_turns=2 and cutoff_ids=[0, 2], new_checkpoint = cutoff_ids[-2] = 0
-        # But 0 is not > current checkpoint (0), so checkpoint won't update
-        # Need 3 turns (3 cutoff points) to have checkpoint > 0
-        manager._valid_cutoff_message_ids = [0, 2, 4]  # 3 turns
-        manager._all_messages_for_summary = [
+        messages = [
             {"role": "user", "content": [{"text": "q1"}]},
             {"role": "assistant", "content": [{"text": "a1"}]},
             {"role": "user", "content": [{"text": "q2"}]},
@@ -1509,12 +1499,12 @@ class TestEndToEndScenarios:
             {"role": "user", "content": [{"text": "q3"}]},
             {"role": "assistant", "content": [{"text": "a3"}]},
         ]
+        agent = self._make_mock_agent(messages)
 
         with patch.object(manager, 'save_compaction_state'):
             with patch.object(manager, '_generate_summary_for_compaction', return_value="Summary"):
-                manager.update_after_turn(1200, 'test-agent')  # Above threshold
+                manager.update_after_turn(1200, 'test-agent', agent)
 
-        # With protected_turns=2 and cutoff_ids=[0, 2, 4], new_checkpoint = cutoff_ids[-2] = 2
         assert manager.compaction_state.checkpoint == 2
         assert manager.compaction_state.summary == "Summary"
 
@@ -1522,16 +1512,12 @@ class TestEndToEndScenarios:
         """Scenario: Checkpoint can be updated forward as conversation grows"""
         from agent.session.compacting_session_manager import CompactionState
 
-        # Already has checkpoint at 2
         manager.compaction_state = CompactionState(
             checkpoint=2,
             summary="Previous summary",
-            lastInputTokens=1500
         )
 
-        # More turns added: indices 0, 2, 4, 6 are user text messages
-        manager._valid_cutoff_message_ids = [0, 2, 4, 6]
-        manager._all_messages_for_summary = [
+        messages = [
             {"role": "user", "content": [{"text": "msg1"}]},
             {"role": "assistant", "content": [{"text": "resp1"}]},
             {"role": "user", "content": [{"text": "msg2"}]},
@@ -1541,12 +1527,12 @@ class TestEndToEndScenarios:
             {"role": "user", "content": [{"text": "msg4"}]},
             {"role": "assistant", "content": [{"text": "resp4"}]},
         ]
+        agent = self._make_mock_agent(messages)
 
         with patch.object(manager, 'save_compaction_state'):
             with patch.object(manager, '_generate_summary_for_compaction', return_value="Updated summary"):
-                manager.update_after_turn(1800, 'test-agent')
+                manager.update_after_turn(1800, 'test-agent', agent)
 
-        # With protected_turns=2 and cutoff_ids=[0, 2, 4, 6], new_checkpoint = cutoff_ids[-2] = 4
         assert manager.compaction_state.checkpoint == 4
         assert manager.compaction_state.summary == "Updated summary"
 
@@ -1554,153 +1540,20 @@ class TestEndToEndScenarios:
         """Scenario: Checkpoint remains stable when tokens are below threshold"""
         from agent.session.compacting_session_manager import CompactionState
 
-        # Already has checkpoint
         manager.compaction_state = CompactionState(
             checkpoint=50,
             summary="Previous summary",
-            lastInputTokens=1500
         )
 
-        # Set up some cutoff points
-        manager._valid_cutoff_message_ids = [0]
+        agent = self._make_mock_agent([
+            {"role": "user", "content": [{"text": "q1"}]},
+            {"role": "assistant", "content": [{"text": "a1"}]},
+        ])
 
         with patch.object(manager, 'save_compaction_state'):
-            # Below threshold, checkpoint should not change
-            manager.update_after_turn(800, 'test-agent')
+            manager.update_after_turn(800, 'test-agent', agent)
 
-        # Checkpoint unchanged, only lastInputTokens updated
         assert manager.compaction_state.checkpoint == 50
         assert manager.compaction_state.summary == "Previous summary"
-        assert manager.compaction_state.lastInputTokens == 800
 
 
-class TestRepairToolMismatch:
-    """Test _repair_tool_mismatch: handles orphaned toolUse/toolResult on user interruption"""
-
-    @pytest.fixture
-    def manager(self):
-        with patch('agent.session.compacting_session_manager.AgentCoreMemorySessionManager.__init__', return_value=None):
-            from agent.session.compacting_session_manager import CompactingSessionManager
-            from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
-
-            config = MagicMock(spec=AgentCoreMemoryConfig)
-            config.memory_id = 'test-memory'
-
-            return CompactingSessionManager(
-                agentcore_memory_config=config,
-                region_name='us-west-2',
-            )
-
-    def test_no_change_when_pairs_match(self, manager):
-        """Normal paired toolUse/toolResult should pass through unchanged"""
-        messages = [
-            {"role": "user", "content": [{"text": "do something"}]},
-            {
-                "role": "assistant",
-                "content": [{"toolUse": {"toolUseId": "id-1", "name": "search", "input": {}}}],
-            },
-            {
-                "role": "user",
-                "content": [{"toolResult": {"toolUseId": "id-1", "content": [{"text": "result"}], "status": "success"}}],
-            },
-        ]
-        result = manager._repair_tool_mismatch(messages)
-        assert len(result) == 3
-        assert result[2]["content"][0]["toolResult"]["toolUseId"] == "id-1"
-
-    def test_strips_orphaned_tooluse_when_no_following_message(self, manager):
-        """toolUse with no following user message → assistant message removed entirely"""
-        messages = [
-            {"role": "user", "content": [{"text": "go"}]},
-            {
-                "role": "assistant",
-                "content": [{"toolUse": {"toolUseId": "id-orphan", "name": "browser", "input": {}}}],
-            },
-        ]
-        result = manager._repair_tool_mismatch(messages)
-        assert len(result) == 1
-        assert result[0]["role"] == "user"
-
-    def test_strips_orphaned_tooluse_from_existing_user_message(self, manager):
-        """toolUse whose toolResult is missing → orphaned toolUse stripped from assistant"""
-        messages = [
-            {
-                "role": "assistant",
-                "content": [
-                    {"toolUse": {"toolUseId": "id-1", "name": "tool_a", "input": {}}},
-                    {"toolUse": {"toolUseId": "id-2", "name": "tool_b", "input": {}}},
-                ],
-            },
-            {
-                "role": "user",
-                # only id-1 result present; id-2 is missing (interrupted)
-                "content": [{"toolResult": {"toolUseId": "id-1", "content": [{"text": "ok"}], "status": "success"}}],
-            },
-        ]
-        result = manager._repair_tool_mismatch(messages)
-        assert len(result) == 2
-        tool_use_ids = {b["toolUse"]["toolUseId"] for b in result[0]["content"] if "toolUse" in b}
-        assert tool_use_ids == {"id-1"}
-        result_ids = {b["toolResult"]["toolUseId"] for b in result[1]["content"] if "toolResult" in b}
-        assert result_ids == {"id-1"}
-
-    def test_removes_excess_tool_results(self, manager):
-        """toolResult with no matching toolUse → removed (the 'exceeds' ValidationException case)"""
-        messages = [
-            {
-                "role": "assistant",
-                # only one toolUse
-                "content": [{"toolUse": {"toolUseId": "id-1", "name": "tool_a", "input": {}}}],
-            },
-            {
-                "role": "user",
-                # two results — id-2 is excess (no matching toolUse)
-                "content": [
-                    {"toolResult": {"toolUseId": "id-1", "content": [{"text": "ok"}], "status": "success"}},
-                    {"toolResult": {"toolUseId": "id-2", "content": [{"text": "stale"}], "status": "success"}},
-                ],
-            },
-        ]
-        result = manager._repair_tool_mismatch(messages)
-        assert len(result) == 2
-        result_ids = {b["toolResult"]["toolUseId"] for b in result[1]["content"] if "toolResult" in b}
-        assert result_ids == {"id-1"}
-
-    def test_strips_orphaned_tooluse_before_next_assistant(self, manager):
-        """toolUse followed immediately by another assistant message → orphaned toolUse stripped"""
-        messages = [
-            {
-                "role": "assistant",
-                "content": [{"toolUse": {"toolUseId": "id-1", "name": "tool_a", "input": {}}}],
-            },
-            {"role": "assistant", "content": [{"text": "continuing"}]},
-        ]
-        result = manager._repair_tool_mismatch(messages)
-        assert len(result) == 1
-        assert result[0]["content"][0]["text"] == "continuing"
-
-    def test_no_repair_needed_for_plain_messages(self, manager):
-        """Conversations with no tools should be returned identical"""
-        messages = [
-            {"role": "user", "content": [{"text": "hello"}]},
-            {"role": "assistant", "content": [{"text": "hi"}]},
-            {"role": "user", "content": [{"text": "bye"}]},
-        ]
-        result = manager._repair_tool_mismatch(messages)
-        assert result == messages
-
-    def test_empty_messages(self, manager):
-        """Empty list should return empty list"""
-        assert manager._repair_tool_mismatch([]) == []
-
-    def test_does_not_mutate_original(self, manager):
-        """Original message list should not be modified"""
-        messages = [
-            {
-                "role": "assistant",
-                "content": [{"toolUse": {"toolUseId": "id-1", "name": "t", "input": {}}}],
-            },
-        ]
-        original_len = len(messages)
-        manager._repair_tool_mismatch(messages)
-        assert len(messages) == original_len

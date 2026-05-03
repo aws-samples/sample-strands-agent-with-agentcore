@@ -158,14 +158,8 @@ export async function POST(request: NextRequest) {
     let model_id: string | undefined = state.model_id
     let temperature: number | undefined = state.temperature
     let request_type: string | undefined = state.request_type
-    let enabled_tools: string[] | undefined = state.enabled_tools
     let selected_artifact_id: string | undefined = state.selected_artifact_id
     let system_prompt: string | undefined = state.system_prompt
-
-    // If enabled_tools is not in state, fall back to extracting names from AG-UI body.tools
-    if (!enabled_tools && Array.isArray(body.tools)) {
-      enabled_tools = body.tools.map((t: { name: string }) => t.name)
-    }
 
     // Extract user message from the last element of body.messages.
     // content may be a string (text-only) or an InputContentPart[] (multimodal).
@@ -209,23 +203,6 @@ export async function POST(request: NextRequest) {
     })
 
     console.log(`[BFF] User: ${userId}, Session: ${sessionId}${isNewSession ? ' (new)' : ''}`)
-
-    // Load or use provided enabled_tools
-    let enabledToolsList: string[] = []
-
-    if (enabled_tools && Array.isArray(enabled_tools)) {
-      enabledToolsList = enabled_tools
-    } else {
-      // Load enabled tools for all users (including anonymous in AWS)
-      if (IS_LOCAL) {
-        const { getUserEnabledTools } = await import('@/lib/local-tool-store')
-        enabledToolsList = getUserEnabledTools(userId)
-      } else {
-        // DynamoDB for all users including anonymous
-        const { getUserEnabledTools } = await import('@/lib/dynamodb-client')
-        enabledToolsList = await getUserEnabledTools(userId)
-      }
-    }
 
     // Helper function to get current date in US Pacific timezone
     function getCurrentDatePacific(): string {
@@ -383,10 +360,7 @@ export async function POST(request: NextRequest) {
             sessionId,
             message,
             modelConfig,
-            enabledTools: enabledToolsList,
           })
-
-          console.log(`[BFF] Enabled tools: ${JSON.stringify(enabledToolsList)}`)
 
           // Merge system prompts: user-provided (artifact context) + model config
           let finalSystemPrompt = modelConfig.system_prompt
@@ -399,8 +373,20 @@ export async function POST(request: NextRequest) {
             await processAguiMessagesImages(aguiMessages)
           }
 
+          // Load user's disabled skills from DB
+          let disabled_skills: string[] = []
+          try {
+            if (IS_LOCAL) {
+              // Local mode: no disabled skills (all enabled)
+            } else {
+              const { getUserDisabledSkills } = await import('@/lib/dynamodb-client')
+              disabled_skills = await getUserDisabledSkills(userId)
+            }
+          } catch (e) {
+            console.warn('[BFF] Failed to load disabled skills:', e)
+          }
+
           // Build AG-UI body with server-side config enriched into state
-          const enabled_skills = state.enabled_skills
           const enrichedState: Record<string, any> = {
             user_id: userId,
             model_id: modelConfig.model_id,
@@ -410,17 +396,14 @@ export async function POST(request: NextRequest) {
             ...(authToken && { auth_token: authToken }),
             ...(selected_artifact_id && { selected_artifact_id }),
             ...(request_type && { request_type }),
-            ...(enabled_skills && { enabled_skills }),
+            ...(disabled_skills.length > 0 && { disabled_skills }),
           }
-
-          // enabled_tools as AG-UI tools array
-          const aguiTools = enabledToolsList.map(id => ({ name: id, description: '', parameters: {} }))
 
           const aguiBody = {
             thread_id: sessionId,
             run_id: runIdFromBody || crypto.randomUUID(),
             messages: aguiMessages,
-            tools: aguiTools,
+            tools: [],
             context: [],
             state: enrichedState,
           }
@@ -495,7 +478,6 @@ export async function POST(request: NextRequest) {
                 metadata: {
                   lastModel: modelConfig.model_id,
                   lastTemperature: modelConfig.temperature,
-                  enabledTools: enabledToolsList,
                   skillsEnabled: request_type === 'skill',
                 },
               }

@@ -279,8 +279,8 @@ class TestInvocationsEndpoint:
         assert response.headers.get("x-session-id") == "my-session-123"
 
     @patch('routers.chat.create_agent')
-    def test_invocations_passes_enabled_skills(self, mock_factory, mock_agent):
-        """Test that enabled skills from state are passed to agent."""
+    def test_invocations_passes_disabled_skills(self, mock_factory, mock_agent):
+        """Test that disabled skills from state are passed to agent."""
         mock_factory.return_value = mock_agent
 
         from routers.chat import router
@@ -290,13 +290,13 @@ class TestInvocationsEndpoint:
         app.include_router(router)
         client = TestClient(app)
 
-        payload = _agui_payload(enabled_skills=["calculator", "web-search"])
+        payload = _agui_payload(disabled_skills=["calculator", "web-search"])
 
         client.post("/invocations", json=payload)
 
         mock_factory.assert_called_once()
         call_kwargs = mock_factory.call_args.kwargs
-        assert call_kwargs['enabled_skills'] == ["calculator", "web-search"]
+        assert call_kwargs['disabled_skills'] == ["calculator", "web-search"]
 
     @patch('routers.chat.create_agent')
     def test_invocations_handles_files(self, mock_factory, mock_agent):

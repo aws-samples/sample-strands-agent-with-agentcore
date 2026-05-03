@@ -4,18 +4,6 @@ Multimodal Prompt Builder Module
 Handles building multimodal prompts with text, images, and documents
 for Strands Agent. Supports both local and cloud modes with proper
 content block formatting for Bedrock APIs.
-
-Usage:
-    from agent.processor import build_prompt
-
-    # Build prompt from message and files
-    prompt, uploaded_files = build_prompt(
-        message="Analyze this document",
-        files=file_list,
-        user_id=user_id,
-        session_id=session_id,
-        enabled_tools=enabled_tools,
-    )
 """
 
 import base64
@@ -168,7 +156,6 @@ def _build_file_hints(
     Args:
         sanitized_filenames: All sanitized file names
         workspace_only_files: Files only in workspace (not sent as ContentBlock)
-        enabled_tools: List of enabled tool IDs
 
     Returns:
         Formatted file hints string
@@ -264,38 +251,9 @@ def build_prompt(
     files: Optional[List[Any]] = None,
     user_id: Optional[str] = None,
     session_id: Optional[str] = None,
-    enabled_tools: Optional[List[str]] = None,
     auto_store: bool = True,
 ) -> Tuple[Any, List[Dict[str, Any]]]:
-    """
-    Build prompt for Strands Agent and prepare uploaded files for tools.
-
-    Handles multimodal input including text, images, and documents.
-    In cloud mode, documents are stored to workspace instead of sent
-    as ContentBlocks to avoid AgentCore Memory serialization errors.
-
-    Args:
-        message: User message text
-        files: Optional list of FileContent objects with base64 bytes
-        user_id: User identifier (for workspace storage)
-        session_id: Session identifier (for workspace storage)
-        enabled_tools: List of enabled tool IDs (for file hints)
-        auto_store: Whether to auto-store files to workspace
-
-    Returns:
-        tuple: (prompt, uploaded_files)
-            - prompt: str or list[ContentBlock] for Strands Agent
-            - uploaded_files: list of dicts with filename, bytes, content_type
-
-    Example:
-        prompt, files = build_prompt(
-            message="Analyze this image",
-            files=[image_file],
-            user_id="user-123",
-            session_id="sess-456",
-        )
-        agent.stream(prompt)
-    """
+    """Build prompt for Strands Agent and prepare uploaded files for tools."""
     # If no files, return simple text message
     if not files or len(files) == 0:
         return message, []

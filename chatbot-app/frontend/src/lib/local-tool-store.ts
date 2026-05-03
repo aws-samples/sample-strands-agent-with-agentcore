@@ -8,7 +8,6 @@ import fs from 'fs'
 import path from 'path'
 
 const STORE_DIR = path.join(process.cwd(), '.local-store')
-const USER_TOOLS_FILE = path.join(STORE_DIR, 'user-tools.json')
 const USER_MODEL_CONFIG_FILE = path.join(STORE_DIR, 'user-model-config.json')
 const USER_API_KEYS_FILE = path.join(STORE_DIR, 'user-api-keys.json')
 
@@ -31,35 +30,6 @@ interface UserApiKeys {
 function ensureStoreDir() {
   if (!fs.existsSync(STORE_DIR)) {
     fs.mkdirSync(STORE_DIR, { recursive: true })
-  }
-}
-
-// Load all user tool preferences
-function loadToolStore(): Record<string, string[]> {
-  ensureStoreDir()
-
-  if (!fs.existsSync(USER_TOOLS_FILE)) {
-    return {}
-  }
-
-  try {
-    const content = fs.readFileSync(USER_TOOLS_FILE, 'utf-8')
-    return JSON.parse(content)
-  } catch (error) {
-    console.error('[LocalToolStore] Failed to load tool store:', error)
-    return {}
-  }
-}
-
-// Save all user tool preferences
-function saveToolStore(store: Record<string, string[]>) {
-  ensureStoreDir()
-
-  try {
-    fs.writeFileSync(USER_TOOLS_FILE, JSON.stringify(store, null, 2), 'utf-8')
-  } catch (error) {
-    console.error('[LocalToolStore] Failed to save tool store:', error)
-    throw error
   }
 }
 
@@ -90,46 +60,6 @@ function saveModelConfigStore(store: Record<string, ModelConfig>) {
     console.error('[LocalToolStore] Failed to save model config store:', error)
     throw error
   }
-}
-
-// ============================================================
-// Tool Preferences
-// ============================================================
-
-/**
- * Get enabled tools for a user
- */
-export function getUserEnabledTools(userId: string): string[] {
-  const store = loadToolStore()
-  return store[userId] || []
-}
-
-/**
- * Update enabled tools for a user
- */
-export function updateUserEnabledTools(userId: string, enabledTools: string[]): void {
-  const store = loadToolStore()
-  store[userId] = enabledTools
-  saveToolStore(store)
-  console.log(`[LocalToolStore] Updated tools for user ${userId}:`, enabledTools)
-}
-
-/**
- * Clear enabled tools for a user
- */
-export function clearUserEnabledTools(userId: string): void {
-  const store = loadToolStore()
-  delete store[userId]
-  saveToolStore(store)
-  console.log(`[LocalToolStore] Cleared tools for user ${userId}`)
-}
-
-/**
- * Get all users with tool preferences
- */
-export function getAllUsers(): string[] {
-  const store = loadToolStore()
-  return Object.keys(store)
 }
 
 // ============================================================

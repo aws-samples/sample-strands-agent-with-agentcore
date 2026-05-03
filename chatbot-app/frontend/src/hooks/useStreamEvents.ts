@@ -31,11 +31,6 @@ interface UseStreamEventsProps {
   startPollingRef: React.MutableRefObject<((sessionId: string) => void) | null>
   stopPollingRef: React.MutableRefObject<(() => void) | null>
   sessionId: string | null
-  availableTools?: Array<{
-    id: string
-    name: string
-    tool_type?: string
-  }>
   onArtifactUpdated?: () => void  // Callback when artifact is updated via update_artifact tool
   onWordDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Word documents are created
   onExcelDocumentsCreated?: (documents: WorkspaceDocument[]) => void  // Callback when Excel documents are created
@@ -58,7 +53,6 @@ export const useStreamEvents = ({
   startPollingRef,
   stopPollingRef,
   sessionId,
-  availableTools = [],
   onArtifactUpdated,
   onWordDocumentsCreated,
   onExcelDocumentsCreated,
@@ -395,7 +389,7 @@ export const useStreamEvents = ({
         turnId: currentTurnIdRef.current || undefined
       }])
     }
-  }, [availableTools, currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages, setUIState, uiState, textBuffer])
+  }, [currentToolExecutionsRef, currentTurnIdRef, setSessionState, setMessages, setUIState, uiState, textBuffer])
 
   const handleToolCallArgsEvent = useCallback((event: ToolCallArgsEvent) => {
     const current = toolInputAccumulatorRef.current[event.toolCallId] || ''
@@ -415,11 +409,14 @@ export const useStreamEvents = ({
 
     const normalizedInput = parsedInput === null || parsedInput === undefined ? {} : parsedInput
 
-    const updatedExecutions = currentToolExecutionsRef.current.map(tool =>
-      tool.id === event.toolCallId
-        ? { ...tool, toolInput: normalizedInput }
-        : tool
-    )
+    const updatedExecutions = currentToolExecutionsRef.current.map(tool => {
+      if (tool.id !== event.toolCallId) return tool
+      const update: any = { toolInput: normalizedInput }
+      if (tool.toolName === 'skill_executor' && normalizedInput.tool_name) {
+        update.toolName = normalizedInput.tool_name
+      }
+      return { ...tool, ...update }
+    })
     currentToolExecutionsRef.current = updatedExecutions
 
     setSessionState(prev => ({
@@ -429,11 +426,14 @@ export const useStreamEvents = ({
 
     setMessages(prevMessages => prevMessages.map(msg => {
       if (msg.isToolMessage && msg.toolExecutions) {
-        const updatedToolExecutions = msg.toolExecutions.map(tool =>
-          tool.id === event.toolCallId
-            ? { ...tool, toolInput: normalizedInput }
-            : tool
-        )
+        const updatedToolExecutions = msg.toolExecutions.map(tool => {
+          if (tool.id !== event.toolCallId) return tool
+          const update: any = { toolInput: normalizedInput }
+          if (tool.toolName === 'skill_executor' && normalizedInput.tool_name) {
+            update.toolName = normalizedInput.tool_name
+          }
+          return { ...tool, ...update }
+        })
         return { ...msg, toolExecutions: updatedToolExecutions }
       }
       return msg

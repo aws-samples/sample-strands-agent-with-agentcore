@@ -27,8 +27,6 @@ export interface ChatHookContext {
     system_prompt: string
     caching_enabled: boolean
   }
-  enabledTools: string[]
-
   // Optional metadata
   files?: any[]
   metadata?: Record<string, any>
@@ -91,62 +89,6 @@ export const sessionMetadataHook: ChatHook = {
   }
 }
 
-/**
- * Tool Configuration Hook
- * Saves user's enabled tools configuration
- */
-export const toolConfigurationHook: ChatHook = {
-  name: 'tool-configuration',
-  async execute(context: ChatHookContext): Promise<HookResult> {
-    try {
-      // Skip if enabledTools is not provided (undefined/null)
-      // But allow empty array [] to be saved (user disabled all tools)
-      if (context.enabledTools === undefined || context.enabledTools === null) {
-        return { success: true }
-      }
-
-      if (context.userId === 'anonymous') {
-        const { updateUserEnabledTools } = await import('@/lib/local-tool-store')
-        updateUserEnabledTools(context.userId, context.enabledTools)
-      } else {
-        if (IS_LOCAL) {
-          const { updateUserEnabledTools } = await import('@/lib/local-tool-store')
-          updateUserEnabledTools(context.userId, context.enabledTools)
-        } else {
-          const { updateUserEnabledTools } = await import('@/lib/dynamodb-client')
-          await updateUserEnabledTools(context.userId, context.enabledTools)
-        }
-      }
-
-      return { success: true }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
-      }
-    }
-  }
-}
-
-/**
- * Model Configuration Hook
- * Saves user's model preferences (if changed)
- */
-export const modelConfigurationHook: ChatHook = {
-  name: 'model-configuration',
-  async execute(context: ChatHookContext): Promise<HookResult> {
-    try {
-      // TODO: Implement model config saving if needed
-      return { success: true }
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error : new Error(String(error))
-      }
-    }
-  }
-}
-
 // ============================================================
 // Hook Manager
 // ============================================================
@@ -194,8 +136,6 @@ export function createDefaultHookManager(): ChatHookManager {
 
   // Register before hooks (run before AgentCore invocation)
   manager.registerBeforeHook(sessionMetadataHook)
-  manager.registerBeforeHook(toolConfigurationHook)
-  // manager.registerBeforeHook(modelConfigurationHook) // Disabled for now
 
   // Register after hooks (run after AgentCore response)
   // (none yet, but could add analytics, logging, etc.)

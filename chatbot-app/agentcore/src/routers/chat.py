@@ -364,10 +364,9 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
                                 })
                 break
 
-    # Extract enabled skills from state (None = all skills registered in catalog).
-    # Frontend sends `enabled_skills` as a list of skill names; skipping or empty
-    # list has different meaning — see SkillChatAgent._load_tools.
-    enabled_skills: Optional[List[str]] = None
+    # Extract disabled skills from state (BFF loads from DB).
+    # Empty list = all skills enabled (default).
+    disabled_skills: Optional[List[str]] = None
 
     model_id = None
     temperature = None
@@ -386,13 +385,13 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
         request_type = input_data.state.get("request_type", "skill")
         auth_token = input_data.state.get("auth_token")
         selected_artifact_id = input_data.state.get("selected_artifact_id")
-        raw_skills = input_data.state.get("enabled_skills")
-        if isinstance(raw_skills, list):
-            enabled_skills = [str(s) for s in raw_skills]
+        raw_disabled = input_data.state.get("disabled_skills")
+        if isinstance(raw_disabled, list):
+            disabled_skills = [str(s) for s in raw_disabled]
 
     logger.info(
         f"AG-UI invocation: thread_id={thread_id}, run_id={run_id}, user_id={user_id}, "
-        f"enabled_skills={'all' if enabled_skills is None else len(enabled_skills)}"
+        f"disabled_skills={disabled_skills}"
     )
 
     try:
@@ -400,7 +399,7 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
             request_type=request_type,
             session_id=session_id,
             user_id=user_id,
-            enabled_skills=enabled_skills,
+            disabled_skills=disabled_skills,
             model_id=model_id,
             temperature=temperature,
             system_prompt=system_prompt,

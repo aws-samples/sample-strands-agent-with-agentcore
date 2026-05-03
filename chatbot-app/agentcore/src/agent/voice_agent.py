@@ -173,7 +173,7 @@ class VoiceAgent(BaseAgent):
         Returns:
             System prompt for voice mode
         """
-        return build_voice_system_prompt(self.enabled_tools)
+        return build_voice_system_prompt()
 
     def _create_session_manager(self) -> Any:
         """

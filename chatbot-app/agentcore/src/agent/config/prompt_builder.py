@@ -116,10 +116,8 @@ def get_current_date_pacific() -> str:
 # System Prompt Builders
 # =============================================================================
 
-def build_text_system_prompt(
-    enabled_tools: Optional[List[str]] = None,
-) -> List[SystemContentBlock]:
-    """Base + date for text mode. enabled_tools kept for signature stability."""
+def build_text_system_prompt() -> List[SystemContentBlock]:
+    """Base + date for text mode."""
     current_date = get_current_date_pacific()
     return [
         {"text": BASE_TEXT_PROMPT},
@@ -127,7 +125,7 @@ def build_text_system_prompt(
     ]
 
 
-def build_voice_system_prompt(enabled_tools: Optional[List[str]] = None) -> str:
+def build_voice_system_prompt() -> str:
     """Voice system prompt as a single string (Nova Sonic BidiAgent)."""
     current_date = get_current_date_pacific()
     return f"{BASE_VOICE_PROMPT}\n\nCurrent date: {current_date}"

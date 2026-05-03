@@ -25,11 +25,6 @@ const POWERPOINT_TOOLS = ['create_presentation', 'update_slide_content', 'add_sl
 interface ToolExecutionContainerProps {
   toolExecutions: ToolExecution[]
   compact?: boolean
-  availableTools?: Array<{
-    id: string
-    name: string
-    tool_type?: string
-  }>
   sessionId?: string
   onOpenResearchArtifact?: (executionId: string) => void  // Open completed research in Canvas
   onOpenWordArtifact?: (filename: string) => void  // Open Word document in Canvas
@@ -94,7 +89,7 @@ const CollapsibleMarkdown = React.memo<{
          prevProps.sessionId === nextProps.sessionId
 })
 
-export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact }) => {
+export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({ toolExecutions, compact = false, sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact }) => {
   const [expandedTools, setExpandedTools] = useState<Set<string>>(new Set())
   const [selectedImage, setSelectedImage] = useState<{ src: string; alt: string } | null>(null)
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set())

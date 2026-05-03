@@ -50,11 +50,6 @@ const ArtifactNotification = ({ title, wordCount }: { title: string; wordCount: 
 interface AssistantTurnProps {
   messages: Message[]
   currentReasoning?: ReasoningState | null
-  availableTools?: Array<{
-    id: string
-    name: string
-    tool_type?: string
-  }>
   sessionId?: string
   onOpenResearchArtifact?: (executionId: string) => void
   onOpenWordArtifact?: (filename: string) => void
@@ -73,7 +68,7 @@ interface AssistantTurnProps {
   hideAvatar?: boolean
 }
 
-export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, availableTools = [], sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact, researchProgress, codeProgress, hideAvatar = false }) => {
+export const AssistantTurn = React.memo<AssistantTurnProps>(({ messages, currentReasoning, sessionId, onOpenResearchArtifact, onOpenWordArtifact, onOpenExcelArtifact, onOpenPptArtifact, onOpenExtractedDataArtifact, onOpenExcalidrawArtifact, researchProgress, codeProgress, hideAvatar = false }) => {
   // Get initial feedback state from first message
   const initialFeedback = messages[0]?.feedback || null
 
@@ -297,7 +292,6 @@ if (!messages || messages.length === 0) {
                   {mergedToolExecutions.length > 0 && (
                     <ToolExecutionContainer
                       toolExecutions={mergedToolExecutions}
-                      availableTools={availableTools}
                       sessionId={sessionId}
                       onOpenResearchArtifact={onOpenResearchArtifact}
                       onOpenWordArtifact={onOpenWordArtifact}

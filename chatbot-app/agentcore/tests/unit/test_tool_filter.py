@@ -201,7 +201,7 @@ class TestGatewayTools:
     @pytest.fixture
     def mock_gateway_factory(self, mock_gateway_client):
         """Create a mock Gateway client factory."""
-        def factory(enabled_tool_ids=None):
+        def factory(enabled_tool_ids=None, **kwargs):
             if enabled_tool_ids:
                 return mock_gateway_client
             return None
@@ -229,7 +229,7 @@ class TestGatewayTools:
 
     def test_gateway_factory_returns_none(self):
         """Should handle gateway factory returning None gracefully."""
-        def failing_factory(enabled_tool_ids=None):
+        def failing_factory(enabled_tool_ids=None, **kwargs):
             return None
 
         registry = ToolFilterRegistry(
@@ -307,7 +307,7 @@ class TestMixedTools:
         gateway_client = Mock(name="gateway")
         a2a_tool = Mock(name="a2a")
 
-        def gateway_factory(enabled_tool_ids=None):
+        def gateway_factory(enabled_tool_ids=None, **kwargs):
             return gateway_client if enabled_tool_ids else None
 
         def a2a_factory(agent_id):

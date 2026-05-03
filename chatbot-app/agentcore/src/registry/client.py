@@ -186,6 +186,14 @@ class RegistryClient:
             return skill.endpoint_url
         return None
 
+    def get_a2a_skill(self, agent_name: str) -> Optional[SkillRecord]:
+        """Return SkillRecord for a specific A2A agent."""
+        self._ensure_loaded()
+        skill = self._skills.get(agent_name)
+        if skill and skill.source == "a2a":
+            return skill
+        return None
+
 
 # -- Singleton --
 

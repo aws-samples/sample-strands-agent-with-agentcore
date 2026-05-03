@@ -3,7 +3,6 @@ Tests for voice.py router
 
 Tests cover:
 - _get_param_from_request (generic param extraction)
-- _get_enabled_tools_from_request (JSON array parsing)
 - /voice/sessions endpoint (list active sessions)
 - /voice/sessions/{session_id} endpoint (stop session)
 """
@@ -60,54 +59,6 @@ class TestGetParamFromRequest:
         result = _get_param_from_request(mock_ws, "session-id", None)
 
         assert result is None
-
-
-class TestGetEnabledToolsFromRequest:
-    """Tests for _get_enabled_tools_from_request function."""
-
-    def test_parses_json_array(self):
-        """Parses JSON array from header."""
-        from routers.voice import _get_enabled_tools_from_request
-
-        mock_ws = MagicMock()
-        mock_ws.headers.get.return_value = '["tool1", "tool2"]'
-
-        result = _get_enabled_tools_from_request(mock_ws, None)
-
-        assert result == ["tool1", "tool2"]
-
-    def test_falls_back_to_query_param(self):
-        """Falls back to query param for local mode."""
-        from routers.voice import _get_enabled_tools_from_request
-
-        mock_ws = MagicMock()
-        mock_ws.headers.get.return_value = None
-
-        result = _get_enabled_tools_from_request(mock_ws, '["calculator"]')
-
-        assert result == ["calculator"]
-
-    def test_returns_empty_list_when_none(self):
-        """Returns empty list when no tools specified."""
-        from routers.voice import _get_enabled_tools_from_request
-
-        mock_ws = MagicMock()
-        mock_ws.headers.get.return_value = None
-
-        result = _get_enabled_tools_from_request(mock_ws, None)
-
-        assert result == []
-
-    def test_handles_invalid_json(self):
-        """Returns empty list on invalid JSON."""
-        from routers.voice import _get_enabled_tools_from_request
-
-        mock_ws = MagicMock()
-        mock_ws.headers.get.return_value = "not valid json"
-
-        result = _get_enabled_tools_from_request(mock_ws, None)
-
-        assert result == []
 
 
 class TestVoiceSessionsEndpoint:

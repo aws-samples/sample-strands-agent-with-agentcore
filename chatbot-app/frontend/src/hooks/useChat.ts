@@ -1,11 +1,10 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
-import { Message, Tool, ToolExecution } from '@/types/chat'
+import { Message, ToolExecution } from '@/types/chat'
 import { ReasoningState, ChatSessionState, ChatUIState, InterruptState, AgentStatus, PendingOAuthState } from '@/types/events'
 import { detectBackendUrl } from '@/utils/chat'
 import { useStreamEvents } from './useStreamEvents'
 import { useChatAPI, SessionPreferences } from './useChatAPI'
 import { usePolling, hasOngoingA2ATools, A2A_TOOLS_REQUIRING_POLLING } from './usePolling'
-import { useConnector } from './useConnector'
 import { getApiUrl } from '@/config/environment'
 import { generateSessionId } from '@/config/session'
 import { fetchAuthSession } from 'aws-amplify/auth'
@@ -38,24 +37,19 @@ interface UseChatReturn {
   isConnected: boolean
   isTyping: boolean
   agentStatus: AgentStatus
-  availableTools: Tool[]
   currentToolExecutions: ToolExecution[]
   currentReasoning: ReasoningState | null
   showProgressPanel: boolean
   toggleProgressPanel: () => void
-  sendMessage: (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => Promise<void>
+  sendMessage: (text: string, files?: File[], systemPrompt?: string, selectedArtifactId?: string | null) => Promise<void>
   stopGeneration: () => void
   newChat: () => Promise<void>
   compactSession: () => Promise<void>
   truncateFromMessage: (message: Message) => Promise<void>
-  toggleTool: (toolId: string) => Promise<void>
-  setExclusiveTools: (toolIds: string[]) => void
-  refreshTools: () => Promise<void>
   sessionId: string
   isLoadingMessages: boolean
   isCompacting: boolean
   loadSession: (sessionId: string) => Promise<void>
-  onGatewayToolsChange: (enabledToolIds: string[]) => void
   browserSession: { sessionId: string | null; browserId: string | null } | null
   browserProgress?: Array<{ stepNumber: number; content: string }>
   researchProgress?: { stepNumber: number; content: string }
@@ -93,7 +87,6 @@ interface UseChatReturn {
 // Default preferences when session has no saved preferences
 const DEFAULT_PREFERENCES: SessionPreferences = {
   lastModel: 'us.anthropic.claude-sonnet-4-6',
-  enabledTools: [],
   selectedPromptId: 'general',
 }
 
@@ -101,8 +94,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   // ==================== STATE ====================
   const [messages, setMessages] = useState<Message[]>([])
   const [backendUrl, setBackendUrl] = useState('http://localhost:8000')
-  const [availableTools, setAvailableTools] = useState<Tool[]>([])
-  const [gatewayToolIds, setGatewayToolIds] = useState<string[]>([])
   const [sessionId, setSessionId] = useState<string>(() => {
     if (typeof window === 'undefined') return generateSessionId()
     const saved = sessionStorage.getItem('chat-session-id')
@@ -119,11 +110,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const [currentModelId, setCurrentModelId] = useState(DEFAULT_PREFERENCES.lastModel!)
   const [currentTemperature, setCurrentTemperature] = useState(0.5)
 
-  // Connector: skill-level enable/disable
-  const { enabledSkills } = useConnector()
-
-  // Ref to hold session-specific enabled tools for re-application after loadTools
-  const sessionEnabledToolsRef = useRef<string[] | null>(null)
 
   // Ref for onSessionLoaded callback to avoid stale closure in useCallback
   const onSessionLoadedRef = useRef(props?.onSessionLoaded)
@@ -207,7 +193,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     startPollingRef,
     stopPollingRef,
     sessionId,
-    availableTools,
     onArtifactUpdated: props?.onArtifactUpdated,
     onWordDocumentsCreated: props?.onWordDocumentsCreated,
     onExcelDocumentsCreated: props?.onExcelDocumentsCreated,
@@ -221,8 +206,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
   // ==================== CHAT API HOOK ====================
   const {
-    loadTools,
-    toggleTool: apiToggleTool,
     newChat: apiNewChat,
     compactSession: apiCompactSession,
     truncateSession: apiTruncateSession,
@@ -238,17 +221,13 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     backendUrl,
     setUIState,
     setMessages,
-    availableTools,
-    setAvailableTools,
     handleStreamEvent,
     resetStreamingState,
-    gatewayToolIds,
     sessionId,
     setSessionId,
     onSessionCreated: handleSessionCreated,
     currentModelId,
     currentTemperature,
-    enabledSkills,
   })
 
   // Initialize polling with apiLoadSession (now available)
@@ -366,22 +345,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
 
     console.log(`[useChat] ${preferences ? 'Restoring session' : 'Using default'} preferences:`, effectivePreferences)
 
-    // Restore tool states (including nested tools in dynamic groups)
-    const enabledTools = effectivePreferences.enabledTools || []
-    setAvailableTools(prevTools => prevTools.map(tool => {
-      const updated: any = { ...tool, enabled: enabledTools.includes(tool.id) }
-      if ((tool as any).isDynamic && (tool as any).tools) {
-        updated.tools = (tool as any).tools.map((nt: any) => ({
-          ...nt,
-          enabled: enabledTools.includes(nt.id)
-        }))
-      }
-      return updated
-    }))
-    // Save enabled tools ref so loadTools re-application can restore them
-    sessionEnabledToolsRef.current = enabledTools
-    console.log(`[useChat] Tool states updated: ${enabledTools.length} enabled`)
-
     // Restore model configuration with validation against available models
     let restoredModel = effectivePreferences.lastModel!
     try {
@@ -402,19 +365,9 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     } finally {
       setIsLoadingMessages(false)
     }
-  }, [apiLoadSession, setAvailableTools, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
+  }, [apiLoadSession, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools])
 
   // ==================== INITIALIZATION EFFECTS ====================
-  // Load tools when backend is ready (enabled states are preserved via merge in loadTools)
-  useEffect(() => {
-    if (uiState.isConnected) {
-      const timeoutId = setTimeout(() => {
-        loadTools()
-      }, 1000)
-      return () => clearTimeout(timeoutId)
-    }
-  }, [uiState.isConnected, loadTools])
-
   // Restore last session on page load
   useEffect(() => {
     const lastSessionId = sessionStorage.getItem('chat-session-id')
@@ -470,34 +423,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   }, [sessionState.pendingOAuth, sessionId])
 
   // ==================== ACTIONS ====================
-  const toggleTool = useCallback(async (toolId: string) => {
-    await apiToggleTool(toolId)
-  }, [apiToggleTool])
-
-  // Set only specific tools as enabled; disable everything else in one state update
-  const setExclusiveTools = useCallback((toolIds: string[]) => {
-    const idSet = new Set(toolIds)
-    setAvailableTools(prev => prev.map(tool => {
-      const isDynamic = (tool as any).isDynamic === true
-      const nestedTools = (tool as any).tools || []
-
-      if (isDynamic && nestedTools.length > 0) {
-        // For dynamic groups, enable/disable nested tools
-        const updatedNested = nestedTools.map((nt: any) => ({
-          ...nt,
-          enabled: idSet.has(tool.id)
-        }))
-        return { ...tool, enabled: idSet.has(tool.id), tools: updatedNested }
-      }
-
-      return { ...tool, enabled: idSet.has(tool.id) }
-    }))
-  }, [setAvailableTools])
-
-  const refreshTools = useCallback(async () => {
-    await loadTools()
-  }, [loadTools])
-
   const newChat = useCallback(async () => {
     // Invalidate current session
     currentSessionIdRef.current = `temp_${Date.now()}`
@@ -517,16 +442,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       })
       setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' }))
       setMessages([])
-      setAvailableTools(prevTools => prevTools.map(tool => {
-        const updated: any = { ...tool, enabled: false }
-        if ((tool as any).isDynamic && (tool as any).tools) {
-          updated.tools = (tool as any).tools.map((nt: any) => ({ ...nt, enabled: false }))
-        }
-        return updated
-      }))
-      sessionEnabledToolsRef.current = []
     }
-  }, [apiNewChat, stopPolling, setAvailableTools])
+  }, [apiNewChat, stopPolling])
 
   const respondToInterrupt = useCallback(async (interruptId: string, response: string) => {
     if (!sessionState.interrupt) return
@@ -540,18 +457,12 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     const agentStatus: 'thinking' | 'researching' = isResearchInterrupt ? 'researching' : 'thinking'
     setUIState(prev => ({ ...prev, isTyping: true, agentStatus }))
 
-    const overrideTools = isResearchInterrupt
-      ? ['agentcore_research-agent']
-      : undefined
-
     try {
       await apiSendMessage(
         JSON.stringify([{ interruptResponse: { interruptId, response } }]),
         undefined,
         undefined,
         () => setUIState(prev => ({ ...prev, isTyping: false, agentStatus: 'idle' })),
-        overrideTools,
-        undefined // interrupt responses must use "normal" request_type for backend parsing
       )
     } catch (error) {
       console.error('[Interrupt] Failed to respond to interrupt:', error)
@@ -559,7 +470,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   }, [sessionState.interrupt, apiSendMessage])
 
-  const sendMessage = useCallback(async (text: string, files?: File[], additionalTools?: string[], systemPrompt?: string, selectedArtifactId?: string | null) => {
+  const sendMessage = useCallback(async (text: string, files?: File[], systemPrompt?: string, selectedArtifactId?: string | null) => {
     if (!text.trim() && (!files || files.length === 0)) return
 
     const now = Date.now()
@@ -637,11 +548,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
         }))
         setUIState(prev => ({ ...prev, agentStatus: 'idle', isTyping: false }))
       },
-      undefined, // overrideEnabledTools
-      undefined, // request_type is hardcoded to "skill" in useChatAPI
-      additionalTools, // Pass additional tools (e.g., artifact editor)
-      systemPrompt, // Pass system prompt (e.g., artifact context)
-      selectedArtifactId // Pass selected artifact ID for tool context
+      systemPrompt,
+      selectedArtifactId
     )
   }, [apiSendMessage, setUIState])
 
@@ -855,10 +763,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     setUIState(prev => ({ ...prev, showProgressPanel: !prev.showProgressPanel }))
   }, [])
 
-  const handleGatewayToolsChange = useCallback((enabledToolIds: string[]) => {
-    setGatewayToolIds(enabledToolIds)
-  }, [])
-
   // Add voice tool execution (mirrors text mode's handleToolUseEvent pattern)
   // Tool executions are added as separate isToolMessage messages
   const addVoiceToolExecution = useCallback((toolExecution: ToolExecution) => {
@@ -1060,7 +964,6 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     isConnected: uiState.isConnected,
     isTyping: uiState.isTyping,
     agentStatus: uiState.agentStatus,
-    availableTools,
     currentToolExecutions: sessionState.toolExecutions,
     currentReasoning: sessionState.reasoning,
     showProgressPanel: uiState.showProgressPanel,
@@ -1070,14 +973,10 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     newChat,
     compactSession,
     truncateFromMessage,
-    toggleTool,
-    setExclusiveTools,
-    refreshTools,
     sessionId,
     isLoadingMessages,
     isCompacting: compactingSessionId !== null && compactingSessionId === sessionId,
     loadSession: loadSessionWithPreferences,
-    onGatewayToolsChange: handleGatewayToolsChange,
     browserSession: sessionState.browserSession,
     browserProgress: sessionState.browserProgress,
     researchProgress: sessionState.researchProgress,

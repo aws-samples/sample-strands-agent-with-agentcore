@@ -10,7 +10,6 @@ export interface SkillInfo {
 interface ConnectorState {
   allSkills: SkillInfo[]
   disabledSkills: Set<string>
-  enabledSkills: string[] | undefined
   isLoading: boolean
   toggleSkill: (skillName: string) => void
   saveDisabledSkills: () => Promise<void>
@@ -58,16 +57,9 @@ export function ConnectorProvider({ children }: { children: React.ReactNode }) {
     await apiPut('skills/disabled', { disabledSkills: Array.from(current) })
   }, [disabledSkills])
 
-  const enabledSkills = useMemo(() => {
-    if (disabledSkills.size === 0) return undefined
-    return allSkills
-      .filter(s => !disabledSkills.has(s.name))
-      .map(s => s.name)
-  }, [allSkills, disabledSkills])
-
   const value = useMemo(() => ({
-    allSkills, disabledSkills, enabledSkills, isLoading, toggleSkill, saveDisabledSkills,
-  }), [allSkills, disabledSkills, enabledSkills, isLoading, toggleSkill, saveDisabledSkills])
+    allSkills, disabledSkills, isLoading, toggleSkill, saveDisabledSkills,
+  }), [allSkills, disabledSkills, isLoading, toggleSkill, saveDisabledSkills])
 
   return React.createElement(ConnectorContext.Provider, { value }, children)
 }
@@ -78,7 +70,6 @@ export function useConnector(): ConnectorState {
     return {
       allSkills: [],
       disabledSkills: new Set(),
-      enabledSkills: undefined,
       isLoading: false,
       toggleSkill: () => {},
       saveDisabledSkills: async () => {},

@@ -95,9 +95,7 @@ class ChatAgent(BaseAgent):
 
     def _build_system_prompt(self) -> Any:
         """Build text-based system prompt using prompt_builder"""
-        return build_text_system_prompt(
-            enabled_tools=self.enabled_tools
-        )
+        return build_text_system_prompt()
 
     def get_model_config(self) -> Dict[str, Any]:
         """Return model configuration"""

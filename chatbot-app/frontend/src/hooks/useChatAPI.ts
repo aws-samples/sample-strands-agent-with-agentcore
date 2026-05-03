@@ -1,10 +1,9 @@
-import { useCallback, useRef, useState, useEffect } from 'react'
-import { Message, Tool, ToolExecution } from '@/types/chat'
+import { useCallback, useRef, useEffect } from 'react'
+import { Message, ToolExecution } from '@/types/chat'
 import { AGUIStreamEvent, ChatUIState, AGUI_EVENT_TYPES } from '@/types/events'
 import { getApiUrl } from '@/config/environment'
 import logger from '@/utils/logger'
 import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth'
-import { apiGet, apiPost } from '@/lib/api-client'
 import { buildToolMaps, createToolExecution } from '@/utils/messageParser'
 import { isSessionTimedOut, getLastActivity, updateLastActivity, clearSessionData, triggerWarmup, generateSessionId } from '@/config/session'
 import { isA2ATool } from './usePolling'
@@ -159,36 +158,28 @@ interface UseChatAPIProps {
   backendUrl: string
   setUIState: React.Dispatch<React.SetStateAction<ChatUIState>>
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>
-  availableTools: Tool[]  // Added: need current tools state
-  setAvailableTools: React.Dispatch<React.SetStateAction<Tool[]>>
   handleStreamEvent: (event: AGUIStreamEvent) => void
   resetStreamingState: () => void
-  onSessionCreated?: () => void  // Callback when new session is created
-  gatewayToolIds?: string[]  // Gateway tool IDs from frontend
+  onSessionCreated?: () => void
   sessionId: string
   setSessionId: React.Dispatch<React.SetStateAction<string>>
-  currentModelId: string  // Per-session model ID from useChat state
-  currentTemperature: number  // Per-session temperature from useChat state
-  enabledSkills?: string[]  // Skill names to enable (undefined = all)
+  currentModelId: string
+  currentTemperature: number
 }
 
 // Session preferences returned when loading a session
 export interface SessionPreferences {
   lastModel?: string
-  enabledTools?: string[]
   skillsEnabled?: boolean
   selectedPromptId?: string
   customPromptText?: string
 }
 
 interface UseChatAPIReturn {
-  loadTools: () => Promise<void>
-  toggleTool: (toolId: string) => Promise<void>
   newChat: () => Promise<boolean>
-  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void, overrideEnabledTools?: string[], requestType?: string) => Promise<void>
+  sendMessage: (messageToSend: string, files?: File[], onSuccess?: () => void, onError?: (error: string) => void) => Promise<void>
   cleanup: () => void
   sendStopSignal: () => Promise<void>
-  isLoadingTools: boolean
   loadSession: (sessionId: string) => Promise<{ preferences: SessionPreferences | null; messages: Message[] }>
 }
 
@@ -196,17 +187,13 @@ export const useChatAPI = ({
   backendUrl,
   setUIState,
   setMessages,
-  availableTools,
-  setAvailableTools,
   handleStreamEvent,
   resetStreamingState,
   onSessionCreated,
-  gatewayToolIds = [],
   sessionId,
   setSessionId,
   currentModelId,
   currentTemperature,
-  enabledSkills,
 }: UseChatAPIProps) => {
 
   const abortRef = useRef<{ unsubscribe: () => void } | null>(null)
@@ -283,108 +270,6 @@ export const useChatAPI = ({
     }
     return {}
   }
-
-  const loadTools = useCallback(async () => {
-    try {
-      const authHeaders = await getAuthHeaders()
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        ...authHeaders
-      }
-
-      // Include session ID in headers if available (use ref to avoid dependency)
-      const currentSessionId = sessionIdRef.current
-      if (currentSessionId) {
-        headers['X-Session-ID'] = currentSessionId
-      }
-
-      const response = await fetch(getApiUrl('tools'), {
-        method: 'GET',
-        headers,
-        signal: AbortSignal.timeout(5000)
-      })
-
-      if (response.ok) {
-        // Extract session ID from response headers
-        const responseSessionId = response.headers.get('X-Session-ID')
-
-        // Only update session ID if we don't have one yet (initial load)
-        if (responseSessionId && !currentSessionId) {
-          setSessionId(responseSessionId)
-        }
-
-        const data = await response.json()
-        // Combine regular tools and MCP servers from unified API response
-        const allTools = [...(data.tools || []), ...(data.mcp_servers || [])]
-        // Merge with existing enabled states to prevent flicker on tool refresh
-        setAvailableTools(prevTools => {
-          if (prevTools.length === 0) return allTools
-          const enabledIds = new Set<string>()
-          for (const tool of prevTools) {
-            if ((tool as any).enabled) enabledIds.add(tool.id)
-            if ((tool as any).isDynamic && (tool as any).tools) {
-              for (const nt of (tool as any).tools) {
-                if (nt.enabled) enabledIds.add(nt.id)
-              }
-            }
-          }
-          return allTools.map((tool: any) => {
-            const updated = { ...tool, enabled: enabledIds.has(tool.id) }
-            if (tool.isDynamic && tool.tools) {
-              updated.tools = tool.tools.map((nt: any) => ({
-                ...nt,
-                enabled: enabledIds.has(nt.id)
-              }))
-            }
-            return updated
-          })
-        })
-      } else {
-        setAvailableTools([])
-      }
-    } catch (error) {
-      setAvailableTools([])
-    }
-  }, [setAvailableTools])
-
-  /**
-   * Toggle tool enabled state (in-memory only)
-   * Tool preferences are committed to storage when message is sent
-   */
-  const toggleTool = useCallback(async (toolId: string) => {
-    try {
-      // Update frontend state
-      setAvailableTools(prev => prev.map(tool => {
-        // Check if this is a grouped tool with nested tools FIRST
-        // (to handle case where parent id == nested id)
-        if ((tool as any).isDynamic && (tool as any).tools) {
-          const nestedTools = (tool as any).tools
-          const nestedIndex = nestedTools.findIndex((t: any) => t.id === toolId)
-
-          if (nestedIndex !== -1) {
-            const updatedNestedTools = [...nestedTools]
-            updatedNestedTools[nestedIndex] = {
-              ...updatedNestedTools[nestedIndex],
-              enabled: !updatedNestedTools[nestedIndex].enabled
-            }
-            return { ...tool, tools: updatedNestedTools }
-          }
-        }
-
-        // Direct tool toggle (for non-grouped tools)
-        if (tool.id === toolId) {
-          return { ...tool, enabled: !tool.enabled }
-        }
-
-        return tool
-      }))
-
-      logger.debug(`Tool ${toolId} toggled (in-memory, will commit on next message)`)
-    } catch (error) {
-      logger.error('Failed to toggle tool:', error)
-    }
-  }, [setAvailableTools, availableTools])
 
   const newChat = useCallback(async () => {
     try {
@@ -539,11 +424,8 @@ export const useChatAPI = ({
     files?: File[],
     onSuccess?: () => void,
     onError?: (error: string) => void,
-    overrideEnabledTools?: string[], // Override enabled tools (for Research Agent interrupt)
-    requestType?: string, // Request type: "normal", "swarm", "compose"
-    additionalTools?: string[], // Additional tools to add (e.g., artifact editor when artifact is selected)
-    systemPrompt?: string, // Additional system prompt context (e.g., artifact context)
-    selectedArtifactId?: string | null // Selected artifact ID for tool context
+    systemPrompt?: string,
+    selectedArtifactId?: string | null
   ) => {
     // Update last activity timestamp (for session timeout tracking)
     updateLastActivity()
@@ -558,46 +440,7 @@ export const useChatAPI = ({
       // Use ref to get latest sessionId (avoids stale closure)
       const currentSessionId = sessionIdRef.current
 
-      // Extract enabled tool IDs (including nested tools from groups)
-      const enabledToolIds: string[] = []
-
-      // If overrideEnabledTools is provided, use it instead of availableTools
-      if (overrideEnabledTools) {
-        enabledToolIds.push(...overrideEnabledTools)
-      } else {
-        availableTools.forEach(tool => {
-          // Check if this is a grouped tool with nested tools
-          if ((tool as any).isDynamic && (tool as any).tools) {
-            // Add enabled nested tools
-            const nestedTools = (tool as any).tools || []
-            nestedTools.forEach((nestedTool: any) => {
-              if (nestedTool.enabled) {
-                enabledToolIds.push(nestedTool.id)
-              }
-            })
-          } else if (tool.enabled && !tool.id.startsWith('gateway_')) {
-            // Add regular enabled tools (exclude gateway prefix)
-            enabledToolIds.push(tool.id)
-          }
-        })
-      }
-
-      // Combine with Gateway tool IDs (from props) - skip if overriding
-      let allEnabledToolIds = overrideEnabledTools
-        ? [...enabledToolIds]
-        : [...enabledToolIds, ...gatewayToolIds]
-
-      // Add additional tools (e.g., artifact editor when artifact is selected)
-      if (additionalTools && additionalTools.length > 0) {
-        additionalTools.forEach(toolId => {
-          if (!allEnabledToolIds.includes(toolId)) {
-            allEnabledToolIds.push(toolId)
-          }
-        })
-        logger.info(`➕ Added ${additionalTools.length} additional tools: ${additionalTools.join(', ')}`)
-      }
-
-      logger.info(`Sending message with ${allEnabledToolIds.length} enabled tools (${enabledToolIds.length} local + ${gatewayToolIds.length} gateway)${files && files.length > 0 ? ` and ${files.length} files` : ''}`)
+      logger.info(`Sending message${files && files.length > 0 ? ` with ${files.length} files` : ''}`)
 
       const RETRYABLE_STATUSES = [502, 503, 504]
       const MAX_RETRIES = 2
@@ -640,13 +483,12 @@ export const useChatAPI = ({
           threadId,
           runId: crypto.randomUUID(),
           messages: [{ id: crypto.randomUUID(), role: 'user', content: contentParts }],
-          tools: allEnabledToolIds.map(id => ({ name: id, description: '', parameters: {} })),
+          tools: [],
           context: [],
           state: {
             model_id: currentModelId,
             temperature: currentTemperature,
             request_type: "skill",
-            ...(enabledSkills && { enabled_skills: enabledSkills }),
             ...(systemPrompt && { system_prompt: systemPrompt }),
             ...(selectedArtifactId && { selected_artifact_id: selectedArtifactId }),
           },
@@ -905,7 +747,7 @@ export const useChatAPI = ({
 
       onError?.(errorMessage)
     }
-  }, [handleStreamEvent, setUIState, setMessages, availableTools, gatewayToolIds, onSessionCreated, currentModelId, currentTemperature, enabledSkills, reconnect])
+  }, [handleStreamEvent, setUIState, setMessages, onSessionCreated, currentModelId, currentTemperature, reconnect])
   // sessionId removed from dependency array - using sessionIdRef.current instead
 
   /**
@@ -1029,7 +871,7 @@ export const useChatAPI = ({
       // Extract session preferences for restoration
       const sessionPreferences: SessionPreferences | null = data.sessionPreferences || null
       if (sessionPreferences) {
-        logger.info(`Session preferences loaded: model=${sessionPreferences.lastModel}, tools=${sessionPreferences.enabledTools?.length || 0}`)
+        logger.info(`Session preferences loaded: model=${sessionPreferences.lastModel}`)
       }
 
       // Store artifacts in sessionStorage for useArtifacts to pick up
@@ -1350,8 +1192,6 @@ export const useChatAPI = ({
   }, [])
 
   return {
-    loadTools,
-    toggleTool,
     newChat,
     compactSession,
     truncateSession,
@@ -1360,7 +1200,6 @@ export const useChatAPI = ({
     sendMessage,
     cleanup,
     sendStopSignal,
-    isLoadingTools: false,
     loadSession,
     isReconnecting: reconnect.isReconnecting,
     reconnectAttempt: reconnect.reconnectAttempt,

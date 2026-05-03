@@ -35,10 +35,8 @@ class SkillChatAgent(ChatAgent):
     The rest of the ChatAgent behavior (streaming, session, hooks) is inherited.
     """
 
-    def __init__(self, *args, enabled_skills: Optional[List[str]] = None, **kwargs):
-        # enabled_skills filters the Registry skill catalog (None = all).
-        # Stored before super().__init__ since _load_tools reads it.
-        self._enabled_skills = enabled_skills
+    def __init__(self, *args, disabled_skills: Optional[List[str]] = None, **kwargs):
+        self._disabled_skills: set = set(disabled_skills or [])
         super().__init__(*args, **kwargs)
 
     def _build_system_prompt(self):
@@ -55,13 +53,7 @@ class SkillChatAgent(ChatAgent):
         ]
 
     def _load_tools(self):
-        """Override: inject tool IDs for skills the user has enabled.
-
-        self._enabled_skills (from constructor) filters the Registry:
-          - None        → all skills
-          - []          → no skills (agent has no tools)
-          - [names]     → only those skills' tools are auto-injected
-        """
+        """Override: inject tool IDs for skills not in the disabled set."""
         if self.enabled_tools is None:
             self.enabled_tools = []
         has_auth = bool(getattr(self, 'auth_token', None))
@@ -70,7 +62,7 @@ class SkillChatAgent(ChatAgent):
         a2a_tools = get_a2a_skill_tools()
 
         def _skill_allowed(skill_name: str) -> bool:
-            return self._enabled_skills is None or skill_name in self._enabled_skills
+            return skill_name not in self._disabled_skills
 
         for tool_name, skill_name in tool_skill_map.items():
             if not _skill_allowed(skill_name):
@@ -96,7 +88,8 @@ class SkillChatAgent(ChatAgent):
         loaded_ids = {getattr(t, 'tool_name', None) for t in tools}
         from agents.chat_agent import TOOL_REGISTRY
         for tool_id, tool_obj in TOOL_REGISTRY.items():
-            if getattr(tool_obj, '_skill_name', None) and tool_id not in loaded_ids:
+            skill_name = getattr(tool_obj, '_skill_name', None)
+            if skill_name and tool_id not in loaded_ids and _skill_allowed(skill_name):
                 tools.append(tool_obj)
                 logger.debug(f"[SkillChatAgent] Auto-loaded skill tool: {tool_id}")
 
@@ -123,7 +116,6 @@ class SkillChatAgent(ChatAgent):
     def _extract_mcp_skill_tools(self, client) -> list:
         """Start MCP client and extract individual tools with skill metadata."""
         try:
-            # Start client session and list available tools
             client.start()
             paginated_tools = client.list_tools_sync()
 
@@ -134,14 +126,16 @@ class SkillChatAgent(ChatAgent):
                 skill_name = tool_skill_map.get(tool_name)
 
                 if skill_name:
+                    if skill_name in self._disabled_skills:
+                        logger.debug(
+                            f"[SkillChatAgent] MCP tool '{tool_name}' skipped "
+                            f"(skill '{skill_name}' disabled)"
+                        )
+                        continue
                     _apply_skill_metadata(tool, skill_name)
-                    logger.debug(
-                        f"[SkillChatAgent] MCP tool '{tool_name}' → skill '{skill_name}'"
-                    )
                 else:
                     logger.warning(
-                        f"[SkillChatAgent] MCP tool '{tool_name}' has no skill mapping — "
-                        f"passing as non-skill tool"
+                        f"[SkillChatAgent] MCP tool '{tool_name}' has no skill mapping"
                     )
 
                 skill_tools.append(tool)
