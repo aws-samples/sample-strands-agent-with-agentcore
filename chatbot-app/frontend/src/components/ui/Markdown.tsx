@@ -214,37 +214,35 @@ const components: Partial<Components> = {
     // Regular image
     return <img src={src} alt={alt} className="max-w-full h-auto rounded-lg" {...props} />;
   },
-  code: ({ node, className, children, ...props }: any) => {
-    // Check if this is a code block by looking for language class
-    // Code blocks typically have className like "language-javascript"
-    const isCodeBlock = className && className.startsWith('language-');
-
-    if (isCodeBlock) {
-      // This is a code block
-      return (
-        <CodeBlock
-          node={node}
-          inline={false}
-          className={className}
-          {...props}
-        >
-          {children}
-        </CodeBlock>
-      );
-    } else {
-      // This is inline code - remove any remaining backticks
-      const cleanChildren = String(children).replace(/^`+|`+$/g, '');
-      return (
-        <code
-          className="bg-zinc-100 dark:bg-zinc-800 py-0.5 px-1 rounded-md text-label"
-          {...props}
-        >
-          {cleanChildren}
-        </code>
-      );
-    }
+  code: ({ className, children, ...props }: any) => {
+    const cleanChildren = String(children).replace(/^`+|`+$/g, '');
+    return (
+      <code
+        className="bg-zinc-100 dark:bg-zinc-800 py-0.5 px-1 rounded-md text-label"
+        {...props}
+      >
+        {cleanChildren}
+      </code>
+    );
   },
-  pre: ({ children }) => <>{children}</>,
+  pre: ({ node, children }: any) => {
+    const codeChild = node?.children?.find((c: any) => c.tagName === 'code');
+    const className = codeChild?.properties?.className?.[0] || '';
+    const extractText = (n: any): string => {
+      if (n.type === 'text') return n.value || '';
+      return (n.children || []).map(extractText).join('');
+    };
+    const codeContent = codeChild ? extractText(codeChild) : '';
+    return (
+      <CodeBlock
+        node={node}
+        inline={false}
+        className={className}
+      >
+        {codeContent}
+      </CodeBlock>
+    );
+  },
   table: ({ children }) => (
     <div className="overflow-x-auto my-4" style={{ width: '100%', maxWidth: '100%', display: 'block' }}>
       <table className="border-collapse" style={{ width: 'auto', minWidth: 'max-content' }}>
