@@ -52,7 +52,7 @@
     "html2canvas": "^1.4.1",
     "html2pdf.js": "^0.14.0",
     "jszip": "^3.10.1",
-    "lodash": "^4.17.23",
+    "lodash": "^4.18.1",
     "lottie-react": "^2.4.1",
     "lucide-react": "^0.294.0",
     "marked": "^17.0.1",
@@ -77,10 +77,22 @@
     "mdast-util-to-hast": "^13.2.1",
     "jspdf": "^4.1.0",
     "@smithy/config-resolver": "^4.4.0",
-    "lodash": "^4.17.23",
+    "lodash": "^4.18.1",
+    "lodash-es": "^4.17.24",
+    "postcss": "^8.5.10",
     "fast-xml-parser": "^5.3.6",
     "ajv": "^8.18.0",
+    "brace-expansion": ">=1.1.13",
     "dompurify": ">=3.2.4",
+    "@ag-ui/client": {
+      "uuid": ">=11.1.1"
+    },
+    "@aws-amplify/core": {
+      "uuid": ">=11.1.1"
+    },
+    "@aws-amplify/api-graphql": {
+      "uuid": ">=11.1.1"
+    },
     "nanoid": "^3.3.8",
     "@excalidraw/mermaid-to-excalidraw": {
       "nanoid": "^5.0.9",
@@ -100,7 +112,7 @@
     "eslint": "^8",
     "eslint-config-next": "15.4.3",
     "jsdom": "^26.1.0",
-    "postcss": "^8",
+    "postcss": "^8.5.10",
     "tailwind-scrollbar": "^3.1.0",
     "tailwindcss": "^3.3.0",
     "tailwindcss-animate": "^1.0.7",
