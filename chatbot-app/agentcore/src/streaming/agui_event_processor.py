@@ -4,7 +4,7 @@ import time
 import logging
 from typing import AsyncGenerator, Dict, Any
 from .agui_event_formatter import AGUIStreamEventFormatter, extract_final_result_data
-from agent.stop_signal import get_stop_signal_provider, DynamoDBStopSignalProvider
+from agent.stop_signal import get_stop_signal_provider
 
 # OpenTelemetry imports
 from opentelemetry import trace, baggage, context
@@ -15,10 +15,6 @@ from ag_ui.encoder import EventEncoder
 
 logger = logging.getLogger(__name__)
 
-
-class StopRequestedException(Exception):
-    """Raised when stop signal is detected during streaming"""
-    pass
 
 class AGUIStreamEventProcessor:
     """Processes streaming events from the agent and formats them as AG-UI protocol events"""
@@ -44,11 +40,12 @@ class AGUIStreamEventProcessor:
         # This captures inputTokens from the final metadata chunk of each LLM call
         self.last_llm_input_tokens = 0
 
-        # Stop signal provider (Strategy pattern - Local or DynamoDB)
-        self.stop_signal_provider = get_stop_signal_provider()
+        # Stop signal provider (lazy-initialized on first check; False = resolved as unavailable)
+        self._stop_signal_provider = None
         self.last_stop_check_time = 0
         self.stop_check_interval = 1.0  # Check every 1 second (configurable)
         self._stop_detected = False  # Cached stop state - once True, stops immediately
+        self._cancel_called = False  # Whether agent.cancel() has already been called
 
         # Initialize OpenTelemetry
         self.observability_enabled = os.getenv("AGENT_OBSERVABILITY_ENABLED", "false").lower() == "true"
@@ -85,22 +82,28 @@ class AGUIStreamEventProcessor:
         from datetime import datetime
         return datetime.now().isoformat()
 
-    def _should_check_stop_signal(self) -> bool:
-        """Check if enough time has passed to check stop signal (throttling)"""
-        current_time = time.time()
-        if current_time - self.last_stop_check_time >= self.stop_check_interval:
-            self.last_stop_check_time = current_time
-            return True
-        return False
+    @property
+    def stop_signal_provider(self):
+        if self._stop_signal_provider is None:
+            provider = get_stop_signal_provider()
+            self._stop_signal_provider = provider if provider else False
+        return self._stop_signal_provider if self._stop_signal_provider is not False else None
 
     def _check_stop_signal(self) -> bool:
-        """Check if stop has been requested for current session."""
+        """Check if stop has been requested for current session (throttled)."""
         if self._stop_detected:
             return True
 
-        if not self.current_user_id or not self.current_session_id:
-            logger.debug(f"[StopSignal] No user/session: user={self.current_user_id}, session={self.current_session_id}")
+        if not self.stop_signal_provider:
             return False
+
+        if not self.current_user_id or not self.current_session_id:
+            return False
+
+        current_time = time.time()
+        if current_time - self.last_stop_check_time < self.stop_check_interval:
+            return False
+        self.last_stop_check_time = current_time
 
         try:
             is_stopped = self.stop_signal_provider.is_stop_requested(
@@ -109,7 +112,7 @@ class AGUIStreamEventProcessor:
             )
             if is_stopped:
                 self._stop_detected = True
-                logger.debug(f"Stop signal detected for session {self.current_session_id}")
+                logger.info(f"[StopSignal] Stop detected for session {self.current_session_id}")
             return is_stopped
         except Exception as e:
             logger.warning(f"[StopSignal] Error: {e}")
@@ -123,7 +126,7 @@ class AGUIStreamEventProcessor:
                 DynamoDB item so a remote agent (Code Agent) can detect it.
                 If False, escalate then immediately delete (no remote agent running).
         """
-        if not self.current_user_id or not self.current_session_id:
+        if not self.stop_signal_provider or not self.current_user_id or not self.current_session_id:
             return
 
         try:
@@ -134,10 +137,7 @@ class AGUIStreamEventProcessor:
         except Exception as e:
             logger.warning(f"[StopSignal] Error escalating stop signal: {e}")
 
-        # DynamoDB mode + remote agent running: keep phase 2 item for Code Agent
-        # All other cases: clear immediately (local mode always, DynamoDB when no remote agent)
-        is_dynamo = isinstance(self.stop_signal_provider, DynamoDBStopSignalProvider)
-        if not (keep_for_remote_agent and is_dynamo):
+        if not keep_for_remote_agent:
             try:
                 self.stop_signal_provider.clear_stop_signal(
                     self.current_user_id,
@@ -146,131 +146,31 @@ class AGUIStreamEventProcessor:
             except Exception as e:
                 logger.warning(f"[StopSignal] Error clearing stop signal: {e}")
 
-    def _save_partial_response(self, agent, session_id: str) -> bool:
-        """Save partial response when stream is interrupted.
+    def _fix_cancelled_history(self, agent) -> None:
+        """Replace SDK's 'Cancelled by user' placeholder with actual partial text.
 
-        Two cases:
-        1. tool_use NOT started: save accumulated text as assistant message with [interrupted] marker.
-        2. tool_use started (e.g., A2A tool running): inject a synthetic tool_result into
-           Strands conversation history with partial progress context so the next turn
-           knows what was done before the interruption.
-
-        IMPORTANT for case 1: Do NOT save partial response if tool_use has already been emitted.
-        When tool_use is emitted, Strands SDK saves the assistant message (with text + toolUse).
-        If we save partial response here, it creates a DUPLICATE assistant message,
-        which breaks the tool_use/tool_result pairing and causes ValidationException.
+        When agent.cancel() triggers, the SDK discards the in-progress assistant
+        message and stores {"text": "Cancelled by user"} instead. We replace that
+        with the text that was actually streamed to the frontend, or remove it
+        entirely if no text was streamed yet.
         """
-        if self.tool_use_started:
-            # Tool was running when stop was requested.
-            # Try to inject partial progress as tool_result so next turn has context.
-            return self._inject_interrupted_tool_result(agent)
-
-        if not self.partial_response_text.strip():
-            return False
-
-        abort_message_text = self.partial_response_text.strip() + "\n\n**[Response interrupted by user]**"
-        self.partial_response_text = ""
-
-        session_mgr = getattr(agent, 'session_manager', None) or getattr(agent, '_session_manager', None)
-        if not session_mgr:
-            return False
-
-        try:
-            abort_message = {"role": "assistant", "content": [{"text": abort_message_text}]}
-            session_mgr.append_message(abort_message, agent)
-            if hasattr(session_mgr, 'flush'):
-                session_mgr.flush()
-            logger.debug(f"[Partial Response] Saved interrupted response ({len(abort_message_text)} chars)")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to save partial response: {e}")
-            return False
-
-    def _inject_interrupted_tool_result(self, agent) -> bool:
-        """Inject a meaningful tool_result for the interrupted tool into Strands history.
-
-        When an A2A tool (e.g., code agent) is running and the user hits stop,
-        the tool's async generator is abandoned before it yields its final result.
-        This leaves an orphaned toolUse in the conversation history.
-
-        Strands SDK auto-fills "Tool was interrupted." on the next call, but that
-        loses all context about what the agent actually did. Instead, we build a
-        tool_result from the partial progress saved in invocation_state by the tool.
-        """
-        # Find orphaned toolUse IDs from the last assistant message
         if not agent.messages:
-            return False
+            return
 
         last_msg = agent.messages[-1]
         if last_msg.get("role") != "assistant":
-            return False
+            return
 
-        tool_use_ids = [
-            content["toolUse"]["toolUseId"]
-            for content in last_msg.get("content", [])
-            if "toolUse" in content
-        ]
-        if not tool_use_ids:
-            return False
-
-        # Build progress summary from invocation_state (set by A2A tool during streaming)
-        progress = {}
-        if hasattr(self, 'invocation_state') and self.invocation_state:
-            progress = self.invocation_state.get("_a2a_partial_progress", {})
-
-        if progress and progress.get("steps"):
-            steps = progress["steps"]
-            files_changed = progress.get("files_changed", [])
-            todos = progress.get("todos", [])
-
-            # Build a concise but informative summary
-            summary_parts = [f"[Task interrupted by user after {len(steps)} steps]"]
-            summary_parts.append(f"Task: {progress.get('task', 'unknown')[:200]}")
-
-            # Last few steps for context
-            recent_steps = steps[-5:]  # last 5 steps
-            if recent_steps:
-                summary_parts.append("Recent steps:")
-                for step in recent_steps:
-                    summary_parts.append(f"  - {step[:150]}")
-
-            if files_changed:
-                summary_parts.append(f"Files changed: {', '.join(files_changed[:10])}")
-
-            if todos:
-                done = sum(1 for t in todos if isinstance(t, dict) and t.get("status") == "completed")
-                summary_parts.append(f"Todos: {done}/{len(todos)} completed")
-
-            summary_text = "\n".join(summary_parts)
+        if self.partial_response_text.strip():
+            actual_text = self.partial_response_text.strip() + "\n\n**[Response interrupted by user]**"
         else:
-            summary_text = "[Task interrupted by user. No progress details available.]"
+            actual_text = "**[Response interrupted by user]**"
 
-        # Inject tool_result message into Strands conversation history
-        tool_result_content = [
-            {
-                "toolResult": {
-                    "toolUseId": tool_use_id,
-                    "status": "error",
-                    "content": [{"text": summary_text}],
-                }
-            }
-            for tool_use_id in tool_use_ids
-        ]
-        tool_result_message = {"role": "user", "content": tool_result_content}
-
-        try:
-            agent.messages.append(tool_result_message)
-            # Sync to session manager if available
-            session_mgr = getattr(agent, 'session_manager', None) or getattr(agent, '_session_manager', None)
-            if session_mgr and hasattr(session_mgr, 'append_message'):
-                session_mgr.append_message(tool_result_message, agent)
-                if hasattr(session_mgr, 'flush'):
-                    session_mgr.flush()
-            logger.info(f"[Partial Response] Injected interrupted tool_result with {len(progress.get('steps', []))} steps context")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to inject interrupted tool_result: {e}")
-            return False
+        # Replace text blocks only — preserve toolUse blocks if present
+        content = last_msg.get("content", [])
+        non_text = [block for block in content if not (isinstance(block, dict) and "text" in block)]
+        last_msg["content"] = non_text + [{"text": actual_text}]
+        logger.debug(f"[Cancel] Fixed history: kept {len(non_text)} non-text blocks, set text ({len(actual_text)} chars)")
 
     def _get_last_pending_tool_id(self) -> str:
         """Get the last tool_use_id that was started but hasn't received a result yet.
@@ -372,6 +272,7 @@ class AGUIStreamEventProcessor:
         # Reset stop signal state for this stream
         self.last_stop_check_time = 0
         self._stop_detected = False
+        self._cancel_called = False
 
         # Reset seen tool uses for each new stream
         self.seen_tool_uses.clear()
@@ -459,11 +360,11 @@ class AGUIStreamEventProcessor:
                         # Timeout — drain skill queue and loop back to check bridge
                         async for sse in self._drain_skill_queue(session_id):
                             yield sse
-                        # Check stop signal during elicitation polling
-                        if self._check_stop_signal():
-                            logger.info(f"[StopSignal] Stopping stream during elicitation polling for session {session_id}")
-                            self._clear_stop_signal(keep_for_remote_agent=True)
-                            raise StopRequestedException("Stop requested by user")
+                        # Check stop signal and trigger SDK cancellation (once)
+                        if self._check_stop_signal() and not self._cancel_called:
+                            self._cancel_called = True
+                            logger.info(f"[StopSignal] Cancelling agent during elicitation polling for session {session_id}")
+                            agent.cancel()
                         continue
 
                     try:
@@ -484,11 +385,11 @@ class AGUIStreamEventProcessor:
                         # Timeout — drain skill queue and loop back
                         async for sse in self._drain_skill_queue(session_id):
                             yield sse
-                        # Check stop signal during tool execution (e.g. while code agent runs)
-                        if self._check_stop_signal():
-                            logger.info(f"[StopSignal] Stopping stream during tool execution for session {session_id}")
-                            self._clear_stop_signal(keep_for_remote_agent=True)
-                            raise StopRequestedException("Stop requested by user")
+                        # Check stop signal and trigger SDK cancellation (once)
+                        if self._check_stop_signal() and not self._cancel_called:
+                            self._cancel_called = True
+                            logger.info(f"[StopSignal] Cancelling agent during tool execution for session {session_id}")
+                            agent.cancel()
                         continue
                     try:
                         event = next_event_task.result()
@@ -500,10 +401,10 @@ class AGUIStreamEventProcessor:
                 async for sse in self._drain_skill_queue(session_id):
                     yield sse
                 # Check stop signal periodically (throttled to reduce DB calls)
-                if self._check_stop_signal():
-                    logger.debug(f"[StopSignal] Stopping stream for session {session_id}")
-                    self._clear_stop_signal()
-                    raise StopRequestedException("Stop requested by user")
+                if self._check_stop_signal() and not self._cancel_called:
+                    self._cancel_called = True
+                    logger.info(f"[StopSignal] Cancelling agent for session {session_id}")
+                    agent.cancel()
 
                 # Check for browser session ARN in invocation_state (for Live View)
                 # This is set by A2A tool callback when browser_session_arn artifact is received
@@ -562,6 +463,15 @@ class AGUIStreamEventProcessor:
                             continue
                         else:
                             logger.warning("[Interrupt] stop_reason is interrupt but no interrupts attribute!")
+                    # Handle cancellation via agent.cancel()
+                    elif hasattr(final_result, 'stop_reason') and final_result.stop_reason == "cancelled":
+                        logger.info(f"[Cancel] Agent cancelled for session {session_id}")
+                        self._fix_cancelled_history(agent)
+                        self._clear_stop_signal(keep_for_remote_agent=self.tool_use_started)
+                        yield self.formatter.format_event("stop")
+                        stream_completed_normally = True
+                        return
+
                     else:
                         logger.info(f"[Interrupt] Not an interrupt event (stop_reason={getattr(final_result, 'stop_reason', 'NONE')})")
 
@@ -635,11 +545,11 @@ class AGUIStreamEventProcessor:
                     # Accumulate text for potential abort handling
                     self.partial_response_text += text_data
 
-                    # Check stop signal before yielding response (fast path using cached flag)
-                    if self._check_stop_signal():
-                        logger.debug(f"Stopping stream for session {session_id}")
-                        self._clear_stop_signal()
-                        raise StopRequestedException("Stop requested by user")
+                    # Check stop signal and trigger SDK cancellation (once)
+                    if self._check_stop_signal() and not self._cancel_called:
+                        self._cancel_called = True
+                        logger.info(f"[StopSignal] Cancelling agent during text streaming for session {session_id}")
+                        agent.cancel()
 
                     # Check if this is a raw XML tool call that needs parsing
                     tool_calls = self._parse_xml_tool_calls(text_data)
@@ -879,14 +789,7 @@ class AGUIStreamEventProcessor:
                     async for result in self._process_message_event(event):
                         yield result
 
-        except StopRequestedException:
-            self._save_partial_response(agent, session_id)
-            yield self.formatter.format_event("stop")
-            stream_completed_normally = True
-            return
-
         except GeneratorExit:
-            self._save_partial_response(agent, session_id)
             stream_completed_normally = True
             return
 
@@ -939,9 +842,6 @@ class AGUIStreamEventProcessor:
                 yield self.formatter.format_event("error", error_message=f"Sorry, I encountered an error: {str(e)}")
 
         finally:
-            if not stream_completed_normally:
-                self._save_partial_response(agent, session_id)
-
             # Cancel any pending next-event task to avoid leaks
             if next_event_task is not None and not next_event_task.done():
                 next_event_task.cancel()

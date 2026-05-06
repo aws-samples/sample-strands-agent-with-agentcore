@@ -36,6 +36,13 @@ async def set_stop_signal(request: StopRequest):
     """
     try:
         provider = get_stop_signal_provider()
+        if not provider:
+            return StopResponse(
+                success=False,
+                message="Stop signal provider not available",
+                user_id=request.user_id,
+                session_id=request.session_id
+            )
         provider.request_stop(request.user_id, request.session_id)
 
         logger.info(f"[StopRouter] Stop signal set for {request.user_id}:{request.session_id}")

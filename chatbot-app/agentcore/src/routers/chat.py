@@ -205,6 +205,9 @@ async def invocations(http_request: Request):
         user_id = state.get("user_id", "anonymous")
         from agent.stop_signal import get_stop_signal_provider
         provider = get_stop_signal_provider()
+        if not provider:
+            logger.warning("[Stop] Stop signal provider not available (DYNAMODB_USERS_TABLE not set)")
+            return {"status": "stop_unavailable", "session_id": thread_id}
         provider.request_stop(user_id, thread_id)
         logger.info(f"[Stop] Stop signal set for session={thread_id}")
         return {"status": "stop_requested", "session_id": thread_id}
