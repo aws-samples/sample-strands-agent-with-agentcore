@@ -109,16 +109,19 @@ class ExecutionRegistry:
 
     async def create_execution(self, session_id: str, user_id: str, run_id: str) -> Execution:
         async with self._lock:
-            # Reject if another execution is already running for this session
             latest_id = self._session_latest.get(session_id)
             if latest_id:
                 latest = self._executions.get(latest_id)
                 if latest and latest.status == ExecutionStatus.RUNNING:
+                    # Force-complete the stale execution (stop was already requested)
                     logger.warning(
-                        f"[ExecutionRegistry] Session {session_id} already has a running execution "
-                        f"{latest_id}, rejecting new execution {session_id}:{run_id}"
+                        f"[ExecutionRegistry] Superseding stale execution {latest_id} "
+                        f"for session {session_id}"
                     )
-                    raise RuntimeError(f"Session {session_id} already has a running execution")
+                    latest.status = ExecutionStatus.STOPPED
+                    latest.completed_at = time.time()
+                    if latest.task and not latest.task.done():
+                        latest.task.cancel()
 
             execution_id = f"{session_id}:{run_id}"
             execution = Execution(
