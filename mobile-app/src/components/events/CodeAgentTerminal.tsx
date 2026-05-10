@@ -7,14 +7,7 @@ import type { ToolExecution } from '../../types/chat'
 
 /** Detect if a tool execution is a code-agent call. */
 export function isCodeAgentExecution(t: ToolExecution): boolean {
-  if (t.toolName === 'code_agent' || t.toolName === 'agentcore_code-agent') return true
-  if (t.toolName === 'skill_executor') {
-    try {
-      const p = JSON.parse(t.toolInput) as Record<string, unknown>
-      if (p.tool_name === 'code_agent') return true
-    } catch { /* ignore */ }
-  }
-  return false
+  return t.toolName === 'code_agent' || t.toolName === 'agentcore_code-agent'
 }
 
 /** Strip workspace prefix from paths. */

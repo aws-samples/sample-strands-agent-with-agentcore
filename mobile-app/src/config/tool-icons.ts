@@ -59,7 +59,7 @@ const toolToIconKey: Record<string, string> = {
   code_agent:                       'code-agent',
   workspace_tools:                  's3-workspace',
 
-  // ── Skill tool names (called via skill_executor) ─────────────
+  // ── Skill tool names ─────────────
   // web-search
   ddg_web_search:                   'duckduckgo',
   // google-web-search
@@ -171,7 +171,7 @@ const skillToToolId: Record<string, string> = {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 export function resolveToolIcon(toolName: string, toolInput?: string): IconEntry | null {
-  // skill_dispatcher: resolve by skill_name
+  // skill_dispatcher is a meta-tool; map via skill_name to a representative icon.
   if (toolName === 'skill_dispatcher' && toolInput) {
     try {
       const parsed = JSON.parse(toolInput) as Record<string, unknown>
@@ -183,28 +183,9 @@ export function resolveToolIcon(toolName: string, toolInput?: string): IconEntry
     } catch { /* ignore */ }
   }
 
-  // skill_executor: resolve by inner tool_name, fallback to skill_name
-  if (toolName === 'skill_executor' && toolInput) {
-    try {
-      const parsed = JSON.parse(toolInput) as Record<string, unknown>
-      // 1. Try tool_name direct lookup
-      const innerTool = parsed.tool_name as string | undefined
-      if (innerTool) {
-        const entry = ICONS[toolToIconKey[innerTool]]
-          ?? ICONS[toolToIconKey[innerTool.replace(/_/g, '-')]]
-          ?? ICONS[toolToIconKey[innerTool.replace(/-/g, '_')]]
-        if (entry) return entry
-      }
-      // 2. Fallback: skill_name → representative tool icon (same as skill_dispatcher)
-      const skillName = parsed.skill_name as string | undefined
-      if (skillName) {
-        const toolId = skillToToolId[skillName]
-        if (toolId) return ICONS[toolToIconKey[toolId]] ?? null
-      }
-    } catch { /* ignore */ }
-  }
-
   const key = toolToIconKey[toolName]
+    ?? toolToIconKey[toolName.replace(/_/g, '-')]
+    ?? toolToIconKey[toolName.replace(/-/g, '_')]
   return key ? (ICONS[key] ?? null) : null
 }
 

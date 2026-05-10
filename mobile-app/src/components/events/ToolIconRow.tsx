@@ -21,12 +21,12 @@ function getGroupKey(toolName: string, toolInput?: string): string {
 }
 
 /** Resolve a human-friendly display name for a tool.
- *  For skill_dispatcher/skill_executor, extract the inner skill or tool name. */
+ *  skill_dispatcher returns SKILL.md instructions; show its target skill instead. */
 export function resolveDisplayName(toolName: string, toolInput?: string): string {
-  if ((toolName === 'skill_dispatcher' || toolName === 'skill_executor') && toolInput) {
+  if (toolName === 'skill_dispatcher' && toolInput) {
     try {
       const parsed = JSON.parse(toolInput) as Record<string, unknown>
-      const inner = (parsed.skill_name ?? parsed.skill ?? parsed.tool_name) as string | undefined
+      const inner = (parsed.skill_name ?? parsed.skill) as string | undefined
       if (inner) return inner
     } catch { /* ignore */ }
   }

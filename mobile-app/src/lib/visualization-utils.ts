@@ -94,7 +94,7 @@ export function parseVisualizationResult(toolResult: string): VisualizationResul
       }
     }
 
-    // Unwrap {body: "..."} string wrapper (skill_executor sometimes)
+    // Unwrap {body: "..."} string wrapper (Lambda response envelope)
     if (parsed.body && typeof parsed.body === 'string' && !parsed.map_data && !parsed.chart_data) {
       try {
         const inner = JSON.parse(parsed.body)

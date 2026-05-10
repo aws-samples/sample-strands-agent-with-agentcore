@@ -14,7 +14,7 @@ import type { ArtifactSignal, CompletedToolSnapshot } from '../types/artifact'
 
 /** Internal / wrapper tool names that should not be shown verbatim to the user. */
 const INTERNAL_TOOLS = new Set([
-  'skill_executor', 'skill_dispatcher', 'tool_executor',
+  'skill_dispatcher', 'tool_executor',
 ])
 
 const WORKING_PHRASES = [
@@ -286,12 +286,7 @@ export function useStreamEvents(opts?: UseStreamEventsOpts) {
           })
 
           // Immediate signal for excalidraw tool
-          if (toolName === 'create_excalidraw_diagram' || (
-            toolName === 'skill_executor' &&
-            typeof toolInputParsed === 'object' &&
-            toolInputParsed !== null &&
-            (toolInputParsed as Record<string, unknown>).tool_name === 'create_excalidraw_diagram'
-          )) {
+          if (toolName === 'create_excalidraw_diagram') {
             let excalidrawData: Record<string, unknown> = {}
             try { excalidrawData = JSON.parse(parsed.result) as Record<string, unknown> } catch { /* use empty */ }
             onArtifactSignalRef.current?.({

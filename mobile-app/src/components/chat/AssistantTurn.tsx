@@ -127,13 +127,7 @@ export default function AssistantTurn({ message }: Props) {
     const imgs: ImageData[] = []
     for (const t of message.toolExecutions) {
       if (!t.images || t.images.length === 0) continue
-      // skill_executor wraps inner tools — check toolInput for actual tool_name
-      let innerName = t.toolName
-      try {
-        const parsed = JSON.parse(t.toolInput)
-        if (parsed.tool_name) innerName = parsed.tool_name
-      } catch { /* ignore */ }
-      if (INLINE_IMAGE_TOOLS.has(innerName)) {
+      if (INLINE_IMAGE_TOOLS.has(t.toolName)) {
         imgs.push(...t.images)
       }
     }
