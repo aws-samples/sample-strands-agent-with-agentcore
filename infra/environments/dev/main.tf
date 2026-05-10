@@ -68,7 +68,7 @@ data "aws_secretsmanager_secret" "google_maps_creds" {
 }
 
 locals {
-  lambda_tools_root = "${local.root_dir}/agent-blueprint/agentcore-gateway-stack/lambda-functions"
+  lambda_tools_root = "${local.root_dir}/agentcore/gateway-tools/lambda-functions"
 
   # Always-on tools (no API key needed).
   _base_tools = {
@@ -212,8 +212,8 @@ module "runtime_code_agent" {
   component_name = "code-agent"
   runtime_type   = "a2a_agent"
 
-  source_dir      = "agent-blueprint/agentcore-runtime-a2a-stack/code-agent"
-  build_context   = "agent-blueprint/agentcore-runtime-a2a-stack/code-agent"
+  source_dir      = "agentcore/a2a-agents/code-agent"
+  build_context   = "agentcore/a2a-agents/code-agent"
   dockerfile_path = "Dockerfile"
 
   cognito_issuer_url      = module.auth.issuer_url
@@ -240,8 +240,8 @@ module "runtime_research_agent" {
   component_name = "research-agent"
   runtime_type   = "a2a_agent"
 
-  source_dir      = "agent-blueprint/agentcore-runtime-a2a-stack/research-agent"
-  build_context   = "agent-blueprint/agentcore-runtime-a2a-stack/research-agent"
+  source_dir      = "agentcore/a2a-agents/research-agent"
+  build_context   = "agentcore/a2a-agents/research-agent"
   dockerfile_path = "Dockerfile"
 
   cognito_issuer_url      = module.auth.issuer_url
@@ -560,8 +560,8 @@ module "runtime_mcp_3lo" {
   component_name = "mcp-3lo"
   runtime_type   = "mcp_3lo"
 
-  source_dir      = "agent-blueprint/agentcore-runtime-mcp-stack"
-  build_context   = "agent-blueprint/agentcore-runtime-mcp-stack"
+  source_dir      = "agentcore/mcp-runtime"
+  build_context   = "agentcore/mcp-runtime"
   dockerfile_path = "Dockerfile"
 
   cognito_issuer_url      = module.auth.issuer_url

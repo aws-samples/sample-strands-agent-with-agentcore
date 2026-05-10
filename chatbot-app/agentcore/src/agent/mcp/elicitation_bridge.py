@@ -105,7 +105,7 @@ class OAuthElicitationBridge:
                 sessionUri=oauth_session_uri,
                 userIdentifier={"userToken": token},
             ))
-            logger.info(f"[Elicitation] CompleteResourceTokenAuth succeeded: {oauth_session_uri[:50]}...")
+            logger.info("[Elicitation] CompleteResourceTokenAuth succeeded")
         except Exception as e:
             logger.error(f"[Elicitation] CompleteResourceTokenAuth failed: {e}")
 

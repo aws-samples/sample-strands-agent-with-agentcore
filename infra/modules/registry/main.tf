@@ -220,7 +220,14 @@ locals {
 }
 
 # --- Skills Records Stacks (one stack per record) ---
-# Bundled SKILL.md content exceeds CFN's 51,200-byte inline template limit.
+#
+# CFN is used only for lifecycle (create/delete) — content updates go through
+# null_resource.record_update below via direct Lambda invoke. This is because
+# the CloudFormation get-template API strips non-ASCII characters to '?',
+# which corrupts the Terraform state representation and produces a permanent
+# drift loop on any skill_md containing em-dashes, smart quotes, etc.
+# AgentCore Registry itself stores the content correctly; only CFN's
+# surface representation was mangled.
 resource "aws_cloudformation_stack" "records_skills" {
   for_each = local.skill_records
   name     = "${var.project_name}-${var.environment}-record-${each.key}"
@@ -240,7 +247,63 @@ resource "aws_cloudformation_stack" "records_skills" {
     }
   })
 
+  lifecycle {
+    # Suppress the CFN get-template non-ASCII corruption drift. Content
+    # stays in sync via null_resource.record_update below.
+    ignore_changes = [template_body]
+  }
+
   depends_on = [aws_cloudformation_stack.registry]
+}
+
+# --- Record content sync (direct Lambda invoke on SKILL.md change) ---
+#
+# Whenever any input to the record content changes (skill_md body, definition
+# JSON, description, endpoint URL), invoke the registry_manager Lambda in
+# direct mode to update the live AgentCore record. This preserves correct
+# UTF-8 and side-steps the CFN get-template corruption entirely.
+resource "local_file" "record_update_payload" {
+  for_each = local.skill_records
+  # Write payload to /tmp to avoid state bloat; filename changes with content.
+  filename = "/tmp/registry-payload-${var.project_name}-${var.environment}-${each.key}.json"
+  content = jsonencode({
+    direct_invoke         = true
+    action                = "UPDATE_RECORD"
+    registry_id           = aws_cloudformation_stack.registry.outputs["RegistryId"]
+    record_id             = aws_cloudformation_stack.records_skills[each.key].outputs["RecordId"]
+    description           = each.value.description
+    record_version        = local._record_properties[each.key].RecordVersion
+    skill_md_content      = each.value.skill_md
+    skill_definition_json = local._record_properties[each.key].SkillDefinitionJson
+  })
+}
+
+resource "null_resource" "record_update" {
+  for_each = local.skill_records
+
+  triggers = {
+    payload_sha = sha256(local_file.record_update_payload[each.key].content)
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      aws lambda invoke \
+        --function-name "${aws_lambda_function.registry_manager.function_name}" \
+        --region "${var.aws_region}" \
+        --cli-binary-format raw-in-base64-out \
+        --payload "fileb://${local_file.record_update_payload[each.key].filename}" \
+        /tmp/registry-update-${each.key}.out.json >/dev/null
+      # Surface Lambda errors (FunctionError field present on failure).
+      if grep -q '"errorMessage"' /tmp/registry-update-${each.key}.out.json 2>/dev/null; then
+        echo "Lambda error for record ${each.key}:" >&2
+        cat /tmp/registry-update-${each.key}.out.json >&2
+        exit 1
+      fi
+    EOT
+  }
+
+  depends_on = [aws_cloudformation_stack.records_skills, local_file.record_update_payload]
 }
 
 # ============================================================

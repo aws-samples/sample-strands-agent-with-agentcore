@@ -58,7 +58,7 @@ echo "Ports cleared successfully"
 
 # Get absolute path to project root and master .env file
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MASTER_ENV_FILE="$PROJECT_ROOT/agent-blueprint/.env"
+MASTER_ENV_FILE="$PROJECT_ROOT/chatbot-app/.env"
 CHATBOT_APP_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 cd agentcore

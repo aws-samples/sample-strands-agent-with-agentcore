@@ -112,6 +112,13 @@ resource "aws_s3_object" "zip" {
   key    = "lambda-tools/${var.tool_name}/${local.source_hash}.zip"
   source = data.archive_file.zip.output_path
   etag   = data.archive_file.zip.output_md5
+
+  # S3 multipart uploads set etag = md5(concat(part_md5s))-<partcount>, which
+  # never matches the single-md5 Terraform computes. The key embeds source_hash,
+  # so content changes still trigger a new object — etag drift here is cosmetic.
+  lifecycle {
+    ignore_changes = [etag]
+  }
 }
 
 resource "aws_lambda_function" "this" {

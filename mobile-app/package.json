@@ -55,6 +55,7 @@
   "private": true,
   "overrides": {
     "fast-xml-parser": ">=5.3.8",
-    "markdown-it": ">=12.3.2"
+    "markdown-it": ">=12.3.2",
+    "postcss": ">=8.5.10"
   }
 }

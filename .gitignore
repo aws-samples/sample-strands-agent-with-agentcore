@@ -173,6 +173,7 @@ chatbot-app/agentcore/sessions/
 *.tsbuildinfo
 tsconfig.tsbuildinfo
 **/.build/
+agentcore/gateway-tools/lambda-functions/*/build.zip
 
 # Temporary test scripts
 verify-build.sh

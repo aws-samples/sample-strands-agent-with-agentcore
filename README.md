@@ -238,11 +238,9 @@ cd sample-strands-agent-with-agentcore
 cd chatbot-app
 ./setup.sh
 
-cd ../agent-blueprint
-cp .env.example .env
-# configure credentials
+# Create chatbot-app/.env with deployment outputs (Cognito IDs, API URL, etc.)
+# — typically populated from terraform output after `infra/scripts/deploy.sh apply`.
 
-cd ../chatbot-app
 ./start.sh
 ```
 
@@ -273,12 +271,15 @@ sample-strands-agent-chatbot/
 ├── chatbot-app/
 │   ├── frontend/          # Next.js UI + BFF
 │   └── agentcore/         # Python backend (Strands Agent)
+├── agentcore/             # AgentCore workloads (built/deployed by Terraform)
+│   ├── gateway-tools/     # Lambda MCP tools (arxiv, weather, tavily, ...)
+│   ├── a2a-agents/        # A2A runtimes (code-agent, research-agent)
+│   └── mcp-runtime/       # MCP 3LO runtime (Gmail, GitHub, Notion, ...)
 ├── cowork/                # Claude Desktop 3P ↔ AgentCore Gateway connector
-├── infra/                 # Terraform infrastructure
-│   ├── modules/           # Reusable modules (auth, runtime, gateway, chat, ...)
-│   ├── environments/dev/  # Environment configuration
-│   └── scripts/           # Deploy orchestrator
-└── agent-blueprint/       # Legacy CDK (deprecated)
+└── infra/                 # Terraform infrastructure
+    ├── modules/           # Reusable modules (auth, runtime, gateway, chat, ...)
+    ├── environments/dev/  # Environment configuration
+    └── scripts/           # Deploy orchestrator
 ```
 
 ## Documentation

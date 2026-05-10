@@ -251,8 +251,59 @@ def handle_record(event, props):
         return {"PhysicalResourceId": record_id}
 
 
+def handle_update_record_direct(event):
+    """Direct-invoke path for Terraform null_resource triggers.
+
+    Bypasses CloudFormation because CFN's get-template API strips non-ASCII
+    characters to '?', causing permanent drift on SKILL.md content. Registry
+    data itself is preserved correctly; only CFN's surface representation
+    was corrupted. Direct invoke on content change keeps the record in sync
+    without round-tripping through CFN.
+    """
+    registry_id = event["registry_id"]
+    record_id = event["record_id"]
+    description = event.get("description", "")
+    record_version = event.get("record_version", "1.0.0")
+    skill_md_content = event.get("skill_md_content", "")
+    skill_def_json = event.get("skill_definition_json", "")
+
+    update_skills = {"skillMd": {"optionalValue": {"inlineContent": skill_md_content}}}
+    if skill_def_json:
+        update_skills["skillDefinition"] = {"optionalValue": {
+            "schemaVersion": "0.1.0", "inlineContent": skill_def_json,
+        }}
+
+    client.update_registry_record(
+        registryId=registry_id,
+        recordId=record_id,
+        description={"optionalValue": description},
+        recordVersion=record_version,
+        descriptors={"optionalValue": {"agentSkills": {"optionalValue": update_skills}}},
+    )
+    logger.info(f"Direct-invoke updated record: {record_id}")
+
+    _wait_for_record(registry_id, record_id, "UPDATING")
+
+    try:
+        client.submit_registry_record_for_approval(registryId=registry_id, recordId=record_id)
+        logger.info(f"Submitted record {record_id} for approval")
+    except Exception as e:
+        logger.warning(f"Submit for approval failed: {e}")
+
+    return {"record_id": record_id, "status": "updated"}
+
+
 def lambda_handler(event, context):
-    """CloudFormation Custom Resource handler."""
+    """CloudFormation Custom Resource handler + Terraform direct-invoke path."""
+    # Direct-invoke path (Terraform null_resource triggers).
+    if event.get("direct_invoke"):
+        action = event.get("action", "")
+        logger.info(f"Direct invoke: action={action}")
+        if action == "UPDATE_RECORD":
+            return handle_update_record_direct(event)
+        raise ValueError(f"Unknown direct-invoke action: {action}")
+
+    # CloudFormation Custom Resource path.
     logger.info(f"Event: RequestType={event['RequestType']}, Action={event.get('ResourceProperties', {}).get('Action', 'unknown')}")
 
     try:

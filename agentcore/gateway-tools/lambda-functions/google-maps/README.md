@@ -308,9 +308,8 @@ Google Maps Platform provides:
 
 ## Deployment
 
-This Lambda is deployed as part of the AgentCore Gateway Stack:
+This Lambda is deployed via Terraform (`infra/modules/gateway-lambda-tool`):
 
 ```bash
-cd agent-blueprint/agentcore-gateway-stack
-./scripts/deploy.sh
+./infra/scripts/deploy.sh apply
 ```

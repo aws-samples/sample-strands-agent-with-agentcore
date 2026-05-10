@@ -99,7 +99,7 @@ async function resizeImageIfNeeded(
     return { buffer: result, resized: true }
 
   } catch (error) {
-    console.error(`[BFF] Failed to resize image ${safeName}:`, error)
+    console.error('[BFF] Failed to resize image:', safeName, error)
     return { buffer, resized: false }
   }
 }

@@ -1,7 +1,7 @@
 """Local tools for general-purpose tasks
 
 Web search and URL fetching now live in the Gateway web-search Lambda
-(agent-blueprint/agentcore-gateway-stack/lambda-functions/web-search).
+(agentcore/gateway-tools/lambda-functions/web-search).
 """
 
 from .visualization import create_visualization

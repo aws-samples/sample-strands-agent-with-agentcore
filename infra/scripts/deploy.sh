@@ -245,6 +245,15 @@ _load_oauth_secret() {
 }
 
 prompt_oauth_providers() {
+  # Always load existing secrets so plan/apply both get correct TF_VAR values.
+  # Interactive prompts (for brand-new providers) only run on apply.
+  local gname="${PROJECT_NAME}/mcp/google-oauth"
+  local hname="${PROJECT_NAME}/mcp/github-oauth"
+  local nname="${PROJECT_NAME}/mcp/notion-oauth"
+  _secret_exists "$gname" && _load_oauth_secret "$gname" GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET
+  _secret_exists "$hname" && _load_oauth_secret "$hname" GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET
+  _secret_exists "$nname" && _load_oauth_secret "$nname" NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET
+
   [ "$ACTION" != "apply" ] && return 0
 
   echo ""
@@ -253,11 +262,9 @@ prompt_oauth_providers() {
   echo "  Skipping disables the matching 3LO provider."
   echo "============================================"
 
-  local gname="${PROJECT_NAME}/mcp/google-oauth"
   if _secret_exists "$gname"; then
     echo ""
     echo "Google OAuth   : already configured"
-    _load_oauth_secret "$gname" GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET
   else
     echo ""
     echo "Google OAuth (Gmail/Calendar 3LO)"
@@ -277,11 +284,9 @@ prompt_oauth_providers() {
     fi
   fi
 
-  local hname="${PROJECT_NAME}/mcp/github-oauth"
   if _secret_exists "$hname"; then
     echo ""
     echo "GitHub OAuth   : already configured"
-    _load_oauth_secret "$hname" GITHUB_OAUTH_CLIENT_ID GITHUB_OAUTH_CLIENT_SECRET
   else
     echo ""
     echo "GitHub OAuth"
@@ -301,11 +306,9 @@ prompt_oauth_providers() {
     fi
   fi
 
-  local nname="${PROJECT_NAME}/mcp/notion-oauth"
   if _secret_exists "$nname"; then
     echo ""
     echo "Notion OAuth   : already configured"
-    _load_oauth_secret "$nname" NOTION_OAUTH_CLIENT_ID NOTION_OAUTH_CLIENT_SECRET
   else
     echo ""
     echo "Notion OAuth (Public integration)"
@@ -343,14 +346,8 @@ ENABLE_TELEGRAM=false
 TELEGRAM_BOT_TOKEN=""
 
 prompt_channels() {
-  [ "$ACTION" != "apply" ] && return 0
-
-  echo ""
-  echo "============================================"
-  echo "  Channel adapters (press Enter to skip)"
-  echo "============================================"
-
-  # Telegram
+  # Always load existing token so plan/apply both get TF_VAR_telegram_bot_token
+  # and TF_VAR_enable_telegram correctly.
   local secret_name="${PROJECT_NAME}/telegram/bot-token"
   if _secret_exists "$secret_name"; then
     TELEGRAM_BOT_TOKEN=$(aws secretsmanager get-secret-value \
@@ -358,9 +355,19 @@ prompt_channels() {
       --query SecretString --output text 2>/dev/null || echo "")
     if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
       ENABLE_TELEGRAM=true
-      echo ""
-      echo "Telegram bot    : already configured"
     fi
+  fi
+
+  [ "$ACTION" != "apply" ] && return 0
+
+  echo ""
+  echo "============================================"
+  echo "  Channel adapters (press Enter to skip)"
+  echo "============================================"
+
+  if _secret_exists "$secret_name"; then
+    echo ""
+    echo "Telegram bot    : already configured"
   else
     echo ""
     echo "Telegram Bot  https://t.me/BotFather"
@@ -387,22 +394,24 @@ export TF_VAR_telegram_bot_token="$TELEGRAM_BOT_TOKEN"
 ENABLE_COWORK=false
 
 prompt_cowork() {
-  [ "$ACTION" != "apply" ] && return 0
-
+  # Honor explicit override first (any action).
   if [ -n "${TF_VAR_enable_cowork:-}" ]; then
     ENABLE_COWORK="$TF_VAR_enable_cowork"
-    echo "  Cowork: using TF_VAR_enable_cowork=$ENABLE_COWORK"
+    [ "$ACTION" = "apply" ] && echo "  Cowork: using TF_VAR_enable_cowork=$ENABLE_COWORK"
     return 0
   fi
 
-  # Check current terraform state for previously deployed value
+  # Check current terraform state for previously deployed value (plan + apply).
   local current
   current=$(terraform -chdir="$ENV_DIR" output -raw enable_cowork 2>/dev/null || echo "")
   if [ "$current" = "true" ]; then
     ENABLE_COWORK=true
-    echo "  Cowork: already enabled (from terraform state)"
+    [ "$ACTION" = "apply" ] && echo "  Cowork: already enabled (from terraform state)"
     return 0
   fi
+
+  # Interactive prompt only on apply.
+  [ "$ACTION" != "apply" ] && return 0
 
   echo ""
   echo "============================================"
@@ -733,9 +742,8 @@ case "$ACTION" in
     echo ""
 
     # Print OAuth callback URLs (must be registered in each provider's console)
-    local has_oauth=false
+    has_oauth=false
     for provider in google-oauth-provider github-oauth-provider notion-oauth-provider; do
-      local cb
       cb=$("$DEPLOY_VENV/bin/python" -c "
 import boto3
 try:

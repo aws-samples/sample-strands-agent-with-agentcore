@@ -1,14 +1,28 @@
 const MAX_MESSAGE_LENGTH = 4096;
 
 function escapeHtml(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 function convertCitations(text: string): string {
-  // <cite source="Title" url="https://...">text</cite> → text (Title: url)
+  // <cite source="Title" url="https://...">text</cite> → "text [Title](url)"
+  // url is optional — LLMs sometimes omit it (skill prompt not strictly followed).
+  // Attribute order is also flexible.
   return text.replace(
-    /<cite\s+source="([^"]*)"\s+url="([^"]*)">([\s\S]*?)<\/cite>/gi,
-    (_match, source, url, body) => `${body} [${source || url}](${url})`,
+    /<cite\b([^>]*)>([\s\S]*?)<\/cite>/gi,
+    (_match, attrs, body) => {
+      const src = attrs.match(/\bsource="([^"]*)"/i)?.[1] ?? "";
+      const url = attrs.match(/\burl="([^"]*)"/i)?.[1] ?? "";
+      if (url && src) return `${body} [${src}](${url})`;
+      if (url) return `${body} [${url}](${url})`;
+      if (src) return `${body} (${src})`;
+      return body;
+    },
   );
 }
 
