@@ -14,6 +14,7 @@ import inspect
 import logging
 import os
 import re
+from typing import Iterable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -126,9 +127,18 @@ class SkillRegistry:
     # Level 1: catalog (injected into system prompt at init)
     # ------------------------------------------------------------------
 
-    def get_catalog(self) -> str:
-        """Generate the Level 1 skill catalog for the system prompt."""
+    def get_catalog(self, exclude: Optional[Iterable[str]] = None) -> str:
+        """Generate the Level 1 skill catalog for the system prompt.
+
+        Skills listed in `exclude` are omitted so the agent never sees a
+        disabled skill as available.
+        """
         if not self._skills:
+            return ""
+
+        excluded = set(exclude or ())
+        visible = {name: info for name, info in self._skills.items() if name not in excluded}
+        if not visible:
             return ""
 
         lines = [
@@ -137,7 +147,7 @@ class SkillRegistry:
             "Use skill_dispatcher to activate a skill, then skill_executor to run its tools.",
             "",
         ]
-        for name, info in self._skills.items():
+        for name, info in visible.items():
             skill_type = info.get("type", "tool")
             suffix = ""
             if skill_type == "instruction":

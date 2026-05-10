@@ -171,7 +171,7 @@ class SkillChatAgent(ChatAgent):
         set_dispatcher_registry(registry)
         self._skill_registry = registry
 
-        catalog = registry.get_catalog()
+        catalog = registry.get_catalog(exclude=self._disabled_skills)
         if self.system_prompt:
             base_prompt_text = system_prompt_to_string(self.system_prompt)
             self.system_prompt = [{"text": f"{base_prompt_text}\n\n{catalog}"}]
