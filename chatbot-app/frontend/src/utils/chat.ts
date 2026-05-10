@@ -50,30 +50,16 @@ const formatName = (name: string): string =>
   name.replace(/[-_]/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 
 // Tool name to user-friendly display name
-export const getToolDisplayName = (toolId: string, isComplete: boolean, toolInput?: any): string => {
-  // skill_dispatcher: "Finding the right tool..." / "Found the right tool"
+export const getToolDisplayName = (toolId: string, isComplete: boolean, _toolInput?: any): string => {
+  // skill_dispatcher is a meta-tool that returns SKILL.md instructions.
   if (toolId === 'skill_dispatcher') {
     return isComplete ? 'Found the right tool' : 'Finding the right tool...'
-  }
-
-  // skill_executor: resolve the inner tool's displayName
-  if (toolId === 'skill_executor') {
-    if (toolInput?.tool_name) {
-      const innerMapping = displayNameMap[toolInput.tool_name]
-      if (innerMapping) {
-        return isComplete ? innerMapping.complete : innerMapping.running
-      }
-      const formatted = formatName(toolInput.tool_name)
-      return isComplete ? `Used ${formatted}` : `Using ${formatted}`
-    }
-    return isComplete ? 'Finished' : 'Preparing...'
   }
 
   const mapping = displayNameMap[toolId]
   if (mapping) {
     return isComplete ? mapping.complete : mapping.running
   }
-  // Fallback: tool_name → "Using Tool Name"
   const formatted = formatName(toolId)
   return isComplete ? `Used ${formatted}` : `Using ${formatted}`
 }

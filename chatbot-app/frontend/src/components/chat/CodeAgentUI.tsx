@@ -6,11 +6,10 @@ import { JsonDisplay } from '@/components/ui/JsonDisplay'
 
 // ---- Helpers ----
 
-/** Check if a tool execution is a code-agent call (direct, prefixed, or via skill_executor). */
+/** Check if a tool execution is a code-agent call. */
 export const isCodeAgentExecution = (toolExec: ToolExecution): boolean =>
   toolExec.toolName === 'code_agent' ||
-  toolExec.toolName === 'agentcore_code-agent' ||
-  (toolExec.toolName === 'skill_executor' && toolExec.toolInput?.tool_name === 'code_agent')
+  toolExec.toolName === 'agentcore_code-agent'
 
 /** Strip workspace prefix from absolute paths (e.g. /tmp/workspaces/user/session/src/foo.py → src/foo.py). */
 export const shortenWorkspacePath = (p: string): string => {

@@ -165,7 +165,7 @@ function resolveIconId(toolId: string, map: Record<string, any>): string | null 
 
 /**
  * Skill name → representative tool ID mapping.
- * Used to resolve icons for skill_dispatcher / skill_executor.
+ * Used to resolve icons for skill_dispatcher.
  */
 export const skillToToolId: Record<string, string> = {
   'web-search': 'ddg_web_search',
@@ -197,16 +197,13 @@ export const skillToToolId: Record<string, string> = {
 
 /**
  * Resolve the effective tool ID for icon lookup.
- * For skill_dispatcher: uses toolInput.skill_name → representative tool ID.
- * For skill_executor: uses toolInput.tool_name directly.
- * For regular tools: returns the tool ID as-is.
+ * skill_dispatcher is a meta-tool (returns SKILL.md instructions); map it to
+ * a representative icon via skill_name. Other tools pass through — the SSE
+ * formatter already unwraps skill_executor to the inner tool name.
  */
 export function resolveEffectiveToolId(toolId: string, toolInput?: any): string {
   if (toolId === 'skill_dispatcher' && toolInput?.skill_name) {
     return skillToToolId[toolInput.skill_name] || toolId;
-  }
-  if (toolId === 'skill_executor' && toolInput?.tool_name) {
-    return toolInput.tool_name;
   }
   return toolId;
 }

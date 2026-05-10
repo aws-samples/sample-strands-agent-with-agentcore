@@ -409,14 +409,9 @@ export const useStreamEvents = ({
 
     const normalizedInput = parsedInput === null || parsedInput === undefined ? {} : parsedInput
 
-    const updatedExecutions = currentToolExecutionsRef.current.map(tool => {
-      if (tool.id !== event.toolCallId) return tool
-      const update: any = { toolInput: normalizedInput }
-      if (tool.toolName === 'skill_executor' && normalizedInput.tool_name) {
-        update.toolName = normalizedInput.tool_name
-      }
-      return { ...tool, ...update }
-    })
+    const updatedExecutions = currentToolExecutionsRef.current.map(tool =>
+      tool.id === event.toolCallId ? { ...tool, toolInput: normalizedInput } : tool
+    )
     currentToolExecutionsRef.current = updatedExecutions
 
     setSessionState(prev => ({
@@ -426,14 +421,9 @@ export const useStreamEvents = ({
 
     setMessages(prevMessages => prevMessages.map(msg => {
       if (msg.isToolMessage && msg.toolExecutions) {
-        const updatedToolExecutions = msg.toolExecutions.map(tool => {
-          if (tool.id !== event.toolCallId) return tool
-          const update: any = { toolInput: normalizedInput }
-          if (tool.toolName === 'skill_executor' && normalizedInput.tool_name) {
-            update.toolName = normalizedInput.tool_name
-          }
-          return { ...tool, ...update }
-        })
+        const updatedToolExecutions = msg.toolExecutions.map(tool =>
+          tool.id === event.toolCallId ? { ...tool, toolInput: normalizedInput } : tool
+        )
         return { ...msg, toolExecutions: updatedToolExecutions }
       }
       return msg
@@ -625,15 +615,10 @@ export const useStreamEvents = ({
       // Detect used document tools and fetch workspace files from S3
       let workspaceDocuments: Array<{ filename: string; tool_type: string }> = []
 
-      // Resolve document type — for skill_executor, unwrap the inner tool_name
       const resolveDocType = (toolExec: { toolName: string; toolInput?: any; metadata?: any }): DocumentType | undefined => {
         const docType = TOOL_TO_DOC_TYPE[toolExec.toolName]
         if (docType) return docType
-        // skill_executor wraps the actual tool — check toolInput.tool_name
-        if (toolExec.toolName === 'skill_executor' && toolExec.toolInput?.tool_name) {
-          return TOOL_TO_DOC_TYPE[toolExec.toolInput.tool_name]
-        }
-        // Fallback: check metadata.tool_type (e.g. "powerpoint_presentation")
+        // Fallback: metadata.tool_type (e.g. "powerpoint_presentation")
         if (toolExec.metadata?.tool_type) {
           return TOOL_TYPE_TO_DOC_TYPE[toolExec.metadata.tool_type]
         }
@@ -761,15 +746,13 @@ export const useStreamEvents = ({
       if (onExcalidrawCreated) {
         for (const toolExec of currentToolExecutionsRef.current) {
           if (!toolExec.isComplete || toolExec.isCancelled || !toolExec.toolResult) continue
-          // Check direct tool name OR skill_executor wrapping
-          const isExcalidrawTool = toolExec.toolName === 'create_excalidraw_diagram' ||
-            (toolExec.toolName === 'skill_executor' && toolExec.toolInput?.tool_name === 'create_excalidraw_diagram')
-          if (isExcalidrawTool) {
+          if (toolExec.toolName === 'create_excalidraw_diagram') {
             try {
               let result = JSON.parse(toolExec.toolResult)
-              // skill_executor wraps result in an extra layer
-              if (toolExec.toolName === 'skill_executor' && result.result) {
-                result = typeof result.result === 'string' ? JSON.parse(result.result) : result.result
+              // skill_executor packages the inner tool's result as a JSON
+              // string inside `result.result`; unwrap that extra layer.
+              if (result?.result && typeof result.result === 'string') {
+                try { result = JSON.parse(result.result) } catch { /* keep outer */ }
               }
               if (result.success && result.excalidraw_data) {
                 onExcalidrawCreated(result.excalidraw_data, toolExec.id)
@@ -1079,8 +1062,7 @@ export const useStreamEvents = ({
   // Swarm Mode event handlers
   const isCodeAgentExec = (t: ToolExecution) =>
     t.toolName === 'code_agent' ||
-    t.toolName === 'agentcore_code-agent' ||
-    (t.toolName === 'skill_executor' && t.toolInput?.tool_name === 'code_agent')
+    t.toolName === 'agentcore_code-agent'
 
   const handleCodeAgentStartedEvent = useCallback((_event: CustomEvent) => {
     setSessionState(prev => ({

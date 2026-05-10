@@ -189,7 +189,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     const cache = new Map<string, { parsed: ChartToolResult, resultString: string }>();
 
     toolExecutionsDeps.forEach((deps) => {
-      if ((deps.toolName === 'create_visualization' || deps.toolName === 'show_on_map' || deps.toolName === 'skill_executor') &&
+      if ((deps.toolName === 'create_visualization' || deps.toolName === 'show_on_map') &&
           deps.toolResult &&
           deps.isComplete) {
         try {
@@ -207,12 +207,6 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
             } catch (unwrapError) {
               console.warn('Failed to unwrap Lambda response:', unwrapError);
             }
-          }
-
-          // For skill_executor, only cache if result contains chart_data or map_data
-          // (otherwise it's a non-visualization result like web search)
-          if (deps.toolName === 'skill_executor' && !parsed.chart_data && !parsed.map_data) {
-            return;
           }
 
           cache.set(deps.id, {
@@ -488,8 +482,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
         </button>
       )}
-      {(WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) ||
-        (toolExecution.toolName === 'skill_executor' && WORD_DOCUMENT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
+      {WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) &&
         toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
         extractWordFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenWordArtifact && (
         <button onClick={(e) => { e.stopPropagation(); const f = extractWordFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenWordArtifact(f); }}
@@ -497,8 +490,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
         </button>
       )}
-      {(EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) ||
-        (toolExecution.toolName === 'skill_executor' && EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
+      {EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) &&
         toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
         extractExcelFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenExcelArtifact && (
         <button onClick={(e) => { e.stopPropagation(); const f = extractExcelFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenExcelArtifact(f); }}
@@ -506,8 +498,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
         </button>
       )}
-      {(POWERPOINT_TOOLS.includes(toolExecution.toolName) ||
-        (toolExecution.toolName === 'skill_executor' && POWERPOINT_TOOLS.includes(toolExecution.toolInput?.tool_name))) &&
+      {POWERPOINT_TOOLS.includes(toolExecution.toolName) &&
         toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
         extractPptFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenPptArtifact && (
         <button onClick={(e) => { e.stopPropagation(); const f = extractPptFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenPptArtifact(f); }}
@@ -522,8 +513,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
         </button>
       )}
-      {(toolExecution.toolName === 'create_excalidraw_diagram' ||
-        (toolExecution.toolName === 'skill_executor' && toolExecution.toolInput?.tool_name === 'create_excalidraw_diagram')) &&
+      {toolExecution.toolName === 'create_excalidraw_diagram' &&
         toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
         hasExcalidrawData(toolExecution.toolResult) && onOpenExcalidrawArtifact && (
         <button onClick={(e) => { e.stopPropagation(); onOpenExcalidrawArtifact(`excalidraw-${toolExecution.id}`); }}
