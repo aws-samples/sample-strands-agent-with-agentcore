@@ -358,6 +358,9 @@ class AGUIStreamEventFormatter:
         self._run_id: Optional[str] = None
         self._current_message_id: Optional[str] = None
         self._message_open: bool = False
+        # tool_call_ids for which TOOL_CALL_START has already been emitted.
+        # Subsequent tool_use events with the same id stream args-only updates.
+        self._started_tool_calls: set[str] = set()
 
     # ------------------------------------------------------------------ #
     # Internal helpers                                                     #
@@ -520,21 +523,31 @@ class AGUIStreamEventFormatter:
         tool_input = tool_use.get("input", {})
 
         # Unwrap skill_executor so SSE consumers see the effective tool name,
-        # not the Progressive Disclosure wrapper.
+        # not the Progressive Disclosure wrapper. Needs the populated
+        # tool_input, so only meaningful on the second emission.
         wire_tool_name = tool_name
         if tool_name == "skill_executor" and isinstance(tool_input, dict):
             inner = tool_input.get("tool_name")
             if isinstance(inner, str) and inner:
                 wire_tool_name = inner
 
-        # Close any open text message before a tool call sequence
-        result = self._close_open_message()
-        result += self._encode(ToolCallStartEvent(
-            type=EventType.TOOL_CALL_START,
-            tool_call_id=tool_use_id,
-            tool_call_name=wire_tool_name,
-            parent_message_id=None,
-        ))
+        # The processor calls us twice per tool_use: first on registration
+        # with empty input, then again once the model has streamed the
+        # arguments. Emit START only on the populated call so the wire
+        # carries the unwrapped name; emit ARGS and END on every call so
+        # consumers still see incremental state.
+        has_input = isinstance(tool_input, dict) and bool(tool_input)
+        result = ""
+        if tool_use_id not in self._started_tool_calls:
+            if has_input or tool_name != "skill_executor":
+                result += self._close_open_message()
+                result += self._encode(ToolCallStartEvent(
+                    type=EventType.TOOL_CALL_START,
+                    tool_call_id=tool_use_id,
+                    tool_call_name=wire_tool_name,
+                    parent_message_id=None,
+                ))
+                self._started_tool_calls.add(tool_use_id)
         result += self._encode(ToolCallArgsEvent(
             type=EventType.TOOL_CALL_ARGS,
             tool_call_id=tool_use_id,

@@ -20,15 +20,15 @@ pytestmark = pytest.mark.e2e
 def _assert_skill_or_tool_invoked(result, substrings: tuple[str, ...]) -> None:
     """Assert the agent exercised the expected protocol path.
 
-    All tools in this project flow through `skill_executor` / `skill_dispatcher`
-    (see src/skill/). The effective tool identity lives in the
-    TOOL_CALL_ARGS payload (`skill_name`, `tool_name`) for those, so we match
-    against the flattened list that includes both the top-level tool name and
-    the inner skill/tool names.
+    The backend formatter unwraps skill_executor so TOOL_CALL_START carries
+    the effective tool name directly. Matching is flattened across the
+    top-level name, skill_dispatcher's inner skill_name, and any legacy
+    inner_tool_name — so the same assertion works whether the backend is
+    on a new or old build.
 
     For each matched substring we also require at least one invocation that
-    did NOT error out — so a broken skill path fails the test instead of
-    silently passing on "the agent at least tried".
+    did NOT error out — so a broken path fails the test instead of silently
+    passing on "the agent at least tried".
     """
     invocations = result.invocations()
     subs = tuple(s.lower() for s in substrings)

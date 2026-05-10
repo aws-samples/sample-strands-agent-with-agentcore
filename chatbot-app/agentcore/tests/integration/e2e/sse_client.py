@@ -24,10 +24,11 @@ import httpx
 class ToolInvocation:
     """A single observed tool invocation, flattened for easy assertion.
 
-    `tool_call_name` is the top-level name from TOOL_CALL_START (one of
-    `skill_dispatcher`, `skill_executor`, or a local tool name such as
-    `create_visualization`). `skill_name` and `inner_tool_name` are parsed
-    from the TOOL_CALL_ARGS delta when the top-level call is `skill_*`.
+    `tool_call_name` is the effective tool name from TOOL_CALL_START — e.g.
+    `arxiv_search`, `create_visualization`, or `skill_dispatcher` for the
+    L2 meta-tool. `skill_name` / `inner_tool_name` are parsed from the args
+    delta for dispatcher calls (and for skill_executor calls from older
+    backend builds, kept as a no-op safety net).
     """
     tool_call_id: str
     tool_call_name: str
@@ -70,15 +71,20 @@ class StreamResult:
             t = e.get("type")
             tid = e.get("toolCallId")
             if t == "TOOL_CALL_START" and tid:
+                name = e.get("toolCallName", "") or ""
                 if tid not in by_id:
                     by_id[tid] = ToolInvocation(
                         tool_call_id=tid,
-                        tool_call_name=e.get("toolCallName", ""),
+                        tool_call_name=name,
                     )
                     deltas[tid] = []
                     order.append(tid)
-                elif not by_id[tid].tool_call_name:
-                    by_id[tid].tool_call_name = e.get("toolCallName", "") or by_id[tid].tool_call_name
+                elif name:
+                    # Strands emits START twice per tool call: the first time
+                    # before the model has filled in arguments (skill_executor
+                    # with empty input), the second after (the unwrapped
+                    # effective name). The last non-empty name wins.
+                    by_id[tid].tool_call_name = name
             elif t == "TOOL_CALL_ARGS" and tid and tid in by_id:
                 delta = e.get("delta", "")
                 if delta:
