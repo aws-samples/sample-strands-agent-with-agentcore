@@ -519,12 +519,20 @@ class AGUIStreamEventFormatter:
         tool_name: str = tool_use.get("name", "unknown")
         tool_input = tool_use.get("input", {})
 
+        # Unwrap skill_executor so SSE consumers see the effective tool name,
+        # not the Progressive Disclosure wrapper.
+        wire_tool_name = tool_name
+        if tool_name == "skill_executor" and isinstance(tool_input, dict):
+            inner = tool_input.get("tool_name")
+            if isinstance(inner, str) and inner:
+                wire_tool_name = inner
+
         # Close any open text message before a tool call sequence
         result = self._close_open_message()
         result += self._encode(ToolCallStartEvent(
             type=EventType.TOOL_CALL_START,
             tool_call_id=tool_use_id,
-            tool_call_name=tool_name,
+            tool_call_name=wire_tool_name,
             parent_message_id=None,
         ))
         result += self._encode(ToolCallArgsEvent(
