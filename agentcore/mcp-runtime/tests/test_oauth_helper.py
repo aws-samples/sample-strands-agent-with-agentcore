@@ -122,7 +122,9 @@ class TestOAuthHelperGetAccessToken:
 
         result = asyncio.run(_run())
         assert result.token is None
-        assert "accounts.google.com" in result.auth_url
+        from urllib.parse import urlparse
+        parsed = urlparse(result.auth_url)
+        assert parsed.netloc == "accounts.google.com"
 
     def test_raises_when_workload_token_missing(self):
         helper = self._make_helper()
