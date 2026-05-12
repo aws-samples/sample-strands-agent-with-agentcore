@@ -14,7 +14,7 @@ import base64
 import uvicorn
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 import logging
 from mcp.server.fastmcp import Context, FastMCP
@@ -691,8 +691,8 @@ async def modify_email(
         add_labels: Comma-separated label IDs to add (e.g., "STARRED,IMPORTANT").
         remove_labels: Comma-separated label IDs to remove (e.g., "UNREAD,INBOX").
     """
-    add_list = [l.strip() for l in add_labels.split(",")] if add_labels else []
-    remove_list = [l.strip() for l in remove_labels.split(",")] if remove_labels else []
+    add_list = [label.strip() for label in add_labels.split(",")] if add_labels else []
+    remove_list = [label.strip() for label in remove_labels.split(",")] if remove_labels else []
 
     if not add_list and not remove_list:
         return json.dumps(

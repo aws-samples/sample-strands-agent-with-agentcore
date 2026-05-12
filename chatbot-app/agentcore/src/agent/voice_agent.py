@@ -10,10 +10,7 @@ VoiceAgent for Agent Core
 import logging
 import os
 import sys
-import asyncio
-import base64
 from typing import AsyncGenerator, Dict, Any, List, Optional
-from pathlib import Path
 
 # Mock pyaudio to avoid dependency (we use browser Web Audio API, not local audio)
 # This is needed because strands.experimental.bidi.io.audio imports pyaudio
@@ -376,7 +373,7 @@ class VoiceAgent(BaseAgent):
             error_msg = str(e)
             # Handle Nova Sonic specific errors gracefully
             if "System instability detected" in error_msg:
-                logger.warning(f"[VoiceAgent] Nova Sonic system instability - recovering")
+                logger.warning("[VoiceAgent] Nova Sonic system instability - recovering")
                 yield {
                     "type": "bidi_error",
                     "message": "Voice processing interrupted. Please try again.",

@@ -7,7 +7,7 @@ but routes @skill-decorated tools through skill_dispatcher + skill_executor.
 
 import logging
 import os
-from typing import Optional, List, Dict
+from typing import Optional, List
 
 from agents.chat_agent import ChatAgent
 from skill.skill_tools import set_dispatcher_registry
@@ -23,7 +23,6 @@ from registry import (
 _SKILLS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "skills")
 
 # Import local tools (same as ChatAgent uses)
-import local_tools
 
 logger = logging.getLogger(__name__)
 

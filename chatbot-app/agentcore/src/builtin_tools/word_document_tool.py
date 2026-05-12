@@ -1049,8 +1049,6 @@ print(json.dumps(result, ensure_ascii=False))
             output_parts.append(f"📄 **Document Content**: {document_filename} ({doc_info['size_kb']})")
             output_parts.append("")
 
-            # Format paragraphs by style
-            current_style = None
             for para in doc_content.get("paragraphs", []):
                 style = para.get("style", "Normal")
                 text = para.get("text", "")
@@ -1165,7 +1163,6 @@ def preview_word_page(
     """
     import subprocess
     import tempfile
-    import base64
     from pdf2image import convert_from_path
 
     # Get user and session IDs

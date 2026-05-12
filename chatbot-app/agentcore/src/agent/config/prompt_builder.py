@@ -9,15 +9,15 @@ falls back to the base prompt + date.
 
 import logging
 from datetime import datetime
-from typing import List, Dict, Optional, TypedDict
+from typing import List, Dict, TypedDict
 
 # Import timezone support (zoneinfo for Python 3.9+, fallback to pytz)
 try:
-    from zoneinfo import ZoneInfo
+    from zoneinfo import ZoneInfo  # noqa: F401
     TIMEZONE_AVAILABLE = True
 except ImportError:
     try:
-        import pytz
+        import pytz  # noqa: F401
         TIMEZONE_AVAILABLE = True
     except ImportError:
         TIMEZONE_AVAILABLE = False

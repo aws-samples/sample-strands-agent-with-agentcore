@@ -2,17 +2,16 @@
 Finance Lambda for AgentCore Gateway
 Provides Yahoo Finance stock data and analysis
 """
-import json
-import logging
-from typing import Dict, Any, Optional
-from datetime import datetime
+import json  # noqa: E402
+import logging  # noqa: E402
+from typing import Dict, Any  # noqa: E402
+from datetime import datetime  # noqa: E402
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Import after logger setup
-import yfinance as yf
-import pandas as pd
+import yfinance as yf  # noqa: E402
 
 def lambda_handler(event, context):
     """
@@ -174,7 +173,7 @@ def financial_news(params: Dict[str, Any]) -> Dict[str, Any]:
             # Parse ISO 8601 format: '2025-10-31T16:19:35Z'
             try:
                 pub_time = datetime.fromisoformat(pub_date_str.replace('Z', '+00:00')).strftime('%Y-%m-%d %H:%M')
-            except:
+            except:  # noqa: E722
                 pub_time = 'Unknown'
 
             provider = content.get('provider', {})

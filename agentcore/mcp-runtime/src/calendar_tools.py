@@ -17,8 +17,8 @@ Tools:
 import json
 import httpx
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Dict, List, Optional
 
 from mcp.server.fastmcp import Context
 from agentcore_oauth import OAuthHelper, call_with_oauth_retry

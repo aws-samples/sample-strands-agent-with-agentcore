@@ -1,0 +1,182 @@
+name: PR Check
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      gateway: ${{ steps.filter.outputs.gateway }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      a2a: ${{ steps.filter.outputs.a2a }}
+      mcp: ${{ steps.filter.outputs.mcp }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'chatbot-app/agentcore/**'
+            gateway:
+              - 'agentcore/gateway-tools/**'
+            frontend:
+              - 'chatbot-app/frontend/**'
+            a2a:
+              - 'agentcore/a2a-agents/**'
+            mcp:
+              - 'agentcore/mcp-runtime/**'
+
+  backend:
+    name: Backend (Python)
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatbot-app/agentcore
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            chatbot-app/agentcore/requirements.txt
+            chatbot-app/agentcore/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Lint
+        run: python -m ruff check src/
+
+      - name: Unit tests
+        run: python -m pytest tests/unit/ -v --tb=short
+
+      - name: Integration tests
+        run: python -m pytest tests/integration/ -v --tb=short
+
+  gateway-lambda:
+    name: Gateway Lambda (Python)
+    needs: changes
+    if: needs.changes.outputs.gateway == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentcore/gateway-tools
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: agentcore/gateway-tools/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: python -m ruff check lambda-functions/
+
+      - name: Tests
+        run: python -m pytest tests/ -v --tb=short
+
+  frontend:
+    name: Frontend (Next.js)
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: chatbot-app/frontend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: chatbot-app/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Tests
+        run: npm test
+
+  a2a-agents:
+    name: A2A Agents (Python)
+    needs: changes
+    if: needs.changes.outputs.a2a == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: |
+            agentcore/a2a-agents/research-agent/requirements-dev.txt
+            agentcore/a2a-agents/code-agent/requirements-dev.txt
+
+      - name: Install dev dependencies
+        run: |
+          pip install \
+            -r agentcore/a2a-agents/research-agent/requirements-dev.txt \
+            -r agentcore/a2a-agents/code-agent/requirements-dev.txt
+
+      - name: Lint (research-agent)
+        run: python -m ruff check agentcore/a2a-agents/research-agent/src/
+
+      - name: Lint (code-agent)
+        run: python -m ruff check agentcore/a2a-agents/code-agent/src/
+
+      - name: Tests (research-agent)
+        working-directory: agentcore/a2a-agents/research-agent
+        run: python -m pytest tests/ -v --tb=short
+
+      - name: Tests (code-agent)
+        working-directory: agentcore/a2a-agents/code-agent
+        run: python -m pytest tests/ -v --tb=short
+
+  mcp-runtime:
+    name: MCP Runtime (Python)
+    needs: changes
+    if: needs.changes.outputs.mcp == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentcore/mcp-runtime
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: agentcore/mcp-runtime/requirements-dev.txt
+
+      - name: Install dev dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Lint
+        run: python -m ruff check src/
+
+      - name: Tests
+        run: python -m pytest tests/ -v --tb=short

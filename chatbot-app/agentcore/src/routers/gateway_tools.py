@@ -4,8 +4,8 @@ Provides endpoints to discover and manage Gateway MCP tools
 """
 
 import logging
-from fastapi import APIRouter, HTTPException
-from typing import List, Dict, Any
+from fastapi import APIRouter
+from typing import Dict, Any
 from agent.gateway.mcp_client import create_gateway_mcp_client
 
 logger = logging.getLogger(__name__)

@@ -22,7 +22,7 @@ import logging
 import os
 import re
 from datetime import datetime, timezone
-from typing import AsyncGenerator, Optional, Dict, Any, List
+from typing import AsyncGenerator, Optional, Dict, Any
 
 from strands import Agent
 from strands.models import BedrockModel
@@ -638,7 +638,7 @@ class ComposerWorkflow:
 
         # If not structured JSON, use LLM to parse natural language request
         if not requirements:
-            logger.info(f"[Compose] Parsing natural language request with LLM")
+            logger.info("[Compose] Parsing natural language request with LLM")
             prompt = INTAKE_PROMPT.format(
                 user_request=user_request,
                 conversation_context=conversation_context

@@ -22,7 +22,6 @@ from .lib.ppt_utils import (
     get_user_session_ids,
     save_ppt_artifact,
     get_file_compatibility_error,
-    make_error_response,
 )
 from .lib.tool_response import build_success_response, build_image_response
 from .lib.pptx_engine import PptxEngine
@@ -234,7 +233,7 @@ def get_presentation_layouts(
             layouts = engine.get_layouts()
 
         text = f"**Available Layouts**: {filename}\n\n**Total:** {len(layouts)}\n\n"
-        text += "\n".join(f'- "{l["name"]}" (index {l["index"]}, {l["placeholder_count"]} placeholders)' for l in layouts)
+        text += "\n".join(f'- "{l["name"]}" (index {l["index"]}, {l["placeholder_count"]} placeholders)' for l in layouts)  # noqa: E741
 
         return build_success_response(text, {
             "filename": filename,

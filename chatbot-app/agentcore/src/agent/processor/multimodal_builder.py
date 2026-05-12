@@ -14,7 +14,6 @@ from typing import Any, Dict, List, Optional, Tuple
 from agent.config.constants import (
     IMAGE_EXTENSIONS,
     DOCUMENT_EXTENSIONS,
-    OFFICE_EXTENSIONS,
 )
 from agent.processor.file_processor import (
     sanitize_full_filename,

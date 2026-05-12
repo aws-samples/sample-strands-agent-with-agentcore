@@ -17,10 +17,8 @@ Behavior changes:
   - Agent state: Stays separate per agent_id (unchanged)
 """
 
-import json
 import logging
 import os
-from pathlib import Path
 from typing import Any, List, Optional
 
 from strands.session.file_session_manager import FileSessionManager
@@ -80,7 +78,6 @@ class UnifiedFileSessionManager(FileSessionManager):
             if not agent_dir_name.startswith(AGENT_PREFIX):
                 continue
 
-            current_agent_id = agent_dir_name[len(AGENT_PREFIX):]
             messages_dir = os.path.join(agents_path, agent_dir_name, "messages")
 
             if not os.path.exists(messages_dir):

@@ -3,7 +3,6 @@
 import copy
 import json
 import logging
-import os
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -157,7 +156,7 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
         # Skip if content is completely empty after filtering
         content = filtered_message.get("content", [])
         if not content or (isinstance(content, list) and len(content) == 0):
-            logger.debug(f"[Save] Skipping message with empty content (likely from stop signal)")
+            logger.debug("[Save] Skipping message with empty content (likely from stop signal)")
             return
 
         start = time.time()
@@ -550,7 +549,6 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
             **kwargs: Additional arguments
         """
         from strands.agent.state import AgentState
-        from strands.types.session import SessionAgent, SessionMessage
 
         if agent.agent_id in self._latest_agent_message:
             from strands.types.exceptions import SessionException

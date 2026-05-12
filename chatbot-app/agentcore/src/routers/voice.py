@@ -12,10 +12,9 @@ Architecture:
 """
 
 import asyncio
-import json
 import logging
 import uuid
-from typing import Optional, List, TYPE_CHECKING
+from typing import Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,7 @@ async def voice_stream(
             session_id = first_msg.get("session_id") or session_id
             user_id = first_msg.get("user_id") or user_id
             auth_token = first_msg.get("auth_token") or auth_token
-            logger.info(f"[Voice] Config received from client message")
+            logger.info("[Voice] Config received from client message")
     except Exception as e:
         logger.warning(f"[Voice] Config message error: {e}")
 

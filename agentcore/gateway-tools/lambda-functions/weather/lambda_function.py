@@ -4,7 +4,7 @@ Provides current weather and forecast using Open-Meteo API
 """
 import json
 import logging
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 from urllib.parse import urlencode
 from urllib.request import urlopen
 

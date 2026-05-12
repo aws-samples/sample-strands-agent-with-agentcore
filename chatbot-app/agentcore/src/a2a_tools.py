@@ -269,7 +269,6 @@ async def send_a2a_message(
                         "files_changed": result_data.get("files_changed", []),
                         "todos": result_data.get("todos", []),
                         "steps": result_data.get("steps", 0),
-                        "status": result_data.get("status", "completed"),
                     }
                 except Exception:
                     response_text += text
@@ -385,7 +384,6 @@ def create_a2a_tool(agent_id: str):
         logger.warning(f"Unknown A2A agent: {agent_id}")
         return None
 
-    agent_name = skill.name
     agent_description = skill.description
 
     logger.debug(f"Creating A2A tool: {agent_id}")
@@ -576,7 +574,7 @@ def create_a2a_tool(agent_id: str):
                                     session_manager.sync_agent(tool_context.agent)
                                     logger.debug(f"Saved research artifact: {artifact_id}")
                                 else:
-                                    logger.warning(f"No session_manager found, artifact not persisted")
+                                    logger.warning("No session_manager found, artifact not persisted")
 
                             except Exception as e:
                                 logger.error(f"Failed to save research artifact: {e}")

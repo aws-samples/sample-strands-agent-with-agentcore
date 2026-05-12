@@ -149,25 +149,25 @@ class TestA2AResponseStructure:
         assert response["artifacts"][0]["name"] == "agent_response"
 
     def test_a2a_multiple_artifacts(self):
-        """Test A2A response with multiple artifacts (research + markdown)."""
+        """Test A2A response with multiple artifacts (research steps + response)."""
         response = {
             "status": "completed",
             "artifacts": [
                 {
-                    "name": "agent_response",
-                    "parts": [{"text": "Research completed successfully."}]
+                    "name": "research_step_1",
+                    "parts": [{"text": "Searching for AI safety literature..."}]
                 },
                 {
-                    "name": "research_markdown",
-                    "parts": [{"text": "<research>\n# Research Report\n...\n</research>"}]
+                    "name": "agent_response",
+                    "parts": [{"text": "Research completed successfully."}]
                 }
             ]
         }
 
         assert len(response["artifacts"]) == 2
         artifact_names = [a["name"] for a in response["artifacts"]]
+        assert "research_step_1" in artifact_names
         assert "agent_response" in artifact_names
-        assert "research_markdown" in artifact_names
 
     def test_a2a_error_artifact(self):
         """Test A2A error response format."""
@@ -198,20 +198,21 @@ class TestA2AExecutorBehavior:
         """Test TaskUpdater properly accumulates artifacts."""
         updater = MockTaskUpdater()
 
-        # Simulate executor adding artifacts
+        # Simulate executor adding artifacts — research_step_N events are streamed
+        # progressively; agent_response carries the final answer
         await updater.add_artifact(
-            [MockA2APart("First response", "text")],
-            name="agent_response"
+            [MockA2APart("Searching for sources...", "text")],
+            name="research_step_1"
         )
         await updater.add_artifact(
-            [MockA2APart("<research>\n# Report\n</research>", "text")],
-            name="research_markdown"
+            [MockA2APart("Research completed successfully.", "text")],
+            name="agent_response"
         )
         await updater.complete()
 
         assert len(updater.artifacts) == 2
-        assert updater.artifacts[0]["name"] == "agent_response"
-        assert updater.artifacts[1]["name"] == "research_markdown"
+        assert updater.artifacts[0]["name"] == "research_step_1"
+        assert updater.artifacts[1]["name"] == "agent_response"
         assert updater.completed is True
 
     @pytest.mark.asyncio

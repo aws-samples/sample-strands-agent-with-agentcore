@@ -2,18 +2,18 @@
 Google Maps Lambda for AgentCore Gateway
 Provides Places API, Directions API, and Geocoding API tools
 """
-import json
-import os
-import logging
-from typing import Dict, Any, Optional, List
+import json  # noqa: E402
+import os  # noqa: E402
+import logging  # noqa: E402
+from typing import Dict, Any, Optional  # noqa: E402
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Import after logger setup
-import googlemaps
-import boto3
-from botocore.exceptions import ClientError
+import googlemaps  # noqa: E402
+import boto3  # noqa: E402
+from botocore.exceptions import ClientError  # noqa: E402
 
 # Cache for API credentials
 _credentials_cache: Optional[str] = None

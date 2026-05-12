@@ -5,8 +5,8 @@ Provides tool listing and configuration endpoint for frontend.
 Combines local_tools, builtin_tools, gateway_targets, and agentcore_runtime_a2a tools.
 """
 
-from fastapi import APIRouter, Depends
-from typing import Dict, Any, List
+from fastapi import APIRouter
+from typing import Dict, Any
 import logging
 import json
 from pathlib import Path

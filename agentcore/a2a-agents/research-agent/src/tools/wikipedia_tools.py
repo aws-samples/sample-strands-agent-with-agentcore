@@ -6,7 +6,6 @@ Wikipedia Tools - Local Implementation
 
 import json
 import logging
-from typing import Optional
 from strands import tool
 
 logger = logging.getLogger(__name__)

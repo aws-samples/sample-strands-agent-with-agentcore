@@ -17,11 +17,10 @@ src_path = Path(__file__).parent
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
-import logging
+from fastapi import FastAPI  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from contextlib import asynccontextmanager  # noqa: E402
+import logging  # noqa: E402
 
 # Set up logging
 logging.basicConfig(
@@ -104,7 +103,7 @@ if os.getenv('ENVIRONMENT', 'development') == 'development':
     )
 
 # Import routers
-from routers import health, chat, gateway_tools, tools, skills, browser_live_view, stop, voice
+from routers import health, chat, gateway_tools, tools, skills, browser_live_view, stop, voice  # noqa: E402
 
 # Include routers
 app.include_router(health.router)

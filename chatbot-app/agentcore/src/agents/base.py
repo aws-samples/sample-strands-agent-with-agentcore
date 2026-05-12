@@ -10,9 +10,8 @@ Provides unified interface and shared logic:
 """
 
 import logging
-import os
 from abc import ABC
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Any
 
 from agent.tool_filter import filter_tools
 from agent.factory import create_session_manager

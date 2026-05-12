@@ -177,7 +177,7 @@ class WorkflowAgent(BaseAgent):
                 if hasattr(chat_agent.session_manager, 'flush'):
                     chat_agent.session_manager.flush()
 
-                logger.info(f"[Workflow] Saved user message at workflow start")
+                logger.info("[Workflow] Saved user message at workflow start")
             except Exception as e:
                 logger.error(f"Failed to save user message: {e}", exc_info=True)
 
@@ -269,6 +269,6 @@ class WorkflowAgent(BaseAgent):
                 if hasattr(chat_agent.session_manager, 'flush'):
                     chat_agent.session_manager.flush()
 
-                logger.info(f"[Workflow] Saved assistant message to history")
+                logger.info("[Workflow] Saved assistant message to history")
             except Exception as e:
                 logger.error(f"Failed to save workflow result: {e}", exc_info=True)

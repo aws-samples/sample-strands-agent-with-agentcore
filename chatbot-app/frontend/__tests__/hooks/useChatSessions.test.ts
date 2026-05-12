@@ -98,7 +98,7 @@ describe('useChatSessions', () => {
       })
 
       expect(mockApiGet).toHaveBeenCalledWith(
-        'session/list?limit=20&status=active'
+        'session/list?limit=100&status=active'
       )
     })
 
@@ -176,7 +176,7 @@ describe('useChatSessions', () => {
 
       await waitFor(() => {
         expect(mockApiGet).toHaveBeenCalledWith(
-          'session/list?limit=20&status=active'
+          'session/list?limit=100&status=active'
         )
       })
     })

@@ -7,7 +7,6 @@ from .agui_event_formatter import AGUIStreamEventFormatter, extract_final_result
 from agent.stop_signal import get_stop_signal_provider
 
 # OpenTelemetry imports
-from opentelemetry import trace, baggage, context
 from opentelemetry.trace import get_tracer
 from opentelemetry.metrics import get_meter
 
@@ -314,7 +313,6 @@ class AGUIStreamEventProcessor:
 
         stream_iterator = None
         next_event_task = None  # Task for async generator polling (used with elicitation bridge)
-        stream_completed_normally = False  # Track if stream completed without interruption
         try:
             multimodal_message = self._create_multimodal_message(message, file_paths)
 
@@ -441,7 +439,7 @@ class AGUIStreamEventProcessor:
                             if session_mgr and hasattr(session_mgr, 'flush'):
                                 try:
                                     session_mgr.flush()
-                                    logger.info(f"[Interrupt] Flushed session buffer before interrupt event")
+                                    logger.info("[Interrupt] Flushed session buffer before interrupt event")
                                 except Exception as e:
                                     logger.error(f"[Interrupt] Failed to flush session buffer: {e}")
 
@@ -456,10 +454,8 @@ class AGUIStreamEventProcessor:
                             ]
 
                             interrupt_event = self.formatter.format_event("interrupt", interrupts=interrupts_data)
-                            logger.info(f"[Interrupt] Sending interrupt event to frontend")
+                            logger.info("[Interrupt] Sending interrupt event to frontend")
                             yield interrupt_event
-                            # Prevent finally block from injecting synthetic toolResult
-                            stream_completed_normally = True
                             continue
                         else:
                             logger.warning("[Interrupt] stop_reason is interrupt but no interrupts attribute!")
@@ -469,7 +465,6 @@ class AGUIStreamEventProcessor:
                         self._fix_cancelled_history(agent)
                         self._clear_stop_signal(keep_for_remote_agent=self.tool_use_started)
                         yield self.formatter.format_event("stop")
-                        stream_completed_normally = True
                         return
 
                     else:
@@ -513,9 +508,9 @@ class AGUIStreamEventProcessor:
                         # Continue without usage data
 
                     # Documents are fetched by frontend via S3 workspace API - no longer sent from backend
-                    logger.debug(f"[Final Result] Emitting complete event and closing stream")
+                    logger.debug("[Final Result] Emitting complete event and closing stream")
                     yield self.formatter.format_event("complete", message=result_text, images=images, usage=usage)
-                    logger.debug(f"[Final Result] Complete event emitted, stream ended")
+                    logger.debug("[Final Result] Complete event emitted, stream ended")
 
                     # Trigger compaction update using last LLM call's context size
                     session_manager = invocation_state.get("session_manager") if invocation_state else None
@@ -530,7 +525,6 @@ class AGUIStreamEventProcessor:
                             except Exception as e:
                                 logger.warning(f"[Compaction] update_after_turn failed: {e}")
 
-                    stream_completed_normally = True
                     return
 
 
@@ -591,7 +585,6 @@ class AGUIStreamEventProcessor:
 
                 # Handle callback events - ignore current_tool_use from delta events
                 elif event.get("callback"):
-                    callback_data = event["callback"]
                     # Ignore current_tool_use from callback since it's incomplete
                     # We only want to process tool_use when it's fully completed
                     continue
@@ -790,7 +783,6 @@ class AGUIStreamEventProcessor:
                         yield result
 
         except GeneratorExit:
-            stream_completed_normally = True
             return
 
         except Exception as e:
@@ -1002,7 +994,7 @@ class AGUIStreamEventProcessor:
             # Collect documents from tool result (for complete event)
             self._collect_document_info(tool_result)
 
-            logger.debug(f"[Tool Result] Emitting tool_result event (no tool_use_id)")
+            logger.debug("[Tool Result] Emitting tool_result event (no tool_use_id)")
             yield self.formatter.format_event("tool_result", tool_result=tool_result)
 
     def _add_browser_metadata(self, tool_result: Dict[str, Any]) -> None:
@@ -1075,7 +1067,7 @@ class AGUIStreamEventProcessor:
             import base64
             with open(file_path, "rb") as file:
                 return base64.b64encode(file.read()).decode('utf-8')
-        except Exception as e:
+        except Exception:
             return None
 
     def _get_file_mime_type(self, file_path: str) -> str:
