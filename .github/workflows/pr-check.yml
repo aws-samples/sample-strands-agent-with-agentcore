@@ -148,11 +148,11 @@ jobs:
 
       - name: Tests (research-agent)
         working-directory: agentcore/a2a-agents/research-agent
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short --timeout=30
 
       - name: Tests (code-agent)
         working-directory: agentcore/a2a-agents/code-agent
-        run: python -m pytest tests/ -v --tb=short
+        run: python -m pytest tests/ -v --tb=short --timeout=30
 
   mcp-runtime:
     name: MCP Runtime (Python)
