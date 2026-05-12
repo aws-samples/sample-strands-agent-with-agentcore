@@ -169,9 +169,13 @@ class ReportManager:
         Returns:
             Number of replacements made
         """
+        if not os.path.exists(self.draft_path):
+            raise FileNotFoundError(f"Draft not found: {self.draft_path}")
+
         lock = get_file_lock(self.draft_path)
         with lock:
-            content = self.read_draft()
+            with open(self.draft_path, 'r', encoding='utf-8') as f:
+                content = f.read()
 
             if max_replacements == -1:
                 count = content.count(find)
@@ -305,9 +309,13 @@ class ReportManager:
         """
         import re
 
+        if not os.path.exists(self.draft_path):
+            return False
+
         lock = get_file_lock(self.draft_path)
         with lock:
-            content = self.read_draft()
+            with open(self.draft_path, 'r', encoding='utf-8') as f:
+                content = f.read()
 
             # Pattern to match specific chart marker
             pattern = rf'<!-- CHART:{chart_id}\s*\n.*?\n-->'
