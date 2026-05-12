@@ -13,7 +13,6 @@ import logging
 import os
 import threading
 from dataclasses import dataclass, field
-from functools import lru_cache
 from typing import Dict, List, Optional
 
 import boto3

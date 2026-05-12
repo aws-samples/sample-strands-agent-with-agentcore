@@ -19,7 +19,7 @@ from agent.config.prompt_builder import (
 
 # AgentCore Memory integration (optional, only for cloud deployment)
 try:
-    from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig
+    from bedrock_agentcore.memory.integrations.strands.config import AgentCoreMemoryConfig  # noqa: F401
     AGENTCORE_MEMORY_AVAILABLE = True
 except ImportError:
     AGENTCORE_MEMORY_AVAILABLE = False
@@ -192,9 +192,9 @@ class ChatAgent(BaseAgent):
 
             if ARTIFACT_SAVING_TOOLS & enabled_tool_names or getattr(self, '_force_sequential', False):
                 agent_kwargs["tool_executor"] = SequentialToolExecutor()
-                logger.info(f"[ToolExecutor] Using SequentialToolExecutor")
+                logger.info("[ToolExecutor] Using SequentialToolExecutor")
             else:
-                logger.info(f"[ToolExecutor] Using default ConcurrentToolExecutor")
+                logger.info("[ToolExecutor] Using default ConcurrentToolExecutor")
 
             # Use NullConversationManager if requested (disables Strands' default sliding window)
             if self.use_null_conversation_manager:
@@ -212,8 +212,8 @@ class ChatAgent(BaseAgent):
 
             if AGENTCORE_MEMORY_AVAILABLE and os.environ.get('MEMORY_ID'):
                 logger.debug(f"   • Session: {self.session_id}, User: {self.user_id}")
-                logger.debug(f"   • Short-term memory: Conversation history (90 days retention)")
-                logger.debug(f"   • Long-term memory: User preferences and facts across sessions")
+                logger.debug("   • Short-term memory: Conversation history (90 days retention)")
+                logger.debug("   • Long-term memory: User preferences and facts across sessions")
             else:
                 logger.debug(f"   • Session: {self.session_id}")
                 logger.debug(f"   • File-based persistence: {self.session_manager.storage_dir}")

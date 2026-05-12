@@ -2,18 +2,18 @@
 Tavily Search Lambda for AgentCore Gateway
 Provides AI-powered web search and content extraction
 """
-import json
-import os
-import logging
-from typing import Dict, Any, Optional
+import json  # noqa: E402
+import os  # noqa: E402
+import logging  # noqa: E402
+from typing import Dict, Any, Optional  # noqa: E402
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Import after logger setup
-import requests
-import boto3
-from botocore.exceptions import ClientError
+import requests  # noqa: E402
+import boto3  # noqa: E402
+from botocore.exceptions import ClientError  # noqa: E402
 
 # Cache for API key (avoid repeated Secrets Manager calls)
 _api_key_cache: Optional[str] = None

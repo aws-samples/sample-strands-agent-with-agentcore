@@ -16,11 +16,10 @@ import os
 import sys
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 from datetime import datetime
 
-from fastapi import FastAPI, Request, Response
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI
 from strands import Agent
 from strands.models import BedrockModel
 from strands.multiagent.a2a import A2AServer
@@ -31,14 +30,13 @@ from a2a.server.request_handlers import DefaultRequestHandler
 from a2a.types import Part, TextPart
 
 import uvicorn
-import json
 
 # Add src to path
 src_path = Path(__file__).parent
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
 
-from tools import (
+from tools import (  # noqa: E402
     ddg_web_search,
     fetch_url_content,
     wikipedia_search,
@@ -46,7 +44,7 @@ from tools import (
     write_markdown_section,
     read_markdown_file
 )
-from tools.generate_chart import generate_chart_tool
+from tools.generate_chart import generate_chart_tool  # noqa: E402
 
 # Configure logging
 logging.basicConfig(
@@ -101,7 +99,7 @@ class MetadataAwareExecutor(StrandsA2AExecutor):
 
         # Handle tool use start - stream status when tool begins
         # Check both direct key and type-based detection
-        if "current_tool_use" in event or event_type == "tool_use_stream":
+        if event_type == "tool_use_stream":
             tool_use = event.get("current_tool_use", {})
             tool_use_id = tool_use.get("toolUseId")
             tool_name = tool_use.get("name", "")
@@ -235,13 +233,13 @@ class MetadataAwareExecutor(StrandsA2AExecutor):
                 logger.error(f"Bedrock service unavailable: {error_msg}")
                 # Add error artifact before failing
                 await updater.add_artifact(
-                    [Part(root=TextPart(text=f"Error: Bedrock service is temporarily unavailable. Please try again in a few moments."))],
+                    [Part(root=TextPart(text="Error: Bedrock service is temporarily unavailable. Please try again in a few moments."))],
                     name="error"
                 )
             elif "ThrottlingException" in error_msg:
                 logger.error(f"Bedrock throttling: {error_msg}")
                 await updater.add_artifact(
-                    [Part(root=TextPart(text=f"Error: Request was throttled. Please try again later."))],
+                    [Part(root=TextPart(text="Error: Request was throttled. Please try again later."))],
                     name="error"
                 )
             else:
@@ -330,7 +328,7 @@ PORT = int(os.getenv("PORT", "9000"))  # A2A protocol requires port 9000
 PROJECT_NAME = os.getenv("PROJECT_NAME", "strands-agent-chatbot")
 ENVIRONMENT = os.getenv("ENVIRONMENT", "dev")
 
-logger.info(f"Configuration:")
+logger.info("Configuration:")
 logger.info(f"  Model ID: {MODEL_ID}")
 logger.info(f"  AWS Region: {AWS_REGION}")
 logger.info(f"  Port: {PORT}")

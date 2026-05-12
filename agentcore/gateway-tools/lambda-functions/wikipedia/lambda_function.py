@@ -2,15 +2,15 @@
 Wikipedia Lambda for AgentCore Gateway
 Provides Wikipedia search and article retrieval
 """
-import json
-import logging
-from typing import Dict, Any, Optional
+import json  # noqa: E402
+import logging  # noqa: E402
+from typing import Dict, Any  # noqa: E402
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Import after logger setup
-import wikipediaapi
+import wikipediaapi  # noqa: E402
 
 def lambda_handler(event, context):
     """

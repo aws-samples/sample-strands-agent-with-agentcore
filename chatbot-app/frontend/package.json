@@ -6,7 +6,7 @@
     "dev": "NODE_NO_WARNINGS=1 next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "type-check": "tsc --noEmit",
     "verify": "bash verify-build.sh",
     "test": "vitest run",

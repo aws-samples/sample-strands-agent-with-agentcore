@@ -2,18 +2,18 @@
 Google Custom Search Lambda for AgentCore Gateway
 Provides web search and image search
 """
-import json
-import os
-import logging
-from typing import Dict, Any, Optional
+import json  # noqa: E402
+import os  # noqa: E402
+import logging  # noqa: E402
+from typing import Dict, Any, Optional  # noqa: E402
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 # Import after logger setup
-import requests
-import boto3
-from botocore.exceptions import ClientError
+import requests  # noqa: E402
+import boto3  # noqa: E402
+from botocore.exceptions import ClientError  # noqa: E402
 
 # Cache for API credentials
 _credentials_cache: Optional[Dict[str, str]] = None

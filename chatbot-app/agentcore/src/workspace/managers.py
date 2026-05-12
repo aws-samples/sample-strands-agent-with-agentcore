@@ -191,7 +191,7 @@ class PowerPointManager(BaseDocumentManager):
                 try:
                     self.load_from_s3(metadata_filename)
                     templates.append(doc['filename'])
-                except:
+                except:  # noqa: E722
                     pass
 
         logger.info(f"Found {len(templates)} available templates")

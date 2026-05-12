@@ -508,10 +508,10 @@ def register_notion_tools(mcp):
 
             lines = [
                 f"# {title}",
-                f"",
+                "",
                 f"**URL**: {url}",
                 f"**Last edited**: {last_edited}",
-                f"",
+                "",
                 "---",
                 "",
             ]
@@ -672,7 +672,7 @@ def register_notion_tools(mcp):
             )
             return json.dumps({
                 "success": True,
-                "message": f"Block updated successfully",
+                "message": "Block updated successfully",
                 "block_id": data.get("id"),
                 "type": data.get("type"),
             }, ensure_ascii=False, indent=2)

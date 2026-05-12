@@ -1109,7 +1109,6 @@ def preview_excel_sheets(
     """
     import subprocess
     import tempfile
-    import base64
     import io
     from pdf2image import convert_from_path
     from openpyxl import load_workbook

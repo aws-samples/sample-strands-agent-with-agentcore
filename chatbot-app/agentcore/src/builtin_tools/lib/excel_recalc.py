@@ -166,7 +166,7 @@ def recalc_spreadsheet(
             if result.returncode != 0 and result.returncode != 124:
                 error_msg = result.stderr or "Unknown recalculation error"
                 logger.warning(f"LibreOffice recalc failed (rc={result.returncode}): {error_msg[:200]}")
-                return file_bytes, {"status": "skipped", "reason": f"recalc_failed"}
+                return file_bytes, {"status": "skipped", "reason": "recalc_failed"}
         except subprocess.TimeoutExpired:
             logger.warning(f"LibreOffice recalc timed out after {timeout}s")
             return file_bytes, {"status": "skipped", "reason": "timeout"}
@@ -179,7 +179,7 @@ def recalc_spreadsheet(
                 recalced_bytes = f.read()
         except Exception as e:
             logger.error(f"Failed to read recalculated file: {e}")
-            return file_bytes, {"status": "skipped", "reason": f"read_failed"}
+            return file_bytes, {"status": "skipped", "reason": "read_failed"}
 
         report = _scan_errors(temp_path)
         return recalced_bytes, report

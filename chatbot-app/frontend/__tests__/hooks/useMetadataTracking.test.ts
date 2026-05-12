@@ -184,7 +184,7 @@ describe('useMetadataTracking', () => {
       expect(metrics!.e2e).toBe(1000)
     })
 
-    it('should include token usage in metadata', async () => {
+    it('should not save metadata when only token usage is provided (persisted by SDK)', async () => {
       const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
@@ -215,18 +215,13 @@ describe('useMetadataTracking', () => {
         })
       })
 
-      // Wait for async operations
       await vi.runAllTimersAsync()
 
-      // Check that fetch was called with token usage
-      expect(mockFetch).toHaveBeenCalled()
-      const fetchCalls = mockFetch.mock.calls
-      const metadataCall = fetchCalls.find(call => call[0] === '/api/session/update-metadata')
-
-      if (metadataCall) {
-        const body = JSON.parse(metadataCall[1].body)
-        expect(body.metadata.tokenUsage).toEqual(tokenUsage)
-      }
+      // Token usage is persisted by the SDK via message.metadata — no DDB write expected
+      const metadataCalls = mockFetch.mock.calls.filter(
+        call => call[0] === '/api/session/update-metadata'
+      )
+      expect(metadataCalls.length).toBe(0)
     })
 
     it('should include documents in metadata', async () => {
@@ -266,7 +261,7 @@ describe('useMetadataTracking', () => {
       }
     })
 
-    it('should only save metadata once', async () => {
+    it('should only save metadata once when documents are provided', async () => {
       const { result } = renderHook(() => useMetadataTracking())
 
       act(() => {
@@ -279,28 +274,31 @@ describe('useMetadataTracking', () => {
         result.current.recordTTFT()
       })
 
+      const documents = [{ filename: 'report.docx', tool_type: 'word' }]
+
       act(() => {
         result.current.recordE2E({
           sessionId: 'session-123',
-          messageId: 'msg-1'
+          messageId: 'msg-1',
+          documents
         })
       })
 
       act(() => {
         result.current.recordE2E({
           sessionId: 'session-123',
-          messageId: 'msg-1'
+          messageId: 'msg-1',
+          documents
         })
       })
 
       await vi.runAllTimersAsync()
 
-      // Count metadata save calls
       const metadataCalls = mockFetch.mock.calls.filter(
         call => call[0] === '/api/session/update-metadata'
       )
 
-      // Should only save once
+      // Should only save once despite two recordE2E calls
       expect(metadataCalls.length).toBe(1)
     })
   })

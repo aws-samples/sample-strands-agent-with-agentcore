@@ -254,14 +254,14 @@ def browser_get_page_info(
             summary_lines.append("")
 
             # Interactive summary
-            summary_lines.append(f"**Interactive Elements**:")
+            summary_lines.append("**Interactive Elements**:")
             summary_lines.append(f"- Buttons: {len(interactive['buttons'])} visible")
             summary_lines.append(f"- Links: {len(interactive['links'])} visible")
             summary_lines.append(f"- Inputs: {len(interactive['inputs'])} fields")
             summary_lines.append("")
 
             # Content summary
-            summary_lines.append(f"**Content**:")
+            summary_lines.append("**Content**:")
             summary_lines.append(f"- Headings: {len(content['headings'])}")
             summary_lines.append(f"- Images: {content['image_count']}")
             summary_lines.append(f"- Has form: {'Yes' if content['has_form'] else 'No'}")
@@ -272,9 +272,9 @@ def browser_get_page_info(
                 summary_lines.append("")
                 summary_lines.append(f"**Alerts detected**: {len(state['alert_messages'])}")
             if state['has_modals']:
-                summary_lines.append(f"**Modal is open**")
+                summary_lines.append("**Modal is open**")
             if state['has_loading']:
-                summary_lines.append(f"⏳ **Page is loading**")
+                summary_lines.append("⏳ **Page is loading**")
 
             # Add detailed tab information
             tabs = result.get('tabs', [])

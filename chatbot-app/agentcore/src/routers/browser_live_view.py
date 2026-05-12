@@ -50,7 +50,7 @@ async def get_browser_live_view_url(sessionId: str, browserId: str):
 
         # Strategy 2: If not found, create new BrowserClient for A2A browser session
         if not controller:
-            logger.info(f"[Live View] No builtin controller found, creating BrowserClient for A2A session")
+            logger.info("[Live View] No builtin controller found, creating BrowserClient for A2A session")
 
             if not browserId:
                 raise HTTPException(

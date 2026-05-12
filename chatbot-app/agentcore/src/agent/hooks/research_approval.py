@@ -43,7 +43,7 @@ class ResearchApprovalHook(HookProvider):
         else:
             return
 
-        logger.debug(f"Requesting approval for research_agent")
+        logger.debug("Requesting approval for research_agent")
 
         approval = event.interrupt(
             f"{self.app_name}-research-approval",

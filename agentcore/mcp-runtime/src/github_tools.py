@@ -22,7 +22,7 @@ Tools (write):
 import base64
 import json
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from mcp.server.fastmcp import Context
 from agentcore_oauth import OAuthHelper, call_with_oauth_retry
@@ -268,7 +268,7 @@ def register_github_tools(mcp):
                     "state": issue.get("state"),
                     "html_url": issue.get("html_url"),
                     "user": issue.get("user", {}).get("login"),
-                    "labels": [l.get("name") for l in issue.get("labels", [])],
+                    "labels": [label.get("name") for label in issue.get("labels", [])],
                     "created_at": issue.get("created_at"),
                     "updated_at": issue.get("updated_at"),
                     "comments": issue.get("comments"),
@@ -311,7 +311,7 @@ def register_github_tools(mcp):
                 "state": data.get("state"),
                 "html_url": data.get("html_url"),
                 "user": data.get("user", {}).get("login"),
-                "labels": [l.get("name") for l in data.get("labels", [])],
+                "labels": [label.get("name") for label in data.get("labels", [])],
                 "assignees": [a.get("login") for a in data.get("assignees", [])],
                 "milestone": data.get("milestone", {}).get("title") if data.get("milestone") else None,
                 "body": data.get("body"),
@@ -413,7 +413,7 @@ def register_github_tools(mcp):
                 "mergeable": data.get("mergeable"),
                 "merged": data.get("merged"),
                 "body": data.get("body"),
-                "labels": [l.get("name") for l in data.get("labels", [])],
+                "labels": [label.get("name") for label in data.get("labels", [])],
                 "assignees": [a.get("login") for a in data.get("assignees", [])],
                 "requested_reviewers": [r.get("login") for r in data.get("requested_reviewers", [])],
                 "additions": data.get("additions"),

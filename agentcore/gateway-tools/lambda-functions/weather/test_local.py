@@ -2,7 +2,6 @@
 """
 Local test script for weather Lambda function
 """
-import json
 from lambda_function import lambda_handler
 
 

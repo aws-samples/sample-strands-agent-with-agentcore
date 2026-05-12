@@ -1,7 +1,6 @@
 """Skills endpoint — returns the skill catalog from Registry."""
 
 import logging
-from typing import Optional
 
 from fastapi import APIRouter
 

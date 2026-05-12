@@ -385,7 +385,7 @@ def sync_session(user_id: str, session_id: str, workspace: Path, sdk_session_id:
                 Body=sdk_session_id.encode("utf-8"),
                 ContentType="text/plain",
             )
-            logger.info(f"[S3 sync] sdk_session_id saved")
+            logger.info("[S3 sync] sdk_session_id saved")
         except Exception as e:
             logger.warning(f"[S3 sync] Failed to save sdk_session_id: {e}")
 
@@ -410,7 +410,7 @@ def _clear_session_history(user_id: str, session_id: str) -> None:
             objects = [{"Key": o["Key"]} for o in page.get("Contents", [])]
             if objects:
                 s3.delete_objects(Bucket=ARTIFACT_BUCKET, Delete={"Objects": objects})
-        logger.info(f"[S3 reset] Cleared Claude session history")
+        logger.info("[S3 reset] Cleared Claude session history")
     except Exception as e:
         logger.warning(f"[S3 reset] Could not clear Claude session history: {e}")
 
@@ -428,7 +428,7 @@ def _clear_session_history(user_id: str, session_id: str) -> None:
                 shutil.rmtree(item, ignore_errors=True)
             else:
                 item.unlink(missing_ok=True)
-        logger.info(f"[S3 reset] Cleared local ~/.claude/")
+        logger.info("[S3 reset] Cleared local ~/.claude/")
 
 
 
@@ -603,7 +603,7 @@ class ClaudeCodeExecutor(AgentExecutor):
             _sdk_sessions.pop(sdk_key, None)
             _clear_session_history(user_id, session_id)
             sdk_session_id = None
-            logger.info(f"[ClaudeCodeExecutor] Session reset — starting fresh")
+            logger.info("[ClaudeCodeExecutor] Session reset — starting fresh")
         else:
             sdk_session_id = _sdk_sessions.get(sdk_key)
             if not sdk_session_id:
@@ -613,7 +613,7 @@ class ClaudeCodeExecutor(AgentExecutor):
                     _sdk_sessions[sdk_key] = sdk_session_id
                     logger.info(f"[ClaudeCodeExecutor] Session restored from S3: {sdk_session_id}")
                 else:
-                    logger.info(f"[ClaudeCodeExecutor] Starting new SDK session")
+                    logger.info("[ClaudeCodeExecutor] Starting new SDK session")
             else:
                 logger.info(f"[ClaudeCodeExecutor] Resuming SDK session (in-memory): {sdk_session_id}")
 
@@ -645,7 +645,7 @@ class ClaudeCodeExecutor(AgentExecutor):
 
         # --- Compact conversation history before running the task (if requested) ---
         if compact_session and sdk_session_id:
-            logger.info(f"[ClaudeCodeExecutor] Compacting conversation history…")
+            logger.info("[ClaudeCodeExecutor] Compacting conversation history…")
             try:
                 await client.query(prompt="/compact")
                 async for msg in client.receive_response():
@@ -670,7 +670,7 @@ class ClaudeCodeExecutor(AgentExecutor):
             async for message in client.receive_messages():
                 # Check cancel event — graceful exit on interrupt
                 if cancel_event.is_set():
-                    logger.info(f"[ClaudeCodeExecutor] Cancel event detected, exiting message loop")
+                    logger.info("[ClaudeCodeExecutor] Cancel event detected, exiting message loop")
                     break
 
                 # Poll DynamoDB for phase 2 stop signal (1-second interval)
@@ -678,12 +678,12 @@ class ClaudeCodeExecutor(AgentExecutor):
                 if now - last_stop_check >= 1.0:
                     last_stop_check = now
                     if _check_dynamodb_stop(user_id, session_id):
-                        logger.info(f"[ClaudeCodeExecutor] Phase 2 stop signal detected")
+                        logger.info("[ClaudeCodeExecutor] Phase 2 stop signal detected")
                         cancel_event.set()
                         if client._query:
                             try:
                                 await client.interrupt()
-                                logger.info(f"[ClaudeCodeExecutor] Interrupt sent via phase 2 stop")
+                                logger.info("[ClaudeCodeExecutor] Interrupt sent via phase 2 stop")
                             except Exception as e:
                                 logger.warning(f"[ClaudeCodeExecutor] interrupt() failed: {e}")
                         _clear_dynamodb_stop(user_id, session_id)

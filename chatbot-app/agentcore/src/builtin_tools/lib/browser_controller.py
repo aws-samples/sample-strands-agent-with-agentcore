@@ -5,7 +5,6 @@ Simplified implementation for browser automation with natural language.
 
 import os
 import logging
-import asyncio
 import base64
 from typing import Dict, Any, Optional
 from bedrock_agentcore.tools.browser_client import BrowserClient
@@ -188,7 +187,7 @@ class BrowserController:
             # First navigation: connect then navigate
             # cdp_use_existing_page=True ensures only 1 tab exists (reuses AgentCore Browser's tab)
             if not self._connected:
-                logger.info(f"First navigation: connecting to browser")
+                logger.info("First navigation: connecting to browser")
                 self.connect()  # Connect without starting_page (reuse existing tab)
 
             # Always use go_to_url() for navigation (both first and subsequent)
@@ -283,7 +282,7 @@ class BrowserController:
                 end_time = getattr(metadata, 'end_time', None)
 
                 # Log detailed metadata
-                logger.debug(f" Act completed:")
+                logger.debug(" Act completed:")
                 if session_id:
                     logger.info(f"   Session ID: {session_id}")
                 if act_id:
@@ -368,7 +367,7 @@ class BrowserController:
         try:
             if self._connected and self.nova_client:
                 return self._take_screenshot()
-        except:
+        except:  # noqa: E722
             pass
         return None
 
@@ -421,7 +420,7 @@ class BrowserController:
                 end_time = getattr(metadata, 'end_time', None)
 
                 # Log detailed metadata
-                logger.debug(f" Extraction completed:")
+                logger.debug(" Extraction completed:")
                 if session_id:
                     logger.info(f"   Session ID: {session_id}")
                 if act_id:
@@ -897,7 +896,7 @@ class BrowserController:
             logger.info(f"Creating new tab with URL: {url}")
 
             # Create new page in the browser context
-            new_page = self.nova_client.page.context.new_page()
+            self.nova_client.page.context.new_page()
 
             # Switch to the new tab (it's the last one)
             self._current_tab_index = len(self.nova_client.pages) - 1

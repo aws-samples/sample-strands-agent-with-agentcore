@@ -8,14 +8,18 @@ Tests cover:
 - Error handling
 - Response structure
 """
-import pytest
 import json
-import sys
 from unittest.mock import patch, MagicMock
 from datetime import datetime
 
-# Add lambda function path
-sys.path.insert(0, str(__file__).replace('/tests/test_arxiv_lambda.py', '/lambda-functions/arxiv'))
+from conftest import load_lambda
+
+lf = load_lambda("arxiv")
+arxiv_search = lf.arxiv_search
+arxiv_get_paper = lf.arxiv_get_paper
+lambda_handler = lf.lambda_handler
+success_response = lf.success_response
+error_response = lf.error_response
 
 
 # ============================================================
@@ -42,9 +46,6 @@ class TestArxivSearch:
     @patch('arxiv.Client')
     def test_successful_search(self, mock_client_class):
         """Test successful ArXiv search returns formatted results."""
-        from lambda_function import arxiv_search
-
-        # Create mock paper
         mock_paper = MagicMock()
         mock_paper.title = "Test Paper Title"
         mock_paper.authors = [MagicMock(name="Author One"), MagicMock(name="Author Two")]
@@ -72,8 +73,6 @@ class TestArxivSearch:
 
     def test_missing_query_parameter(self):
         """Test that missing query returns error."""
-        from lambda_function import arxiv_search
-
         result = arxiv_search({})
 
         assert result['statusCode'] == 400
@@ -83,8 +82,6 @@ class TestArxivSearch:
 
     def test_empty_query_parameter(self):
         """Test that empty query returns error."""
-        from lambda_function import arxiv_search
-
         result = arxiv_search({"query": ""})
 
         assert result['statusCode'] == 400
@@ -92,8 +89,6 @@ class TestArxivSearch:
     @patch('arxiv.Client')
     def test_empty_search_results(self, mock_client_class):
         """Test handling of no search results."""
-        from lambda_function import arxiv_search
-
         mock_client = MagicMock()
         mock_client.results.return_value = iter([])
         mock_client_class.return_value = mock_client
@@ -109,8 +104,6 @@ class TestArxivSearch:
     @patch('arxiv.Client')
     def test_search_formats_authors_correctly(self, mock_client_class):
         """Test that multiple authors are formatted as comma-separated string."""
-        from lambda_function import arxiv_search
-
         mock_paper = MagicMock()
         mock_paper.title = "Multi-Author Paper"
         mock_paper.authors = [MagicMock(), MagicMock(), MagicMock()]
@@ -142,8 +135,6 @@ class TestArxivGetPaper:
     @patch('arxiv.Client')
     def test_successful_paper_retrieval(self, mock_client_class):
         """Test successful paper retrieval."""
-        from lambda_function import arxiv_get_paper
-
         mock_paper = MagicMock()
         mock_paper.title = "Retrieved Paper"
         mock_paper.authors = [MagicMock()]
@@ -169,8 +160,6 @@ class TestArxivGetPaper:
 
     def test_missing_paper_ids(self):
         """Test that missing paper_ids returns error."""
-        from lambda_function import arxiv_get_paper
-
         result = arxiv_get_paper({})
 
         assert result['statusCode'] == 400
@@ -180,8 +169,6 @@ class TestArxivGetPaper:
     @patch('arxiv.Client')
     def test_multiple_paper_ids(self, mock_client_class):
         """Test retrieval of multiple papers."""
-        from lambda_function import arxiv_get_paper
-
         mock_paper1 = MagicMock()
         mock_paper1.title = "Paper 1"
         mock_paper1.authors = [MagicMock()]
@@ -201,7 +188,6 @@ class TestArxivGetPaper:
         mock_paper2.categories = ["cs.LG"]
 
         mock_client = MagicMock()
-        # Return different papers for different searches
         mock_client.results.side_effect = [iter([mock_paper1]), iter([mock_paper2])]
         mock_client_class.return_value = mock_client
 
@@ -216,8 +202,6 @@ class TestArxivGetPaper:
     @patch('arxiv.Client')
     def test_paper_not_found(self, mock_client_class):
         """Test handling of paper not found."""
-        from lambda_function import arxiv_get_paper
-
         mock_client = MagicMock()
         mock_client.results.return_value = iter([])
         mock_client_class.return_value = mock_client
@@ -233,14 +217,12 @@ class TestArxivGetPaper:
     @patch('arxiv.Client')
     def test_long_summary_truncation(self, mock_client_class):
         """Test that long summaries are truncated."""
-        from lambda_function import arxiv_get_paper
-
         mock_paper = MagicMock()
         mock_paper.title = "Paper with Long Summary"
         mock_paper.authors = [MagicMock()]
         mock_paper.authors[0].name = "Author"
         mock_paper.published = datetime(2024, 1, 1)
-        mock_paper.summary = "A" * 10000  # Very long summary
+        mock_paper.summary = "A" * 10000
         mock_paper.pdf_url = "https://arxiv.org/pdf/test.pdf"
         mock_paper.categories = ["cs.AI"]
 
@@ -253,7 +235,6 @@ class TestArxivGetPaper:
         body = json.loads(result['body'])
         content = json.loads(body['content'][0]['text'])
 
-        # Summary in response should be truncated
         assert len(content['papers'][0]['summary']) <= 510  # 500 + "..."
 
 
@@ -267,8 +248,6 @@ class TestLambdaHandler:
     @patch('arxiv.Client')
     def test_routes_to_arxiv_search(self, mock_client_class):
         """Test that handler routes to arxiv_search correctly."""
-        from lambda_function import lambda_handler
-
         mock_client = MagicMock()
         mock_client.results.return_value = iter([])
         mock_client_class.return_value = mock_client
@@ -281,8 +260,6 @@ class TestLambdaHandler:
     @patch('arxiv.Client')
     def test_routes_to_arxiv_get_paper(self, mock_client_class):
         """Test that handler routes to arxiv_get_paper correctly."""
-        from lambda_function import lambda_handler
-
         mock_client = MagicMock()
         mock_client.results.return_value = iter([])
         mock_client_class.return_value = mock_client
@@ -294,8 +271,6 @@ class TestLambdaHandler:
 
     def test_unknown_tool_returns_error(self):
         """Test that unknown tool name returns error."""
-        from lambda_function import lambda_handler
-
         context = MockContext('unknown_tool')
         result = lambda_handler({}, context)
 
@@ -305,8 +280,6 @@ class TestLambdaHandler:
 
     def test_handles_tool_name_with_prefix(self):
         """Test that tool names with prefix are parsed correctly."""
-        from lambda_function import lambda_handler
-
         context = MockContext('prefix___arxiv_search')
 
         with patch('arxiv.Client') as mock_client_class:
@@ -328,8 +301,6 @@ class TestResponseFormat:
 
     def test_success_response_format(self):
         """Test success response has correct MCP format."""
-        from lambda_function import success_response
-
         result = success_response('{"test": "data"}')
 
         assert result['statusCode'] == 200
@@ -340,8 +311,6 @@ class TestResponseFormat:
 
     def test_error_response_format(self):
         """Test error response has correct format."""
-        from lambda_function import error_response
-
         result = error_response("Test error message")
 
         assert result['statusCode'] == 400

@@ -18,8 +18,6 @@ import logging
 import json
 import os
 import time
-import uuid
-from opentelemetry import trace
 
 from models.schemas import FileContent
 from agent.processor.multimodal_builder import build_prompt

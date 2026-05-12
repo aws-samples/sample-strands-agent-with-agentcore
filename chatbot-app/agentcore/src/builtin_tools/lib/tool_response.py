@@ -13,7 +13,7 @@ making it available to the frontend (e.g., for artifact creation, download butto
 """
 
 import json
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, List
 
 
 def build_success_response(

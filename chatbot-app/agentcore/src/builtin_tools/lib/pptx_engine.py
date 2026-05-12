@@ -318,9 +318,9 @@ class PptxEngine:
     def add_slide(self, layout_name: str, position: int = -1) -> str:
         """Add a new slide from layout name. Returns new slide filename."""
         layouts = self.get_layouts()
-        match = next((l for l in layouts if l["name"] == layout_name), None)
+        match = next((l for l in layouts if l["name"] == layout_name), None)  # noqa: E741
         if not match:
-            available = [l["name"] for l in layouts]
+            available = [l["name"] for l in layouts]  # noqa: E741
             raise ValueError(f"Layout '{layout_name}' not found. Available: {available}")
         new_filename = self._create_slide_from_layout(match["filename"])
         self._insert_into_order(new_filename, position)

@@ -5,7 +5,7 @@ All models follow AgentCore Runtime standard format.
 """
 
 from pydantic import BaseModel
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 
 class FileContent(BaseModel):

@@ -8,6 +8,12 @@ import sys
 import pytest
 from unittest.mock import MagicMock, AsyncMock
 
+# nova-act requires --no-deps install (strands-agents version conflict) and is
+# not available in CI. Mock it before any source imports.
+import unittest.mock
+_nova_act_mock = unittest.mock.MagicMock()
+sys.modules.setdefault("nova_act", _nova_act_mock)
+
 # Add src to path for imports
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '../src'))
 

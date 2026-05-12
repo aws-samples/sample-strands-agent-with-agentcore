@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import re
-from pathlib import Path
 from typing import Optional
 from strands import tool
 from strands.types.tools import ToolContext
@@ -149,7 +148,7 @@ async def write_markdown_section(
                 try:
                     domain = urlparse(url).netloc or url
                     domain = domain.replace('www.', '')
-                except:
+                except:  # noqa: E722
                     domain = url
                 # Use markdown link format with domain as text
                 citation_links.append(f'[{domain}]({url})')

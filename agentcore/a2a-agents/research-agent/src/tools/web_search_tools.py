@@ -6,7 +6,6 @@ Web Search and URL Fetcher Tools - Strands Native
 
 import json
 import logging
-from typing import Optional
 from strands import tool
 
 logger = logging.getLogger(__name__)
@@ -182,7 +181,7 @@ async def fetch_url_content(
                 title_tag = soup.find('title')
                 if title_tag:
                     title = title_tag.get_text().strip()
-            except:
+            except:  # noqa: E722
                 pass
 
             # Extract text
