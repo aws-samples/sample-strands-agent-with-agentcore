@@ -2,12 +2,6 @@
 Pytest configuration for AgentCore Gateway Lambda tests
 """
 import pytest
-import sys
-from pathlib import Path
-
-# Add lambda functions to path
-lambda_functions_path = Path(__file__).parent.parent / "lambda-functions"
-sys.path.insert(0, str(lambda_functions_path))
 
 
 @pytest.fixture
