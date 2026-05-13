@@ -195,7 +195,7 @@ async def send_a2a_message(
             name=agent_id,
             description="",
             version="1.0.0",
-            capabilities={},
+            capabilities={"streaming": True},
             defaultInputModes=["text/plain"],
             defaultOutputModes=["text/plain"],
             skills=[],
