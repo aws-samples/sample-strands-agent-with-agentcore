@@ -71,8 +71,8 @@ resource "aws_cognito_user_pool_client" "app" {
   callback_urls = var.callback_urls
   logout_urls   = var.logout_urls
 
-  id_token_validity      = 8
-  access_token_validity  = 8
+  id_token_validity      = 24
+  access_token_validity  = 24
   refresh_token_validity = 30
   token_validity_units {
     id_token      = "hours"
@@ -98,8 +98,8 @@ resource "aws_cognito_user_pool_client" "web" {
 
   supported_identity_providers = ["COGNITO"]
 
-  id_token_validity      = 8
-  access_token_validity  = 8
+  id_token_validity      = 24
+  access_token_validity  = 24
   refresh_token_validity = 30
   token_validity_units {
     id_token      = "hours"
