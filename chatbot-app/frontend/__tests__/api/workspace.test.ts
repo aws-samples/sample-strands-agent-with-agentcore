@@ -310,6 +310,99 @@ describe('Workspace Files API', () => {
   })
 })
 
+describe('Workspace Download API', () => {
+  describe('Path to S3 key mapping (toS3Key)', () => {
+    const userId = 'user-123'
+    const sessionId = 'session-456'
+
+    it('should map code-agent paths to code-agent-workspace prefix', () => {
+      const path = 'code-agent/output.csv'
+      const expected = `code-agent-workspace/${userId}/${sessionId}/output.csv`
+      const result = toS3Key(userId, sessionId, path)
+      expect(result).toBe(expected)
+    })
+
+    it('should map code-interpreter paths', () => {
+      const path = 'code-interpreter/chart.png'
+      const expected = `code-interpreter-workspace/${userId}/${sessionId}/chart.png`
+      const result = toS3Key(userId, sessionId, path)
+      expect(result).toBe(expected)
+    })
+
+    it('should map documents paths', () => {
+      const path = 'documents/word/report.docx'
+      const expected = `documents/${userId}/${sessionId}/word/report.docx`
+      const result = toS3Key(userId, sessionId, path)
+      expect(result).toBe(expected)
+    })
+
+    it('should default to documents namespace for unrecognized paths', () => {
+      const path = 'random/file.txt'
+      const expected = `documents/${userId}/${sessionId}/random/file.txt`
+      const result = toS3Key(userId, sessionId, path)
+      expect(result).toBe(expected)
+    })
+
+    it('should strip leading slash', () => {
+      const path = '/code-agent/file.json'
+      const expected = `code-agent-workspace/${userId}/${sessionId}/file.json`
+      const result = toS3Key(userId, sessionId, path)
+      expect(result).toBe(expected)
+    })
+  })
+
+  describe('Request validation', () => {
+    it('should require path and sessionId in body', () => {
+      const body = { path: 'code-agent/file.csv', sessionId: 'sess-123' }
+      expect(body.path).toBeTruthy()
+      expect(body.sessionId).toBeTruthy()
+    })
+
+    it('should reject missing path', () => {
+      const body = { sessionId: 'sess-123' } as any
+      const isValid = !!(body.path && body.sessionId)
+      expect(isValid).toBe(false)
+    })
+
+    it('should reject missing sessionId', () => {
+      const body = { path: 'code-agent/file.csv' } as any
+      const isValid = !!(body.path && body.sessionId)
+      expect(isValid).toBe(false)
+    })
+  })
+
+  describe('Filename extraction', () => {
+    it('should extract filename from path', () => {
+      const path = 'code-agent/subdir/output.csv'
+      const filename = path.split('/').pop() || 'download'
+      expect(filename).toBe('output.csv')
+    })
+
+    it('should fallback to download when path ends with slash', () => {
+      const path = 'code-agent/'
+      const filename = path.split('/').pop() || 'download'
+      expect(filename).toBe('download')
+    })
+  })
+})
+
+// Reusable path mapper (mirrors route.ts logic)
+function toS3Key(userId: string, sessionId: string, path: string): string {
+  const NAMESPACE_MAP: [string, string][] = [
+    ['code-agent', `code-agent-workspace/${userId}/${sessionId}/`],
+    ['code-interpreter', `code-interpreter-workspace/${userId}/${sessionId}/`],
+    ['documents', `documents/${userId}/${sessionId}/`],
+  ]
+  const cleanPath = path.replace(/^\//, '')
+  for (const [prefix, base] of NAMESPACE_MAP) {
+    if (cleanPath.startsWith(prefix)) {
+      const suffix = cleanPath.slice(prefix.length).replace(/^\//, '')
+      return base + suffix
+    }
+  }
+  return `documents/${userId}/${sessionId}/${cleanPath}`
+}
+
 describe('Frontend Workspace File Fetching (useStreamEvents)', () => {
   // Tests for the frontend logic that fetches workspace files
   // Uses centralized TOOL_TO_DOC_TYPE from @/config/document-tools

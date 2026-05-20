@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react'
 import { Download, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react'
+import { fetchAuthSession } from 'aws-amplify/auth'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
 import { getToolImageSrc, getToolIcon, resolveEffectiveToolId } from '@/config/tool-icons'
@@ -21,6 +22,10 @@ const WORD_DOCUMENT_TOOLS = ['create_word_document', 'modify_word_document']
 const EXCEL_SPREADSHEET_TOOLS = ['create_excel_spreadsheet', 'modify_excel_spreadsheet']
 // PowerPoint presentation tool names
 const POWERPOINT_TOOLS = ['create_presentation', 'update_slide_content', 'add_slide', 'delete_slides', 'move_slide', 'duplicate_slide', 'update_slide_notes']
+// Workspace file tools (download button on read/write)
+const WORKSPACE_FILE_TOOLS = ['workspace_read', 'workspace_write']
+// Code Interpreter tools that save files to workspace
+const CI_WORKSPACE_TOOLS = ['execute_code', 'ci_push_to_workspace']
 
 interface ToolExecutionContainerProps {
   toolExecutions: ToolExecution[]
@@ -452,6 +457,96 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     }
   };
 
+  const handleWorkspaceDownload = async (toolUseId: string, toolResult?: string, toolName?: string) => {
+    if (downloadingFiles.has(toolUseId) || !toolResult || !sessionId) return
+    setDownloadingFiles(prev => new Set(prev).add(toolUseId))
+    try {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      try {
+        const session = await fetchAuthSession()
+        const token = session.tokens?.accessToken?.toString()
+        if (token) headers['Authorization'] = `Bearer ${token}`
+      } catch { /* auth optional */ }
+      headers['X-Session-ID'] = sessionId
+
+      let paths: string[] = []
+
+      if (toolName === 'ci_push_to_workspace') {
+        const parsed = JSON.parse(toolResult)
+        if (parsed.status === 'ok' && parsed.files_saved?.length) {
+          paths = parsed.files_saved.map((f: string) => `documents/${f}`)
+        }
+      } else if (toolName === 'execute_code') {
+        const match = toolResult.match(/File saved:\s*(\S+)/)
+        if (match) {
+          const filename = match[1]
+          const docType = /\.(png|jpg|jpeg|gif|webp)$/i.test(filename) ? 'image' : 'code-output'
+          paths = [`documents/${docType}/${filename}`]
+        }
+      } else {
+        const parsed = JSON.parse(toolResult)
+        if (parsed.status === 'ok' && parsed.path) {
+          paths = [parsed.path]
+        }
+      }
+
+      if (paths.length === 0) throw new Error('No file path in result')
+
+      if (paths.length === 1) {
+        const response = await fetch(getApiUrl('workspace/download'), {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ path: paths[0], sessionId }),
+        })
+        if (!response.ok) throw new Error(`Download failed: ${response.status}`)
+        const { url, filename } = await response.json()
+
+        const link = document.createElement('a')
+        link.href = url
+        link.download = filename
+        link.style.display = 'none'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      } else {
+        const JSZip = (await import('jszip')).default
+        const zip = new JSZip()
+        for (const path of paths) {
+          const response = await fetch(getApiUrl('workspace/download'), {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ path, sessionId }),
+          })
+          if (!response.ok) continue
+          const { url, filename } = await response.json()
+          const fileResponse = await fetch(url)
+          if (fileResponse.ok) {
+            zip.file(filename, await fileResponse.blob())
+          }
+        }
+        const zipBlob = await zip.generateAsync({ type: 'blob' })
+        const objectUrl = URL.createObjectURL(zipBlob)
+        const link = document.createElement('a')
+        link.href = objectUrl
+        link.download = `workspace_${toolUseId.slice(0, 8)}.zip`
+        link.style.display = 'none'
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+        URL.revokeObjectURL(objectUrl)
+      }
+    } catch (error) {
+      console.error('Workspace download failed:', error)
+      alert(`Download failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    } finally {
+      setDownloadingFiles(prev => {
+        const next = new Set(prev)
+        next.delete(toolUseId)
+        return next
+      })
+    }
+  }
+
   // Helper: render Canvas / download action buttons for a single tool execution
   const renderActionButtons = (toolExecution: ToolExecution) => (
     <>
@@ -468,6 +563,39 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           {downloadingFiles.has(toolExecution.id)
             ? <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" />
             : <Download className="h-3.5 w-3.5 text-muted-foreground" />}
+        </button>
+      )}
+      {WORKSPACE_FILE_TOOLS.includes(toolExecution.toolName) &&
+        toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult && (() => {
+          try { const p = JSON.parse(toolExecution.toolResult || ''); return p.status === 'ok' && p.path } catch { return false }
+        })() && (
+        <button
+          onClick={(e) => { e.stopPropagation(); handleWorkspaceDownload(toolExecution.id, toolExecution.toolResult, toolExecution.toolName); }}
+          disabled={downloadingFiles.has(toolExecution.id)}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {downloadingFiles.has(toolExecution.id)
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <Download className="h-3.5 w-3.5" />}
+          <span>{downloadingFiles.has(toolExecution.id) ? 'Preparing...' : 'Download'}</span>
+        </button>
+      )}
+      {CI_WORKSPACE_TOOLS.includes(toolExecution.toolName) &&
+        toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult && (() => {
+          if (toolExecution.toolName === 'ci_push_to_workspace') {
+            try { const p = JSON.parse(toolExecution.toolResult || ''); return p.status === 'ok' && p.files_saved?.length > 0 } catch { return false }
+          }
+          return /File saved:\s*\S+/.test(toolExecution.toolResult || '')
+        })() && (
+        <button
+          onClick={(e) => { e.stopPropagation(); handleWorkspaceDownload(toolExecution.id, toolExecution.toolResult, toolExecution.toolName); }}
+          disabled={downloadingFiles.has(toolExecution.id)}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {downloadingFiles.has(toolExecution.id)
+            ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            : <Download className="h-3.5 w-3.5" />}
+          <span>{downloadingFiles.has(toolExecution.id) ? 'Preparing...' : 'Download'}</span>
         </button>
       )}
       {isCodeAgentExecution(toolExecution) && toolExecution.isComplete && !toolExecution.isCancelled && (
