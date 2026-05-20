@@ -49,13 +49,22 @@ export function createToolExecution(
   // Extract images from toolResult.content (unless hideImageInChat is set)
   const images = hideImageInChat ? [] : extractToolResultImages(toolResult)
 
+  // DDB stores raw Strands messages where skill tools appear as skill_executor.
+  // SSE unwraps this at streaming time, but on session reload we must do it here.
+  let toolName = toolUse.name
+  let toolInput = toolUse.input
+  if (toolUse.name === 'skill_executor' && toolUse.input?.tool_name) {
+    toolName = toolUse.input.tool_name
+    toolInput = toolUse.input.tool_input ?? toolUse.input
+  }
+
   const execution: ToolExecution = {
     id: toolUseId,
-    toolName: toolUse.name,
-    toolInput: toolUse.input,
+    toolName,
+    toolInput,
     reasoning: [],
     toolResult: toolResultString,
-    isComplete: !!toolResult,  // Only complete if toolResult exists
+    isComplete: !!toolResult,
     isExpanded: false
   }
 
