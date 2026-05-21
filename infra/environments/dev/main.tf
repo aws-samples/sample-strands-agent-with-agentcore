@@ -292,17 +292,17 @@ module "runtime_orchestrator" {
   artifact_bucket_name = aws_s3_bucket.artifacts.id
 
   extra_env_vars = {
-    DYNAMODB_USERS_TABLE       = module.data.users_table_name
-    DYNAMODB_SESSIONS_TABLE    = module.data.sessions_table_name
-    MEMORY_ARN                 = module.memory.memory_arn
-    CODE_AGENT_RUNTIME_ARN     = module.runtime_code_agent.runtime_arn
-    RESEARCH_AGENT_RUNTIME_ARN = module.runtime_research_agent.runtime_arn
-    MCP_3LO_RUNTIME_ARN        = module.runtime_mcp_3lo.runtime_arn
-    CODE_INTERPRETER_ID                = module.agentcore_shared.code_interpreter_id
-    BROWSER_ID                         = module.agentcore_shared.browser_id
-    BROWSER_NAME                       = module.agentcore_shared.browser_name
-    NOVA_ACT_WORKFLOW_DEFINITION_NAME  = module.agentcore_shared.nova_act_workflow_name
-    NOVA_ACT_REGION                    = "us-east-1"
+    DYNAMODB_USERS_TABLE                  = module.data.users_table_name
+    DYNAMODB_SESSIONS_TABLE               = module.data.sessions_table_name
+    MEMORY_ARN                            = module.memory.memory_arn
+    CODE_AGENT_RUNTIME_ARN                = module.runtime_code_agent.runtime_arn
+    RESEARCH_AGENT_RUNTIME_ARN            = module.runtime_research_agent.runtime_arn
+    MCP_3LO_RUNTIME_ARN                   = module.runtime_mcp_3lo.runtime_arn
+    CODE_INTERPRETER_ID                   = module.agentcore_shared.code_interpreter_id
+    BROWSER_ID                            = module.agentcore_shared.browser_id
+    BROWSER_NAME                          = module.agentcore_shared.browser_name
+    NOVA_ACT_WORKFLOW_DEFINITION_NAME     = module.agentcore_shared.nova_act_workflow_name
+    NOVA_ACT_REGION                       = "us-east-1"
     AGENT_OBSERVABILITY_ENABLED           = "true"
     OTEL_PYTHON_DISTRO                    = "aws_distro"
     OTEL_PYTHON_CONFIGURATOR              = "aws_configurator"
@@ -458,22 +458,19 @@ resource "aws_cloudwatch_log_resource_policy" "xray_transaction_search" {
   })
 }
 
-resource "null_resource" "enable_transaction_search" {
-  triggers = {
-    region = var.aws_region
-  }
+resource "aws_xray_trace_segment_destination" "transaction_search" {
+  destination = "CloudWatchLogs"
 
-  provisioner "local-exec" {
-    command = <<-EOT
-      aws xray update-trace-segment-destination \
-        --destination CloudWatchLogs \
-        --region ${var.aws_region} 2>/dev/null || true
+  depends_on = [aws_cloudwatch_log_resource_policy.xray_transaction_search]
+}
 
-      aws xray update-indexing-rule \
-        --name "Default" \
-        --rule '{"Probabilistic": {"DesiredSamplingPercentage": 100}}' \
-        --region ${var.aws_region} 2>/dev/null || true
-    EOT
+resource "aws_xray_indexing_rule" "default" {
+  name = "Default"
+
+  rule {
+    probabilistic {
+      desired_sampling_percentage = 100
+    }
   }
 
   depends_on = [aws_cloudwatch_log_resource_policy.xray_transaction_search]
@@ -487,7 +484,7 @@ module "observability_gateway" {
   project_name  = var.project_name
   environment   = var.environment
 
-  depends_on = [module.gateway, null_resource.enable_transaction_search]
+  depends_on = [module.gateway, aws_xray_trace_segment_destination.transaction_search, aws_xray_indexing_rule.default]
 }
 
 module "observability_memory" {
@@ -498,7 +495,7 @@ module "observability_memory" {
   project_name  = var.project_name
   environment   = var.environment
 
-  depends_on = [module.memory, null_resource.enable_transaction_search]
+  depends_on = [module.memory, aws_xray_trace_segment_destination.transaction_search, aws_xray_indexing_rule.default]
 }
 
 module "observability_code_interpreter" {
@@ -509,7 +506,7 @@ module "observability_code_interpreter" {
   project_name  = var.project_name
   environment   = var.environment
 
-  depends_on = [module.agentcore_shared, null_resource.enable_transaction_search]
+  depends_on = [module.agentcore_shared, aws_xray_trace_segment_destination.transaction_search, aws_xray_indexing_rule.default]
 }
 
 module "registry" {
