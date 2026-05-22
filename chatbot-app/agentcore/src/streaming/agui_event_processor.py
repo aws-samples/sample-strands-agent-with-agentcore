@@ -900,6 +900,10 @@ class AGUIStreamEventProcessor:
                     "code_agent_heartbeat",
                     elapsed_seconds=item.get("elapsed_seconds", 0),
                 )
+            elif event_type == "research_step":
+                yield self.formatter.format_event(
+                    "research_progress", content=item.get("content", ""), stepNumber=item.get("stepNumber", 0)
+                )
 
         # If code agent is active and no events for 10+ seconds, emit heartbeat
         if (self._code_agent_active and self._last_skill_event_time and
