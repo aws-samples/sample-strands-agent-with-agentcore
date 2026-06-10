@@ -56,6 +56,9 @@
   "overrides": {
     "fast-xml-parser": ">=5.3.8",
     "markdown-it": ">=12.3.2",
-    "postcss": ">=8.5.10"
+    "postcss": ">=8.5.10",
+    "@aws-amplify/core": {
+      "js-cookie": ">=3.0.7"
+    }
   }
 }
