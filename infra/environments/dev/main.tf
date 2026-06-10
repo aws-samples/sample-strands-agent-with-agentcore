@@ -12,10 +12,10 @@ module "auth" {
   environment  = var.environment
   aws_region   = var.aws_region
 
-  callback_urls = concat(
-    ["http://localhost:3000/api/auth/callback"],
-    var.enable_cowork ? var.cowork_sidecar_callback_urls : [],
-  )
+  callback_urls = ["http://localhost:3000/api/auth/callback"]
+
+  enable_cowork        = var.enable_cowork
+  cowork_callback_urls = var.cowork_sidecar_callback_urls
 }
 
 module "memory" {
@@ -183,9 +183,15 @@ module "gateway" {
 
   # Gateway is called service-to-service (orchestrator runtime -> gateway MCP),
   # so the M2M client must be in the allowed list. Runtimes themselves stay
-  # user-JWT only (app + web clients).
-  cognito_issuer_url      = module.auth.issuer_url
-  cognito_allowed_clients = [module.auth.app_client_id, module.auth.web_client_id, module.auth.m2m_client_id]
+  # user-JWT only (app + web clients). The Cowork sidecar client is added
+  # when enabled so its JWT passes the Gateway authorizer.
+  cognito_issuer_url = module.auth.issuer_url
+  cognito_allowed_clients = compact([
+    module.auth.app_client_id,
+    module.auth.web_client_id,
+    module.auth.m2m_client_id,
+    var.enable_cowork ? module.auth.cowork_client_id : "",
+  ])
 
   lambda_tool_arns = {
     for k, m in module.gateway_lambda_tools : k => m.function_arn

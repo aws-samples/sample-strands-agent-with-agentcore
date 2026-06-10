@@ -101,11 +101,11 @@ output "cowork_cognito_domain" {
 }
 
 output "cowork_client_id" {
-  value = var.enable_cowork ? module.auth.app_client_id : null
+  value = var.enable_cowork ? module.auth.cowork_client_id : null
 }
 
 output "cowork_client_secret" {
-  value     = var.enable_cowork ? module.auth.app_client_secret : null
+  value     = var.enable_cowork ? module.auth.cowork_client_secret : null
   sensitive = true
 }
 
