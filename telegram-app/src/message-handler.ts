@@ -13,6 +13,7 @@ import { sendAgentResponse, getPendingInterruptId, clearPendingInterrupt } from 
 import { downloadTelegramFile, getLargestPhoto } from "./media-handler.js";
 import { InlineKeyboard } from "grammy";
 import { bufferMessage, setFlushHandler, clearBusy } from "./inbound-buffer.js";
+import { bufferPhotoGroup } from "./media-group-buffer.js";
 
 const MODELS = [
   { id: "us.anthropic.claude-sonnet-4-6", label: "Sonnet 4.6" },
@@ -71,6 +72,13 @@ async function handlePhotoMessage(ctx: Context): Promise<void> {
 
   const caption = ctx.message.caption ?? null;
   const fileId = getLargestPhoto(photos);
+  const mediaGroupId = ctx.message.media_group_id;
+
+  // Album: collect all photos in the group, download serially, then submit as one message.
+  if (mediaGroupId) {
+    bufferPhotoGroup(ctx, mediaGroupId, fileId, caption);
+    return;
+  }
 
   try {
     const media = await downloadTelegramFile(
@@ -94,6 +102,12 @@ async function handleDocumentMessage(ctx: Context): Promise<void> {
   const caption = ctx.message.caption ?? null;
   const mimeType = doc.mime_type ?? "application/octet-stream";
   const filename = doc.file_name ?? "document";
+  const mediaGroupId = ctx.message.media_group_id;
+
+  if (mediaGroupId) {
+    bufferPhotoGroup(ctx, mediaGroupId, doc.file_id, caption, mimeType, filename);
+    return;
+  }
 
   try {
     const media = await downloadTelegramFile(
