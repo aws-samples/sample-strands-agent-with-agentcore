@@ -44,7 +44,7 @@ bedrock-agentcore>=1.14.1
 # NOTE: nova-act requires --no-deps due to strands-agents version conflict
 # Install with: pip install nova-act==3.1.263 --no-deps
 # Dependencies below are for nova-act (excluding strands-agents)
-numpy<=2.2.6
+numpy<=2.4.6
 pandas
 pillow
 pytz
