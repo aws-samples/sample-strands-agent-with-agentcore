@@ -31,16 +31,16 @@ export interface ModelInfo {
 }
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
-  { id: 'us.anthropic.claude-opus-4-7', name: 'Claude Opus 4.7', provider: 'Anthropic', description: 'Most intelligent model' },
+  { id: 'us.anthropic.claude-opus-4-8', name: 'Claude Opus 4.8', provider: 'Anthropic', description: 'Most intelligent model' },
   { id: 'us.anthropic.claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'Anthropic', description: 'Balanced performance' },
   { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude Haiku 4.5', provider: 'Anthropic', description: 'Fast and efficient' },
-  { id: 'us.amazon.nova-2-pro-preview-20251202-v1:0', name: 'Nova 2 Pro', provider: 'Amazon', description: 'High-performance multimodal' },
-  { id: 'us.amazon.nova-2-lite-v1:0', name: 'Nova 2 Lite', provider: 'Amazon', description: 'Lightweight and efficient' },
+  { id: 'openai.gpt-5.5', name: 'GPT-5.5', provider: 'OpenAI', description: 'Frontier reasoning model' },
+  { id: 'openai.gpt-5.4', name: 'GPT-5.4', provider: 'OpenAI', description: 'Frontier model' },
+  { id: 'xai.grok-4.3', name: 'Grok 4.3', provider: 'xAI', description: 'Advanced reasoning model' },
+  { id: 'google.gemma-4-31b', name: 'Gemma 4 31B', provider: 'Google', description: 'Latest multimodal model' },
   { id: 'deepseek.v3.2', name: 'DeepSeek V3.2', provider: 'DeepSeek', description: 'Strong reasoning capabilities' },
-  { id: 'qwen.qwen3-235b-a22b-2507-v1:0', name: 'Qwen 235B', provider: 'Qwen', description: 'Large-scale language model' },
-  { id: 'qwen.qwen3-32b-v1:0', name: 'Qwen 32B', provider: 'Qwen', description: 'Efficient language model' },
-  { id: 'google.gemma-3-27b-it', name: 'Gemma 3 27B', provider: 'Google', description: 'Text and image model' },
-  { id: 'moonshot.kimi-k2-thinking', name: 'Kimi K2 Thinking', provider: 'Moonshot AI', description: 'Deep reasoning model' },
+  { id: 'zai.glm-5', name: 'GLM-5', provider: 'Z.AI', description: 'Flagship reasoning model' },
+  { id: 'moonshotai.kimi-k2.5', name: 'Kimi K2.5', provider: 'Moonshot AI', description: 'Deep reasoning model' },
 ]
 
 export const MODEL_STORAGE_KEY = 'selected_model_id'

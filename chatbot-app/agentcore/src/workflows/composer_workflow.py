@@ -25,7 +25,7 @@ from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional, Dict, Any
 
 from strands import Agent
-from strands.models import BedrockModel
+from agents.model_factory import build_model
 
 from models.composer_schemas import (
     WritingTaskStatus,
@@ -1155,7 +1155,6 @@ Please address this feedback in the revised outline.
         """Invoke LLM with prompt and return response text"""
         import sys
         import io
-        from botocore.config import Config
 
         # Log the full prompt for debugging
         logger.info("=" * 80)
@@ -1164,20 +1163,11 @@ Please address this feedback in the revised outline.
         logger.info(prompt)
         logger.info("=" * 80)
 
-        retry_config = Config(
-            retries={
-                'max_attempts': 5,
-                'mode': 'adaptive'
-            },
-            connect_timeout=30,
-            read_timeout=120
-        )
-
-        model = BedrockModel(
-            model_id=self.model_id,
+        # Routes to BedrockModel or a Mantle OpenAI provider based on model_id.
+        model = build_model(
+            self.model_id,
             temperature=self.temperature,
             max_tokens=8096,
-            boto_client_config=retry_config
         )
 
         # Create a simple agent for LLM invocation (stateless)

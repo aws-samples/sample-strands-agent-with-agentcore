@@ -8,9 +8,9 @@ import logging
 import os
 from typing import Dict, Any, List, Optional
 from strands import Agent
-from strands.models import BedrockModel, CacheConfig
 from strands.tools.executors import SequentialToolExecutor
 from agents.base import BaseAgent
+from agents.model_factory import build_model
 from agent.hooks import ResearchApprovalHook, EmailApprovalHook, GitHubApprovalHook
 from agent.config.prompt_builder import (
     build_text_system_prompt,
@@ -110,37 +110,16 @@ class ChatAgent(BaseAgent):
     def create_agent(self):
         """Create Strands agent with filtered tools and session management"""
         try:
-            from botocore.config import Config
-
             config = self.get_model_config()
 
-            # Configure retry for transient Bedrock errors (serviceUnavailableException)
-            retry_config = Config(
-                retries={
-                    'max_attempts': 10,
-                    'mode': 'adaptive'  # Adaptive retry with exponential backoff
-                },
-                connect_timeout=30,
-                read_timeout=300  # Increased to 5 minutes for complex Code Interpreter operations
+            # Routes to BedrockModel (caching) or a Mantle OpenAI provider based
+            # on model_id. Mantle models ignore caching/temperature internally.
+            model = build_model(
+                config["model_id"],
+                temperature=config.get("temperature"),
+                max_tokens=32000,
+                caching_enabled=bool(self.caching_enabled),
             )
-
-            # Create model configuration
-            model_config = {
-                "model_id": config["model_id"],
-                "boto_client_config": retry_config,
-                "max_tokens": 32000,
-            }
-            # Extended thinking models (Opus 4.7) don't support temperature
-            if "opus-4-7" not in config["model_id"]:
-                model_config["temperature"] = config.get("temperature", 0.7)
-
-            # Add CacheConfig if caching is enabled (strands-agents 1.24.0+)
-            if self.caching_enabled:
-                model_config["cache_config"] = CacheConfig(strategy="auto")
-                logger.info("Prompt caching enabled via CacheConfig(strategy='auto')")
-
-            logger.debug("Bedrock retry config: max_attempts=10, mode=adaptive")
-            model = BedrockModel(**model_config)
 
             # Create hooks
             hooks = []

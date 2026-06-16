@@ -1,0 +1,206 @@
+"""Model factory - builds the right Strands model provider for a given model_id.
+
+Two execution paths coexist:
+- Native Bedrock (`BedrockModel`): supports prompt caching. Default for any
+  model_id not registered as Mantle-only.
+- Bedrock Mantle OpenAI-compatible (`OpenAIResponsesModel`): for frontier/extra
+  models not available on native Bedrock Converse (gpt-5.x, grok, gemma-4).
+  No prompt caching. Authenticated with a Bedrock API key from Secrets Manager.
+
+Mantle models differ by region and by API path, so each is registered with its
+own spec. A Mantle stream can intermittently end with a `response.failed` event
+that the Strands SDK silently swallows (producing an empty turn); ResilientMantleModel
+retries those before any output is streamed downstream.
+"""
+
+import logging
+import os
+from dataclasses import dataclass
+from typing import Optional
+
+import boto3
+from strands.models import BedrockModel, CacheConfig
+
+logger = logging.getLogger(__name__)
+
+
+# Model IDs (substring match) that reject the `temperature` inference param:
+# Anthropic extended-thinking Opus, and OpenAI gpt-5.x reasoning models.
+NO_TEMPERATURE_MODELS = ("opus-4-7", "opus-4-8", "gpt-5")
+
+
+@dataclass(frozen=True)
+class MantleSpec:
+    """How to reach a Mantle-only model.
+
+    api: "responses" -> /openai/v1 (OpenAIResponsesModel)
+    region: Mantle region serving this model (independent of the app's region;
+            e.g. grok-4.3 is us-west-2 only, gpt-5.5 is not in us-west-2).
+    """
+    api: str
+    region: str
+
+
+# Mantle-only models (not callable via native Bedrock Converse). Anything not
+# listed here falls back to BedrockModel. The region is pinned per model: a
+# Mantle model is only served in some regions (grok-4.3 us-west-2 only, gpt-5.5
+# not in us-west-2), so the base_url region is forced independent of where the
+# app is deployed.
+MANTLE_MODELS: dict[str, MantleSpec] = {
+    "openai.gpt-5.5": MantleSpec(api="responses", region="us-east-2"),
+    "openai.gpt-5.4": MantleSpec(api="responses", region="us-east-2"),
+    "xai.grok-4.3": MantleSpec(api="responses", region="us-west-2"),
+    "google.gemma-4-31b": MantleSpec(api="responses", region="us-east-2"),
+    "google.gemma-4-26b-a4b": MantleSpec(api="responses", region="us-east-2"),
+    "google.gemma-4-e2b": MantleSpec(api="responses", region="us-east-2"),
+}
+
+
+# Native Bedrock models that are NOT available in every region. Selecting one of
+# these forces the BedrockModel client to the listed region, overriding the
+# app's deployment region (AWS_REGION). Models available everywhere are omitted
+# and use the default region. Keep in sync with regional Converse availability.
+NATIVE_MODEL_REGION_OVERRIDES: dict[str, str] = {
+    # qwen3-235b is absent in us-east-1; pin to us-west-2 which serves it.
+    "qwen.qwen3-235b-a22b-2507-v1:0": "us-west-2",
+}
+
+
+def model_rejects_temperature(model_id: str) -> bool:
+    return any(tag in model_id for tag in NO_TEMPERATURE_MODELS)
+
+
+_bedrock_api_key: Optional[str] = None
+
+
+def _get_bedrock_api_key() -> str:
+    """Fetch the Bedrock API key from Secrets Manager (cached process-wide).
+
+    Falls back to the AWS_BEARER_TOKEN_BEDROCK env var for local development.
+    """
+    global _bedrock_api_key
+    if _bedrock_api_key:
+        return _bedrock_api_key
+
+    env_key = os.environ.get("AWS_BEARER_TOKEN_BEDROCK")
+    if env_key:
+        _bedrock_api_key = env_key
+        return _bedrock_api_key
+
+    secret_name = os.environ.get("BEDROCK_API_KEY_SECRET_NAME")
+    if not secret_name:
+        raise RuntimeError(
+            "Mantle model requested but no Bedrock API key available "
+            "(set BEDROCK_API_KEY_SECRET_NAME or AWS_BEARER_TOKEN_BEDROCK)"
+        )
+    region = os.environ.get("AWS_REGION", "us-west-2")
+    client = boto3.client("secretsmanager", region_name=region)
+    _bedrock_api_key = client.get_secret_value(SecretId=secret_name)["SecretString"]
+    return _bedrock_api_key
+
+
+def _make_resilient_mantle_model(model_id: str, spec: MantleSpec, max_tokens: int):
+    """Build the resilient OpenAIResponsesModel subclass for a Mantle model."""
+    import asyncio
+
+    from strands.models.openai_responses import OpenAIResponsesModel
+
+    class ResilientMantleModel(OpenAIResponsesModel):
+        """Live streaming preserved. Buffers only the content-less leading events
+        (messageStart). On the first content/tool block, flushes the buffer and
+        streams live. If a turn produces no content block at all -- the Mantle
+        `response.failed` event that the SDK swallows into an empty turn -- the
+        buffer is discarded and the call retried. Safe because nothing was yielded
+        downstream before the first content block.
+        """
+
+        MAX_RETRIES = 6
+        RETRY_BASE_S = 1.0
+        _CONTENT_KEYS = ("contentBlockStart", "contentBlockDelta")
+
+        async def stream(self, *args, **kwargs):
+            attempt = 0
+            while True:
+                lead_buffer = []
+                produced = False
+                async for event in super().stream(*args, **kwargs):
+                    if produced:
+                        yield event
+                        continue
+                    key = next(iter(event.keys())) if isinstance(event, dict) else None
+                    if key in self._CONTENT_KEYS:
+                        produced = True
+                        for held in lead_buffer:
+                            yield held
+                        lead_buffer = []
+                        yield event
+                    else:
+                        lead_buffer.append(event)
+                if produced:
+                    return
+                if attempt < self.MAX_RETRIES:
+                    attempt += 1
+                    logger.warning(
+                        "Mantle empty turn (response.failed) for %s; retry %d/%d",
+                        model_id, attempt, self.MAX_RETRIES,
+                    )
+                    await asyncio.sleep(self.RETRY_BASE_S * attempt)
+                    continue
+                logger.error("Mantle model %s exhausted retries on empty turn", model_id)
+                for held in lead_buffer:
+                    yield held
+                return
+
+    base_url = f"https://bedrock-mantle.{spec.region}.api.aws/openai/v1"
+    return ResilientMantleModel(
+        model_id=model_id,
+        params={"max_output_tokens": max_tokens},
+        client_args={
+            "api_key": _get_bedrock_api_key(),
+            "base_url": base_url,
+        },
+    )
+
+
+def build_model(
+    model_id: str,
+    *,
+    temperature: Optional[float] = None,
+    max_tokens: int = 32000,
+    caching_enabled: bool = False,
+):
+    """Build the appropriate Strands model for `model_id`.
+
+    Mantle-only models -> ResilientMantleModel (no caching, no temperature).
+    Everything else -> BedrockModel (caching + boto retry).
+    """
+    spec = MANTLE_MODELS.get(model_id)
+    if spec is not None:
+        logger.info("Building Mantle model %s (region=%s)", model_id, spec.region)
+        return _make_resilient_mantle_model(model_id, spec, max_tokens)
+
+    from botocore.config import Config
+
+    retry_config = Config(
+        retries={"max_attempts": 10, "mode": "adaptive"},
+        connect_timeout=30,
+        read_timeout=300,
+    )
+    model_config = {
+        "model_id": model_id,
+        "boto_client_config": retry_config,
+        "max_tokens": max_tokens,
+    }
+    # Force the region for native models that aren't available everywhere;
+    # otherwise BedrockModel defaults to the app's AWS_REGION.
+    region_override = NATIVE_MODEL_REGION_OVERRIDES.get(model_id)
+    if region_override:
+        model_config["region_name"] = region_override
+        logger.info("Region override for %s -> %s", model_id, region_override)
+    if not model_rejects_temperature(model_id):
+        model_config["temperature"] = temperature if temperature is not None else 0.7
+    if caching_enabled:
+        model_config["cache_config"] = CacheConfig(strategy="auto")
+        logger.info("Prompt caching enabled via CacheConfig(strategy='auto')")
+
+    return BedrockModel(**model_config)

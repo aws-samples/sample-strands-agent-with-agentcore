@@ -67,6 +67,11 @@ data "aws_secretsmanager_secret" "google_maps_creds" {
   name  = "${var.project_name}/mcp/google-maps-credentials"
 }
 
+data "aws_secretsmanager_secret" "bedrock_api_key" {
+  count = var.enable_mantle_models ? 1 : 0
+  name  = "${var.project_name}/bedrock/api-key"
+}
+
 locals {
   lambda_tools_root = "${local.root_dir}/agentcore/gateway-tools/lambda-functions"
 
@@ -291,24 +296,29 @@ module "runtime_orchestrator" {
   artifact_bucket_arn  = aws_s3_bucket.artifacts.arn
   artifact_bucket_name = aws_s3_bucket.artifacts.id
 
-  extra_env_vars = {
-    DYNAMODB_USERS_TABLE                  = module.data.users_table_name
-    DYNAMODB_SESSIONS_TABLE               = module.data.sessions_table_name
-    MEMORY_ARN                            = module.memory.memory_arn
-    CODE_AGENT_RUNTIME_ARN                = module.runtime_code_agent.runtime_arn
-    RESEARCH_AGENT_RUNTIME_ARN            = module.runtime_research_agent.runtime_arn
-    MCP_3LO_RUNTIME_ARN                   = module.runtime_mcp_3lo.runtime_arn
-    CODE_INTERPRETER_ID                   = module.agentcore_shared.code_interpreter_id
-    BROWSER_ID                            = module.agentcore_shared.browser_id
-    BROWSER_NAME                          = module.agentcore_shared.browser_name
-    NOVA_ACT_WORKFLOW_DEFINITION_NAME     = module.agentcore_shared.nova_act_workflow_name
-    NOVA_ACT_REGION                       = "us-east-1"
-    AGENT_OBSERVABILITY_ENABLED           = "true"
-    OTEL_PYTHON_DISTRO                    = "aws_distro"
-    OTEL_PYTHON_CONFIGURATOR              = "aws_configurator"
-    OTEL_LOGS_EXPORTER                    = "otlp"
-    OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = "urllib3,urllib"
-  }
+  extra_env_vars = merge(
+    {
+      DYNAMODB_USERS_TABLE                  = module.data.users_table_name
+      DYNAMODB_SESSIONS_TABLE               = module.data.sessions_table_name
+      MEMORY_ARN                            = module.memory.memory_arn
+      CODE_AGENT_RUNTIME_ARN                = module.runtime_code_agent.runtime_arn
+      RESEARCH_AGENT_RUNTIME_ARN            = module.runtime_research_agent.runtime_arn
+      MCP_3LO_RUNTIME_ARN                   = module.runtime_mcp_3lo.runtime_arn
+      CODE_INTERPRETER_ID                   = module.agentcore_shared.code_interpreter_id
+      BROWSER_ID                            = module.agentcore_shared.browser_id
+      BROWSER_NAME                          = module.agentcore_shared.browser_name
+      NOVA_ACT_WORKFLOW_DEFINITION_NAME     = module.agentcore_shared.nova_act_workflow_name
+      NOVA_ACT_REGION                       = "us-east-1"
+      AGENT_OBSERVABILITY_ENABLED           = "true"
+      OTEL_PYTHON_DISTRO                    = "aws_distro"
+      OTEL_PYTHON_CONFIGURATOR              = "aws_configurator"
+      OTEL_LOGS_EXPORTER                    = "otlp"
+      OTEL_PYTHON_DISABLED_INSTRUMENTATIONS = "urllib3,urllib"
+    },
+    var.enable_mantle_models ? {
+      BEDROCK_API_KEY_SECRET_NAME = data.aws_secretsmanager_secret.bedrock_api_key[0].name
+    } : {},
+  )
 
   depends_on = [
     module.auth,

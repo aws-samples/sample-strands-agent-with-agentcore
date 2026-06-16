@@ -1,16 +1,20 @@
 /**
  * Available Models endpoint - returns list of supported AI models
+ *
+ * Two backend execution paths (decided server-side by model_id):
+ * - Native Bedrock (BedrockModel): prompt caching supported.
+ * - Bedrock Mantle (OpenAIResponsesModel): frontier/extra models not on native
+ *   Bedrock Converse (gpt-5.x, grok, gemma-4). No prompt caching.
  */
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
-// Available Bedrock models
 const AVAILABLE_MODELS = [
-  // Claude (Anthropic)
+  // Claude (Anthropic) - native Bedrock, prompt caching
   {
-    id: 'us.anthropic.claude-opus-4-7',
-    name: 'Claude Opus 4.7',
+    id: 'us.anthropic.claude-opus-4-8',
+    name: 'Claude Opus 4.8',
     provider: 'Anthropic',
     description: 'Most intelligent model, best for complex tasks',
     noTemperature: true
@@ -28,7 +32,37 @@ const AVAILABLE_MODELS = [
     description: 'Fast and efficient, cost-effective'
   },
 
-  // DeepSeek
+  // GPT (OpenAI) - gpt-5.x via Mantle, gpt-oss via native Bedrock
+  {
+    id: 'openai.gpt-5.5',
+    name: 'GPT-5.5',
+    provider: 'OpenAI',
+    description: 'Frontier reasoning model (via Bedrock Mantle)',
+    noTemperature: true
+  },
+  {
+    id: 'openai.gpt-5.4',
+    name: 'GPT-5.4',
+    provider: 'OpenAI',
+    description: 'Frontier model (via Bedrock Mantle)',
+    noTemperature: true
+  },
+  {
+    id: 'openai.gpt-oss-120b-1:0',
+    name: 'GPT OSS 120B',
+    provider: 'OpenAI',
+    description: 'Open-source GPT model with 120B parameters'
+  },
+
+  // Grok (xAI) - via Mantle
+  {
+    id: 'xai.grok-4.3',
+    name: 'Grok 4.3',
+    provider: 'xAI',
+    description: 'Advanced reasoning model (via Bedrock Mantle)'
+  },
+
+  // DeepSeek - native Bedrock
   {
     id: 'deepseek.v3.2',
     name: 'DeepSeek V3.2',
@@ -36,132 +70,72 @@ const AVAILABLE_MODELS = [
     description: 'Advanced language model with strong reasoning capabilities'
   },
 
-  // Nova (Amazon)
+  // Gemma (Google) - gemma-4 via Mantle
   {
-    id: 'us.amazon.nova-2-omni-v1:0',
-    name: 'Nova 2 Omni',
-    provider: 'Amazon',
-    description: 'Preview multimodal model with advanced capabilities'
+    id: 'google.gemma-4-31b',
+    name: 'Gemma 4 31B',
+    provider: 'Google',
+    description: 'Latest multimodal model (via Bedrock Mantle)'
   },
   {
-    id: 'us.amazon.nova-2-pro-preview-20251202-v1:0',
-    name: 'Nova 2 Pro',
-    provider: 'Amazon',
-    description: 'High-performance multimodal model'
-  },
-  {
-    id: 'us.amazon.nova-2-lite-v1:0',
-    name: 'Nova 2 Lite',
-    provider: 'Amazon',
-    description: 'Lightweight and efficient model'
+    id: 'google.gemma-4-26b-a4b',
+    name: 'Gemma 4 26B',
+    provider: 'Google',
+    description: 'Efficient MoE multimodal model (via Bedrock Mantle)'
   },
 
-  // GPT (OpenAI)
+  // Z.AI GLM - native Bedrock
   {
-    id: 'openai.gpt-oss-120b-1:0',
-    name: 'GPT OSS 120B',
-    provider: 'OpenAI',
-    description: 'Open-source GPT model with 120B parameters'
+    id: 'zai.glm-5',
+    name: 'GLM-5',
+    provider: 'Z.AI',
+    description: 'Latest flagship reasoning and agentic model'
   },
   {
-    id: 'openai.gpt-oss-safeguard-20b',
-    name: 'GPT OSS Safeguard 20B',
-    provider: 'OpenAI',
-    description: 'Content safety model for custom policy enforcement'
-  },
-  {
-    id: 'openai.gpt-oss-safeguard-120b',
-    name: 'GPT OSS Safeguard 120B',
-    provider: 'OpenAI',
-    description: 'Larger content safety model for complex moderation'
+    id: 'zai.glm-4.7',
+    name: 'GLM-4.7',
+    provider: 'Z.AI',
+    description: 'Strong general-purpose model'
   },
 
-  // Qwen
+  // Moonshot - native Bedrock
   {
-    id: 'qwen.qwen3-vl-235b-a22b',
-    name: 'Qwen3 VL 235B',
-    provider: 'Qwen',
-    description: 'Multimodal model for image, video, and code understanding'
+    id: 'moonshotai.kimi-k2.5',
+    name: 'Kimi K2.5',
+    provider: 'Moonshot AI',
+    description: 'Deep reasoning model for complex workflows'
   },
+
+  // MiniMax - native Bedrock
+  {
+    id: 'minimax.minimax-m2.5',
+    name: 'MiniMax M2.5',
+    provider: 'MiniMax AI',
+    description: 'Built for coding agents and automation'
+  },
+
+  // Qwen - native Bedrock
   {
     id: 'qwen.qwen3-235b-a22b-2507-v1:0',
     name: 'Qwen 235B',
     provider: 'Qwen',
     description: 'Large-scale language model with 235B parameters'
   },
-  {
-    id: 'qwen.qwen3-next-80b-a3b',
-    name: 'Qwen3 Next 80B',
-    provider: 'Qwen',
-    description: 'Fast inference for ultra-long documents and RAG'
-  },
-  {
-    id: 'qwen.qwen3-32b-v1:0',
-    name: 'Qwen 32B',
-    provider: 'Qwen',
-    description: 'Efficient language model with 32B parameters'
-  },
 
-  // Gemma (Google)
+  // Mistral - native Bedrock
   {
-    id: 'google.gemma-3-27b-it',
-    name: 'Gemma 3 27B',
-    provider: 'Google',
-    description: 'Powerful text and image model for enterprise'
-  },
-  {
-    id: 'google.gemma-3-12b-it',
-    name: 'Gemma 3 12B',
-    provider: 'Google',
-    description: 'Balanced text and image model for workstations'
-  },
-  {
-    id: 'google.gemma-3-4b-it',
-    name: 'Gemma 3 4B',
-    provider: 'Google',
-    description: 'Efficient text and image model for on-device AI'
-  },
-
-  // NVIDIA
-  {
-    id: 'nvidia.nemotron-nano-12b-v2',
-    name: 'Nemotron Nano 12B v2 VL',
-    provider: 'NVIDIA',
-    description: 'Advanced multimodal reasoning for video understanding'
-  },
-  {
-    id: 'nvidia.nemotron-nano-9b-v2',
-    name: 'Nemotron Nano 9B v2',
-    provider: 'NVIDIA',
-    description: 'High efficiency for reasoning and agentic tasks'
-  },
-
-  // Mistral
-  {
-    id: 'mistral.voxtral-small-24b-2507',
-    name: 'Voxtral Small 24B',
+    id: 'mistral.mistral-large-3-675b-instruct',
+    name: 'Mistral Large 3',
     provider: 'Mistral AI',
-    description: 'State-of-the-art audio input with text performance'
-  },
-  {
-    id: 'mistral.voxtral-mini-3b-2507',
-    name: 'Voxtral Mini 3B',
-    provider: 'Mistral AI',
-    description: 'Advanced audio understanding with transcription'
+    description: 'Flagship instruction model with 675B parameters'
   },
 
-  // Others
+  // NVIDIA - native Bedrock
   {
-    id: 'moonshot.kimi-k2-thinking',
-    name: 'Kimi K2 Thinking',
-    provider: 'Moonshot AI',
-    description: 'Deep reasoning model for complex workflows'
-  },
-  {
-    id: 'minimax.minimax-m2',
-    name: 'MiniMax M2',
-    provider: 'MiniMax AI',
-    description: 'Built for coding agents and automation'
+    id: 'nvidia.nemotron-super-3-120b',
+    name: 'Nemotron Super 3 120B',
+    provider: 'NVIDIA',
+    description: 'High-performance reasoning and agentic model'
   }
 ]
 

@@ -1,0 +1,114 @@
+"""
+Tests for agents.model_factory
+
+Covers:
+- build_model routing: Bedrock vs Mantle by model_id
+- temperature guard (extended-thinking / reasoning models)
+- Mantle base_url / region selection
+- Bedrock API key resolution (env var and Secrets Manager)
+"""
+import os
+import pytest
+from unittest.mock import patch, MagicMock
+
+import agents.model_factory as mf
+from agents.model_factory import (
+    build_model,
+    model_rejects_temperature,
+    MANTLE_MODELS,
+)
+
+
+@pytest.fixture(autouse=True)
+def _reset_key_cache():
+    mf._bedrock_api_key = None
+    yield
+    mf._bedrock_api_key = None
+
+
+class TestTemperatureGuard:
+    @pytest.mark.parametrize("model_id", [
+        "us.anthropic.claude-opus-4-7",
+        "us.anthropic.claude-opus-4-8",
+        "openai.gpt-5.5",
+        "openai.gpt-5.4",
+    ])
+    def test_rejects(self, model_id):
+        assert model_rejects_temperature(model_id) is True
+
+    @pytest.mark.parametrize("model_id", [
+        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-haiku-4-5-20251001-v1:0",
+        "xai.grok-4.3",
+        "google.gemma-4-31b",
+    ])
+    def test_allows(self, model_id):
+        assert model_rejects_temperature(model_id) is False
+
+
+class TestBedrockRouting:
+    def test_bedrock_model_for_native_id(self):
+        with patch.object(mf, "BedrockModel") as MockBedrock:
+            build_model("us.anthropic.claude-sonnet-4-6", temperature=0.5, caching_enabled=True)
+            kwargs = MockBedrock.call_args.kwargs
+            assert kwargs["model_id"] == "us.anthropic.claude-sonnet-4-6"
+            assert kwargs["temperature"] == 0.5
+            assert "cache_config" in kwargs
+
+    def test_no_temperature_for_opus(self):
+        with patch.object(mf, "BedrockModel") as MockBedrock:
+            build_model("us.anthropic.claude-opus-4-8", temperature=0.7)
+            assert "temperature" not in MockBedrock.call_args.kwargs
+
+    def test_no_cache_when_disabled(self):
+        with patch.object(mf, "BedrockModel") as MockBedrock:
+            build_model("us.anthropic.claude-sonnet-4-6", caching_enabled=False)
+            assert "cache_config" not in MockBedrock.call_args.kwargs
+
+    def test_region_override_for_restricted_native_model(self):
+        with patch.object(mf, "BedrockModel") as MockBedrock:
+            build_model("qwen.qwen3-235b-a22b-2507-v1:0")
+            assert MockBedrock.call_args.kwargs["region_name"] == "us-west-2"
+
+    def test_no_region_override_for_global_model(self):
+        with patch.object(mf, "BedrockModel") as MockBedrock:
+            build_model("us.anthropic.claude-sonnet-4-6")
+            assert "region_name" not in MockBedrock.call_args.kwargs
+
+
+class TestMantleRouting:
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+    def test_mantle_model_built_with_correct_base_url(self):
+        model = build_model("openai.gpt-5.5")
+        assert "bedrock-mantle.us-east-2.api.aws/openai/v1" in model.client_args["base_url"]
+        assert model.client_args["api_key"] == "test-key"
+
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+    def test_grok_region_is_west(self):
+        model = build_model("xai.grok-4.3")
+        assert "us-west-2" in model.client_args["base_url"]
+
+    def test_all_mantle_models_have_responses_api(self):
+        for spec in MANTLE_MODELS.values():
+            assert spec.api == "responses"
+            assert spec.region
+
+
+class TestApiKeyResolution:
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "env-key"})
+    def test_env_var_takes_precedence(self):
+        assert mf._get_bedrock_api_key() == "env-key"
+
+    @patch.dict(os.environ, {"BEDROCK_API_KEY_SECRET_NAME": "my/secret", "AWS_REGION": "us-east-2"}, clear=True)
+    def test_secrets_manager_fallback(self):
+        fake_client = MagicMock()
+        fake_client.get_secret_value.return_value = {"SecretString": "sm-key"}
+        with patch.object(mf.boto3, "client", return_value=fake_client) as mock_client:
+            assert mf._get_bedrock_api_key() == "sm-key"
+            mock_client.assert_called_once_with("secretsmanager", region_name="us-east-2")
+            fake_client.get_secret_value.assert_called_once_with(SecretId="my/secret")
+
+    @patch.dict(os.environ, {}, clear=True)
+    def test_raises_when_no_key(self):
+        with pytest.raises(RuntimeError, match="no Bedrock API key"):
+            mf._get_bedrock_api_key()

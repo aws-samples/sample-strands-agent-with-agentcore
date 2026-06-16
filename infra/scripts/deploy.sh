@@ -105,6 +105,7 @@ STATE_BUCKET="${PROJECT_NAME}-tfstate-${ACCOUNT_ID}-${STATE_REGION}"
 SKIP_TAVILY=false
 SKIP_GOOGLE_SEARCH=false
 SKIP_GOOGLE_MAPS=false
+ENABLE_MANTLE_MODELS=false
 
 _secret_exists() {
   aws secretsmanager describe-secret --secret-id "$1" --region "$AWS_REGION" >/dev/null 2>&1
@@ -190,6 +191,26 @@ prompt_api_keys() {
     fi
   fi
 
+  # Bedrock API key (for Mantle OpenAI-compatible models: gpt-5.x, grok, gemma-4)
+  local mantle_secret="${PROJECT_NAME}/bedrock/api-key"
+  if _secret_exists "$mantle_secret"; then
+    ENABLE_MANTLE_MODELS=true
+    echo ""
+    echo "Bedrock Mantle  : already configured (gpt-5.x, grok, gemma-4 enabled)"
+  else
+    echo ""
+    echo "Bedrock API Key (enables Mantle models: GPT-5.5, Grok-4.3, Gemma-4)"
+    echo "  Generate at: https://console.aws.amazon.com/bedrock/home#/api-keys"
+    read -rp "  Bedrock API Key (Enter to skip): " key
+    if [ -n "${key:-}" ]; then
+      _ensure_secret "$mantle_secret" "Bedrock API key for Mantle OpenAI-compatible models" "$key"
+      ENABLE_MANTLE_MODELS=true
+      echo "  -> stored"
+    else
+      echo "  (skipped — GPT-5.5, Grok, Gemma-4 will not be available)"
+    fi
+  fi
+
   # Google Maps Embed (frontend key — separate from server-side credentials).
   # The Embed API requires the key in the browser, so it MUST be a distinct key
   # restricted to Maps Embed API + your CloudFront domain in Google Cloud Console.
@@ -215,6 +236,7 @@ prompt_api_keys() {
 }
 
 prompt_api_keys
+export TF_VAR_enable_mantle_models="$ENABLE_MANTLE_MODELS"
 
 # ------------------------------------------------------------
 # OAuth credential prompts (Google / GitHub / Notion)
