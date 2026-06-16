@@ -1,13 +1,17 @@
 version: 2
+# open-pull-requests-limit is intentionally 0: it pauses NEW PR creation while
+# the existing backlog is triaged. Security updates are unaffected (Dependabot
+# always opens those). Raise the limit once the initial backlog is cleared.
 updates:
   - package-ecosystem: npm
     directory: /chatbot-app/frontend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     groups:
-      frontend-dev:
-        dependency-type: development
+      frontend:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
@@ -16,10 +20,11 @@ updates:
     directory: /mobile-app
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
     groups:
-      mobile-dev:
-        dependency-type: development
+      mobile:
+        patterns:
+          - "*"
         update-types:
           - minor
           - patch
@@ -28,9 +33,21 @@ updates:
     directory: /chatbot-app/agentcore
     schedule:
       interval: weekly
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 0
+    groups:
+      python:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"
