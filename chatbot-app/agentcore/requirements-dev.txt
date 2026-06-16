@@ -7,7 +7,7 @@ pytest-asyncio>=0.24.0
 pytest-cov>=6.0.0
 
 # AWS mocking (for integration tests)
-moto>=5.0.0
+moto>=5.2.2
 
 # Linting
 ruff>=0.9.0
