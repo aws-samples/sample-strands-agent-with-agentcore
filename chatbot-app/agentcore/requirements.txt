@@ -26,7 +26,7 @@ boto3>=1.43.30
 # bedrock-agentcore[strands-agents]>=0.1.0
 
 # HTTP
-httpx>=0.24.0
+httpx>=0.28.1
 anyio>=3.6.0
 
 # OpenTelemetry (for observability)
