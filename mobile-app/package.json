@@ -33,7 +33,7 @@
     "react-native": "0.83.2",
     "react-native-fetch-api": "^3.0.0",
     "react-native-gesture-handler": "~2.30.0",
-    "react-native-get-random-values": "^1.11.0",
+    "react-native-get-random-values": "^2.0.0",
     "react-native-maps": "1.26.20",
     "react-native-markdown-display": "^7.0.2",
     "react-native-reanimated": "4.2.1",
