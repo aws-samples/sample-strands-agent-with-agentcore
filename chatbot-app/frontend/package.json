@@ -101,15 +101,15 @@
     }
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^16.0.5",
+    "@next/bundle-analyzer": "^16.2.9",
     "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/uuid": "^10.0.0",
     "@vitejs/plugin-react": "^4.5.2",
-    "autoprefixer": "^10.0.1",
+    "autoprefixer": "^10.5.0",
     "eslint": "^8",
     "eslint-config-next": "15.4.3",
     "jsdom": "^26.1.0",
@@ -119,6 +119,6 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5",
     "vitest": "^3.2.6",
-    "ws": "^8.19.0"
+    "ws": "^8.21.0"
   }
 }
