@@ -38,7 +38,7 @@ pymupdf>=1.25.0  # PDF text extraction for large files exceeding Bedrock's 4.5MB
 openpyxl>=3.1.0  # Excel sheet name extraction for preview
 defusedxml>=0.7.1  # Safe XML parsing for PPTX engine
 
-bedrock-agentcore>=1.1.5
+bedrock-agentcore>=1.14.1
 
 # Nova Act SDK (for natural language browser automation via AgentCore Browser)
 # NOTE: nova-act requires --no-deps due to strands-agents version conflict
