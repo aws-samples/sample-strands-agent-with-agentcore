@@ -16,7 +16,7 @@
   "dependencies": {
     "@ag-ui/client": "^0.0.45",
     "@ag-ui/core": "^0.0.45",
-    "@aws-amplify/ui-react": "^6.0.0",
+    "@aws-amplify/ui-react": "^6.15.4",
     "@aws-crypto/sha256-js": "^5.2.0",
     "@aws-sdk/client-bedrock-agentcore": "^3.931.0",
     "@aws-sdk/client-bedrock-runtime": "^3.996.0",
