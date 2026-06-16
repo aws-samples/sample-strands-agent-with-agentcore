@@ -102,6 +102,8 @@ def _get_bedrock_api_key() -> str:
 def _make_resilient_mantle_model(model_id: str, spec: MantleSpec, max_tokens: int):
     """Build the resilient OpenAIResponsesModel subclass for a Mantle model."""
     import asyncio
+    import base64
+    import mimetypes
 
     from strands.models.openai_responses import OpenAIResponsesModel
 
@@ -150,6 +152,24 @@ def _make_resilient_mantle_model(model_id: str, spec: MantleSpec, max_tokens: in
                 for held in lead_buffer:
                     yield held
                 return
+
+        @classmethod
+        def _format_request_message_content(cls, content, *, role="user"):
+            # The SDK emits documents as {"type": "input_file", "file_url": <data-url>},
+            # which Mantle rejects with "Unsupported file type: 'unknown'". Mantle
+            # requires the OpenAI-standard shape with an explicit filename + file_data.
+            if "document" in content:
+                doc = content["document"]
+                fmt = doc["format"]
+                mime = mimetypes.types_map.get(f".{fmt}", "application/octet-stream")
+                data_url = f"data:{mime};base64,{base64.b64encode(doc['source']['bytes']).decode()}"
+                name = doc.get("name", "document")
+                return {
+                    "type": "input_file",
+                    "filename": f"{name}.{fmt}",
+                    "file_data": data_url,
+                }
+            return super()._format_request_message_content(content, role=role)
 
     base_url = f"https://bedrock-mantle.{spec.region}.api.aws/openai/v1"
     return ResilientMantleModel(

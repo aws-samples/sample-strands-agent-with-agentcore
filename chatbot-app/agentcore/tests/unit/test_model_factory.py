@@ -93,6 +93,24 @@ class TestMantleRouting:
             assert spec.api == "responses"
             assert spec.region
 
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+    def test_pdf_document_uses_filename_and_file_data(self):
+        # Mantle rejects the SDK default {"type":"input_file","file_url":...} with
+        # "Unsupported file type: 'unknown'". The subclass must emit filename + file_data.
+        model = build_model("openai.gpt-5.5")
+        block = {"document": {"format": "pdf", "name": "report", "source": {"bytes": b"%PDF-1.4 x"}}}
+        out = type(model)._format_request_message_content(block)
+        assert out["type"] == "input_file"
+        assert out["filename"] == "report.pdf"
+        assert out["file_data"].startswith("data:application/pdf;base64,")
+        assert "file_url" not in out
+
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+    def test_non_document_content_delegates_to_parent(self):
+        model = build_model("openai.gpt-5.5")
+        out = type(model)._format_request_message_content({"text": "hi"})
+        assert out == {"type": "input_text", "text": "hi"}
+
 
 class TestApiKeyResolution:
     @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "env-key"})
