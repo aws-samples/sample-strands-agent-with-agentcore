@@ -38,7 +38,7 @@
     "react-native-markdown-display": "^7.0.2",
     "react-native-reanimated": "4.2.1",
     "react-native-safe-area-context": "~5.6.2",
-    "react-native-screens": "~4.23.0",
+    "react-native-screens": "~4.25.2",
     "react-native-svg": "^15.15.3",
     "react-native-svg-transformer": "^1.5.3",
     "react-native-webview": "13.16.0",
