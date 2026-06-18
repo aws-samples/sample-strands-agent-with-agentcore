@@ -103,6 +103,13 @@ export async function triggerWarmup(sessionId?: string, authHeaders?: Record<str
     return
   }
 
+  // AgentCore Runtime requires a JWT; an unauthenticated warmup just 401s.
+  // Caller is responsible for passing a populated Authorization header.
+  if (!authHeaders?.Authorization) {
+    console.error('[Warmup] Aborted: missing Authorization header (caller race?)')
+    return
+  }
+
   const lastWarmup = parseInt(sessionStorage.getItem(WARMUP_KEY) || '0', 10)
   const lastWarmupSession = sessionStorage.getItem(WARMUP_SESSION_KEY)
 
