@@ -59,6 +59,11 @@ COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
 
+# sharp's native libvips (.so) is dlopen'd at runtime and isn't picked up by
+# Next's standalone file tracer, so copy the full @img tree explicitly. On alpine
+# only the linuxmusl/wasm variants are installed, so this stays small.
+COPY --from=builder /app/node_modules/@img ./node_modules/@img
+
 # Set the correct permission for prerender cache
 RUN mkdir -p .next
 RUN chown nextjs:nodejs .next

@@ -238,9 +238,16 @@ export const useChatAPI = ({
       setSessionId(currentSessionId)
       sessionIdRef.current = currentSessionId
 
-      // 3. Trigger warmup with auth
-      const authHeaders = await getAuthHeaders()
-      triggerWarmup(currentSessionId, authHeaders)
+      // 3. Trigger warmup with auth.
+      // Amplify's fetchAuthSession() can return an empty token immediately after
+      // a page load while getCurrentUser() already succeeds, so wait for the
+      // token to hydrate before warming. The runtime requires JWT auth.
+      const authHeaders = await waitForAuthHeaders()
+      if (authHeaders.Authorization) {
+        triggerWarmup(currentSessionId, authHeaders)
+      } else if (userId !== 'anonymous') {
+        logger.error('[Session] Authed user but token never hydrated; skipping warmup')
+      }
     }
 
     initSession()
@@ -267,6 +274,21 @@ export const useChatAPI = ({
       }
     } catch (error) {
       logger.debug('No auth session available (local dev or not authenticated)')
+    }
+    return {}
+  }
+
+  // Poll fetchAuthSession briefly until the access token is hydrated. Needed
+  // right after page load: getCurrentUser() can resolve before the token is
+  // available in memory, so a one-shot getAuthHeaders() may return empty.
+  const waitForAuthHeaders = async (
+    maxAttempts = 5,
+    delayMs = 200,
+  ): Promise<Record<string, string>> => {
+    for (let i = 0; i < maxAttempts; i++) {
+      const headers = await getAuthHeaders()
+      if (headers.Authorization) return headers
+      await new Promise((r) => setTimeout(r, delayMs))
     }
     return {}
   }
