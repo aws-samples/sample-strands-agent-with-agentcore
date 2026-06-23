@@ -120,6 +120,9 @@ jobs:
       - name: Tests
         run: npm test
 
+      - name: Build
+        run: npm run build
+
   a2a-agents:
     name: A2A Agents (Python)
     needs: changes
