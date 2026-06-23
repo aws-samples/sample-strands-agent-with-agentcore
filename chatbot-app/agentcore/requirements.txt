@@ -35,7 +35,7 @@ aws-opentelemetry-distro>=0.17.0
 # Document processing
 pdf2image>=1.17.0
 pymupdf>=1.27.2.3  # PDF text extraction for large files exceeding Bedrock's 4.5MB limit
-openpyxl>=3.1.0  # Excel sheet name extraction for preview
+openpyxl>=3.1.5  # Excel sheet name extraction for preview
 defusedxml>=0.7.1  # Safe XML parsing for PPTX engine
 
 bedrock-agentcore>=1.14.1
