@@ -30,7 +30,7 @@ httpx>=0.28.1
 anyio>=3.6.0
 
 # OpenTelemetry (for observability)
-aws-opentelemetry-distro>=0.17.0
+aws-opentelemetry-distro>=0.18.0
 
 # Document processing
 pdf2image>=1.17.0
