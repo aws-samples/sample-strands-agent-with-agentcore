@@ -20,7 +20,7 @@ A Telegram bot that connects to AWS AgentCore Runtime, enabling personal AI agen
 | Command  | Description                              |
 |----------|------------------------------------------|
 | `/reset` | Clear session and start a new conversation |
-| `/model` | Choose a model (Sonnet 4.6 / Haiku 4.5 / Opus 4.6) |
+| `/model` | Choose a model (Sonnet 5 / Haiku 4.5 / Opus 4.6) |
 
 ## Deployment
 

@@ -20,8 +20,8 @@ const AVAILABLE_MODELS = [
     noTemperature: true
   },
   {
-    id: 'us.anthropic.claude-sonnet-4-6',
-    name: 'Claude Sonnet 4.6',
+    id: 'us.anthropic.claude-sonnet-5',
+    name: 'Claude Sonnet 5',
     provider: 'Anthropic',
     description: 'Most capable model, balanced performance'
   },

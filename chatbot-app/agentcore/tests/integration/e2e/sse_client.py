@@ -180,7 +180,7 @@ def stream_chat(
     prompt: str,
     *,
     thread_id: str | None = None,
-    model_id: str = "us.anthropic.claude-sonnet-4-6",
+    model_id: str = "us.anthropic.claude-sonnet-5",
     state_overrides: dict[str, Any] | None = None,
     timeout: float = 180.0,
 ) -> StreamResult:

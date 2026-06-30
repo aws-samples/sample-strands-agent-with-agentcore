@@ -7,7 +7,7 @@ using built-in tools: Read, Write, Edit, Bash, Glob, Grep.
 Authentication: CLAUDE_CODE_USE_BEDROCK=1 + IAM execution role (no API key needed)
 
 For local testing:
-    CLAUDE_CODE_USE_BEDROCK=1 ANTHROPIC_MODEL=us.anthropic.claude-sonnet-4-6 \
+    CLAUDE_CODE_USE_BEDROCK=1 ANTHROPIC_MODEL=us.anthropic.claude-sonnet-5 \
     uvicorn src.main:app --port 9000 --reload
 """
 

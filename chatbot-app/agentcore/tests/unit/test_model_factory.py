@@ -37,7 +37,7 @@ class TestTemperatureGuard:
         assert model_rejects_temperature(model_id) is True
 
     @pytest.mark.parametrize("model_id", [
-        "us.anthropic.claude-sonnet-4-6",
+        "us.anthropic.claude-sonnet-5",
         "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "xai.grok-4.3",
         "google.gemma-4-31b",
@@ -49,9 +49,9 @@ class TestTemperatureGuard:
 class TestBedrockRouting:
     def test_bedrock_model_for_native_id(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-sonnet-4-6", temperature=0.5, caching_enabled=True)
+            build_model("us.anthropic.claude-sonnet-5", temperature=0.5, caching_enabled=True)
             kwargs = MockBedrock.call_args.kwargs
-            assert kwargs["model_id"] == "us.anthropic.claude-sonnet-4-6"
+            assert kwargs["model_id"] == "us.anthropic.claude-sonnet-5"
             assert kwargs["temperature"] == 0.5
             assert "cache_config" in kwargs
 
@@ -62,7 +62,7 @@ class TestBedrockRouting:
 
     def test_no_cache_when_disabled(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-sonnet-4-6", caching_enabled=False)
+            build_model("us.anthropic.claude-sonnet-5", caching_enabled=False)
             assert "cache_config" not in MockBedrock.call_args.kwargs
 
     def test_region_override_for_restricted_native_model(self):
@@ -72,7 +72,7 @@ class TestBedrockRouting:
 
     def test_no_region_override_for_global_model(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-sonnet-4-6")
+            build_model("us.anthropic.claude-sonnet-5")
             assert "region_name" not in MockBedrock.call_args.kwargs
 
 

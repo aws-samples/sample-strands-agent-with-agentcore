@@ -80,13 +80,13 @@ class TestA2AMessageFormat:
         """Test A2A message carries metadata correctly."""
         parts = [MockA2APart("Test message", "text")]
         metadata = {
-            "model_id": "us.anthropic.claude-sonnet-4-6",
+            "model_id": "us.anthropic.claude-sonnet-5",
             "session_id": "test-session-123",
             "user_id": "user-456"
         }
         message = MockA2AMessage(parts, metadata)
 
-        assert message.metadata["model_id"] == "us.anthropic.claude-sonnet-4-6"
+        assert message.metadata["model_id"] == "us.anthropic.claude-sonnet-5"
         assert message.metadata["session_id"] == "test-session-123"
         assert message.metadata["user_id"] == "user-456"
 
@@ -349,7 +349,7 @@ class TestA2AMetadataIntegration:
         # Frontend sends model_id in request
         frontend_request = {
             "message": "Research quantum computing",
-            "model_id": "us.anthropic.claude-sonnet-4-6",
+            "model_id": "us.anthropic.claude-sonnet-5",
             "enabled_tools": ["research-agent"]
         }
 

@@ -86,7 +86,7 @@ interface UseChatReturn {
 
 // Default preferences when session has no saved preferences
 const DEFAULT_PREFERENCES: SessionPreferences = {
-  lastModel: 'us.anthropic.claude-sonnet-4-6',
+  lastModel: 'us.anthropic.claude-sonnet-5',
   selectedPromptId: 'general',
 }
 
