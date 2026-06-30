@@ -113,7 +113,7 @@
     "eslint-config-next": "15.4.3",
     "jsdom": "^29.1.1",
     "postcss": "^8.5.10",
-    "tailwind-scrollbar": "^3.1.0",
+    "tailwind-scrollbar": "^4.0.2",
     "tailwindcss": "^3.3.0",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5",
