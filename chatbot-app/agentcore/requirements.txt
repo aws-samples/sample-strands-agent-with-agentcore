@@ -2,7 +2,7 @@
 # Using same versions as backend for compatibility
 
 # Core Framework
-fastapi==0.138.0
+fastapi==0.138.2
 uvicorn[standard]==0.49.0
 
 # Strands Agent Framework
