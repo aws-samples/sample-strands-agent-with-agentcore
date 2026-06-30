@@ -256,7 +256,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
     }
 
     return (
-      <div className="my-4 p-3 bg-red-50 border border-red-200 rounded">
+      <div className="my-4 p-3 bg-red-50 border border-red-200 rounded-sm">
         <p className="text-red-600">{result.message}</p>
       </div>
     );
@@ -557,7 +557,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
         <button
           onClick={(e) => { e.stopPropagation(); handleFilesDownload(toolExecution.id, toolExecution.toolName, toolExecution.toolResult); }}
           disabled={downloadingFiles.has(toolExecution.id)}
-          className="ml-auto p-1 hover:bg-muted rounded transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
+          className="ml-auto p-1 hover:bg-muted rounded-sm transition-colors opacity-0 group-hover:opacity-100 disabled:opacity-50"
           title="Download files"
         >
           {downloadingFiles.has(toolExecution.id)
@@ -697,11 +697,11 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                 const imageFormat = isUrlImage ? 'WEB' : ('format' in image && typeof image.format === 'string') ? image.format.toUpperCase() : 'IMG'
                 return (
                   <div key={idx} className="relative flex-shrink-0 h-[140px]">
-                    <div className="relative h-full rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-lg transition-all cursor-pointer bg-gray-50 dark:bg-gray-900"
+                    <div className="relative h-full rounded-lg overflow-hidden border border-border shadow-xs hover:shadow-lg transition-all cursor-pointer bg-gray-50 dark:bg-gray-900"
                       onClick={() => isUrlImage && 'url' in image && image.url ? window.open(image.url, '_blank', 'noopener,noreferrer') : setSelectedImage({ src: imageSrc, alt: imageTitle })}>
                       <LazyImage src={imageSrc} alt={imageTitle} className="h-full w-auto object-cover" />
                       <div className="absolute top-2 right-2">
-                        <div className="text-[10px] font-medium bg-black/70 text-white backdrop-blur-sm px-1.5 py-0.5 rounded">{String(imageFormat)}</div>
+                        <div className="text-[10px] font-medium bg-black/70 text-white backdrop-blur-sm px-1.5 py-0.5 rounded-sm">{String(imageFormat)}</div>
                       </div>
                       {isUrlImage && 'title' in image && image.title && (
                         <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-6">
@@ -850,7 +850,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                       <div key={exec.id}>
                         {count > 1 && (
                           <div className="text-label text-muted-foreground mb-1 font-medium flex items-center gap-1.5">
-                            <span className="text-[10px] bg-muted rounded px-1 py-0.5 tabular-nums">{i + 1}</span>
+                            <span className="text-[10px] bg-muted rounded-sm px-1 py-0.5 tabular-nums">{i + 1}</span>
                             {getToolDisplayName(exec.toolName, exec.isComplete, exec.toolInput)}
                           </div>
                         )}

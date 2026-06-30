@@ -34,7 +34,7 @@ function SkillIcon({ skillName, className }: { skillName: string; className?: st
   const src = `/tool-icons/${skillName}.${ICON_EXTENSIONS[failed] || 'svg'}`;
 
   if (failed >= ICON_EXTENSIONS.length) {
-    return <div className={`rounded bg-sidebar-foreground/10 ${className}`} />;
+    return <div className={`rounded-sm bg-sidebar-foreground/10 ${className}`} />;
   }
 
   return (
@@ -123,7 +123,7 @@ export function ConnectorPanel({ onBack }: ConnectorPanelProps) {
             {Array.from({ length: 6 }).map((_, i) => (
               <div key={i} className="flex items-center justify-between py-2">
                 <div className="flex items-center gap-3">
-                  <Skeleton className="h-5 w-5 rounded" />
+                  <Skeleton className="h-5 w-5 rounded-sm" />
                   <Skeleton className="h-4 w-28" />
                 </div>
                 <Skeleton className="h-5 w-9 rounded-full" />

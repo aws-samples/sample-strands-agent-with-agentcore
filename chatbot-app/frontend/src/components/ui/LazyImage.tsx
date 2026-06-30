@@ -29,7 +29,7 @@ export const LazyImage: React.FC<LazyImageProps> = ({
   return (
     <div className={`relative ${className}`} style={style}>
       {!isLoaded && !hasError && (
-        <div className="absolute inset-0 bg-gray-200 animate-pulse rounded" />
+        <div className="absolute inset-0 bg-gray-200 animate-pulse rounded-sm" />
       )}
       <img
         src={src}

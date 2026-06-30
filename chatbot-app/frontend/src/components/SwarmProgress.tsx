@@ -135,7 +135,7 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
   // If no renderable items, show raw JSON as fallback
   if (documents.length === 0 && images.length === 0 && charts.length === 0) {
     return (
-      <div className="mt-1 p-2 bg-muted/30 rounded text-caption font-mono overflow-x-auto">
+      <div className="mt-1 p-2 bg-muted/30 rounded-sm text-caption font-mono overflow-x-auto">
         <pre className="whitespace-pre-wrap break-words text-muted-foreground">
           {typeof context === 'string' ? context : JSON.stringify(context, null, 2)}
         </pre>
@@ -156,7 +156,7 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
                 className="group relative flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600"
                 onClick={() => handleDocumentDownload(doc.filename, doc.tool_type, sessionId)}
               >
-                <div className="flex items-center justify-center w-6 h-6 bg-gray-50 dark:bg-gray-800 rounded shadow-sm">
+                <div className="flex items-center justify-center w-6 h-6 bg-gray-50 dark:bg-gray-800 rounded-sm shadow-xs">
                   <Icon className={`h-3 w-3 ${color}`} />
                 </div>
                 <span className="text-caption font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
@@ -178,7 +178,7 @@ function SharedContextRenderer({ context, sessionId }: { context: Record<string,
               className="group relative flex items-center gap-2 px-3 py-1.5 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-lg transition-all duration-200 cursor-pointer border border-gray-200/50 dark:border-gray-700/50 hover:border-gray-300 dark:hover:border-gray-600"
               onClick={() => handleDocumentDownload(img.filename, 'image', sessionId)}
             >
-              <div className="flex items-center justify-center w-6 h-6 bg-purple-50 dark:bg-purple-900/30 rounded shadow-sm">
+              <div className="flex items-center justify-center w-6 h-6 bg-purple-50 dark:bg-purple-900/30 rounded-sm shadow-xs">
                 <Image className="h-3 w-3 text-purple-600 dark:text-purple-400" />
               </div>
               <span className="text-caption font-medium text-gray-700 dark:text-gray-200 whitespace-nowrap">
@@ -413,7 +413,7 @@ function AgentStepSection({ step, isRunning, sessionId }: { step: SwarmAgentStep
             <span
               key={`${tool.toolName}-${i}`}
               className={cn(
-                "inline-flex items-center gap-1 px-2 py-0.5 rounded text-caption",
+                "inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-caption",
                 tool.status === 'completed' && "bg-green-100/50 text-green-700 dark:bg-green-900/20 dark:text-green-400",
                 tool.status === 'failed' && "bg-red-100/50 text-red-700 dark:bg-red-900/20 dark:text-red-400",
                 tool.status === 'running' && "bg-purple-100/50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-400"

@@ -137,7 +137,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId, o
             <div className="flex items-center gap-2">
               {onTruncate && message.rawTimestamp && (
                 pendingTruncate ? (
-                  <div className="flex items-center gap-1 rounded-lg border border-destructive/30 bg-background p-0.5 shadow-sm">
+                  <div className="flex items-center gap-1 rounded-lg border border-destructive/30 bg-background p-0.5 shadow-xs">
                     <button
                       onClick={() => { onTruncate(); setPendingTruncate(false) }}
                       className="p-1.5 rounded-md text-destructive hover:bg-destructive/10 transition-colors"
@@ -171,7 +171,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId, o
               >
                 {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
               </button>
-              <div className={`rounded-2xl rounded-tr-md px-5 py-3.5 shadow-sm ${
+              <div className={`rounded-2xl rounded-tr-md px-5 py-3.5 shadow-xs ${
                 message.isVoiceMessage
                   ? 'bg-gradient-to-r from-fuchsia-100 to-purple-100 dark:from-fuchsia-900/30 dark:to-purple-900/30 text-fuchsia-800 dark:text-fuchsia-200'
                   : 'bg-primary/10 text-foreground'
@@ -262,7 +262,7 @@ export const ChatMessage = React.memo<ChatMessageProps>(({ message, sessionId, o
                       <LazyImage
                         src={imageSrc}
                         alt={`Generated image ${idx + 1}`}
-                        className="max-w-full h-auto rounded-xl border border-border shadow-sm"
+                        className="max-w-full h-auto rounded-xl border border-border shadow-xs"
                         style={{ maxHeight: '400px' }}
                       />
                       <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">

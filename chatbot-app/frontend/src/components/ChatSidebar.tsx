@@ -203,9 +203,9 @@ export function ChatSidebar({
                   <button
                     key={size}
                     onClick={() => setFontSize(size)}
-                    className={`flex-1 px-2 py-1 text-xs rounded transition-colors capitalize ${
+                    className={`flex-1 px-2 py-1 text-xs rounded-sm transition-colors capitalize ${
                       fontSize === size
-                        ? 'bg-background text-foreground shadow-sm font-medium'
+                        ? 'bg-background text-foreground shadow-xs font-medium'
                         : 'text-muted-foreground hover:text-foreground'
                     }`}
                   >

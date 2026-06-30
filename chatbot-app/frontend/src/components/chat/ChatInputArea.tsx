@@ -224,7 +224,7 @@ export function ChatInputArea({
 
       {/* Input Area */}
       <div className="mx-auto px-4 pb-4 md:pb-6 w-full md:max-w-4xl">
-        <div className={`chat-input-container bg-muted/40 dark:bg-zinc-900 rounded-2xl p-3 border border-border/50 shadow-sm ${
+        <div className={`chat-input-container bg-muted/40 dark:bg-zinc-900 rounded-2xl p-3 border border-border/50 shadow-xs ${
           ''
         }`}>
           <form

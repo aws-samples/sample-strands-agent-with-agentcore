@@ -363,7 +363,7 @@ if (!messages || messages.length === 0) {
                             <LazyImage
                               src={imageSrc}
                               alt={`Generated image ${idx + 1}`}
-                              className="max-w-full h-auto rounded-xl border border-border shadow-sm"
+                              className="max-w-full h-auto rounded-xl border border-border shadow-xs"
                               style={{ maxHeight: '400px' }}
                             />
                             <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity">

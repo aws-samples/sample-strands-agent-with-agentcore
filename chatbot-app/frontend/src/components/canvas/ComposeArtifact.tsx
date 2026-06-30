@@ -85,7 +85,7 @@ export function ComposeArtifact({
           <div className="flex-1 bg-muted/30 rounded-lg p-4 group-hover:bg-muted/50 transition-colors border border-border/50">
             <div className="flex items-start justify-between gap-3 mb-2">
               <h4 className="font-semibold text-body">{section.title}</h4>
-              <span className="text-label font-medium text-muted-foreground bg-background/80 px-2 py-1 rounded whitespace-nowrap">
+              <span className="text-label font-medium text-muted-foreground bg-background/80 px-2 py-1 rounded-sm whitespace-nowrap">
                 ~{section.estimated_words}w
               </span>
             </div>

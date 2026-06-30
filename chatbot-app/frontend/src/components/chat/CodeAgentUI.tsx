@@ -46,7 +46,7 @@ export const CodeAgentTerminal = React.memo<CodeAgentTerminalProps>(({ steps, co
   }, [steps.length, isExpanded])
 
   return (
-    <div className="mt-1 rounded-md border border-gray-300 dark:border-white/10 bg-gray-900 dark:bg-[#0d1117] overflow-hidden shadow-sm">
+    <div className="mt-1 rounded-md border border-gray-300 dark:border-white/10 bg-gray-900 dark:bg-[#0d1117] overflow-hidden shadow-xs">
       {/* Title bar */}
       <div
         className={`flex items-center gap-1.5 px-3 py-1 border-b border-white/5 ${completed ? 'cursor-pointer hover:bg-white/5' : ''}`}

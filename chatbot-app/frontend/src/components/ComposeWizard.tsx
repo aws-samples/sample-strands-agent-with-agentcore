@@ -471,15 +471,15 @@ export function ComposeWizard({ isOpen, onComplete, onClose, inputRect }: Compos
         {/* Footer */}
         <div className="px-3 py-2 bg-muted/30 border-t border-border">
           <div className="text-caption text-muted-foreground flex items-center gap-2">
-            <kbd className="px-1.5 py-0.5 bg-background rounded text-[10px] font-mono border border-border">
+            <kbd className="px-1.5 py-0.5 bg-background rounded-sm text-[10px] font-mono border border-border">
               ↑↓
             </kbd>
             <span>Navigate</span>
-            <kbd className="px-1.5 py-0.5 bg-background rounded text-[10px] font-mono border border-border">
+            <kbd className="px-1.5 py-0.5 bg-background rounded-sm text-[10px] font-mono border border-border">
               ↵
             </kbd>
             <span>Select</span>
-            <kbd className="px-1.5 py-0.5 bg-background rounded text-[10px] font-mono border border-border">
+            <kbd className="px-1.5 py-0.5 bg-background rounded-sm text-[10px] font-mono border border-border">
               Esc
             </kbd>
             <span>{step === 'type' ? 'Close' : 'Back'}</span>
