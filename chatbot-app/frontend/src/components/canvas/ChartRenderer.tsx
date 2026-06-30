@@ -416,7 +416,7 @@ function AreaChartComponent({
   );
 }
 
-function DownloadButton({ chartRef, title }: { chartRef: React.RefObject<HTMLDivElement>, title: string }) {
+function DownloadButton({ chartRef, title }: { chartRef: React.RefObject<HTMLDivElement | null>, title: string }) {
   const [isDownloading, setIsDownloading] = useState(false);
 
   const handleDownload = async () => {
