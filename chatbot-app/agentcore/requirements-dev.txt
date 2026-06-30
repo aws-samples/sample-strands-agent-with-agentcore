@@ -10,4 +10,4 @@ pytest-cov>=6.0.0
 moto>=5.2.2
 
 # Linting
-ruff>=0.15.17
+ruff>=0.15.20
