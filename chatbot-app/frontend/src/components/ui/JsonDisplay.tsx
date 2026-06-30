@@ -9,7 +9,7 @@ interface JsonDisplayProps {
 }
 
 // Optimized syntax highlighting for JSON
-const highlightJson = (json: string): JSX.Element[] => {
+const highlightJson = (json: string): React.JSX.Element[] => {
   // Early return for large strings to prevent performance issues
   if (json.length > 10000) {
     return [<span key="0" className="text-foreground">{json}</span>]
