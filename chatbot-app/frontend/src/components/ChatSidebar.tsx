@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Menu, Plus, Trash2, Moon, Sun, Settings, Github, ChevronRight, LogOut, Type, Plug } from 'lucide-react';
+import { Menu, Plus, Trash2, Moon, Sun, Settings, ChevronRight, LogOut, Type, Plug } from 'lucide-react';
+import { FaGithub } from 'react-icons/fa';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -220,7 +221,7 @@ export function ChatSidebar({
               rel="noopener noreferrer"
               className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md hover:bg-muted transition-colors"
             >
-              <Github className="h-4 w-4 text-muted-foreground" />
+              <FaGithub className="h-4 w-4 text-muted-foreground" />
               <span>GitHub</span>
             </a>
             {showSignOut && (
