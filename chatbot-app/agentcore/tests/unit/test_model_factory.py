@@ -30,6 +30,7 @@ class TestTemperatureGuard:
     @pytest.mark.parametrize("model_id", [
         "us.anthropic.claude-opus-4-7",
         "us.anthropic.claude-opus-4-8",
+        "us.anthropic.claude-sonnet-5",
         "openai.gpt-5.5",
         "openai.gpt-5.4",
     ])
@@ -37,7 +38,6 @@ class TestTemperatureGuard:
         assert model_rejects_temperature(model_id) is True
 
     @pytest.mark.parametrize("model_id", [
-        "us.anthropic.claude-sonnet-5",
         "us.anthropic.claude-haiku-4-5-20251001-v1:0",
         "xai.grok-4.3",
         "google.gemma-4-31b",
@@ -49,11 +49,16 @@ class TestTemperatureGuard:
 class TestBedrockRouting:
     def test_bedrock_model_for_native_id(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-sonnet-5", temperature=0.5, caching_enabled=True)
+            build_model("us.anthropic.claude-haiku-4-5-20251001-v1:0", temperature=0.5, caching_enabled=True)
             kwargs = MockBedrock.call_args.kwargs
-            assert kwargs["model_id"] == "us.anthropic.claude-sonnet-5"
+            assert kwargs["model_id"] == "us.anthropic.claude-haiku-4-5-20251001-v1:0"
             assert kwargs["temperature"] == 0.5
             assert "cache_config" in kwargs
+
+    def test_no_temperature_for_sonnet_5(self):
+        with patch.object(mf, "BedrockModel") as MockBedrock:
+            build_model("us.anthropic.claude-sonnet-5", temperature=0.7)
+            assert "temperature" not in MockBedrock.call_args.kwargs
 
     def test_no_temperature_for_opus(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
