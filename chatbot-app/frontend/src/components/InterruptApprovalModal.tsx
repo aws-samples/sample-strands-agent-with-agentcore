@@ -44,9 +44,9 @@ function InterruptDetails({ name, reason }: { name: string; reason?: Record<stri
       <div className="space-y-2 text-sm">
         <p className="text-foreground font-medium">{reason.summary}</p>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>Repo: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.repo}</code></span>
-          <span>Branch: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.branch}</code></span>
-          <span>From: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.from_branch}</code></span>
+          <span>Repo: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.repo}</code></span>
+          <span>Branch: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.branch}</code></span>
+          <span>From: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.from_branch}</code></span>
         </div>
       </div>
     )
@@ -59,8 +59,8 @@ function InterruptDetails({ name, reason }: { name: string; reason?: Record<stri
       <div className="space-y-2 text-sm">
         <p className="text-foreground font-medium">{reason.summary}</p>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>Repo: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.repo}</code></span>
-          <span>Branch: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.branch}</code></span>
+          <span>Repo: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.repo}</code></span>
+          <span>Branch: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.branch}</code></span>
         </div>
         {reason.commit_message && (
           <p className="text-xs text-muted-foreground">Commit: <em>{reason.commit_message}</em></p>
@@ -83,10 +83,10 @@ function InterruptDetails({ name, reason }: { name: string; reason?: Record<stri
       <div className="space-y-2 text-sm">
         <p className="text-foreground font-medium">{reason.summary}</p>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>Repo: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.repo}</code></span>
-          <span>Title: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.title}</code></span>
+          <span>Repo: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.repo}</code></span>
+          <span>Title: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.title}</code></span>
           <span>{reason.head} → {reason.base}</span>
-          {reason.draft && <span className="px-1.5 py-0.5 rounded bg-yellow-100 text-yellow-800">Draft</span>}
+          {reason.draft && <span className="px-1.5 py-0.5 rounded-sm bg-yellow-100 text-yellow-800">Draft</span>}
         </div>
       </div>
     )
@@ -98,7 +98,7 @@ function InterruptDetails({ name, reason }: { name: string; reason?: Record<stri
       <div className="space-y-3">
         <p className="text-sm text-foreground">{reason.intent}</p>
         <div className="flex items-center gap-4 text-xs text-muted-foreground">
-          <span>Query: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.query}</code></span>
+          <span>Query: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.query}</code></span>
           <span>Max: <strong className="text-foreground">{reason.max_delete || 50}</strong></span>
         </div>
       </div>
@@ -111,7 +111,7 @@ function InterruptDetails({ name, reason }: { name: string; reason?: Record<stri
       {reason.summary && <p className="text-foreground font-medium">{reason.summary}</p>}
       {reason.tool_name && (
         <p className="text-xs text-muted-foreground">
-          Tool: <code className="px-1.5 py-0.5 rounded bg-muted text-foreground">{reason.tool_name}</code>
+          Tool: <code className="px-1.5 py-0.5 rounded-sm bg-muted text-foreground">{reason.tool_name}</code>
         </p>
       )}
     </div>

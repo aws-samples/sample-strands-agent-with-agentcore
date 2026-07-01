@@ -405,7 +405,7 @@ export function BrowserLiveViewModal({
             <DialogTitle className="text-label font-medium text-slate-700 dark:text-slate-300">
               Live View
             </DialogTitle>
-            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 dark:bg-green-400/10 rounded">
+            <div className="flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 dark:bg-green-400/10 rounded-sm">
               <div className="w-1.5 h-1.5 bg-green-500 dark:bg-green-400 rounded-full animate-pulse" />
               <span className="text-[10px] font-medium text-green-600 dark:text-green-400">LIVE</span>
             </div>

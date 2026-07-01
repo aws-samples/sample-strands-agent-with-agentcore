@@ -131,7 +131,7 @@ export const JsonDisplay = React.memo<JsonDisplayProps>(({
           <span className="text-label font-medium text-foreground">{label}</span>
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1 text-caption text-muted-foreground hover:text-foreground transition-colors p-1 rounded hover:bg-muted"
+            className="flex items-center gap-1 text-caption text-muted-foreground hover:text-foreground transition-colors p-1 rounded-sm hover:bg-muted"
             title="Copy JSON"
           >
             {isCopied ? (
@@ -190,7 +190,7 @@ export const KeyValueDisplay = React.memo<{ data: Record<string, any>, className
 }) => {
   if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
     return (
-      <div className={`text-label text-muted-foreground italic p-3 bg-muted rounded ${className}`}>
+      <div className={`text-label text-muted-foreground italic p-3 bg-muted rounded-sm ${className}`}>
         No parameters
       </div>
     )
@@ -207,7 +207,7 @@ export const KeyValueDisplay = React.memo<{ data: Record<string, any>, className
             {typeof value === 'object' ? (
               <JsonDisplay data={value} maxLines={3} className="mt-1" />
             ) : (
-              <span className="font-mono bg-muted px-2 py-1 rounded text-caption">
+              <span className="font-mono bg-muted px-2 py-1 rounded-sm text-caption">
                 {typeof value === 'string' ? `"${value}"` : String(value)}
               </span>
             )}

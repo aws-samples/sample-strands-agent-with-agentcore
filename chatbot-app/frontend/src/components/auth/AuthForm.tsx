@@ -144,7 +144,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           <p className="text-sm text-muted-foreground mt-1.5">Sign in to continue</p>
         </div>
 
-        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-xs">
           <form onSubmit={handleSignIn}>
             <div className="flex flex-col gap-4">
               <div className="grid gap-1.5">
@@ -226,7 +226,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           <p className="text-sm text-muted-foreground mt-1.5">Enter your details to get started</p>
         </div>
 
-        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-xs">
           <form onSubmit={handleSignUp}>
             <div className="flex flex-col gap-4">
               <div className="grid gap-1.5">
@@ -308,7 +308,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           <p className="text-sm text-muted-foreground mt-1.5">We sent a code to {email}</p>
         </div>
 
-        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-xs">
           <form onSubmit={handleConfirmSignUp}>
             <div className="flex flex-col gap-4">
               <div className="grid gap-1.5">
@@ -367,7 +367,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           <p className="text-sm text-muted-foreground mt-1.5">Enter your email to receive a reset code</p>
         </div>
 
-        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-xs">
           <form onSubmit={handleForgotPassword}>
             <div className="flex flex-col gap-4">
               <div className="grid gap-1.5">
@@ -425,7 +425,7 @@ export function AuthForm({ onSuccess }: AuthFormProps) {
           <p className="text-sm text-muted-foreground mt-1.5">Enter the code sent to {email}</p>
         </div>
 
-        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-sm">
+        <div className="rounded-xl border border-border/60 bg-card/80 backdrop-blur-sm p-6 shadow-xs">
           <form onSubmit={handleConfirmReset}>
             <div className="flex flex-col gap-4">
               <div className="grid gap-1.5">

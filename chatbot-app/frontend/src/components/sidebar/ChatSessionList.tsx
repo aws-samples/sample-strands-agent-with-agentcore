@@ -137,7 +137,7 @@ export function ChatSessionList({
                     </span>
                     <button
                       onClick={(e) => handleDeleteSession(session.sessionId, e)}
-                      className="opacity-0 group-hover/session:opacity-100 transition-opacity p-1 rounded hover:bg-destructive/10 text-sidebar-foreground/40 hover:text-destructive flex-shrink-0"
+                      className="opacity-0 group-hover/session:opacity-100 transition-opacity p-1 rounded-sm hover:bg-destructive/10 text-sidebar-foreground/40 hover:text-destructive flex-shrink-0"
                       title="Delete"
                     >
                       <Trash2 className="h-3.5 w-3.5" />

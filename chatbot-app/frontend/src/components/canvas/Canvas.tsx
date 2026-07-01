@@ -474,7 +474,7 @@ export function Canvas({
                         className={`flex-shrink-0 text-left p-3 rounded-xl border-2 transition-all ${
                           selectedArtifactId === artifact.id
                             ? 'bg-primary/5 border-primary shadow-md ring-1 ring-primary/20'
-                            : 'bg-sidebar-background border-sidebar-border hover:border-primary/50 hover:bg-sidebar-accent/30 hover:shadow-sm'
+                            : 'bg-sidebar-background border-sidebar-border hover:border-primary/50 hover:bg-sidebar-accent/30 hover:shadow-xs'
                         }`}
                       >
                         <div className="flex items-center gap-3">

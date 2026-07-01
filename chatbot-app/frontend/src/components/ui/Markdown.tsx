@@ -71,7 +71,7 @@ const S3Image = ({ src, alt }: { src: string; alt?: string }) => {
     <img
       src={resolvedUrl}
       alt={alt || 'Research image'}
-      className="max-w-full h-auto rounded-lg shadow-sm"
+      className="max-w-full h-auto rounded-lg shadow-xs"
     />
   );
 };

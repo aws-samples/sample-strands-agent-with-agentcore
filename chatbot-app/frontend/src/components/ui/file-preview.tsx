@@ -131,7 +131,7 @@ const ImageFilePreview = React.forwardRef<HTMLDivElement, FilePreviewProps>(
         </div>
         {onRemove && (
           <button
-            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background shadow-sm hover:bg-destructive hover:text-destructive-foreground hover:border-destructive transition-colors"
+            className="absolute -right-1.5 -top-1.5 flex h-5 w-5 items-center justify-center rounded-full border bg-background shadow-xs hover:bg-destructive hover:text-destructive-foreground hover:border-destructive transition-colors"
             type="button"
             onClick={onRemove}
             aria-label="Remove attachment"

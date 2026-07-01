@@ -108,7 +108,7 @@ const SelectItem = ({ value, children }: SelectItemProps) => {
 
   return (
     <div
-      className="relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 px-2 text-label outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
+      className="relative flex w-full cursor-pointer select-none items-center rounded-xs py-1.5 px-2 text-label outline-none hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground"
       onClick={() => {
         context.onValueChange(value)
         context.setOpen(false)

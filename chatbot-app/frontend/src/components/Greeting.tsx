@@ -117,7 +117,7 @@ export function PromptSuggestions({ onSelectPrompt }: PromptSuggestionsProps) {
 
       {/* Example prompts panel — expands downward */}
       {active && (
-        <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-sm animate-fade-in">
+        <div className="w-full max-w-lg rounded-2xl border border-border bg-card shadow-xs animate-fade-in">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <active.icon className="w-4 h-4" />
