@@ -2,7 +2,7 @@ export const API_BASE_URL = (
   (process.env.EXPO_PUBLIC_API_URL as string | undefined) ?? 'http://localhost:3000'
 ).replace(/\/$/, '')
 
-export const DEFAULT_MODEL_ID = 'us.anthropic.claude-sonnet-4-6'
+export const DEFAULT_MODEL_ID = 'us.anthropic.claude-sonnet-5'
 export const DEFAULT_TEMPERATURE = 0.7
 export const TEXT_BUFFER_FLUSH_MS = 120
 
@@ -32,7 +32,7 @@ export interface ModelInfo {
 
 export const AVAILABLE_MODELS: ModelInfo[] = [
   { id: 'us.anthropic.claude-opus-4-8', name: 'Claude Opus 4.8', provider: 'Anthropic', description: 'Most intelligent model' },
-  { id: 'us.anthropic.claude-sonnet-4-6', name: 'Claude Sonnet 4.6', provider: 'Anthropic', description: 'Balanced performance' },
+  { id: 'us.anthropic.claude-sonnet-5', name: 'Claude Sonnet 5', provider: 'Anthropic', description: 'Balanced performance' },
   { id: 'us.anthropic.claude-haiku-4-5-20251001-v1:0', name: 'Claude Haiku 4.5', provider: 'Anthropic', description: 'Fast and efficient' },
   { id: 'openai.gpt-5.5', name: 'GPT-5.5', provider: 'OpenAI', description: 'Frontier reasoning model' },
   { id: 'openai.gpt-5.4', name: 'GPT-5.4', provider: 'OpenAI', description: 'Frontier model' },

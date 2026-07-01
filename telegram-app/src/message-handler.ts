@@ -16,7 +16,7 @@ import { bufferMessage, setFlushHandler, clearBusy } from "./inbound-buffer.js";
 import { bufferPhotoGroup } from "./media-group-buffer.js";
 
 const MODELS = [
-  { id: "us.anthropic.claude-sonnet-4-6", label: "Sonnet 4.6" },
+  { id: "us.anthropic.claude-sonnet-5", label: "Sonnet 5" },
   { id: "us.anthropic.claude-haiku-4-5-20251001-v1:0", label: "Haiku 4.5" },
   { id: "us.anthropic.claude-opus-4-8", label: "Opus 4.8" },
   { id: "openai.gpt-5.5", label: "GPT-5.5" },

@@ -25,8 +25,8 @@ logger = logging.getLogger(__name__)
 
 
 # Model IDs (substring match) that reject the `temperature` inference param:
-# Anthropic extended-thinking Opus, and OpenAI gpt-5.x reasoning models.
-NO_TEMPERATURE_MODELS = ("opus-4-7", "opus-4-8", "gpt-5")
+# Anthropic extended-thinking Opus, Sonnet 5, and OpenAI gpt-5.x reasoning models.
+NO_TEMPERATURE_MODELS = ("opus-4-7", "opus-4-8", "sonnet-5", "gpt-5")
 
 
 @dataclass(frozen=True)
