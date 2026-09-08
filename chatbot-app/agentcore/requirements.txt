@@ -8,7 +8,7 @@ uvicorn[standard]==0.52.4
 # Strands Agent Framework
 strands-agents[a2a,otel]==1.54.0
 strands-agents-tools[a2a_client]>=0.8.8
-mcp>=1.28.1,<2.0.0
+mcp>=2.1.1,<3.0.0
 
 # OpenAI SDK - required for Bedrock Runtime/Mantle Responses models
 openai>=2.49.0
