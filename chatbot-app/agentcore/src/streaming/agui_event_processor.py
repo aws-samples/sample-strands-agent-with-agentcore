@@ -21,6 +21,43 @@ from ag_ui.encoder import EventEncoder
 logger = logging.getLogger(__name__)
 
 
+def ensure_unique_document_names(messages: list, current_message: Any) -> int:
+    """Make Bedrock document names unique across history and the current turn."""
+    seen_names: set[str] = set()
+    renamed_count = 0
+
+    def visit_content(content: Any) -> None:
+        nonlocal renamed_count
+        if not isinstance(content, list):
+            return
+
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            document = block.get("document")
+            if not isinstance(document, dict):
+                continue
+
+            original_name = str(document.get("name") or "document")
+            candidate = original_name
+            suffix_number = 2
+            while candidate.casefold() in seen_names:
+                suffix = f"-{suffix_number}"
+                candidate = f"{original_name[:200 - len(suffix)]}{suffix}"
+                suffix_number += 1
+
+            if candidate != original_name:
+                document["name"] = candidate
+                renamed_count += 1
+            seen_names.add(candidate.casefold())
+
+    for message in messages if isinstance(messages, list) else []:
+        if isinstance(message, dict):
+            visit_content(message.get("content"))
+    visit_content(current_message)
+    return renamed_count
+
+
 class AGUIStreamEventProcessor:
     """Processes streaming events from the agent and formats them as AG-UI protocol events"""
 
@@ -500,6 +537,15 @@ class AGUIStreamEventProcessor:
         compaction_update_attempted = False
         try:
             multimodal_message = self._create_multimodal_message(message, file_paths)
+            renamed_documents = ensure_unique_document_names(
+                getattr(agent, "messages", []),
+                multimodal_message,
+            )
+            if renamed_documents:
+                logger.info(
+                    "Renamed %d duplicate document(s) before model invocation",
+                    renamed_documents,
+                )
 
             # Initialize streaming
             yield self.formatter.format_event("init")
