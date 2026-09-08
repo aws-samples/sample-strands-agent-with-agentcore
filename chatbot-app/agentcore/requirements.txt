@@ -7,7 +7,7 @@ uvicorn[standard]==0.52.4
 
 # Strands Agent Framework
 strands-agents[a2a,otel]==1.54.0
-strands-agents-tools[a2a_client]>=0.8.6
+strands-agents-tools[a2a_client]>=0.8.8
 mcp>=1.28.1,<2.0.0
 
 # OpenAI SDK - required for Bedrock Runtime/Mantle Responses models
@@ -20,7 +20,7 @@ aws-sdk-bedrock-runtime  # Required by strands BidiNovaSonicModel
 a2a-sdk>=0.3.0,<1.0.0
 
 # AWS & Bedrock
-boto3>=1.43.83
+boto3>=1.43.89
 
 # AgentCore Memory Integration (optional, for cloud deployment only)
 # Uncomment below for cloud deployment:
@@ -35,7 +35,7 @@ aws-opentelemetry-distro>=0.19.0
 
 # Document processing
 pdf2image>=1.17.0
-pymupdf>=1.28.0  # PDF text extraction for large files exceeding Bedrock's 4.5MB limit
+pymupdf>=1.28.2  # PDF text extraction for large files exceeding Bedrock's 4.5MB limit
 openpyxl>=3.1.5  # Excel sheet name extraction for preview
 defusedxml>=0.7.1  # Safe XML parsing for PPTX engine
 
