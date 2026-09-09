@@ -229,7 +229,7 @@ def test_start_job_resolves_and_persists_model_selection(monkeypatch):
     assert record["parentModelId"] == "us.openai.gpt-5.6-terra"
     assert record["modelId"] == "us.openai.gpt-5.6-sol"
     assert record["modelSelection"]["taskComplexity"] == "high"
-    assert record["modelSelection"]["catalogRevision"] == "2026-08-26.2"
+    assert record["modelSelection"]["catalogRevision"] == "2026-09-09.1"
     assert record["modelSelection"]["applied"] is True
 
 
