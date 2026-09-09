@@ -1,6 +1,7 @@
 export const DEFAULT_MODEL_ID = 'us.openai.gpt-5.6-terra'
 
 const MODEL_ID_ALIASES: Record<string, string> = {
+  'openai.gpt-6-astra': 'us.openai.gpt-6-astra',
   'openai.gpt-5.6-sol': 'us.openai.gpt-5.6-sol',
   'openai.gpt-5.6-terra': 'us.openai.gpt-5.6-terra',
   'openai.gpt-5.6-luna': 'us.openai.gpt-5.6-luna',

@@ -34,6 +34,7 @@ class TestTemperatureGuard:
     @pytest.mark.parametrize("model_id", [
         "us.anthropic.claude-opus-5",
         "us.anthropic.claude-sonnet-5",
+        "us.openai.gpt-6-astra",
         "us.openai.gpt-5.6-sol",
         "us.openai.gpt-5.6-terra",
         "us.openai.gpt-5.6-luna",
@@ -119,12 +120,13 @@ class TestBedrockRouting:
 
 class TestBedrockRuntimeResponsesRouting:
     GPT_MODELS = (
+        "us.openai.gpt-6-astra",
         "us.openai.gpt-5.6-sol",
         "us.openai.gpt-5.6-terra",
         "us.openai.gpt-5.6-luna",
     )
 
-    def test_only_gpt_56_uses_runtime_responses(self):
+    def test_catalog_gpt_models_use_runtime_responses(self):
         assert BEDROCK_RESPONSES_MODELS == frozenset(self.GPT_MODELS)
 
     @pytest.mark.parametrize("model_id", GPT_MODELS)
@@ -132,7 +134,7 @@ class TestBedrockRuntimeResponsesRouting:
         "AWS_BEARER_TOKEN_BEDROCK": "test-key",
         "AWS_REGION": "us-west-2",
     })
-    def test_gpt_56_uses_runtime_responses_endpoint(self, model_id):
+    def test_gpt_uses_runtime_responses_endpoint(self, model_id):
         model = build_model(model_id)
         assert isinstance(model, OpenAIResponsesModel)
         assert (
@@ -143,6 +145,7 @@ class TestBedrockRuntimeResponsesRouting:
         assert model.config["model_id"] == model_id
 
     @pytest.mark.parametrize(("legacy_id", "canonical_id"), [
+        ("openai.gpt-6-astra", "us.openai.gpt-6-astra"),
         ("openai.gpt-5.6-sol", "us.openai.gpt-5.6-sol"),
         ("openai.gpt-5.6-terra", "us.openai.gpt-5.6-terra"),
         ("openai.gpt-5.6-luna", "us.openai.gpt-5.6-luna"),

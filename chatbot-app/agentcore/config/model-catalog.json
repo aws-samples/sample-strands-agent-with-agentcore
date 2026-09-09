@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "2026-08-26.2",
+  "revision": "2026-09-09.1",
   "providerMatchers": {
     "anthropic": [
       "anthropic.",
@@ -43,6 +43,14 @@
       "transport": "bedrock",
       "maxInputTokens": 200000,
       "rejectsTemperature": false
+    },
+    "gpt.astra.latest": {
+      "id": "us.openai.gpt-6-astra",
+      "provider": "openai",
+      "family": "gpt",
+      "transport": "bedrock_responses",
+      "maxInputTokens": 1000000,
+      "rejectsTemperature": true
     },
     "gpt.sol.latest": {
       "id": "us.openai.gpt-5.6-sol",

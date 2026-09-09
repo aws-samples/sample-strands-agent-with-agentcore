@@ -3,7 +3,7 @@
  *
  * Three backend execution paths (decided server-side by model_id):
  * - Bedrock Runtime Converse (BedrockModel): native/cross-Region profiles.
- * - Bedrock Runtime Responses (OpenAIResponsesModel): GPT-5.6.
+ * - Bedrock Runtime Responses (OpenAIResponsesModel): GPT-6 and GPT-5.6.
  * - Bedrock Mantle Responses (OpenAIResponsesModel): Gemma 4.
  */
 import { NextResponse } from 'next/server'
@@ -34,6 +34,13 @@ const AVAILABLE_MODELS = [
   },
 
   // GPT (OpenAI) - Bedrock Runtime Responses with cross-Region profiles
+  {
+    id: 'us.openai.gpt-6-astra',
+    name: 'GPT-6 Astra',
+    provider: 'OpenAI',
+    description: 'Latest flagship agentic model via Bedrock Runtime',
+    noTemperature: true
+  },
   {
     id: 'us.openai.gpt-5.6-sol',
     name: 'GPT-5.6 Sol',
