@@ -114,13 +114,19 @@ def test_catalog_has_unique_model_ids():
     assert len(catalog.models) == len(catalog.models_by_id)
 
 
-def test_gpt_56_models_use_bedrock_runtime_responses():
+def test_gpt_models_use_bedrock_runtime_responses():
     catalog = get_model_catalog()
-    for key in ("gpt.sol.latest", "gpt.terra.latest", "gpt.luna.latest"):
+    for key in (
+        "gpt.astra.latest",
+        "gpt.sol.latest",
+        "gpt.terra.latest",
+        "gpt.luna.latest",
+    ):
         assert catalog.models[key].transport == "bedrock_responses"
 
 
 @pytest.mark.parametrize(("legacy_id", "canonical_id"), [
+    ("openai.gpt-6-astra", "us.openai.gpt-6-astra"),
     ("openai.gpt-5.6-terra", "us.openai.gpt-5.6-terra"),
     ("xai.grok-4.3", "us.xai.grok-4.6"),
 ])

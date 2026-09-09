@@ -85,6 +85,7 @@ class TestMeasuredModelWindows:
         ):
             assert get_max_input_tokens(model_id) == 1_000_000
         for model_id in (
+            "us.openai.gpt-6-astra",
             "us.openai.gpt-5.6-sol",
             "us.openai.gpt-5.6-terra",
             "us.openai.gpt-5.6-luna",

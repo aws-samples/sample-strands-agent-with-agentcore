@@ -258,7 +258,7 @@ def build_model(
 ):
     """Build the appropriate Strands model for `model_id`.
 
-    GPT-5.6 -> Bedrock Runtime OpenAI-compatible Responses API.
+    GPT-6/GPT-5.6 -> Bedrock Runtime OpenAI-compatible Responses API.
     Mantle-only models -> Bedrock Mantle Responses API.
     Everything else -> BedrockModel Converse with IAM authentication.
     """

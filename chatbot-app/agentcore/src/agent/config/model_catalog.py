@@ -17,6 +17,7 @@ _ALLOWED_TRANSPORTS = frozenset({
     "mantle_responses",
 })
 MODEL_ID_ALIASES = {
+    "openai.gpt-6-astra": "us.openai.gpt-6-astra",
     "openai.gpt-5.6-sol": "us.openai.gpt-5.6-sol",
     "openai.gpt-5.6-terra": "us.openai.gpt-5.6-terra",
     "openai.gpt-5.6-luna": "us.openai.gpt-5.6-luna",
