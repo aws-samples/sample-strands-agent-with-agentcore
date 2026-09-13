@@ -383,6 +383,10 @@ export async function GET(request: NextRequest) {
       artifactsById.set(artifact.id, artifact)
     }
     artifacts = Array.from(artifactsById.values())
+    if (userId !== 'anonymous') {
+      const { mergeArtifactEdits } = await import('@/lib/artifact-edits')
+      artifacts = await mergeArtifactEdits(userId, sessionId, artifacts)
+    }
 
     // Return messages with merged toolResults from blobs and metadata
     // Also include session preferences (model, tools) for restoration

@@ -138,9 +138,9 @@ describe('Canvas — docked artifact sidebar', () => {
     renderCanvas()
 
     const sidebar = screen.getByTestId('artifacts-sidebar')
-    expect(sidebar).toHaveClass('relative', 'flex-none')
-    expect(sidebar).not.toHaveClass('fixed', 'shadow-xl')
-    expect(sidebar).toHaveStyle({ width: '520px', flexBasis: '520px' })
+    expect(sidebar).toHaveClass('md:relative', 'flex-none')
+    expect(sidebar).not.toHaveClass('shadow-xl')
+    expect(sidebar).toHaveStyle({ width: '604px', flexBasis: '604px' })
   })
 
   it('supports keyboard resizing within the configured range', () => {
@@ -150,7 +150,7 @@ describe('Canvas — docked artifact sidebar', () => {
     const resizeHandle = screen.getByRole('separator', { name: /resize right sidebar/i })
 
     fireEvent.keyDown(resizeHandle, { key: 'ArrowRight' })
-    expect(sidebar).toHaveStyle({ width: '496px', flexBasis: '496px' })
+    expect(sidebar).toHaveStyle({ width: '580px', flexBasis: '580px' })
 
     fireEvent.keyDown(resizeHandle, { key: 'Home' })
     expect(sidebar).toHaveStyle({ width: '360px', flexBasis: '360px' })
@@ -187,11 +187,11 @@ describe('Canvas — docked artifact sidebar', () => {
     const resizeHandle = screen.getByRole('separator', { name: /resize right sidebar/i })
 
     fireEvent.pointerDown(resizeHandle, { clientX: 500, pointerId: 1 })
-    fireEvent.pointerMove(window, { clientX: 450, pointerId: 1 })
-    expect(sidebar).toHaveStyle({ width: '570px', flexBasis: '570px' })
+    fireEvent.pointerMove(window, { clientX: 550, pointerId: 1 })
+    expect(sidebar).toHaveStyle({ width: '554px', flexBasis: '554px' })
 
     fireEvent.pointerUp(window, { pointerId: 1 })
-    expect(localStorage.setItem).toHaveBeenLastCalledWith('artifacts-sidebar:width', '570')
+    expect(localStorage.setItem).toHaveBeenLastCalledWith('artifacts-sidebar:width', '554')
   })
 
   it('switches between conversational artifacts and session workspace files', () => {
@@ -209,4 +209,16 @@ describe('Canvas — docked artifact sidebar', () => {
       'true',
     )
   })
+})
+
+
+it('expands the preview and restores its docked width with Escape', () => {
+  renderCanvas()
+  const sidebar = screen.getByTestId('artifacts-sidebar')
+  fireEvent.click(screen.getByRole('button', { name: 'Expand results panel' }))
+  expect(sidebar).toHaveClass('fixed')
+  expect(screen.queryByRole('separator', { name: /resize right sidebar/i })).not.toBeInTheDocument()
+  fireEvent.keyDown(window, { key: 'Escape' })
+  expect(sidebar).toHaveClass('md:relative')
+  expect(screen.getByRole('button', { name: 'Expand results panel' })).toHaveAttribute('aria-pressed', 'false')
 })

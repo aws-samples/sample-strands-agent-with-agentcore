@@ -20,12 +20,17 @@ def _save_excalidraw_artifact(
     title: str,
     excalidraw_data: dict,
     element_count: int,
-) -> None:
+    artifact_id: str | None = None,
+) -> str:
     """Save Excalidraw diagram as artifact to agent.state for Canvas display."""
     try:
-        artifact_id = f"excalidraw-{uuid.uuid4().hex[:8]}-{title}"
+        artifact_id = artifact_id or f"excalidraw-{uuid.uuid4().hex[:8]}"
         artifacts = tool_context.agent.state.get("artifacts") or {}
 
+        if artifact_id in artifacts and artifacts[artifact_id].get("type") != "excalidraw":
+            raise ValueError("The selected result is not a diagram")
+        timestamp = datetime.now(timezone.utc).isoformat()
+        excalidraw_data["updatedAt"] = timestamp
         artifacts[artifact_id] = {
             "id": artifact_id,
             "type": "excalidraw",
@@ -36,7 +41,7 @@ def _save_excalidraw_artifact(
                 "element_count": element_count,
             },
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": timestamp,
         }
 
         tool_context.agent.state.set("artifacts", artifacts)
@@ -51,8 +56,10 @@ def _save_excalidraw_artifact(
         else:
             logger.warning(f"No session_manager found, Excalidraw artifact not persisted: {artifact_id}")
 
+        return artifact_id
     except Exception as e:
         logger.error(f"Failed to save Excalidraw artifact: {e}")
+        raise
 
 
 @skill("excalidraw")
@@ -61,7 +68,8 @@ def create_excalidraw_diagram(
     elements: list[dict[str, Any]],
     title: str = "Diagram",
     background_color: str = "#ffffff",
-    tool_context: ToolContext = None
+    tool_context: ToolContext = None,
+    artifact_id: str | None = None,
 ) -> str:
     """
     Create a hand-drawn style diagram using Excalidraw element JSON.
@@ -72,6 +80,7 @@ def create_excalidraw_diagram(
                   - x, y: Position coordinates
                   - width, height: Dimensions (not required for text/freedraw)
                   Common optional fields: strokeColor, backgroundColor, fillStyle, label
+        artifact_id: Existing diagram ID when revising a result; omit for a new diagram.
         title: Title for the diagram (shown in Canvas)
         background_color: Canvas background color (default: "#ffffff")
 
@@ -138,7 +147,8 @@ def create_excalidraw_diagram(
 
         # Persist artifact to agent.state (no S3 needed - content is JSON stored directly)
         if tool_context is not None:
-            _save_excalidraw_artifact(tool_context, title, excalidraw_data, element_count)
+            saved_id = _save_excalidraw_artifact(tool_context, title, excalidraw_data, element_count, artifact_id)
+            excalidraw_data["artifactId"] = saved_id
 
         return json.dumps({
             "success": True,

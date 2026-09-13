@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { codeInterpreterWorkspaceId } from '@/lib/workspace/s3-repository'
 import { S3Client, ListObjectsV2Command } from '@aws-sdk/client-s3'
 import { SSMClient, GetParameterCommand } from '@aws-sdk/client-ssm'
 import { extractUserFromRequest, getSessionId } from '@/lib/auth-utils'
@@ -81,31 +82,29 @@ export async function GET(request: NextRequest) {
 
     // List files from S3
     const s3Client = new S3Client({ region })
-    const s3Prefix = `documents/${userId}/${sessionId}/${docType}/`
-
-    const listResponse = await s3Client.send(
-      new ListObjectsV2Command({
-        Bucket: documentBucket,
-        Prefix: s3Prefix,
-      })
-    )
-
-    const files: Array<{
-      filename: string
-      size_kb: string
-      last_modified: string
-      s3_key: string
-      tool_type: string
-    }> = []
-
-    if (listResponse.Contents) {
-      for (const obj of listResponse.Contents) {
-        const filename = obj.Key?.split('/').pop()
-        if (filename && obj.Key && obj.Size !== undefined && obj.LastModified) {
-          // Skip hidden files (template metadata, etc.)
-          if (filename.startsWith('.')) continue
-
-          files.push({
+    // PowerPoint publishes into the mounted workspace. Keep legacy documents
+    // discoverable too, preferring the current file when both paths exist.
+    const prefixes = docType === 'powerpoint'
+      ? [
+          `code-interpreter-workspace/${codeInterpreterWorkspaceId(userId, sessionId)}/artifacts/powerpoint/`,
+          `documents/${userId}/${sessionId}/${docType}/`,
+        ]
+      : [`documents/${userId}/${sessionId}/${docType}/`]
+    const byFilename = new Map<string, {
+      filename: string; size_kb: string; last_modified: string; s3_key: string; tool_type: string
+    }>()
+    for (const prefix of prefixes) {
+      let continuationToken: string | undefined
+      do {
+        const page = await s3Client.send(new ListObjectsV2Command({
+          Bucket: documentBucket, Prefix: prefix, ContinuationToken: continuationToken,
+        }))
+        for (const obj of page.Contents || []) {
+          const filename = obj.Key?.slice(prefix.length)
+          // Only published files at this level, never draft/revision subfolders.
+          if (!filename || filename.startsWith('.') || filename.includes('/') || byFilename.has(filename)
+            || obj.Size === undefined || !obj.LastModified) continue
+          byFilename.set(filename, {
             filename,
             size_kb: `${(obj.Size / 1024).toFixed(1)} KB`,
             last_modified: obj.LastModified.toISOString(),
@@ -113,13 +112,11 @@ export async function GET(request: NextRequest) {
             tool_type: DOC_TYPE_TO_TOOL_TYPE[docType as DocumentType] || 'word_document',
           })
         }
-      }
-
-      // Sort by last_modified (most recent first)
-      files.sort((a, b) =>
-        new Date(b.last_modified).getTime() - new Date(a.last_modified).getTime()
-      )
+        continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined
+      } while (continuationToken)
     }
+    const files = [...byFilename.values()].sort((a, b) =>
+      new Date(b.last_modified).getTime() - new Date(a.last_modified).getTime())
 
     console.log(`[Workspace] Listed ${files.length} ${docType} file(s) for user=${userId}, session=${sessionId}`)
 
