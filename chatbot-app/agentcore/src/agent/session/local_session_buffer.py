@@ -36,6 +36,9 @@ class LocalSessionBuffer:
         """
         Override append_message to buffer messages.
         """
+        from .cancellation_history import prepare_message
+        if isinstance(message, dict) and "role" in message:
+            message = prepare_message(message, agent)
         # Store agent reference for flush
         if agent:
             self._last_agent = agent

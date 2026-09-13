@@ -809,6 +809,17 @@ class PptxEngine:
         referenced_slides = self._get_referenced_slides()
         self._remove_orphaned_slides(referenced_slides)
         self._remove_orphaned_media()
+        # Some generators leave overrides for unused masters that were never
+        # written. Remove only declarations for absent parts; validation still
+        # rejects missing required parts and dangling relationships.
+        content_types = self._tmpdir / "[Content_Types].xml"
+        if content_types.exists():
+            dom = defusedxml.minidom.parse(str(content_types))
+            for node in list(dom.getElementsByTagName("Override")):
+                part = unquote(node.getAttribute("PartName")).lstrip("/")
+                if not (self._tmpdir / part).is_file():
+                    node.parentNode.removeChild(node)
+            content_types.write_bytes(dom.toxml(encoding="utf-8"))
 
     def _get_referenced_slides(self) -> set:
         pres_path = self._tmpdir / "ppt" / "presentation.xml"

@@ -111,3 +111,12 @@ export function getToolsForDocType(docType: DocumentType): string[] {
     .filter(([_, type]) => type === docType)
     .map(([toolName]) => toolName)
 }
+
+/** Only published mutations should create Office result entries on legacy streams. */
+export const OFFICE_WRITE_TOOLS = new Set([
+  'create_word_document', 'modify_word_document',
+  'create_excel_spreadsheet', 'modify_excel_spreadsheet',
+  'create_presentation', 'finalize_presentation_edit',
+  'update_slide_content', 'add_slide', 'delete_slides',
+  'move_slide', 'duplicate_slide', 'update_slide_notes',
+])

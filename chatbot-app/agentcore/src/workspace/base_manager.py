@@ -49,9 +49,9 @@ class BaseDocumentManager:
         self.bucket = get_workspace_bucket()
         self.s3_prefix = f"documents/{user_id}/{session_id}/{document_type}"
 
-        # Code Interpreter path (use current directory, no subdirectory like diagram_tool)
-        # Code Interpreter sessions are automatically isolated
-        self.ci_work_path = ""
+        # executeCode runs in the mounted workspace, while readFiles/writeFiles
+        # resolve relative paths independently. Use the same absolute path for all.
+        self.ci_work_path = os.getenv("S3_FILES_MOUNT_PATH", "/mnt/workspace").rstrip("/")
 
         # AWS region for Code Interpreter
         self.region = os.getenv('AWS_REGION', 'us-west-2')
@@ -64,8 +64,8 @@ class BaseDocumentManager:
         return f"{self.s3_prefix}/{filename}"
 
     def get_ci_path(self, filename: str) -> str:
-        """Generate Code Interpreter file path (filename only, no directory)"""
-        return filename
+        """Use the mounted workspace for both code execution and file transport."""
+        return f"{self.ci_work_path}/{filename}"
 
     def save_to_s3(self, filename: str, file_bytes: bytes, metadata: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         """Save file to S3 storage
@@ -292,25 +292,9 @@ print(f"File written: {ci_path} ({{len(file_bytes)}} bytes)")
         try:
             ci_path = self.get_ci_path(filename)
 
-            # Download from Code Interpreter using readFiles API
-            download_response = code_interpreter.invoke("readFiles", {"paths": [ci_path]})
+            from builtin_tools.lib.code_interpreter_files import download_workspace_file
 
-            file_bytes = None
-            for event in download_response.get("stream", []):
-                result = event.get("result", {})
-                if "content" in result and len(result["content"]) > 0:
-                    content_block = result["content"][0]
-                    # File content can be in 'data' (bytes) or 'resource.blob'
-                    if "data" in content_block:
-                        file_bytes = content_block["data"]
-                    elif "resource" in content_block and "blob" in content_block["resource"]:
-                        file_bytes = content_block["resource"]["blob"]
-
-                    if file_bytes:
-                        break
-
-            if not file_bytes:
-                raise Exception(f"No file content returned for {ci_path}")
+            file_bytes = download_workspace_file(code_interpreter, ci_path)
 
             size_kb = len(file_bytes) / 1024
             logger.debug(f" Downloaded from Code Interpreter: {ci_path} ({size_kb:.1f} KB)")

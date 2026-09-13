@@ -345,7 +345,7 @@ if (!messages || messages.length === 0) {
           )}
 
           {/* Compact turn footer: actions and metrics share one baseline. */}
-          <div className="mt-1 flex h-6 items-center justify-between opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-within:opacity-100">
+          <div className="mt-3 flex min-h-6 items-start justify-between gap-3">
             <button
               type="button"
               onClick={handleCopy}
@@ -360,9 +360,10 @@ if (!messages || messages.length === 0) {
               )}
             </button>
             {metricsText && (
-              <span className="hidden text-[11px] text-muted-foreground/70 md:block">
-                {metricsText}
-              </span>
+              <details className="max-w-[85%] text-right text-xs text-muted-foreground">
+                <summary className="cursor-pointer rounded px-1 py-1 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">Response details</summary>
+                <p className="mt-2 rounded-lg bg-muted/50 px-3 py-2 text-[11px] leading-relaxed tabular-nums">{metricsText}</p>
+              </details>
             )}
           </div>
         </div>

@@ -42,12 +42,13 @@ If the user asks to modify this document, use the update_artifact tool to find a
 
 The user currently has an Excalidraw diagram open:
 - **Title**: ${artifact.title}
+- **Artifact ID**: ${artifact.id}
 - **Current Elements** (JSON):
 \`\`\`json
 ${elementsJson}
 \`\`\`
 
-If the user asks to modify this diagram, call create_excalidraw_diagram with the full updated elements array. Include all existing elements plus your changes — use the same element IDs when modifying existing elements, add new unique IDs for new elements, and omit elements you want to remove.`,
+If the user asks to modify this diagram, call create_excalidraw_diagram with artifact_id "${artifact.id}" and the full updated elements array. These elements include the user's manual edits; preserve them unless asked to change them. Include all existing elements plus your changes — use the same element IDs when modifying existing elements, add new unique IDs for new elements, and omit elements you want to remove.`,
     }
   }
 

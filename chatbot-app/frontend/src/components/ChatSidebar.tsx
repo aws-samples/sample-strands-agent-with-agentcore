@@ -140,7 +140,7 @@ export function ChatSidebar({
           className={`w-full justify-start gap-3 h-10 px-3 hover:bg-sidebar-accent text-sidebar-foreground/70 ${showConnector ? 'bg-sidebar-accent text-sidebar-foreground' : ''}`}
         >
           <Plug className="h-4 w-4" />
-          <span className="text-[14px]">Connectors</span>
+          <span className="text-[14px]">Tools & apps</span>
         </Button>
       </div>
 

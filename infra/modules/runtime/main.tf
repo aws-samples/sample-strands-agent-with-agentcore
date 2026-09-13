@@ -679,7 +679,7 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
       REGISTRY_ID = var.registry_id
       MEMORY_ID   = var.memory_id
     } : {},
-    contains(["a2a_agent", "http_agent"], var.runtime_type) && var.artifact_bucket_name != "" ? {
+    contains(["orchestrator", "a2a_agent", "http_agent"], var.runtime_type) && var.artifact_bucket_name != "" ? {
       ARTIFACT_BUCKET = var.artifact_bucket_name
     } : {},
     var.extra_env_vars,

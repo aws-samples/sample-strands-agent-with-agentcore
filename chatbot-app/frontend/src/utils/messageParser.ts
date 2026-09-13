@@ -3,6 +3,7 @@
  */
 
 import { ToolExecution } from '@/types/chat'
+import { toolResultCancelled, toolResultFailed } from '@/lib/tool-outcome'
 import { extractBlobImages, extractToolResultImages, extractToolResultText } from './imageExtractor'
 
 /**
@@ -65,6 +66,7 @@ export function createToolExecution(
     reasoning: [],
     toolResult: toolResultString,
     isComplete: !!toolResult,
+    isCancelled: toolResultCancelled(toolResult) || toolResultFailed(toolResult),
     isExpanded: false
   }
 

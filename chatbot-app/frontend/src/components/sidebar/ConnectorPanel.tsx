@@ -22,9 +22,9 @@ const SOURCE_ORDER: Record<string, number> = {
 
 const SOURCE_LABEL: Record<string, string> = {
   builtin: 'Built-in',
-  gateway: 'Gateway',
-  mcp: 'Connected Apps',
-  a2a: 'Agents',
+  gateway: 'Search & information',
+  mcp: 'Apps',
+  a2a: 'Specialist tools',
 };
 
 const ICON_EXTENSIONS = ['svg', 'png'];
@@ -110,10 +110,9 @@ export function ConnectorPanel({ onBack }: ConnectorPanelProps) {
       </div>
 
       <div className="px-4 pb-2 flex-shrink-0">
-        <h2 className="text-[14px] font-semibold text-sidebar-foreground">Connectors</h2>
+        <h2 className="text-[14px] font-semibold text-sidebar-foreground">Tools & apps</h2>
         <p className="text-[11px] text-sidebar-foreground/40 mt-0.5 leading-relaxed">
-          Skills are loaded on demand — no need to select upfront.
-          Disable any you don't want the agent to use.
+          The assistant chooses tools as needed. Turn off any you prefer not to use. Apps may ask you to connect an account when first used.
         </p>
       </div>
 

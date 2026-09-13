@@ -61,6 +61,7 @@ interface UseChatReturn {
     messageIdentity?: ReplayMessageIdentity,
   ) => Promise<boolean>
   stopGeneration: () => Promise<boolean>
+  stopError: string | null
   // Queue for turns composed while the agent is busy
   queuedMessages: QueuedMessage[]
   queueHoldReason: QueueHoldReason | null
@@ -147,7 +148,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     sessionStorage.setItem('chat-session-id', newId)
     return newId
   })
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [isLoadingMessages, setIsLoadingMessages] = useState(true)
   // Track which session is being compacted; isCompacting is true only when viewing that session
   const [compactingSessionId, setCompactingSessionId] = useState<string | null>(null)
 
@@ -197,6 +198,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     }
   })
   const [isForegroundRunActive, setIsForegroundRunActive] = useState(false)
+  const [stopFailure, setStopFailure] = useState<{ sessionId: string; message: string } | null>(null)
   const [sessionEventRefreshVersion, setSessionEventRefreshVersion] = useState(0)
 
   // ==================== REFS ====================
@@ -459,7 +461,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     // Notify that session loading is complete (artifacts are in sessionStorage)
     onSessionLoadedRef.current?.()
     } finally {
-      setIsLoadingMessages(false)
+      if (currentSessionIdRef.current === newSessionId) setIsLoadingMessages(false)
     }
   }, [apiLoadSession, setUIState, setSessionState, stopPolling, checkAndStartPollingForA2ATools, detachStream, resetStreamingState])
 
@@ -474,6 +476,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       })
     } else {
       setMessages([])
+      setIsLoadingMessages(false)
     }
   }, [])
 
@@ -987,6 +990,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
   const stopGeneration = useCallback(async (): Promise<boolean> => {
     const stoppingSessionId = currentSessionIdRef.current
     const previousStatus = uiState.agentStatus
+    setStopFailure(null)
     setUIState(prev => ({ ...prev, agentStatus: 'stopping' }))
 
     const stopped = await sendStopSignal()
@@ -996,7 +1000,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       if (currentSessionIdRef.current !== stoppingSessionId) return true
 
       // The durable stop request has been accepted; the local stream can now close.
-      resetStreamingState()
+      resetStreamingState(true)
       setIsForegroundRunActive(false)
       // Stopping is a deliberate interruption, so don't immediately send whatever
       // was queued — that would look like the stop was ignored.
@@ -1004,7 +1008,8 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
       return true
     }
 
-    if (currentSessionIdRef.current === stoppingSessionId) {
+    if (stoppingSessionId && currentSessionIdRef.current === stoppingSessionId) {
+      setStopFailure({ sessionId: stoppingSessionId, message: "Couldn’t stop this run. It may still be running. Try again." })
       setUIState(prev => ({
         ...prev,
         agentStatus: previousStatus === 'stopping' ? 'thinking' : previousStatus,
@@ -1304,6 +1309,7 @@ export const useChat = (props?: UseChatProps): UseChatReturn => {
     sendMessage,
     replayExecution,
     stopGeneration,
+    stopError: stopFailure?.sessionId === sessionId && (isForegroundRunActive || hasStoppableRun) ? stopFailure.message : null,
     queuedMessages,
     queueHoldReason,
     enqueueMessage,

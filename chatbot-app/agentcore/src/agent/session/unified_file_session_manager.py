@@ -40,6 +40,10 @@ class UnifiedFileSessionManager(FileSessionManager):
     enabling voice-text conversation continuity in local development mode.
     """
 
+    def append_message(self, message, agent, **kwargs):
+        from .cancellation_history import prepare_message
+        return super().append_message(prepare_message(message, agent), agent, **kwargs)
+
     def list_messages(
         self,
         session_id: str,

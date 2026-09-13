@@ -34,7 +34,7 @@ description: Search the web and fetch content from URLs for current information,
 
 ## Citation Format
 
-When presenting information from search results or fetched pages, wrap every specific claim in `<cite>` tags:
+When presenting information from search results or fetched pages, wrap the relevant sentence or phrase itself in `<cite>` tags:
 
 ```
 <cite source="SOURCE_TITLE" url="URL">claim text</cite>
@@ -46,4 +46,8 @@ When presenting information from search results or fetched pages, wrap every spe
 - The `url` attribute should contain the source URL when available.
 - Do NOT cite your own reasoning or general knowledge.
 - If search results don't contain relevant information, inform the user rather than guessing.
-- Use the minimum number of citations necessary to support claims.
+- Use the minimum number of citations necessary to support claims. The text inside `<cite>` is displayed as normal prose. Do not write a claim and then repeat it inside a citation. A short answer should remain short after citations are rendered.
+
+## Prices and interactive pages
+
+For a price comparison, verify currency, per-person versus total cost, billing cadence, and any required commitment. A price shown as "per month" may be the monthly equivalent of an annual payment. Check billing selectors, official pricing FAQs, or another first-party source before concluding whether a commitment applies. If extracted text omits interactive controls, say the billing basis is unverified; do not claim the page has no condition. Use a browser tool when the condition cannot be resolved from fetched content. Preserve these qualifications in concise follow-up answers.

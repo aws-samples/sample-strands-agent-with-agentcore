@@ -649,8 +649,8 @@ class TestS3KeyGeneration:
 
                 assert s3_key == "documents/user123/session456/word/document.docx"
 
-    def test_get_ci_path_returns_filename_only(self, mock_s3):
-        """Test Code Interpreter path is just the filename."""
+    def test_get_ci_path_uses_mounted_workspace(self, mock_s3):
+        """File transport must address the same mounted path as executeCode."""
         with patch('workspace.base_manager.boto3.client', return_value=mock_s3):
             with patch('workspace.base_manager.get_workspace_bucket', return_value='test-bucket'):
                 from workspace.base_manager import BaseDocumentManager
@@ -658,8 +658,8 @@ class TestS3KeyGeneration:
                 manager = BaseDocumentManager("user1", "session1", "word")
                 ci_path = manager.get_ci_path("document.docx")
 
-                # CI path should be just the filename (no directory)
-                assert ci_path == "document.docx"
+                # readFiles does not inherit executeCode’s working directory.
+                assert ci_path == "/mnt/workspace/document.docx"
 
 
 # ============================================================
@@ -705,3 +705,19 @@ class TestBackwardCompatibility:
                 from workspace.managers import ImageDocumentManager, ImageManager
 
                 assert ImageDocumentManager is ImageManager
+
+
+def test_generated_presentation_revision_preserves_source_and_rejects_stale_write():
+    mock_s3 = MockS3Client()
+    with patch('workspace.base_manager.boto3.client', return_value=mock_s3), patch('workspace.base_manager.get_workspace_bucket', return_value='test-bucket'):
+        from workspace.managers import PowerPointManager
+        manager = PowerPointManager('user1', 'session1')
+        manager.save_to_s3('deck.pptx', b'original')
+        etag = manager.resolve_presentation('deck.pptx')['etag']
+        manager.save_to_s3('deck.pptx', b'revised', expected_etag=etag)
+        assert manager.load_from_s3('deck.pptx') == b'revised'
+        assert len(manager.list_s3_documents()) == 1
+        assert b'original' in [value for key, value in mock_s3.objects.items() if '/revisions/' in key]
+        with pytest.raises(ValueError, match='changed'):
+            manager.save_to_s3('deck.pptx', b'stale', expected_etag=etag)
+        assert manager.load_from_s3('deck.pptx') == b'revised'

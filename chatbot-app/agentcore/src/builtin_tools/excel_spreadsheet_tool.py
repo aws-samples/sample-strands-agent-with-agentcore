@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def _format_recalc_report(report: dict) -> str:
     """Format recalc report as a message string for the response."""
     status = report.get("status", "skipped")
-    if status == "skipped":
+    if status not in {"success", "errors_found"}:
         return ""
 
     formulas = report.get("total_formulas", 0)
@@ -476,6 +476,8 @@ print(f"Spreadsheet created: {ci_path}")
             # Return success message
             return build_success_response(message, {
                 "filename": spreadsheet_filename,
+                "s3_url": s3_info["s3_url"],
+                "size_kb": s3_info["size_kb"],
                 "tool_type": "excel_spreadsheet",
                 "user_id": user_id,
                 "session_id": session_id
@@ -744,6 +746,8 @@ print(f"Spreadsheet modified and saved: {output_ci_path}")
             # Return success message with metadata for download button
             return build_success_response(message, {
                 "filename": output_filename,
+                "s3_url": s3_info["s3_url"],
+                "size_kb": s3_info["size_kb"],
                 "tool_type": "excel_spreadsheet",
                 "user_id": user_id,
                 "session_id": session_id

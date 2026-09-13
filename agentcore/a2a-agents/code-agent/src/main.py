@@ -364,7 +364,19 @@ def _build_client_options(
         resume=sdk_session_id,
         permission_mode="bypassPermissions",
         cwd=str(workspace) if workspace else None,
-        system_prompt={"type": "preset", "preset": "claude_code"},
+        system_prompt={
+            "type": "preset", "preset": "claude_code",
+            "append": (
+                "This task is called by another assistant. Returning a final result ends the task; "
+                "background notifications will not automatically resume the caller. "
+                "For finite commands, stay attached until they finish and verify the requested output "
+                "before returning. Do not detach a finite command or promise to check it later. "
+                "Start a persistent background service only when a running service is the requested "
+                "deliverable, and report what is running and how to stop it."
+            ),
+        },
+        # Keep finite Bash commands inside the cancellable A2A execution.
+        env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"},
         setting_sources=["user", "project"],
         max_turns=max_turns,
         model=model_id,
@@ -711,6 +723,8 @@ class ClaudeCodeExecutor(AgentExecutor):
                     break  # Turn complete
 
         except (CLIConnectionError, CLIJSONDecodeError) as e:
+            if cancel_event.is_set():
+                return
             logger.exception("[ClaudeCodeExecutor] CLI communication error")
             # Client is broken — discard and let next call recreate with resume=
             await _disconnect_client(sdk_key)
@@ -721,6 +735,8 @@ class ClaudeCodeExecutor(AgentExecutor):
             await updater.failed()
             return
         except ProcessError as e:
+            if cancel_event.is_set():
+                return
             logger.exception("[ClaudeCodeExecutor] CLI process error (exit code: %s)", e.exit_code)
             await _disconnect_client(sdk_key)
             await updater.add_artifact(
@@ -730,6 +746,8 @@ class ClaudeCodeExecutor(AgentExecutor):
             await updater.failed()
             return
         except Exception as e:
+            if cancel_event.is_set():
+                return
             logger.exception("[ClaudeCodeExecutor] Unexpected execution error")
             await _disconnect_client(sdk_key)
             await updater.add_artifact(
@@ -739,11 +757,19 @@ class ClaudeCodeExecutor(AgentExecutor):
             await updater.failed()
             return
 
-        # --- Emit final result (both on success and cancel) ---
+        finally:
+            sync_session(user_id, session_id, workspace, _sdk_sessions.get(sdk_key))
+
+        # Empty terminal messages are not evidence that the requested task ran.
         was_cancelled = cancel_event.is_set()
+        missing_result = not str(final_result or "").strip()
         result_payload = {
-            "status": "cancelled" if was_cancelled else "completed",
-            "summary": str(final_result) if final_result else ("(interrupted)" if was_cancelled else ""),
+            "status": "cancelled" if was_cancelled else ("error" if missing_result else "completed"),
+            "summary": (
+                "(interrupted)" if was_cancelled else
+                "Error: The code task ended without a result. Please retry." if missing_result else
+                str(final_result)
+            ),
             "files_changed": sorted(files_changed),
             "todos": last_todos,
             "steps": step_counter,
@@ -753,11 +779,10 @@ class ClaudeCodeExecutor(AgentExecutor):
             name="code_result"
         )
 
-        # --- Always sync to S3 — critical for cancel case (session continuity) ---
-        sync_session(user_id, session_id, workspace, _sdk_sessions.get(sdk_key))
-
         if was_cancelled:
             await updater.cancel()
+        elif missing_result:
+            await updater.failed()
         else:
             await updater.complete()
 
@@ -769,7 +794,9 @@ class ClaudeCodeExecutor(AgentExecutor):
         2. Send interrupt() to Claude Code subprocess (like pressing ESC)
         3. Report cancel status to A2A framework
 
-        The subprocess stays alive — next query() reuses the same client.
+        Discard the interrupted connection so its unread terminal messages
+        cannot be mistaken for the next task’s result. The saved SDK session
+        still provides conversation continuity on the next connection.
         """
         logger.info(f"[ClaudeCodeExecutor] Cancel requested for task {context.task_id}")
 
@@ -788,6 +815,7 @@ class ClaudeCodeExecutor(AgentExecutor):
                     logger.info(f"[ClaudeCodeExecutor] Interrupt sent to client {sdk_key}")
                 except Exception as e:
                     logger.warning(f"[ClaudeCodeExecutor] interrupt() failed: {e}")
+            await _disconnect_client(sdk_key)
 
         # 3. Report cancel to A2A framework
         updater = TaskUpdater(event_queue, context.task_id, context.context_id)

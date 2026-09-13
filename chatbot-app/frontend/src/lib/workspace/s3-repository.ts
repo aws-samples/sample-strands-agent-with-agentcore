@@ -41,6 +41,7 @@ function codeInterpreterPrefix(userId: string, sessionId: string): string {
 }
 
 const NAMESPACES: Namespace[] = [
+  { logicalPath: 'presentations', label: 'Presentations', prefix: (userId, sessionId) => `${codeInterpreterPrefix(userId, sessionId)}artifacts/powerpoint/` },
   {
     logicalPath: 'uploads',
     label: 'Uploads',
@@ -185,7 +186,7 @@ function decodeCursor(path: string, cursor?: string): string | undefined {
   }
 }
 
-async function getWorkspaceBucket(): Promise<string> {
+export async function getWorkspaceBucket(): Promise<string> {
   const configuredBucket = process.env.ARTIFACT_BUCKET
   if (configuredBucket) return configuredBucket
 

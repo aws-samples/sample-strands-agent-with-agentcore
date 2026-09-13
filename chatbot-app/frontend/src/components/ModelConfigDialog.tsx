@@ -38,6 +38,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
   const [currentConfig, setCurrentConfig] = useState<ModelConfig | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAll, setShowAll] = useState(false);
 
   const isVoiceActive = agentStatus?.startsWith('voice_');
   const [availableModels, setAvailableModels] = useState<AvailableModel[]>([]);
@@ -161,7 +162,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
   // Filter models based on search
   const filteredModels = useMemo(() => {
     if (!searchQuery.trim()) {
-      return availableModels;
+      return showAll ? availableModels : availableModels.filter(model => /Terra|Sol|Luna|Sonnet/.test(model.name) || model.id === selectedModelId);
     }
 
     // MOBILE FIX: Normalize search query (trim + lowercase) to handle mobile keyboard input
@@ -174,7 +175,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
       const idMatch = model.id.toLowerCase().includes(query);
       return nameMatch || providerMatch || descMatch || idMatch;
     });
-  }, [availableModels, searchQuery]);
+  }, [availableModels, searchQuery, showAll, selectedModelId]);
 
   // Group models by provider
   const groupedModels = useMemo(() => {
@@ -253,6 +254,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
           </div>
         </div>
 
+        <button className="px-4 py-2 text-left text-xs text-primary" onClick={() => setShowAll(!showAll)}>{showAll ? 'Show recommended models' : 'Show all models'}</button>
         {/* Model List */}
         <div className="flex-1 overflow-y-auto p-3">
           {Object.entries(groupedModels).length === 0 ? (
@@ -272,6 +274,8 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
                       return (
                         <div
                           key={model.id}
+                          role="button" tabIndex={0}
+                          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); void handleModelChange(model.id) } }}
                           onClick={() => handleModelChange(model.id)}
                           className={`group flex items-start gap-3 px-3 py-2.5 rounded-lg transition-all cursor-pointer ${
                             isSelected
@@ -295,7 +299,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
                               {model.name}
                             </div>
                             <div className="text-caption text-muted-foreground/70 mt-0.5 line-clamp-2">
-                              {model.description}
+                              {/Terra/.test(model.name) ? 'Balanced for everyday work' : /Sol/.test(model.name) ? 'For complex reasoning and demanding tasks' : /Luna/.test(model.name) ? 'Quick answers for simpler tasks' : model.description.replace(/\s*\(?via Bedrock[^)]*\)?/gi, '')}
                             </div>
                           </div>
                         </div>

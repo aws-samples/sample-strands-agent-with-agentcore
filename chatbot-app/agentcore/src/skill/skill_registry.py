@@ -14,7 +14,8 @@ import inspect
 import logging
 import os
 import re
-from collections.abc import Iterable
+import threading
+from collections.abc import Callable, Iterable
 
 from skill.tool_names import canonical_tool_name
 
@@ -28,6 +29,9 @@ class SkillRegistry:
         self.skills_dir = skills_dir
         # skill_name → { description, type, compose, tools, sources }
         self._skills: dict[str, dict] = {}
+        self._tool_loaders: dict[str, list[Callable[[], list]]] = {}
+        self._loaded_tool_loaders: set[Callable[[], list]] = set()
+        self._tool_load_lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Phase 1: Directory-based skill discovery (L1)
@@ -123,6 +127,24 @@ class SkillRegistry:
             if info["tools"]
         }
         logger.info(f"SkillRegistry bound tools: {bound_counts}")
+
+    def add_tool_loader(self, skill_names: Iterable[str], loader: Callable[[], list]) -> None:
+        """Defer remote discovery until one of these enabled skills is activated.
+
+        A shared provider is loaded once per registry, even if multiple skills
+        request it concurrently. Failed discovery is not cached as an empty list.
+        """
+        for name in skill_names:
+            if name in self._skills:
+                self._tool_loaders.setdefault(name, []).append(loader)
+
+    def _load_deferred_tools(self, skill_name: str) -> None:
+        with self._tool_load_lock:
+            for loader in self._tool_loaders.get(skill_name, []):
+                if loader not in self._loaded_tool_loaders:
+                    tools = loader()
+                    self.bind_tools(tools)
+                    self._loaded_tool_loaders.add(loader)
 
     @property
     def skill_names(self) -> list[str]:
@@ -302,6 +324,7 @@ class SkillRegistry:
         if skill_name not in self._skills:
             raise KeyError(f"Unknown skill: '{skill_name}'. Available: {self.skill_names}")
 
+        self._load_deferred_tools(skill_name)
         info = self._skills[skill_name]
 
         if info.get("type") == "composite":
@@ -314,6 +337,7 @@ class SkillRegistry:
                         f"unknown skill '{ref}' — skipping"
                     )
                     continue
+                self._load_deferred_tools(ref)
                 for t in self._skills[ref]["tools"]:
                     tool_name = canonical_tool_name(t)
                     if tool_name not in seen:

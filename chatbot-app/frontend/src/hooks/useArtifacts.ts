@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Artifact } from '@/types/artifact'
+import { deduplicateArtifacts, normalizeOfficeArtifact } from '@/lib/office-artifacts'
+import { apiFetch } from '@/lib/api-client'
 
 interface ArtifactSessionState {
   sessionId: string
@@ -12,7 +14,7 @@ interface ArtifactSessionState {
  * Convert backend artifact format to frontend Artifact.
  */
 function toFrontendArtifact(item: any, sessionId: string): Artifact {
-  let timestamp = item.timestamp || item.created_at
+  let timestamp = item.updated_at || item.timestamp || item.created_at
   if (timestamp) {
     try {
       const date = new Date(timestamp)
@@ -24,16 +26,24 @@ function toFrontendArtifact(item: any, sessionId: string): Artifact {
     timestamp = new Date().toISOString()
   }
 
+  let draft: any
+  try {
+    const stored = localStorage.getItem(`diagram-draft:${sessionId}:${item.id}`)
+    if (stored) {
+      const candidate = JSON.parse(stored)
+      if (Date.parse(candidate.baseTimestamp) === Date.parse(timestamp)) draft = candidate
+    }
+  } catch { /* unavailable local recovery storage */ }
   return {
     id: item.id,
-    type: item.type,
+    type: item.type === 'diagram' ? 'image' : item.type,
     title: item.title,
-    content: item.content,
+    content: draft?.content || item.content,
     description: item.metadata?.description || item.description || '',
     toolName: item.tool_name || item.toolName,
     timestamp,
     sessionId,
-    metadata: item.metadata,
+    metadata: draft ? { ...item.metadata, manuallyEdited: true, editVersion: draft.version, saveError: "Recovered changes have not been saved. Retry save." } : item.metadata,
   }
 }
 
@@ -46,7 +56,7 @@ function readStorageArtifacts(sessionId: string): Artifact[] {
   try {
     const data = JSON.parse(stored)
     if (!Array.isArray(data)) return []
-    return data.map((item: any) => toFrontendArtifact(item, sessionId))
+    return deduplicateArtifacts(data.map((item: any) => toFrontendArtifact(item, sessionId)))
   } catch {
     return []
   }
@@ -100,6 +110,17 @@ export function useArtifacts(
     sessionStorage.setItem(`artifacts-${sessionId}`, JSON.stringify(artifacts))
   }, [sessionId, loadedFromBackend, artifacts])
 
+  useEffect(() => {
+    const beforeUnload = (event: BeforeUnloadEvent) => {
+      if (artifacts.some(a => a.metadata?.pendingSave || a.metadata?.saveError)) {
+        event.preventDefault()
+        event.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', beforeUnload)
+    return () => window.removeEventListener('beforeunload', beforeUnload)
+  }, [artifacts])
+
   const toggleCanvas = useCallback(() => {
     setIsCanvasOpen(prev => !prev)
   }, [])
@@ -124,7 +145,8 @@ export function useArtifacts(
     )
   }, [sessionId])
 
-  const addArtifact = useCallback((artifact: Artifact) => {
+  const addArtifact = useCallback((input: Artifact) => {
+    const artifact = normalizeOfficeArtifact(input)
     setSessionState(current => {
       if (current.sessionId !== sessionId) return current
       const existingIndex = current.artifacts.findIndex(a => a.id === artifact.id)
@@ -173,18 +195,20 @@ export function useArtifacts(
   const refreshArtifacts = useCallback(async (options?: { skipFlashEffect?: boolean }): Promise<Artifact[]> => {
     const requestedSessionId = sessionId
     try {
-      const response = await fetch(`/api/conversation/history?session_id=${sessionId}`)
+      const response = await apiFetch(`conversation/history?session_id=${sessionId}`)
       if (response.ok) {
         const data = await response.json()
         const artifactsData = data.artifacts || []
         const converted = Array.isArray(artifactsData)
-          ? artifactsData.map((item: any) =>
+          ? deduplicateArtifacts(artifactsData.map((item: any) =>
               toFrontendArtifact(item, requestedSessionId)
-            )
+            ))
           : []
         if (activeSessionIdRef.current !== requestedSessionId) return []
         setSessionState(current => current.sessionId === requestedSessionId
-          ? { ...current, artifacts: converted, loadedFromBackend: true }
+          ? { ...current, artifacts: converted, loadedFromBackend: true,
+              selectedArtifactId: converted.some(a => a.id === current.selectedArtifactId)
+                ? current.selectedArtifactId : null }
           : current
         )
 
@@ -207,12 +231,14 @@ export function useArtifacts(
   const reloadFromStorage = useCallback(() => {
     const loaded = readStorageArtifacts(sessionId)
     if (activeSessionIdRef.current !== sessionId) return
-    setSessionState({
-      sessionId,
+    setSessionState(current => current.sessionId === sessionId ? {
+      ...current,
       artifacts: loaded,
-      selectedArtifactId: null,
+      // History arriving later must not undo a selection made in this session.
+      selectedArtifactId: loaded.some(a => a.id === current.selectedArtifactId)
+        ? current.selectedArtifactId : null,
       loadedFromBackend: true,
-    })
+    } : current)
   }, [sessionId])
 
   const setSelectedArtifactId = useCallback((id: string | null) => {

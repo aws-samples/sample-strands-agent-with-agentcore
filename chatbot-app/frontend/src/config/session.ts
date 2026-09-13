@@ -10,7 +10,8 @@
  *
  * Set to 0 to disable timeout (session persists indefinitely)
  */
-export const SESSION_TIMEOUT_MINUTES: number = 20
+// A conversation is durable; runtime idleness must not discard the open chat.
+export const SESSION_TIMEOUT_MINUTES: number = 0
 
 /**
  * LocalStorage key for tracking last activity time

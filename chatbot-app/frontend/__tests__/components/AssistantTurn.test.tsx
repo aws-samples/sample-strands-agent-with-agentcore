@@ -740,3 +740,24 @@ describe('AssistantTurn', () => {
     })
   })
 })
+
+describe('Tool activity outcomes', () => {
+  const show = (tools: any[]) => render(<AssistantTurn messages={[{ id: 'activity', sender: 'bot', text: '', timestamp: '2026-09-12T00:00:00Z', toolExecutions: tools }]} />)
+  it('labels multiple spreadsheet operations as actions and supports keyboard expansion', () => {
+    show(['create_excel_spreadsheet', 'preview_excel_sheets', 'read_excel_spreadsheet'].map((toolName, i) => ({ id: String(i), toolName, isComplete: true })))
+    expect(screen.getByText('Excel spreadsheet activity')).toBeInTheDocument()
+    expect(screen.getByText('3 actions')).toBeInTheDocument()
+    expect(screen.queryByText('×3')).not.toBeInTheDocument()
+    const disclosure = screen.getByRole('button', { expanded: false })
+    fireEvent.keyDown(disclosure, { key: 'Enter' })
+    expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+  })
+  it.each([
+    [{ status: 'cancelled', success: false }, 'Stopped', 'Stopped by you'],
+    [{ status: 'error' }, 'Failed', 'Could not complete: creating excel spreadsheet'],
+  ])('distinguishes explicit cancellation from failure: %j', (toolResult, icon, label) => {
+    show([{ id: 'one', toolName: 'create_excel_spreadsheet', isComplete: true, isCancelled: true, toolResult }])
+    expect(screen.getByRole('img', { name: icon as string })).toBeInTheDocument()
+    expect(screen.getByText(label as string)).toBeInTheDocument()
+  })
+})

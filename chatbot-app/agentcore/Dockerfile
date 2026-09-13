@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y \
     libdbus-1-3 \
     libreoffice-writer \
     libreoffice-impress \
+    libreoffice-calc \
     poppler-utils \
     fonts-nanum \
     && rm -rf /var/lib/apt/lists/*
