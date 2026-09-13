@@ -21,6 +21,7 @@ interface ChatInputAreaProps {
   setSelectedFiles: React.Dispatch<React.SetStateAction<File[]>>
   agentStatus: AgentStatus
   isBusy: boolean
+  isLoadingSession?: boolean
   isVoiceActive: boolean
   isVoiceSupported: boolean
   isCanvasOpen: boolean
@@ -67,6 +68,7 @@ export function ChatInputArea({
   setSelectedFiles,
   agentStatus,
   isBusy,
+  isLoadingSession = false,
   isVoiceActive,
   isVoiceSupported,
   isCanvasOpen,
@@ -147,7 +149,7 @@ export function ChatInputArea({
   )
 
   const submit = useCallback(() => {
-    if (!hasContent || isVoiceActive || isUploadingWorkspace) return
+    if (!hasContent || isVoiceActive || isUploadingWorkspace || isLoadingSession) return
     // Slash commands are handled in handleKeyDown.
     if (/^\s*\//.test(inputMessage)) return
 
@@ -161,7 +163,7 @@ export function ChatInputArea({
     setWorkspaceFiles([])
   }, [
     hasContent, isVoiceActive, isUploadingWorkspace, inputMessage, selectedFiles,
-    workspaceFiles, isBusy,
+    workspaceFiles, isBusy, isLoadingSession,
     onEnqueueMessage, onSendMessage, setSelectedFiles,
   ])
 
@@ -526,7 +528,7 @@ export function ChatInputArea({
                 ) : (
                   <Button
                     type="submit"
-                    disabled={!hasContent || isUploadingWorkspace}
+                    disabled={!hasContent || isUploadingWorkspace || isLoadingSession}
                     size="sm"
                     title={isBusy ? "Queue this message" : "Send"}
                     className="h-9 w-9 p-0 bg-primary hover:bg-primary/90 text-primary-foreground rounded-lg transition-colors duration-150 disabled:opacity-40"

@@ -16,6 +16,7 @@ export type TurnActivityOwner =
 const PHASE_OWNERS: Record<TurnPhase, TurnActivityOwner> = {
   idle: 'none',
   submitting: 'global',
+  starting_runtime: 'global',
   waiting_for_model: 'global',
   reasoning: 'global',
   preparing_tool: 'tool',
@@ -34,7 +35,9 @@ export const getGlobalTurnActivity = (phase: TurnPhase): TurnActivity | null => 
 
   switch (phase) {
     case 'submitting':
-      return { label: 'Starting...', ariaLabel: 'Starting request' }
+      return { label: 'Connecting...', ariaLabel: 'Starting request' }
+    case 'starting_runtime':
+      return { label: 'Starting assistant...', ariaLabel: 'Starting assistant' }
     case 'waiting_for_model':
       return { label: 'Thinking...', ariaLabel: 'Waiting for the model' }
     case 'reasoning':

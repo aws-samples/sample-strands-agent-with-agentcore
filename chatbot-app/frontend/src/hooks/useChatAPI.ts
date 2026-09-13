@@ -1,3 +1,4 @@
+import { rememberStoppedTurn, restoreStoppedTurn } from '@/lib/stopped-turn'
 import { useCallback, useRef, useEffect, useState } from 'react'
 import { Message, ToolExecution, WorkspaceAttachment } from '@/types/chat'
 import { AGUIStreamEvent, ChatUIState, AGUI_EVENT_TYPES } from '@/types/events'
@@ -837,6 +838,8 @@ export const useChatAPI = ({
         // Reset streaming state and clear partial assistant turn before replay.
         // Mirrors the loadSession path: prevents duplicate messages when replaying from cursor=0.
         resetStreamingState()
+        if (streamGenerationRef.current !== streamGeneration) return
+        if (sessionIdRef.current) reconnect.restoreFromSession(sessionIdRef.current)
         setMessages(prev => {
           let lastUserIdx = -1
           for (let i = prev.length - 1; i >= 0; i--) {
@@ -1330,7 +1333,7 @@ export const useChatAPI = ({
         })
 
       // Non-A2A incomplete tools can't recover on reload — mark them cancelled to avoid permanent spinner.
-      const finalMessages = loadedMessages.map(msg => {
+      const finalMessages = restoreStoppedTurn(newSessionId, loadedMessages.map(msg => {
         if (!msg.toolExecutions) return msg
         const updated = msg.toolExecutions.map(te =>
           !te.isComplete && !te.isCancelled && !isA2ATool(te.toolName)
@@ -1338,7 +1341,7 @@ export const useChatAPI = ({
             : te
         )
         return { ...msg, toolExecutions: updated }
-      })
+      }))
       if (!isCurrentLoad()) {
         return { preferences: null, messages: [] }
       }
@@ -1378,6 +1381,15 @@ export const useChatAPI = ({
       // Check for a running execution that can be resumed (e.g., after page refresh)
       const hasExecution = reconnect.restoreFromSession(newSessionId)
       if (hasExecution) {
+        // Stop must work while replay/status requests are still connecting.
+        // Waiting for RUN_STARTED leaves a visible but unusable Stop button.
+        const restoredExecutionId = reconnect.getExecutionId()
+        const prefix = `${newSessionId}:`
+        if (restoredExecutionId?.startsWith(prefix) && restoredExecutionId.length > prefix.length) {
+          activeRunIdRef.current = restoredExecutionId.slice(prefix.length)
+          activeRunSessionIdRef.current = newSessionId
+          setHasStoppableRun(true)
+        }
         logger.info(`[loadSession] Found persisted execution for session ${newSessionId}, attempting resume...`)
 
         // Remove the last assistant turn from history — replay will rebuild it.
@@ -1400,16 +1412,36 @@ export const useChatAPI = ({
           agentStatus: 'thinking',
           turnPhase: 'reconnecting',
         }))
+        let resumedInterrupt = false
+        const clearResumedRun = () => {
+          if (activeRunSessionIdRef.current === newSessionId) {
+            activeRunIdRef.current = null
+            activeRunSessionIdRef.current = null
+            setHasStoppableRun(false)
+          }
+        }
         reconnect.attemptReconnect(
-          (event) => handleStreamEvent(event),
+          async (event) => {
+            if (!isCurrentLoad()) return
+            if (event.type === 'RUN_STARTED') {
+              activeRunIdRef.current = (event as any).runId
+              activeRunSessionIdRef.current = newSessionId
+              setHasStoppableRun(true)
+            }
+            if (event.type === 'CUSTOM' && (event as any).name === 'interrupt') resumedInterrupt = true
+            await handleStreamEvent(event)
+            if (event.type === 'RUN_ERROR' || (event.type === 'RUN_FINISHED' && !resumedInterrupt)) clearResumedRun()
+          },
           () => {
             if (!isCurrentLoad()) return
+            if (!resumedInterrupt) clearResumedRun()
             // Resume succeeded
             logger.info('[loadSession] Resume after page refresh succeeded')
             setUIState(prev => ({ ...prev, isReconnecting: false, isTyping: false, isConnected: true, agentStatus: 'idle', turnPhase: 'idle' }))
           },
           () => {
             if (!isCurrentLoad()) return
+            clearResumedRun()
             // Resume failed — show history only
             logger.info('[loadSession] Resume after page refresh failed, showing history only')
             setMessages(finalMessages)
@@ -1423,6 +1455,7 @@ export const useChatAPI = ({
           },
         ).catch(() => {
           if (!isCurrentLoad()) return
+          clearResumedRun()
           setMessages(finalMessages)
           setUIState(prev => ({ ...prev, isReconnecting: false, isTyping: false, agentStatus: 'idle', turnPhase: 'idle' }))
         })
@@ -1607,10 +1640,19 @@ export const useChatAPI = ({
         throw new Error(`Stop request failed (${response.status}): ${error}`)
       }
 
-      // Stop delivery is durable now; disconnect the local stream relay.
-      abortRef.current?.unsubscribe()
-      abortRef.current = null
-      if (activeRunIdRef.current === currentRunId) {
+      // Only detach the run this request stopped; the user may have switched
+      // sessions while the request was in flight. Resumed streams have their
+      // own controller and must be detached as well.
+      if (activeRunIdRef.current === currentRunId && activeRunSessionIdRef.current === activeRunSessionId) {
+        setMessages(messages => {
+          rememberStoppedTurn(currentSessionId, currentRunId, messages)
+          return messages
+        })
+        abortRef.current?.unsubscribe()
+        abortRef.current = null
+        // Keep the execution identity so an immediate reload can observe the
+        // server finishing cancellation and persisting its partial answer.
+        reconnect.detach()
         activeRunIdRef.current = null
         activeRunSessionIdRef.current = null
         setHasStoppableRun(false)
@@ -1621,7 +1663,7 @@ export const useChatAPI = ({
       logger.error('Failed to send stop signal:', error)
       return false
     }
-  }, [getAuthHeaders])
+  }, [getAuthHeaders, reconnect.detach])
 
   return {
     newChat,

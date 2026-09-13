@@ -16,6 +16,7 @@ const reconnectMocks = vi.hoisted(() => ({
   detach: vi.fn(),
   onStreamStart: vi.fn(),
   restoreFromSession: vi.fn().mockReturnValue(false),
+  getExecutionId: vi.fn().mockReturnValue(null),
   attemptReconnect: vi.fn(),
 }))
 const authMocks = vi.hoisted(() => ({
@@ -91,6 +92,7 @@ function setup(handleStreamEvent = vi.fn()) {
   const setMessages = vi.fn((update: any) => {
     messageState = typeof update === 'function' ? update(messageState) : update
   })
+  const setSessionId = vi.fn()
   const hook = renderHook(() =>
     useChatAPI({
       backendUrl: 'http://localhost:8000',
@@ -99,7 +101,7 @@ function setup(handleStreamEvent = vi.fn()) {
       handleStreamEvent,
       resetStreamingState: vi.fn(),
       sessionId: 'session-1',
-      setSessionId: vi.fn(),
+      setSessionId,
       currentModelId: 'us.anthropic.claude-opus-5',
       currentTemperature: 0.5,
     } as any),
@@ -110,6 +112,7 @@ function setup(handleStreamEvent = vi.fn()) {
     handleStreamEvent,
     setMessages,
     getMessages: () => messageState,
+    setSessionId,
   }
 }
 
@@ -462,4 +465,41 @@ describe('useChatAPI — durable session restore', () => {
       expect.objectContaining({ text: 'answer A' }),
     ]))
   })
+})
+
+it.each([false, true])('stops a restored execution even before replay starts (started=%s)', async started => {
+  resetAuthMock()
+  reconnectMocks.restoreFromSession.mockReturnValueOnce(true)
+  reconnectMocks.getExecutionId.mockReturnValueOnce('session-1:resumed-run')
+  reconnectMocks.attemptReconnect.mockImplementationOnce(async (onEvent: any) => {
+    if (started) await onEvent({ type: 'RUN_STARTED', threadId: 'session-1', runId: 'resumed-run' })
+  })
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({ success: true, messages: [], artifacts: [] }) }))
+  const { hook } = setup()
+  await act(async () => { await hook.result.current.loadSession('session-1') })
+  expect(hook.result.current.hasStoppableRun).toBe(true)
+  const stopFetch = vi.fn().mockResolvedValue({ ok: true, text: async () => '' })
+  vi.stubGlobal('fetch', stopFetch)
+  await act(async () => { expect(await hook.result.current.sendStopSignal()).toBe(true) })
+  expect(JSON.parse(stopFetch.mock.calls[0][1].body)).toMatchObject({ runId: 'resumed-run', sessionId: 'session-1' })
+  expect(reconnectMocks.detach).toHaveBeenCalled()
+  expect(hook.result.current.hasStoppableRun).toBe(false)
+})
+
+
+it('restores the open conversation after a long idle period', async () => {
+  resetAuthMock()
+  const savedSessionGetter = vi.mocked(sessionStorage.getItem).getMockImplementation()
+  const savedLocalGetter = vi.mocked(localStorage.getItem).getMockImplementation()
+  vi.mocked(sessionStorage.getItem).mockImplementation(key => key === 'chat-session-id' ? 'retained-conversation' : null)
+  vi.mocked(localStorage.getItem).mockImplementation(key => key === 'chat-last-activity' ? String(Date.now() - 24 * 60 * 60 * 1000) : null)
+  try {
+    const { hook, setSessionId } = setup()
+    await waitFor(() => expect(setSessionId).toHaveBeenCalledWith('retained-conversation'))
+    expect(setSessionId).toHaveBeenCalledTimes(1)
+    hook.unmount()
+  } finally {
+    vi.mocked(sessionStorage.getItem).mockImplementation(savedSessionGetter || (() => null))
+    vi.mocked(localStorage.getItem).mockImplementation(savedLocalGetter || (() => null))
+  }
 })

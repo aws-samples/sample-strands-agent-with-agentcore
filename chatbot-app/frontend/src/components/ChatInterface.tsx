@@ -32,6 +32,7 @@ import { buildArtifactContext } from "@/lib/artifactContext"
 import type { WorkspaceAttachment } from "@/types/chat"
 import { useTheme } from "next-themes"
 import { useVoiceIntegration } from "@/hooks/useVoiceIntegration"
+import { SlowTurnNotice } from "@/components/chat/SlowTurnNotice"
 import { TurnActivityIndicator } from "@/components/chat/TurnActivityIndicator"
 import { apiPost } from "@/lib/api-client"
 import { sessionEventCursor } from "@/lib/session-event-cursor"
@@ -175,6 +176,7 @@ export function ChatInterface() {
     sendMessage,
     replayExecution,
     stopGeneration,
+    stopError,
     queuedMessages,
     queueHoldReason,
     enqueueMessage,
@@ -601,13 +603,6 @@ export function ChatInterface() {
     }
   }, [open, isCanvasOpen, closeCanvas])
 
-  // Close canvas on mobile view
-  useEffect(() => {
-    if (isMobileView && isCanvasOpen) {
-      closeCanvas()
-    }
-  }, [isMobileView, isCanvasOpen, closeCanvas])
-
   // Listen for open-artifact events from ChatMessage artifact cards
   useEffect(() => {
     const handleOpenArtifact = (event: CustomEvent<{ artifactId: string }>) => {
@@ -751,7 +746,7 @@ export function ChatInterface() {
   const buildCurrentArtifactContext = useCallback(() => {
     const selectedArtifact = selectedArtifactId
       ? artifacts.find(a => a.id === selectedArtifactId)
-      : undefined
+      : [...artifacts].reverse().find(a => a.type === "excalidraw" && a.metadata?.manuallyEdited)
     return buildArtifactContext(selectedArtifact).artifactContext
   }, [selectedArtifactId, artifacts])
 
@@ -878,8 +873,10 @@ export function ChatInterface() {
     return hasActiveSwarmProgress && lastGroup?.type === 'assistant_turn';
   }, [swarmProgress, groupedMessages])
 
+  const visibleToolProgress = useMemo(() => ({ browserProgress, researchProgress, codeProgress, swarmProgress }), [browserProgress, researchProgress, codeProgress, swarmProgress])
+
   const renderRightSidebarToggles = (large = false) => {
-    const buttonSize = large ? 'h-9 w-9' : 'h-8 w-8'
+    const buttonSize = large ? 'h-9 px-3' : 'h-8 px-3'
     const iconSize = large ? 'h-5 w-5' : 'h-4 w-4'
     const activeView = isCanvasOpen ? rightSidebarView : null
 
@@ -892,7 +889,7 @@ export function ChatInterface() {
                 variant="ghost"
                 size="sm"
                 onClick={() => toggleRightSidebar('artifacts')}
-                className={`${buttonSize} relative p-0 hover:bg-muted/60 ${
+                className={`${buttonSize} relative gap-2 hover:bg-muted/60 ${
                   activeView === 'artifacts'
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground'
@@ -905,8 +902,9 @@ export function ChatInterface() {
                 aria-pressed={activeView === 'artifacts'}
               >
                 <Files className={iconSize} />
+                <span>Results</span>
                 {artifacts.length > 0 && (
-                  <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                  <span className="flex h-5 min-w-5 px-1 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                     {artifacts.length}
                   </span>
                 )}
@@ -922,7 +920,7 @@ export function ChatInterface() {
                 variant="ghost"
                 size="sm"
                 onClick={() => toggleRightSidebar('workspace')}
-                className={`${buttonSize} p-0 hover:bg-muted/60 ${
+                className={`${buttonSize} gap-2 hover:bg-muted/60 ${
                   activeView === 'workspace'
                     ? 'bg-muted text-foreground'
                     : 'text-muted-foreground'
@@ -935,6 +933,7 @@ export function ChatInterface() {
                 aria-pressed={activeView === 'workspace'}
               >
                 <FolderTree className={iconSize} />
+                <span>Files</span>
               </Button>
             </TooltipTrigger>
             <TooltipContent>
@@ -959,7 +958,7 @@ export function ChatInterface() {
 
       {/* Main Chat Area - unified layout for both modes */}
       <SidebarInset
-        className={`h-screen min-w-0 flex flex-col overflow-hidden ${groupedMessages.length === 0 ? 'justify-center items-center' : ''} relative`}
+        className={`h-svh min-w-0 flex flex-col ${groupedMessages.length === 0 ? 'overflow-y-auto items-center pt-24 pb-8 md:pt-[12vh]' : 'overflow-hidden'} relative`}
       >
         {/* Sidebar trigger - Always visible in top-left */}
         {groupedMessages.length === 0 && (
@@ -969,7 +968,7 @@ export function ChatInterface() {
         )}
 
         {/* Artifact sidebar toggle - shown in top-right when no chat has started */}
-        {groupedMessages.length === 0 && mounted && !isMobileView && (
+        {groupedMessages.length === 0 && mounted && !isCanvasOpen && (
           <div className={`absolute top-4 right-4 z-20`}>
             {renderRightSidebarToggles(true)}
           </div>
@@ -984,7 +983,7 @@ export function ChatInterface() {
 
             <div className="flex items-center gap-2">
               {/* Artifact sidebar toggle - hidden on mobile */}
-              {!isMobileView && renderRightSidebarToggles()}
+              {!isCanvasOpen && renderRightSidebarToggles()}
             </div>
           </div>
         )}
@@ -1118,6 +1117,16 @@ export function ChatInterface() {
             hidden={!!swarmProgress?.isActive}
           />
 
+          <SlowTurnNotice
+            active={turnControl.isBusy && !currentInterrupt && turnPhase !== 'waiting_for_user' && !isReconnecting && !isCompacting}
+            progress={groupedMessages}
+            reasoning={currentReasoning}
+            toolProgress={visibleToolProgress}
+            phase={turnPhase}
+            sessionId={stableSessionId}
+            onStop={agentStatus === 'stopping' ? undefined : stopGeneration}
+          />
+
           {/* Reconnection banner */}
           {isReconnecting && (
             <div className="flex items-center justify-center py-2 px-4 mx-4 mb-2 rounded-md bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 text-yellow-700 dark:text-yellow-400 text-sm">
@@ -1149,10 +1158,17 @@ export function ChatInterface() {
 
         {/* Greeting - Show when chat not started (not during loading) */}
         {groupedMessages.length === 0 && !isLoadingMessages && (
-          <div className="mx-auto px-4 w-full md:max-w-4xl">
-            <div className="flex flex-col items-center justify-center mb-8 animate-fade-in">
+          <div className="mx-auto px-4 w-full shrink-0 md:max-w-4xl">
+            <div className="flex flex-col items-center justify-center mb-6 animate-fade-in">
               <Greeting />
             </div>
+          </div>
+        )}
+
+        {stopError && (
+          <div role="alert" className="mx-auto mb-2 flex w-full max-w-4xl items-center justify-between gap-3 px-4 text-sm text-destructive">
+            <span>{stopError}</span>
+            <button onClick={stopGeneration} disabled={agentStatus === 'stopping'} className="shrink-0 rounded underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring">Try stopping again</button>
           </div>
         )}
 
@@ -1185,6 +1201,7 @@ export function ChatInterface() {
           setSelectedFiles={setSelectedFiles}
           agentStatus={isCompacting ? 'compacting' : agentStatus}
           isBusy={turnControl.isBusy}
+          isLoadingSession={isLoadingMessages}
           isVoiceActive={isVoiceActive}
           isVoiceSupported={isVoiceSupported}
           isCanvasOpen={isCanvasOpen}
@@ -1207,8 +1224,8 @@ export function ChatInterface() {
 
         {/* Prompt Suggestions - Show only on empty chat */}
         {groupedMessages.length === 0 && !isLoadingMessages && (
-          <div className="mx-auto px-4 w-full md:max-w-4xl pb-4 -mt-2">
-            <PromptSuggestions onSelectPrompt={(prompt) => handleSendMessage(prompt, [])} />
+          <div className="mx-auto px-4 w-full shrink-0 md:max-w-4xl pb-4 mt-2">
+            <PromptSuggestions onSelectPrompt={setPrefillMessage} />
           </div>
         )}
       </SidebarInset>

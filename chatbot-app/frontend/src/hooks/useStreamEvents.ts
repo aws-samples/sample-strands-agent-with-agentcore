@@ -1,3 +1,5 @@
+import { toolResultFailed, toolResultCancelled } from '@/lib/tool-outcome'
+import { markTurnStopped } from '@/lib/stopped-turn'
 import { useCallback, useRef, startTransition, useEffect } from 'react'
 import { flushSync } from 'react-dom'
 import { EventType, type TextMessageStartEvent, type TextMessageContentEvent, type TextMessageEndEvent, type ToolCallStartEvent, type ToolCallArgsEvent, type ToolCallEndEvent, type ToolCallResultEvent, type RunFinishedEvent, type RunErrorEvent, type CustomEvent } from '@ag-ui/core'
@@ -8,7 +10,7 @@ import { useTextBuffer } from './useTextBuffer'
 import { A2A_TOOLS_REQUIRING_POLLING, isA2ATool, getAgentStatusForTool } from './usePolling'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { updateLastActivity } from '@/config/session'
-import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, TOOL_TYPE_TO_DOC_TYPE, DocumentType } from '@/config/document-tools'
+import { TOOL_TO_DOC_TYPE, DOC_TYPE_TO_TOOL_TYPE, TOOL_TYPE_TO_DOC_TYPE, OFFICE_WRITE_TOOLS, DocumentType } from '@/config/document-tools'
 import { ExtractedDataInfo } from './useCanvasHandlers'
 
 // Word document info from workspace API
@@ -106,7 +108,8 @@ export const useStreamEvents = ({
       toolExecutions: updatedExecutions,
     }))
     setMessages(prevMessages => prevMessages.map(message => {
-      if (!message.isToolMessage || !message.toolExecutions) return message
+      // History-restored assistant messages can carry tools without isToolMessage.
+      if (!message.toolExecutions) return message
       return {
         ...message,
         toolExecutions: message.toolExecutions.map(tool =>
@@ -411,7 +414,7 @@ export const useStreamEvents = ({
       }))
 
       setMessages(prevMessages => prevMessages.map(msg => {
-        if (msg.isToolMessage && msg.toolExecutions) {
+        if (msg.toolExecutions) {
           const updatedToolExecutions = msg.toolExecutions.map(tool =>
             tool.id === event.toolCallId
               ? { ...tool, toolInput: normalizedInput }
@@ -578,7 +581,7 @@ export const useStreamEvents = ({
     // Find the tool name from current executions
     const toolExecution = currentToolExecutionsRef.current.find(tool => tool.id === event.toolCallId)
     const toolName = toolExecution?.toolName
-    const isCancelled = toolStatus === 'error'
+    const isCancelled = toolStatus === 'error' || toolResultFailed(toolOutput) || toolResultCancelled(toolOutput)
 
     setUIState(prev => ({
       ...prev,
@@ -586,6 +589,26 @@ export const useStreamEvents = ({
       agentStatus: prev.agentStatus === 'stopping' ? prev.agentStatus : 'thinking',
       turnPhase: 'processing_tool_result',
     }))
+
+    // Register saved Office output as soon as the tool returns. Waiting for
+    // RUN_FINISHED loses the preview when the model stalls after file creation.
+    const officeType = TOOL_TYPE_TO_DOC_TYPE[toolMetadata?.tool_type]
+    if (!isCancelled && toolMetadata?.filename && toolMetadata?.s3_url) {
+      const document: WorkspaceDocument = {
+        filename: toolMetadata.filename,
+        s3_key: toolMetadata.s3_url,
+        size_kb: toolMetadata.size_kb || '',
+        last_modified: new Date().toISOString(),
+        tool_type: toolMetadata.tool_type,
+      }
+      if (officeType === 'word') onWordDocumentsCreated?.([document])
+      if (officeType === 'excel') onExcelDocumentsCreated?.([document])
+      if (officeType === 'powerpoint') onPptDocumentsCreated?.([document])
+    }
+    if (!isCancelled && toolMetadata?.s3_key && toolMetadata?.filename
+      && TOOL_TO_DOC_TYPE[toolMetadata.tool_type] === 'diagram') {
+      onDiagramCreated?.(toolMetadata.s3_key, toolMetadata.filename)
+    }
 
     // Track tool completion in swarm mode for expanded view
     if (swarmModeRef.current.isActive && swarmModeRef.current.agentSteps.length > 0) {
@@ -714,7 +737,7 @@ export const useStreamEvents = ({
       }))
 
       setMessages(prev => prev.map(msg => {
-        if (msg.isToolMessage && msg.toolExecutions) {
+        if (msg.toolExecutions) {
           const updatedToolExecutions = msg.toolExecutions.map(tool =>
             tool.id === event.toolCallId
               ? {
@@ -724,6 +747,7 @@ export const useStreamEvents = ({
                   metadata: toolMetadata,
                   images: filteredImages,
                   isComplete: true,
+                  isCancelled,
                 }
               : tool
           )
@@ -741,7 +765,7 @@ export const useStreamEvents = ({
     } else {
       startTransition(applyUpdates)
     }
-  }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages, setUIState])
+  }, [currentToolExecutionsRef, sessionState, setSessionState, setMessages, setUIState, onWordDocumentsCreated, onExcelDocumentsCreated, onPptDocumentsCreated, onDiagramCreated, onArtifactUpdated, onBrowserSessionDetected, onExtractedDataCreated])
 
   const handleCompleteEvent = useCallback(async (event: RunFinishedEvent) => {
     if (completeProcessedRef.current) return
@@ -817,7 +841,7 @@ export const useStreamEvents = ({
 
           for (const toolExec of currentToolExecutionsRef.current) {
             const filename = toolExec.metadata?.filename
-            if (!filename || !toolExec.isComplete || toolExec.isCancelled) continue
+            if (!filename || !toolExec.isComplete || toolExec.isCancelled || toolExec.metadata?.s3_url || !OFFICE_WRITE_TOOLS.has(toolExec.toolName)) continue
 
             const docType = resolveDocType(toolExec)
             if (docType === 'word') wordOutputFilenames.add(filename)
@@ -922,17 +946,6 @@ export const useStreamEvents = ({
             } catch {
               // Invalid JSON, skip
             }
-          }
-        }
-      }
-
-      // Trigger diagram artifact creation (uses s3_key from metadata directly, no workspace API needed)
-      if (onDiagramCreated) {
-        for (const toolExec of currentToolExecutionsRef.current) {
-          if (!toolExec.isComplete || toolExec.isCancelled) continue
-          const docType = resolveDocType(toolExec)
-          if (docType === 'diagram' && toolExec.metadata?.s3_key && toolExec.metadata?.filename) {
-            onDiagramCreated(toolExec.metadata.s3_key, toolExec.metadata.filename)
           }
         }
       }
@@ -1133,9 +1146,11 @@ export const useStreamEvents = ({
   // RunFinishedEvent (handled by handleCompleteEvent) already sets isTyping/agentStatus/isStreaming,
   // so this handler only needs to mark incomplete tool executions as cancelled.
   const handleStreamStoppedEvent = useCallback(() => {
+    textBuffer.reset()
+    setMessages(markTurnStopped)
     startTransition(() => {
       setMessages(prevMsgs => prevMsgs.map(msg => {
-        if (msg.isToolMessage && msg.toolExecutions) {
+        if (msg.toolExecutions) {
           const updatedToolExecutions = msg.toolExecutions.map(tool =>
             !tool.isComplete ? { ...tool, isComplete: true, isCancelled: true } : tool
           )
@@ -1275,7 +1290,7 @@ export const useStreamEvents = ({
       currentToolExecutionsRef.current = updatedExecutions
       setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
       setMessages(prev => prev.map(msg =>
-        msg.isToolMessage && msg.toolExecutions
+        msg.toolExecutions
           ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
               t.id === activeExec.id ? { ...t, codeSteps: updatedSteps } : t
             )}
@@ -1302,7 +1317,7 @@ export const useStreamEvents = ({
     currentToolExecutionsRef.current = updatedExecutions
     setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions }))
     setMessages(prev => prev.map(msg =>
-      msg.isToolMessage && msg.toolExecutions
+      msg.toolExecutions
         ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
             t.id === activeExec.id ? { ...t, codeTodos: todos } : t
           )}
@@ -1327,7 +1342,7 @@ export const useStreamEvents = ({
     // Clear codeProgress — live terminal disappears when tool result arrives
     setSessionState(prev => ({ ...prev, toolExecutions: updatedExecutions, codeProgress: undefined }))
     setMessages(prev => prev.map(msg =>
-      msg.isToolMessage && msg.toolExecutions
+      msg.toolExecutions
         ? { ...msg, toolExecutions: msg.toolExecutions.map(t =>
             t.id === codeExec.id ? { ...t, codeResultMeta: meta } : t
           )}
@@ -1725,6 +1740,13 @@ export const useStreamEvents = ({
         case EventType.CUSTOM: {
           const customEvent = event
           switch (customEvent.name) {
+            case 'request_progress':
+              if (customEvent.value?.phase === 'starting_runtime') {
+                setUIState(prev => prev.turnPhase === 'submitting'
+                  ? { ...prev, turnPhase: 'starting_runtime' }
+                  : prev)
+              }
+              break
             case 'reasoning':
               handleReasoningEvent(customEvent)
               break
@@ -1855,7 +1877,7 @@ export const useStreamEvents = ({
   ])
 
   // Reset streaming state (called when user stops generation)
-  const resetStreamingState = useCallback(() => {
+  const resetStreamingState = useCallback((stoppedByUser = false) => {
     // Flush any remaining buffered text before resetting
     textBuffer.reset()
 
@@ -1877,7 +1899,7 @@ export const useStreamEvents = ({
     // Mark streaming message as stopped and cancel any in-progress tool executions
     setMessages(prev => prev.map(msg => {
       if (msg.isStreaming) return { ...msg, isStreaming: false }
-      if (msg.isToolMessage && msg.toolExecutions) {
+      if (msg.toolExecutions) {
         const updated = msg.toolExecutions.map(te =>
           !te.isComplete && !te.isCancelled
             ? { ...te, isCancelled: true }
@@ -1892,8 +1914,13 @@ export const useStreamEvents = ({
       ...prev,
       reasoning: null,
       streaming: null,
-      swarmProgress: undefined
+      swarmProgress: undefined,
+      codeProgress: undefined,
+      toolExecutions: prev.toolExecutions.map(tool => !tool.isComplete
+        ? { ...tool, isComplete: true, isCancelled: true } : tool),
     }))
+
+    if (stoppedByUser) setMessages(markTurnStopped)
 
     // Reset UI — covers the case where stream was aborted without receiving RunFinishedEvent
     setUIState(prev => ({

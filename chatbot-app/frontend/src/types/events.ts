@@ -241,6 +241,7 @@ export type AgentStatus =
 export type TurnPhase =
   | 'idle'
   | 'submitting'
+  | 'starting_runtime'
   | 'waiting_for_model'
   | 'reasoning'
   | 'preparing_tool'

@@ -120,12 +120,16 @@ export function useSSEReconnect() {
     const persisted = loadPersistedExecution(sessionId)
     stateRef.current = {
       executionId: persisted?.executionId ?? null,
-      cursor: persisted?.cursor ?? 0,
+      // History restoration discards the active assistant turn, so replay
+      // must include its start event and every text/tool delta.
+      cursor: 0,
       isReconnecting: false,
       reconnectAttempt: 0,
     }
     return persisted !== null
   }, [detach])
+
+  const getExecutionId = useCallback(() => stateRef.current.executionId, [])
 
   const onEventReceived = useCallback((
     executionId: string,
@@ -212,7 +216,9 @@ export function useSSEReconnect() {
             headers,
             signal: statusController.signal,
           })
+          if (!statusRes.ok) throw new Error(`Status check failed (${statusRes.status})`)
           statusData = await statusRes.json()
+          if (statusData.status === 'unavailable') throw new Error('Status temporarily unavailable')
         } finally {
           clearTimeout(statusTimeout)
           if (activeControllerRef.current === statusController) {
@@ -383,6 +389,7 @@ export function useSSEReconnect() {
     onEventReceived,
     attemptReconnect,
     restoreFromSession,
+    getExecutionId,
     reset,
     detach,
     isReconnecting,

@@ -225,7 +225,7 @@ export async function getExecutionStatus(
         `${AGENTCORE_URL}/execution-status?executionId=${encodeURIComponent(executionId)}`,
         { method: 'GET', signal: AbortSignal.timeout(10000) }
       )
-      if (!response.ok) return { status: 'not_found' }
+      if (!response.ok) return { status: 'unavailable' }
       return await response.json()
     }
 
@@ -251,11 +251,11 @@ export async function getExecutionStatus(
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(10000),
     })
-    if (!response.ok) return { status: 'not_found' }
+    if (!response.ok) return { status: 'unavailable' }
     return await response.json()
   } catch (error) {
     console.error('[AgentCore] getExecutionStatus failed:', error)
-    return { status: 'not_found' }
+    return { status: 'unavailable' }
   }
 }
 

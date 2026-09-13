@@ -20,8 +20,10 @@ vi.mock('@/components/ModelConfigDialog', () => ({
 }))
 
 function Harness({
+  isLoadingSession = false,
   onSendMessage = vi.fn().mockResolvedValue(undefined),
 }: {
+  isLoadingSession?: boolean
   onSendMessage?: (
     text: string,
     files: File[],
@@ -37,6 +39,7 @@ function Harness({
         setSelectedFiles={setFiles}
         agentStatus="idle"
         isBusy={false}
+        isLoadingSession={isLoadingSession}
         isVoiceActive={false}
         isVoiceSupported={false}
         isCanvasOpen={false}
@@ -208,3 +211,17 @@ describe('ChatInputArea structured data attachments', () => {
     expect(screen.queryByText('Workspace')).not.toBeInTheDocument()
   })
 })
+
+ it('keeps a draft while session history is loading and allows sending afterward', () => {
+   const send = vi.fn().mockResolvedValue(undefined)
+   const { rerender } = render(<Harness isLoadingSession onSendMessage={send} />)
+   fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Keep my draft' } })
+   const button = screen.getByTitle('Send')
+   expect(button).toBeDisabled()
+   fireEvent.click(button)
+   expect(send).not.toHaveBeenCalled()
+   expect(screen.getByRole('textbox')).toHaveValue('Keep my draft')
+   rerender(<Harness onSendMessage={send} />)
+   fireEvent.click(screen.getByTitle('Send'))
+   expect(send).toHaveBeenCalledWith('Keep my draft', [], [])
+ })

@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { Search, Zap, Wand2, FolderKanban, Code2, X } from "lucide-react"
+import { Search, Zap, Wand2, FolderKanban, Code2, X, ArrowUpRight, ChartColumn, Compass, Layers } from "lucide-react"
 
 type Prompt = { text: string; icon: string }
 
@@ -65,14 +65,25 @@ export const PROMPT_CATEGORIES = [
   },
 ]
 
+export const FEATURED_TASKS = [
+  { title: 'Compare campaign performance', description: 'Compare campaign performance and explore a budget shift.', icon: ChartColumn,
+    prompt: 'Analyze this sample campaign data (all amounts in USD): Search spend $1,200, revenue $6,000; Social spend $1,000, revenue $3,500; Retargeting spend $600, revenue $4,800; Video spend $800, revenue $1,600. Calculate and chart ROAS by campaign, then compare the outcome of shifting $80 from Video to Retargeting assuming fixed returns. Label the data as illustrative.' },
+  { title: 'Research a decision', description: 'Explore the web and turn sources into a clear recommendation.', icon: Compass,
+    prompt: 'Research three project management tools for a five-person design team. Compare their current pricing in USD, collaboration features, and limitations. Cite sources and recommend the best fit for a $60/month budget.' },
+  { title: 'Make the plan visual', description: 'Turn an idea into a diagram you can review and refine.', icon: Layers,
+    prompt: 'Draw an Excalidraw architecture diagram for a customer support assistant: web app, API, agent, knowledge base, and human escalation. Label the data flow and explain one key design tradeoff.' },
+]
+
 export function Greeting() {
   return (
     <div className="w-full flex flex-col justify-center items-center animate-fade-in">
-      <h1 className="text-[28px] md:text-[34px] leading-tight font-semibold text-center text-foreground">
+      <p className="mb-4 text-xs font-semibold tracking-[0.18em] uppercase text-primary">Agent workspace</p>
+      <h1 className="text-[30px] md:text-[40px] tracking-tight leading-tight font-semibold text-center text-foreground">
         <span>
-          What are we working on?
+          From a question to a clear next step.
         </span>
       </h1>
+      <p className="mt-4 max-w-lg text-center text-sm md:text-base leading-relaxed text-muted-foreground">Research, analyze, and create with tools that work alongside you.</p>
     </div>
   )
 }
@@ -82,6 +93,7 @@ interface PromptSuggestionsProps {
 }
 
 export function PromptSuggestions({ onSelectPrompt }: PromptSuggestionsProps) {
+  const [showMore, setShowMore] = useState(false)
   const [activeCategory, setActiveCategory] = useState<string | null>(null)
 
   const active = PROMPT_CATEGORIES.find((c) => c.id === activeCategory)
@@ -97,11 +109,27 @@ export function PromptSuggestions({ onSelectPrompt }: PromptSuggestionsProps) {
 
   return (
     <div className="w-full flex flex-col items-center gap-3">
+      <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-3">
+        {FEATURED_TASKS.map(({ title, description, icon: Icon, prompt }) => (
+          <button key={title} onClick={() => handlePromptClick(prompt)}
+            className="group rounded-xl border border-border bg-card p-4 text-left transition-colors hover:border-primary/40 hover:bg-accent/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <div className="mb-3 flex items-center justify-between">
+              <Icon className="h-5 w-5 text-primary" aria-hidden="true" />
+              <ArrowUpRight className="h-4 w-4 text-muted-foreground group-hover:text-primary" aria-hidden="true" />
+            </div>
+            <div className="text-sm font-semibold text-foreground">{title}</div>
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{description}</p>
+          </button>
+        ))}
+      </div>
+      <button className="mt-2 text-xs text-muted-foreground hover:text-foreground" aria-expanded={showMore} onClick={() => { setShowMore(!showMore); setActiveCategory(null) }}>{showMore ? 'Fewer examples' : 'More examples'}</button>
       {/* Task categories */}
-      <div className="flex flex-wrap justify-center gap-2">
+      {showMore && <div className="flex flex-wrap justify-center gap-2">
         {PROMPT_CATEGORIES.map(({ id, label, icon: Icon }) => (
           <button
             key={id}
+            aria-expanded={activeCategory === id}
+            aria-controls="prompt-examples"
             onClick={() => handleCategoryClick(id)}
             className={`flex items-center gap-1.5 px-3 py-2 rounded-md text-sm font-medium border transition-colors
               ${activeCategory === id
@@ -113,17 +141,18 @@ export function PromptSuggestions({ onSelectPrompt }: PromptSuggestionsProps) {
             {label}
           </button>
         ))}
-      </div>
+      </div>}
 
       {/* Example prompts panel — expands downward */}
       {active && (
-        <div className="w-full max-w-xl rounded-lg border border-border bg-card shadow-xs animate-fade-in overflow-hidden">
+        <div id="prompt-examples" className="w-full rounded-lg border border-border bg-card shadow-xs animate-fade-in overflow-hidden">
           <div className="flex items-center justify-between px-4 py-3 border-b border-border">
             <div className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
               <active.icon className="w-4 h-4" />
               {active.label}
             </div>
             <button
+              aria-label="Close examples"
               onClick={() => setActiveCategory(null)}
               className="text-muted-foreground hover:text-foreground transition-colors"
             >

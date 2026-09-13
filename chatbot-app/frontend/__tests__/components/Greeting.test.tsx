@@ -5,13 +5,13 @@ import { Greeting, PromptSuggestions } from '@/components/Greeting'
 describe('Greeting Component', () => {
   it('should render the greeting text', () => {
     render(<Greeting />)
-    expect(screen.getByText('What are we working on?')).toBeInTheDocument()
+    expect(screen.getByText('From a question to a clear next step.')).toBeInTheDocument()
   })
 
   it('should use a restrained workspace heading', () => {
     render(<Greeting />)
 
-    const greetingElement = screen.getByText('What are we working on?')
+    const greetingElement = screen.getByText('From a question to a clear next step.')
     expect(greetingElement.parentElement).toHaveClass('text-foreground')
     expect(greetingElement).not.toHaveClass('text-transparent')
     expect(greetingElement.parentElement).toHaveClass('font-semibold')
@@ -30,6 +30,7 @@ describe('Greeting Component', () => {
 describe('PromptSuggestions Component', () => {
   it('should render all category chips', () => {
     render(<PromptSuggestions />)
+    fireEvent.click(screen.getByText('More examples'))
     expect(screen.getByText('Search')).toBeInTheDocument()
     expect(screen.getByText('Automate')).toBeInTheDocument()
     expect(screen.getByText('Create')).toBeInTheDocument()
@@ -39,13 +40,15 @@ describe('PromptSuggestions Component', () => {
 
   it('should show prompts panel when category is clicked', () => {
     render(<PromptSuggestions />)
+    fireEvent.click(screen.getByText('More examples'))
     fireEvent.click(screen.getByText('Search'))
     expect(screen.getByText('Search the web for the latest AI news and summarize key highlights')).toBeInTheDocument()
   })
 
   it('should hide prompts panel when same category is clicked again', () => {
     render(<PromptSuggestions />)
-    const searchButton = screen.getByRole('button', { name: /Search/i })
+    fireEvent.click(screen.getByText('More examples'))
+    const searchButton = screen.getByRole('button', { name: /^Search$/i })
     fireEvent.click(searchButton)
     fireEvent.click(searchButton)
     expect(screen.queryByText('Search the web for the latest AI news and summarize key highlights')).not.toBeInTheDocument()
@@ -54,6 +57,7 @@ describe('PromptSuggestions Component', () => {
   it('should call onSelectPrompt when a prompt is clicked', () => {
     const onSelectPrompt = vi.fn()
     render(<PromptSuggestions onSelectPrompt={onSelectPrompt} />)
+    fireEvent.click(screen.getByText('More examples'))
     fireEvent.click(screen.getByText('Code'))
     fireEvent.click(screen.getByText('Build a To-Do web app with React and Tailwind CSS'))
     expect(onSelectPrompt).toHaveBeenCalledWith('Build a To-Do web app with React and Tailwind CSS')

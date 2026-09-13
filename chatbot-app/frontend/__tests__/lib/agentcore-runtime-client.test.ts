@@ -42,4 +42,15 @@ describe('agentcore-runtime-client errors', () => {
       responseBody: '{"error":"stale"}',
     })
   })
+  it.each([503, 401])('keeps HTTP %s distinct from a missing execution', async status => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status })))
+    const { getExecutionStatus } = await import('@/lib/agentcore-runtime-client')
+    expect(await getExecutionStatus('session:run', 'user', 'Bearer token')).toEqual({ status: 'unavailable' })
+  })
+  it('preserves a genuine missing execution response', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{"status":"not_found"}')))
+    const { getExecutionStatus } = await import('@/lib/agentcore-runtime-client')
+    expect(await getExecutionStatus('session:run', 'user', 'Bearer token')).toEqual({ status: 'not_found' })
+  })
+
 })

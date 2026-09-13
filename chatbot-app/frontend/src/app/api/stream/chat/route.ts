@@ -382,12 +382,26 @@ export async function POST(request: NextRequest) {
         try {
           // Execute before hooks (session metadata, tool config, etc.)
           const hookManager = createDefaultHookManager()
-          await hookManager.executeBeforeHooks({
+          const metadataReady = hookManager.executeBeforeHooks({
             userId,
             sessionId,
             message,
             modelConfig,
+            metadata: { skillsEnabled: request_type === 'skill' },
           })
+
+          // Fetch independent preferences while metadata is saved. Both must
+          // settle before starting the runtime so cancellation preserves settings.
+          const disabledSkillsReady = (async (): Promise<string[]> => {
+            if (IS_LOCAL) return []
+            try {
+              const { getUserDisabledSkills } = await import('@/lib/dynamodb-client')
+              return await getUserDisabledSkills(userId)
+            } catch (error) {
+              console.warn('[BFF] Failed to load disabled skills:', error)
+              return []
+            }
+          })()
 
           // Merge system prompts: model config + user-provided (artifact context).
           //
@@ -405,18 +419,7 @@ export async function POST(request: NextRequest) {
             await processAguiMessagesImages(aguiMessages)
           }
 
-          // Load user's disabled skills from DB
-          let disabled_skills: string[] = []
-          try {
-            if (IS_LOCAL) {
-              // Local mode: no disabled skills (all enabled)
-            } else {
-              const { getUserDisabledSkills } = await import('@/lib/dynamodb-client')
-              disabled_skills = await getUserDisabledSkills(userId)
-            }
-          } catch (e) {
-            console.warn('[BFF] Failed to load disabled skills:', e)
-          }
+          const [, disabled_skills] = await Promise.all([metadataReady, disabledSkillsReady])
 
           // Build AG-UI body with server-side config enriched into state
           const enrichedState: Record<string, any> = {
@@ -442,6 +445,11 @@ export async function POST(request: NextRequest) {
             state: enrichedState,
           }
 
+          if (!clientDisconnected) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              type: 'CUSTOM', name: 'request_progress', value: { phase: 'starting_runtime' },
+            })}\n\n`))
+          }
           const agentStream = await invokeAgentCoreRuntime(
             aguiBody, userId, sessionId, authToken, agentCoreAbortController.signal
           )
@@ -485,7 +493,8 @@ export async function POST(request: NextRequest) {
           )
           const runtimeUnavailable = (
             error instanceof AgentCoreRuntimeError
-            && error.status >= 500
+            && (error.status >= 500
+              || (error.status === 424 && /Received error \((502|503|504)\)/.test(error.responseBody)))
           )
           const errorEvent = `data: ${JSON.stringify({
             type: 'RUN_ERROR',
@@ -531,12 +540,7 @@ export async function POST(request: NextRequest) {
               const updates: any = {
                 lastMessageAt: new Date().toISOString(),
                 messageCount: (currentSession.messageCount || 0) + 1,
-                // Save model and tool preferences for session restoration
-                metadata: {
-                  lastModel: modelConfig.model_id,
-                  lastTemperature: modelConfig.temperature,
-                  skillsEnabled: request_type === 'skill',
-                },
+
               }
 
               // Save session metadata for all users (including anonymous in AWS)
