@@ -7,6 +7,9 @@ but routes @skill-decorated tools through skill_dispatcher + skill_executor.
 
 import logging
 import os
+import threading
+import time
+from functools import partial
 
 from agents.chat_agent import ChatAgent
 from registry import (
@@ -16,7 +19,6 @@ from registry import (
 )
 from skill.decorators import _apply_skill_metadata
 from skill.skill_registry import SkillRegistry
-from skill.skill_tools import set_dispatcher_registry
 from skill.tool_names import canonical_tool_name
 
 # Resolve skills directory relative to this file: src/agents/../../skills → agentcore/skills
@@ -43,6 +45,8 @@ class SkillChatAgent(ChatAgent):
     ):
         self._disabled_skills: set = set(disabled_skills or [])
         self._tool_free = tool_free
+        self._mcp_load_lock = threading.RLock()
+        self._deferred_mcp_tools = []
         super().__init__(*args, **kwargs)
 
     def _build_system_prompt(self):
@@ -107,12 +111,19 @@ class SkillChatAgent(ChatAgent):
         final_tools = []
         for t in tools:
             if self._is_mcp_client(t):
-                mcp_skill_tools = self._extract_mcp_skill_tools(t)
-                final_tools.extend(mcp_skill_tools)
-                logger.info(
-                    f"[SkillChatAgent] Extracted {len(mcp_skill_tools)} MCP skill tools "
-                    f"from {t.__class__.__name__}"
-                )
+                source_prefix = "gateway_" if t is self.gateway_client else "mcp_"
+                allowed = {
+                    tool_id.removeprefix(source_prefix)
+                    for tool_id in self.enabled_tools
+                    if tool_id.startswith(source_prefix)
+                }
+                skill_names = {
+                    tool_skill_map[name] for name in allowed if name in tool_skill_map
+                }
+                self._deferred_mcp_tools.append((
+                    skill_names,
+                    partial(self._extract_mcp_skill_tools, t, allowed, tool_skill_map),
+                ))
             else:
                 final_tools.append(t)
 
@@ -124,38 +135,58 @@ class SkillChatAgent(ChatAgent):
         # MCPClient has list_tools_sync but no tool_spec (unlike MCPAgentTool)
         return hasattr(obj, "list_tools_sync") and not hasattr(obj, "tool_spec")
 
-    def _extract_mcp_skill_tools(self, client) -> list:
-        """Start MCP client and extract individual tools with skill metadata."""
-        try:
-            client.start()
-            paginated_tools = client.list_tools_sync()
+    def _extract_mcp_skill_tools(self, client, allowed_names, tool_skill_map) -> list:
+        """Connect only when a selected skill needs remote schemas or execution."""
+        with self._mcp_load_lock:
+            if self._closed:
+                raise RuntimeError("This run has ended. Send a new request to use the tool.")
+            started = time.monotonic()
+            try:
+                client.start()
+                tools = []
+                token = None
+                seen_tokens = set()
+                while True:
+                    page = client.list_tools_sync(pagination_token=token)
+                    tools.extend(page)
+                    token = getattr(page, "pagination_token", None)
+                    if not token:
+                        break
+                    if token in seen_tokens:
+                        raise RuntimeError("Remote tool discovery returned a repeated page.")
+                    seen_tokens.add(token)
 
-            tool_skill_map = get_tool_to_skill_map()
-            skill_tools = []
-            for tool in paginated_tools:
-                tool_name = canonical_tool_name(tool)
-                skill_name = tool_skill_map.get(tool_name)
-
-                if skill_name:
-                    if skill_name in self._disabled_skills:
-                        logger.debug(
-                            f"[SkillChatAgent] MCP tool '{tool_name}' skipped "
-                            f"(skill '{skill_name}' disabled)"
-                        )
+                skill_tools = []
+                for remote_tool in tools:
+                    name = canonical_tool_name(remote_tool)
+                    skill_name = tool_skill_map.get(name)
+                    if name not in allowed_names or not skill_name or skill_name in self._disabled_skills:
                         continue
-                    _apply_skill_metadata(tool, skill_name)
-                else:
-                    logger.warning(
-                        f"[SkillChatAgent] MCP tool '{tool_name}' has no skill mapping"
-                    )
+                    _apply_skill_metadata(remote_tool, skill_name)
+                    skill_tools.append(remote_tool)
+                logger.info(
+                    "[SkillChatAgent] Connected %d deferred MCP tools in %.3fs",
+                    len(skill_tools), time.monotonic() - started,
+                )
+                return skill_tools
+            except Exception as exc:
+                # Discard partial discovery and reset the client so a later
+                # explicit activation can retry without duplicate connections.
+                try:
+                    client.stop(None, None, None)
+                except Exception:
+                    logger.warning("Failed to close MCP client after discovery failure", exc_info=True)
+                logger.warning("Deferred MCP discovery failed", exc_info=True)
+                raise RuntimeError("Could not connect to this tool service. Try again.") from exc
 
-                skill_tools.append(tool)
-
-            return skill_tools
-
-        except Exception as e:
-            logger.error(f"[SkillChatAgent] Failed to extract MCP tools: {e}")
-            return []
+    def close(self):
+        lock = getattr(self, "_mcp_load_lock", None)
+        if lock is None:
+            return super().close()
+        # A cancelled run must not close a client halfway through discovery
+        # and then leave a newly connected client behind.
+        with lock:
+            super().close()
 
     def create_agent(self):
         """Override: set up skill registry, then delegate to ChatAgent.create_agent()."""
@@ -179,7 +210,8 @@ class SkillChatAgent(ChatAgent):
         registry = SkillRegistry(_SKILLS_DIR)
         registry.discover_skills(exclude=self._disabled_skills)
         registry.bind_tools(skill_tools)
-        set_dispatcher_registry(registry)
+        for skill_names, loader in self._deferred_mcp_tools:
+            registry.add_tool_loader(skill_names, loader)
         self._skill_registry = registry
 
         catalog = registry.get_catalog()
@@ -192,6 +224,7 @@ class SkillChatAgent(ChatAgent):
         self.tools = [skill_dispatcher, skill_executor] + non_skill_tools
 
         super().create_agent()
+        self.agent._skill_registry = registry
 
         logger.info(
             f"[SkillChatAgent] Agent created with skills: {registry.skill_names}, "
