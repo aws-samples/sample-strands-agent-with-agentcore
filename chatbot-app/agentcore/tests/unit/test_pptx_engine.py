@@ -144,3 +144,19 @@ def test_replace_text_does_not_reprocess_replacement_text():
         slide = engine.analyze_slide("slide1.xml")
 
     assert slide["title"] == "Quarterly Review Summary"
+
+
+def test_clean_repairs_unused_master_override_but_not_missing_relationships():
+    with PptxEngine(_minimal_pptx()) as engine:
+        types = engine.dir / "[Content_Types].xml"
+        types.write_text(types.read_text().replace('</Types>', '<Override PartName="/ppt/slideMasters/slideMaster2.xml" ContentType="application/xml"/></Types>'))
+        assert not engine.validate()['valid']
+        engine.clean()
+        assert engine.validate()['valid']
+        packed = engine.pack()
+    with PptxEngine(packed) as reopened:
+        assert reopened.validate()['valid']
+        assert reopened.analyze_slide('slide1.xml')['title'] == 'Quarterly Review'
+    with PptxEngine(_minimal_pptx(missing_layout=True)) as broken:
+        broken.clean()
+        assert not broken.validate()['valid']

@@ -423,6 +423,8 @@ print(f"Document created: {ci_path}")
         # Return success message
         return build_success_response(message, {
             "filename": document_filename,
+            "s3_url": s3_info["s3_url"],
+            "size_kb": s3_info["size_kb"],
             "tool_type": "word_document",
             "user_id": user_id,
             "session_id": session_id
@@ -713,6 +715,8 @@ print(f"Document modified and saved: {output_ci_path}")
         # Return success message with metadata for download button
         return build_success_response(message, {
             "filename": output_filename,
+            "s3_url": s3_info["s3_url"],
+            "size_kb": s3_info["size_kb"],
             "tool_type": "word_document",
             "user_id": user_id,
             "session_id": session_id
