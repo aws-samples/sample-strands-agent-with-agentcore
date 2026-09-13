@@ -16,7 +16,7 @@ description: "Use this skill any time the user needs a visual output as an image
 |-----------------------------|------------------------|--------------------------------------------|
 | Data chart or graph         | `generate_chart`       | Read SKILL.md Design Ideas                 |
 | Poster / infographic / art  | `create_visual_design` | Read [canvas-design.md](canvas-design.md)  |
-| Architecture / flow diagram | `create_visual_design` | Read [diagram-design.md](diagram-design.md)|
+| Architecture / flow diagram | Excalidraw skill | Use `create_excalidraw_diagram` for an editable in-app result. Use image generation only when a raster or print deliverable is requested. |
 
 ## Available Tools
 
@@ -48,8 +48,9 @@ Uses reportlab, Pillow, svgwrite, or any available library.
 ### Data Charts (`generate_chart`)
 1. Identify data structure and choose appropriate chart type
 2. Select color palette (see Design Ideas below)
-3. Write code with `plt.savefig(filename, dpi=300, bbox_inches='tight')`
-4. Review the generated chart
+3. Preserve requested labels, units, colors, dimensions, and explicit axis limits in the code. Verify these against the generated output.
+4. Write code with `plt.savefig(filename, dpi=300, bbox_inches='tight')`
+5. Review the generated chart and confirm the saved file matches the requested format and filename
 
 ### Visual Design (`create_visual_design`)
 1. Establish design concept/philosophy (internally)
@@ -116,7 +117,7 @@ Prefer thin/light fonts. Minimize text in designs.
 2. Check for overlapping elements, clipped text, insufficient margins
 3. Verify sufficient color contrast
 4. If issues found, fix the code and regenerate
-5. Complete at least one fix-verify cycle before finishing
+5. If a check fails, correct and verify it. Do not regenerate an already valid output solely to perform a fix cycle.
 
 ## UI Guidance (from tools-config)
 

@@ -53,7 +53,7 @@ class SkillChatAgent(ChatAgent):
         """
         from agent.config.prompt_builder import build_text_system_prompt
 
-        # Delegates so the concise style swap applies here too. This is the agent
+        # Delegates so the concise length preference applies here too. This is the agent
         # the chat path actually uses, so inlining BASE_TEXT_PROMPT here would
         # bypass the toggle entirely.
         return build_text_system_prompt(concise=getattr(self, 'concise_mode', False))

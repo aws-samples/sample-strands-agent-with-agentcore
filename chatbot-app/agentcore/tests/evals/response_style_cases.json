@@ -1,0 +1,260 @@
+[
+  {
+    "id": "greeting",
+    "context": "This application supports web research, spreadsheet analysis, presentation creation, and diagrams. No action has been requested or executed in this conversation.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "안녕. 이 앱으로 뭘 할 수 있어?"
+      }
+    ],
+    "criteria": "Natural Korean greeting and a clear brief explanation of capabilities. No invented completed work or long catalog."
+  },
+  {
+    "id": "explain",
+    "context": "No tool is needed for this conceptual question.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "ROAS가 4.4라는 게 무슨 뜻이야? 처음 보는 사람도 이해하게 설명해줘."
+      }
+    ],
+    "criteria": "Korean; explains revenue of 4.4 per 1 spent, not profit; understandable complete sentences."
+  },
+  {
+    "id": "campaign",
+    "context": "Illustrative data in USD: Search spend 1200 revenue 6000; Social spend 1000 revenue 3500; Retargeting spend 600 revenue 4800; Video spend 800 revenue 1600. No budget changes have been executed.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Which campaign would you put more budget into? Explain what moving $80 from Video would change, without turning this into a long report."
+      }
+    ],
+    "criteria": "English; recommends Retargeting; incremental revenue $480 at fixed returns (not $640); preserves assumption, no claim of actually moving money."
+  },
+  {
+    "id": "file_success",
+    "context": "Verified tool result: status success, filename campaign-review.pptx, six slides, saved and registered in Results. Covers channel performance, budget proposal, and assumptions. Rendering/visual QA was NOT performed.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "다 됐어? 어디서 보면 돼?"
+      }
+    ],
+    "criteria": "Korean; confirms the saved deck and Results location; no false claim of visual verification; avoids repeated task recap."
+  },
+  {
+    "id": "partial_failure",
+    "context": "Verified tool results: budget.xlsx saved in Results. PowerPoint generation failed with MissingFontError: Aptos. No PPTX file was saved. No chart was generated. The user has not authorized replacing the requested font.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Did you finish my spreadsheet and presentation?"
+      }
+    ],
+    "criteria": "English; spreadsheet success versus presentation failure, missing Aptos font, no invented chart or completed deck; useful recovery option without claiming replacement already happened."
+  },
+  {
+    "id": "english_request",
+    "context": "The team has already selected Linear. USD 60 is the team's monthly budget, not a verified vendor price. No current pricing research has been performed.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "이번 데모와 팀에 보낼 문구는 계속 영어로 써줘. 금액은 달러로 표시해줘."
+      },
+      {
+        "role": "assistant",
+        "content": "I’ll use English and USD for the demo and team messages."
+      },
+      {
+        "role": "user",
+        "content": "팀에 보낼 요약을 두 문장으로 써줘. 월 예산은 60달러고, Notion이 아니라 Linear를 선택했어."
+      }
+    ],
+    "criteria": "Exactly two English sentences; USD/$60 monthly budget, Linear chosen; must not claim verified Linear price is $60; preserves earlier language preference."
+  },
+  {
+    "id": "everyday_followup",
+    "context": "No tools are needed. The user is acknowledging the explanation, not asking for new work.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "고마워, 이제 이해됐어."
+      }
+    ],
+    "criteria": "Brief natural Korean acknowledgment; no capability list, lecture, repeated explanation, or unnecessary next-step offer."
+  },
+  {
+    "id": "simple_concept",
+    "context": "General explanation; no tool needed.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "클라우드 백업이 뭐야? 부모님께 설명하듯 쉽게 알려줘."
+      }
+    ],
+    "criteria": "Plain Korean, short connected explanation with familiar example; distinguish remotely saved copy and recovery without claiming all sync systems retain deleted files; no jargon-heavy checklist."
+  },
+  {
+    "id": "everyday_choice",
+    "context": "No purchases or other actions authorized. Both options already owned.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "책은 한 달에 한 권 정도 읽고 출퇴근은 20분이야. 전자책이랑 종이책 중 뭘 들고 다니는 게 나을까?"
+      }
+    ],
+    "criteria": "Korean, direct proportionate recommendation tied to light reading/short commute; no shopping catalog, long comparison table, purchase or invented device facts."
+  },
+  {
+    "id": "access_failure",
+    "context": "Verified tool result: shared drive report retrieval failed with HTTP 403 AccessDenied. The requested report was not read. No document was generated. No automatic retry or permission change is available. User can upload a copy here or grant access via the sharing settings.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "보고서 요약 아직 안 됐어?"
+      }
+    ],
+    "criteria": "Korean; plainly explains cannot access report rather than claiming a summary; practical upload/sharing next step; no unnecessary HTTP jargon, internal procedure, or unrelated missing-artifact list."
+  },
+  {
+    "id": "stalled_work",
+    "context": "Last verified progress: source files downloaded. No new model or tool events for 90 seconds. Execution state unknown; neither completion nor failure confirmed. No cancel, retry, or state-inspection tool is available in this test.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "아직도 기다려야 해? 멈춘 거야?"
+      }
+    ],
+    "criteria": "Empathetic concise Korean; distinguishes observed silence from confirmed failure, states last progress, no invented timeout cause, ETA, background monitoring or retry ability."
+  },
+  {
+    "id": "requested_steps",
+    "context": "The user uses the Gmail web interface. No tools are needed.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Gmail에서 부재중 자동응답 설정하는 방법을 단계별로 알려줘. 회사 밖 사람에게도 답장이 가는지 주의할 점도 알려줘."
+      }
+    ],
+    "criteria": "Korean numbered usable steps covering settings See all settings General vacation responder dates message save, external sender restrictions and account-policy uncertainty. Do not force a short prose reply at expense of requested steps."
+  },
+  {
+    "id": "spanish_preference",
+    "context": "The user wants a reusable note about a planned team lunch, not a booking or payment. EUR 80 is the total budget; no price has been researched.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "이번 안내문은 스페인어로 써줘. 예산은 유로로 표시해줘."
+      },
+      {
+        "role": "assistant",
+        "content": "Escribiré el aviso en español y usaré euros."
+      },
+      {
+        "role": "user",
+        "content": "금요일 팀 점심을 계획 중이고 총 예산은 80유로라고 한 문장으로 알려줘."
+      }
+    ],
+    "criteria": "Exactly one Spanish sentence describing planned Friday team lunch and total EUR/€80 budget; no English/USD, booking, payment or per-person price claim."
+  },
+  {
+    "id": "technical_detail",
+    "context": "Observed shared drive retrieval error: HTTP 403 AccessDenied. No detailed provider error or permissions inspection is available. No file was read.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "HTTP 403 AccessDenied가 무슨 뜻이야? 개발자 관점에서 확인할 항목을 목록으로 알려줘."
+      }
+    ],
+    "criteria": "Korean developer-focused list; preserve exact error and distinguish authorization failure from assumed missing resource; useful identity, scope, sharing/policy checks without claiming a diagnosed root cause or completed checks. Explicit formatting and technical-detail request overrides conversational default."
+  },
+  {
+    "id": "english_greeting",
+    "context": "This application supports web research, spreadsheet analysis, presentation creation, and diagrams. No action has been requested or executed in this conversation.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Hey, what can I do with this app?"
+      }
+    ],
+    "criteria": "Natural English greeting and a clear brief explanation of capabilities. No invented completed work or long catalog. Natural idiomatic English, proportionate conversational tone, no stiff administrative wording or unsupported detail."
+  },
+  {
+    "id": "english_followup",
+    "context": "No tools are needed. The user is acknowledging the explanation, not asking for new work.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Thanks, that clears it up."
+      }
+    ],
+    "criteria": "Brief natural English acknowledgment; no capability list, lecture, repeated explanation, or unnecessary next-step offer. Natural idiomatic English, proportionate conversational tone, no stiff administrative wording or unsupported detail."
+  },
+  {
+    "id": "english_concept",
+    "context": "General explanation; no tool needed.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "What is cloud backup? Explain it in plain English for someone who is not tech-savvy."
+      }
+    ],
+    "criteria": "Plain English, short connected explanation with familiar example; distinguish remotely saved copy and recovery without claiming all sync systems retain deleted files; no jargon-heavy checklist. Natural idiomatic English, proportionate conversational tone, no stiff administrative wording or unsupported detail."
+  },
+  {
+    "id": "english_choice",
+    "context": "No purchases or other actions authorized. Both options already owned.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "I read about one book a month and have a 20-minute commute. Should I bring an e-reader or a paperback?"
+      }
+    ],
+    "criteria": "English, direct proportionate recommendation tied to light reading/short commute; no shopping catalog, long comparison table, purchase or invented device facts. Natural idiomatic English, proportionate conversational tone, no stiff administrative wording or unsupported detail. Do not assume the commute is one-way or turn 20 minutes into 40."
+  },
+  {
+    "id": "english_access_failure",
+    "context": "Verified tool result: shared drive report retrieval failed with HTTP 403 AccessDenied. The requested report was not read. No document was generated. No automatic retry or permission change is available. User can upload a copy here or grant access via the sharing settings.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Any luck summarizing that report?"
+      }
+    ],
+    "criteria": "English; plainly explains cannot access report rather than claiming a summary; practical upload/sharing next step; no unnecessary HTTP jargon, internal procedure, or unrelated missing-artifact list. Natural idiomatic English, proportionate conversational tone, no stiff administrative wording or unsupported detail."
+  },
+  {
+    "id": "english_file_success",
+    "context": "Verified tool result: status success, filename campaign-review.pptx, six slides, saved and registered in Results. Covers channel performance, budget proposal, and assumptions. Rendering/visual QA was NOT performed.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Is it ready? Where can I find it?"
+      }
+    ],
+    "criteria": "English; confirms the saved deck and Results location; no false claim of visual verification; avoids repeated task recap. Natural idiomatic English, proportionate conversational tone, no stiff administrative wording or unsupported detail."
+  },
+  {
+    "id": "english_stalled_work",
+    "context": "Last verified progress: source files downloaded. No new model or tool events for 90 seconds. Execution state unknown; neither completion nor failure confirmed. No cancel, retry, or state-inspection tool is available in this test.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "This is taking a while. Is it stuck?"
+      }
+    ],
+    "criteria": "Empathetic concise English; distinguishes observed silence from confirmed failure, states last progress, no invented timeout cause, ETA, background monitoring or retry ability. Natural idiomatic English, proportionate conversational tone, no stiff administrative wording or unsupported detail."
+  },
+  {
+    "id": "english_rewrite",
+    "context": "The user wants text to send to a coworker. No message has been sent or scheduled. Friday is a proposed deadline, not an agreed deadline.",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Make this sound less stiff, but still professional: \"Please be advised that the completion of your review is required prior to Friday.\""
+      }
+    ],
+    "criteria": "Natural sendable English request that preserves the before-Friday deadline, avoids bureaucratic phrasing and adds no invented agreement or justification. Return the useful rewrite without a lecture, canned introduction, or unrequested variants."
+  }
+]
