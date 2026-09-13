@@ -1057,7 +1057,10 @@ async def _handle_agui_invocation(body: dict, http_request: Request) -> Streamin
                     agent.close()
                 finally:
                     if execution.status == ExecutionStatus.RUNNING:
-                        execution.status = ExecutionStatus.COMPLETED
+                        execution.status = (
+                            ExecutionStatus.STOPPED if agui_processor.was_cancelled
+                            else ExecutionStatus.COMPLETED
+                        )
                     execution.completed_at = time.time()
                     execution._new_event.set()
                 logger.info(
