@@ -1,0 +1,28 @@
+{
+  "url": "https://d4ysazlxg9l8c.cloudfront.net",
+  "checks": [
+    "Authenticated live app serves new sidebar; all 3 UI-created test chats appear",
+    "Trimmed, case-insensitive English title search with no additional list/search request",
+    "Korean partial title search",
+    "Empty results, Show all chats, Escape and clear button restore history and focus",
+    "Tools & apps return preserves search",
+    "Keyboard Tab/Enter, visible delete focus, real history load and selected-row state",
+    "Clear-all menu opens confirmation; Cancel performs no deletion",
+    "Theme controls work on an existing conversation",
+    "Deletes only the selected test item from filtered results without opening it",
+    "390px touch viewport: search/delete fit; selecting chat restores real history, closes drawer fully and native inert prevents hidden input focus",
+    "Mobile New chat closes drawer and clears search",
+    "All 3 UI-created test conversations removed individually; no clear-all action used"
+  ],
+  "errors": [],
+  "screenshots": [
+    "desktop-list.png",
+    "desktop-search.png",
+    "empty-results.png",
+    "desktop-dark-selected.png",
+    "mobile-search.png",
+    "mobile-opened-chat.png"
+  ],
+  "success": true,
+  "verificationNote": "The first mobile check used a role locator count that included the inert off-screen input in this Playwright version. Confirmed actual off-screen geometry and native browser focus prevention instead."
+}

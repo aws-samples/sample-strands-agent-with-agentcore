@@ -1,9 +1,16 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
-import { Menu, Plus, Trash2, Moon, Sun, Settings, ChevronRight, LogOut, Type, Plug } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef, useId } from 'react';
+import { Menu, Plus, Trash2, Moon, Sun, Settings, MoreHorizontal, Search, X, LogOut, Type, Plug } from 'lucide-react';
 import { FaGithub } from 'react-icons/fa';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Dialog,
   DialogContent,
@@ -20,7 +27,6 @@ import {
 import {
   Sidebar,
   SidebarHeader,
-  SidebarMenu,
   useSidebar,
 } from '@/components/ui/sidebar';
 import { ChatSessionList } from './sidebar/ChatSessionList';
@@ -46,12 +52,15 @@ export function ChatSidebar({
   theme,
   setTheme,
 }: ChatSidebarProps) {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, setOpenMobile } = useSidebar();
   const [isConfirmDialogOpen, setIsConfirmDialogOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [showSignOut, setShowSignOut] = useState(false);
   const [showConnector, setShowConnector] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchHintId = useId();
 
   // Prevent hydration mismatch by only rendering theme-dependent UI after mount
   useEffect(() => {
@@ -79,6 +88,28 @@ export function ChatSidebar({
     onNewChat,
   });
 
+  const normalizedQuery = searchQuery.trim().normalize('NFC').toLowerCase();
+  const filteredSessions = useMemo(() => chatSessions.filter(session =>
+    session.title.normalize('NFC').toLowerCase().includes(normalizedQuery)
+  ), [chatSessions, normalizedQuery]);
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    searchInputRef.current?.focus();
+  };
+
+  const handleNewChat = () => {
+    setSearchQuery('');
+    setShowConnector(false);
+    setOpenMobile(false);
+    onNewChat();
+  };
+
+  const handleLoadSession = loadSession ? async (id: string) => {
+    await loadSession(id);
+    setOpenMobile(false);
+  } : undefined;
+
   const handleClearAll = async () => {
     setIsDeleting(true);
     try {
@@ -98,38 +129,38 @@ export function ChatSidebar({
     >
       {/* Header - Hamburger menu & Theme toggle */}
       <SidebarHeader className="flex-shrink-0 px-3 py-3 border-b-0">
-        <SidebarMenu>
-          <div className="flex flex-row items-center justify-between">
+        <div className="flex flex-row items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleSidebar}
+            className="h-9 w-9 p-0 hover:bg-sidebar-accent"
+            title="Close sidebar"
+            aria-label="Close sidebar"
+          >
+            <Menu className="h-5 w-5" />
+          </Button>
+          {isMounted && theme && setTheme && (
             <Button
               variant="ghost"
               size="sm"
-              onClick={toggleSidebar}
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className="h-9 w-9 p-0 hover:bg-sidebar-accent"
-              title="Close sidebar"
+              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
             >
-              <Menu className="h-5 w-5" />
+              {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
             </Button>
-            {isMounted && theme && setTheme && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="h-9 w-9 p-0 hover:bg-sidebar-accent"
-                title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-              >
-                {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-              </Button>
-            )}
-          </div>
-        </SidebarMenu>
+          )}
+        </div>
       </SidebarHeader>
 
       {/* New Chat + Connectors Buttons */}
       <div className="px-3 pb-2 space-y-1">
         <Button
           variant="ghost"
-          onClick={onNewChat}
-          className="w-full justify-start gap-3 h-10 px-3 hover:bg-sidebar-accent text-sidebar-foreground"
+          onClick={handleNewChat}
+          className="w-full justify-start gap-3 h-10 px-3 border border-sidebar-border bg-sidebar-accent/50 hover:bg-sidebar-accent text-sidebar-foreground"
         >
           <Plus className="h-5 w-5" />
           <span className="text-[14px] font-medium">New chat</span>
@@ -137,6 +168,7 @@ export function ChatSidebar({
         <Button
           variant="ghost"
           onClick={() => setShowConnector(!showConnector)}
+          aria-expanded={showConnector}
           className={`w-full justify-start gap-3 h-10 px-3 hover:bg-sidebar-accent text-sidebar-foreground/70 ${showConnector ? 'bg-sidebar-accent text-sidebar-foreground' : ''}`}
         >
           <Plug className="h-4 w-4" />
@@ -151,24 +183,71 @@ export function ChatSidebar({
         </div>
       ) : (
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-          <div className="px-4 pb-2 flex-shrink-0 flex items-center justify-between">
-            <span className="text-[12px] font-medium text-sidebar-foreground/55">Chats</span>
+          <div className="px-3 pt-2 pb-3 flex-shrink-0">
+            <div className="relative">
+              <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-sidebar-foreground/50" />
+              <Input
+                ref={searchInputRef}
+                aria-label="Search chat titles"
+                aria-describedby={searchHintId}
+                placeholder="Search chat titles…"
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                onKeyDown={event => {
+                  if (event.key === 'Escape' && searchQuery) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    clearSearch();
+                  }
+                }}
+                className="h-9 pl-9 pr-9 text-[16px] md:text-[13px] bg-sidebar-background border-sidebar-border focus-visible:ring-1 focus-visible:ring-offset-0"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  aria-label="Clear search"
+                  className="absolute right-0.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-sidebar-foreground/60 hover:bg-sidebar-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <X aria-hidden="true" className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <p id={searchHintId} className="mt-1.5 px-1 text-[11px] text-sidebar-foreground/60">
+              Searches titles in this list · up to 100 chats
+            </p>
+          </div>
+          <div className="px-4 pb-1 flex-shrink-0 flex min-h-8 items-center justify-between">
+            <span className="text-[12px] font-medium text-sidebar-foreground/65" role="status">
+              {normalizedQuery && !isLoadingSessions
+                ? `${filteredSessions.length} ${filteredSessions.length === 1 ? 'result' : 'results'}`
+                : 'Chats'}
+            </span>
             {chatSessions.length > 0 && (
-              <button
-                onClick={() => setIsConfirmDialogOpen(true)}
-                className="text-sidebar-foreground/40 hover:text-destructive transition-colors"
-                title="Clear all chats"
-              >
-                <Trash2 className="h-4 w-4" />
-              </button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="sm" aria-label="Chat options" className="h-8 w-8 p-0 text-sidebar-foreground/60 hover:bg-sidebar-accent">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onSelect={() => setIsConfirmDialogOpen(true)} className="text-destructive focus:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                    Clear all chats…
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
-          <ScrollArea className="flex-1">
+          {/* Constrain Radix's intrinsic-width wrapper so long titles truncate inside the sidebar. */}
+          <ScrollArea key={normalizedQuery} className="flex-1 min-h-0" viewportClassName="[&>div]:!block">
             <ChatSessionList
-              sessions={chatSessions}
+              sessions={filteredSessions}
+              isSearching={!!normalizedQuery}
+              onClearSearch={clearSearch}
               currentSessionId={sessionId}
               isLoading={isLoadingSessions}
-              onLoadSession={loadSession}
+              onLoadSession={handleLoadSession}
               onDeleteSession={deleteSession}
             />
           </ScrollArea>
@@ -183,8 +262,8 @@ export function ChatSidebar({
               variant="ghost"
               className="w-full justify-start gap-3 h-10 px-3 hover:bg-sidebar-accent text-sidebar-foreground/70"
             >
-              <span className="text-[13px]">Settings</span>
               <Settings className="h-4 w-4" />
+              <span className="text-[13px]">Settings</span>
             </Button>
           </PopoverTrigger>
           <PopoverContent
