@@ -28,7 +28,7 @@ boto3>=1.43.89
 
 # HTTP
 httpx>=0.28.1
-anyio>=4.14.1
+anyio>=4.15.1
 
 # OpenTelemetry (for observability)
 aws-opentelemetry-distro>=0.19.0
