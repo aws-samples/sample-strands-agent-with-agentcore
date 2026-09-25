@@ -1,0 +1,47 @@
+[
+  {
+    "case": "gpt-6-sol",
+    "requested_model": "openai.gpt-6-sol",
+    "passed": true,
+    "seconds": 8.72,
+    "tools": [],
+    "text": "MODEL_OK",
+    "errors": [],
+    "session_id": "model_upgrade_29d7a82a1f6540fbb0dcb762ffbf0dfa_28325546eb16"
+  },
+  {
+    "case": "gpt-6-luna",
+    "requested_model": "openai.gpt-6-luna",
+    "passed": true,
+    "seconds": 9.09,
+    "tools": [],
+    "text": "MODEL_OK",
+    "errors": [],
+    "session_id": "model_upgrade_d4e5de99714047c7a2b798af3bcf4429_c58f40fdfc76"
+  },
+  {
+    "case": "claude-opus-5-5",
+    "requested_model": "anthropic.claude-opus-5-5",
+    "passed": true,
+    "seconds": 13.84,
+    "tools": [],
+    "text": "MODEL_OK",
+    "errors": [],
+    "session_id": "model_upgrade_c0e12b87383f43158a7af6a07561ae9f_27e2fd07aab8"
+  },
+  {
+    "case": "legacy_terra",
+    "requested_model": "us.openai.gpt-5.6-terra",
+    "passed": true,
+    "seconds": 6.59,
+    "tools": [],
+    "text": "MODEL_OK",
+    "errors": [],
+    "session_id": "model_upgrade_3354e433ee33425f9ba44a23dc4910da_c90a653332a1"
+  },
+  {
+    "case": "luna_compaction",
+    "passed": true,
+    "response": "## 1. **Primary Request and Intent**\nThe user stated that the release is named **Aurora** and is scheduled to ship **Friday**.\n\n## 2. **Key Decisions and Outcomes**\nThe assistant confirmed the release name and schedule: **Aurora will ship Friday**.\n\n## 7. **Current Work**\nNo further work is pending. The latest exchange established the release name and planned shipping day."
+  }
+]

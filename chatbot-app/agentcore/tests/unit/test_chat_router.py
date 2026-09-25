@@ -1368,11 +1368,11 @@ class TestModelConfiguration:
 
         client.post(
             "/invocations",
-            json=_agui_payload(model_id="us.anthropic.claude-opus-5")
+            json=_agui_payload(model_id="anthropic.claude-opus-5-5")
         )
 
         call_kwargs = mock_factory.call_args.kwargs
-        assert call_kwargs['model_id'] == "us.anthropic.claude-opus-5"
+        assert call_kwargs['model_id'] == "anthropic.claude-opus-5-5"
 
     @patch('routers.chat.create_agent')
     def test_passes_temperature(self, mock_factory, mock_agent):

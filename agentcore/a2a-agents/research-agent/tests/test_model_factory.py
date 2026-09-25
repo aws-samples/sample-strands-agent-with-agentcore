@@ -27,12 +27,19 @@ def test_native_model_uses_bedrock():
     assert bedrock_model.call_args.kwargs["region_name"] == "us-west-2"
 
 
-def test_gpt_56_legacy_id_uses_bedrock_runtime_profile():
-    with patch.object(mf, "BedrockModel") as bedrock_model:
-        mf.build_model("openai.gpt-5.6-terra", app_region="us-west-2")
+@pytest.mark.parametrize("model_id", ["us.openai.gpt-6-sol", "us.openai.gpt-6-luna", "us.openai.gpt-5.6-terra"])
+@patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+def test_gpt_uses_mantle_in_us_east_1(model_id):
+    model = mf.build_model(model_id, app_region="us-west-2")
+    assert model.config["model_id"] in {"openai.gpt-6-sol", "openai.gpt-6-luna"}
+    assert model.client_args["base_url"] == "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
 
-    assert bedrock_model.call_args.kwargs["model_id"] == "us.openai.gpt-5.6-terra"
-    assert bedrock_model.call_args.kwargs["region_name"] == "us-west-2"
+
+@patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+def test_opus_uses_mantle_messages():
+    model = mf.build_model("us.anthropic.claude-opus-5-5", app_region="us-west-2")
+    assert model.config["model_id"] == "anthropic.claude-opus-5-5"
+    assert str(model.client.base_url) == "https://bedrock-mantle.us-east-1.api.aws/anthropic/"
 
 
 def test_grok_46_uses_bedrock_runtime_profile():

@@ -1,0 +1,11 @@
+{
+  "case": "opus_docx_upload",
+  "passed": true,
+  "seconds": 44.34,
+  "text": "The release codename in routing.docx is **HARBOR_SILVER_731**. That's the only line in the document.",
+  "tools": [
+    "skill_dispatcher",
+    "read_word_document"
+  ],
+  "errors": []
+}

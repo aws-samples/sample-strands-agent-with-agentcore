@@ -80,15 +80,14 @@ class TestMeasuredModelWindows:
         get_max_input_tokens = _model_factory().get_max_input_tokens
 
         for model_id in (
-            "us.anthropic.claude-opus-5",
+            "anthropic.claude-opus-5-5",
             "us.anthropic.claude-sonnet-5",
         ):
             assert get_max_input_tokens(model_id) == 1_000_000
         for model_id in (
             "us.openai.gpt-6-astra",
-            "us.openai.gpt-5.6-sol",
-            "us.openai.gpt-5.6-terra",
-            "us.openai.gpt-5.6-luna",
+            "openai.gpt-6-sol",
+            "openai.gpt-6-luna",
         ):
             assert get_max_input_tokens(model_id) == 1_000_000
 

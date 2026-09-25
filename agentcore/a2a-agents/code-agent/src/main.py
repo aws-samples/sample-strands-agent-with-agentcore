@@ -42,7 +42,7 @@ from claude_agent_sdk import (
     ProcessError,
     CLIJSONDecodeError,
 )
-from .model_runtime import effective_model_id, needs_model_switch
+from .model_runtime import effective_model_id, needs_model_switch, uses_mantle
 from .session_workspace import (
     missing_required_inputs,
     normalize_required_input_paths,
@@ -352,6 +352,17 @@ def build_task_with_files(task_text: str, file_descriptions: list[str]) -> str:
 # Client Lifecycle Helpers
 # ============================================================
 
+def _model_environment(model_id: Optional[str]) -> dict[str, str]:
+    env = {"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"}
+    if uses_mantle(model_id):
+        env.update({
+            "CLAUDE_CODE_USE_BEDROCK": "1",
+            "CLAUDE_CODE_USE_MANTLE": "1",
+            "AWS_REGION": "us-east-1",
+        })
+    return env
+
+
 def _build_client_options(
     sdk_session_id: Optional[str] = None,
     workspace: Optional[Path] = None,
@@ -376,7 +387,7 @@ def _build_client_options(
             ),
         },
         # Keep finite Bash commands inside the cancellable A2A execution.
-        env={"CLAUDE_CODE_DISABLE_BACKGROUND_TASKS": "1"},
+        env=_model_environment(model_id),
         setting_sources=["user", "project"],
         max_turns=max_turns,
         model=model_id,
@@ -394,6 +405,16 @@ async def _get_or_create_client(
     enabling warm starts and graceful interrupt via client.interrupt().
     """
     existing = _sdk_clients.get(sdk_key)
+    if existing and uses_mantle(_sdk_client_models.get(sdk_key)) != uses_mantle(model_id):
+        # The endpoint and credentials belong to the subprocess. set_model alone
+        # cannot switch between Bedrock Runtime and Mantle.
+        try:
+            await existing.disconnect()
+        except Exception:
+            logger.exception("[Client] Failed to disconnect before backend switch")
+        _sdk_clients.pop(sdk_key, None)
+        _sdk_client_models.pop(sdk_key, None)
+        existing = None
     if existing and existing._query is not None:
         cached_model_id = _sdk_client_models.get(sdk_key, "")
         if needs_model_switch(cached_model_id, model_id):

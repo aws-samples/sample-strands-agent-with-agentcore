@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "defaultModel": "GPT-6 Sol",
+  "modelSelections": [
+    "GPT-6 Luna",
+    "Claude Opus 5.5",
+    "GPT-6 Sol"
+  ],
+  "terraRemoved": true,
+  "pageErrors": []
+}

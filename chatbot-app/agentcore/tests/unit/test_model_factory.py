@@ -32,12 +32,11 @@ def _reset_key_cache():
 
 class TestTemperatureGuard:
     @pytest.mark.parametrize("model_id", [
-        "us.anthropic.claude-opus-5",
+        "anthropic.claude-opus-5-5",
         "us.anthropic.claude-sonnet-5",
         "us.openai.gpt-6-astra",
-        "us.openai.gpt-5.6-sol",
-        "us.openai.gpt-5.6-terra",
-        "us.openai.gpt-5.6-luna",
+        "openai.gpt-6-sol",
+        "openai.gpt-6-luna",
         "us.xai.grok-4.6",
     ])
     def test_rejects(self, model_id):
@@ -77,15 +76,33 @@ class TestBedrockRouting:
             build_model("us.anthropic.claude-sonnet-5", temperature=0.7)
             assert "temperature" not in MockBedrock.call_args.kwargs
 
-    def test_no_temperature_for_opus(self):
-        with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-opus-5", temperature=0.7)
-            assert "temperature" not in MockBedrock.call_args.kwargs
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+    def test_opus_uses_mantle_messages_without_temperature(self):
+        from strands.models.anthropic import AnthropicModel
+
+        model = build_model("us.anthropic.claude-opus-5-5", temperature=0.7, caching_enabled=True)
+        assert isinstance(model, AnthropicModel)
+        assert str(model.client.base_url) == "https://bedrock-mantle.us-east-1.api.aws/anthropic/"
+        assert model.config["model_id"] == "anthropic.claude-opus-5-5"
+        assert model.config.get("params", {}).get("temperature") is None
+        assert model.config["cache_config"].strategy == "auto"
 
     def test_no_temperature_for_grok_46(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
             build_model("us.xai.grok-4.6", temperature=0.7)
             assert "temperature" not in MockBedrock.call_args.kwargs
+
+    @pytest.mark.parametrize("file_format", ["docx", "xlsx"])
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
+    def test_opus_office_uploads_remain_accessible_through_workspace(self, file_format):
+        model = build_model("anthropic.claude-opus-5-5")
+        result = model._format_request_message_content({
+            "document": {"name": "report", "format": file_format, "source": {"bytes": b"office-data"}},
+        })
+        assert result["type"] == "text"
+        assert f"report.{file_format}" in result["text"]
+        assert "workspace" in result["text"]
+        assert "office-data" not in result["text"]
 
     def test_no_cache_when_disabled(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
@@ -119,12 +136,7 @@ class TestBedrockRouting:
 
 
 class TestBedrockRuntimeResponsesRouting:
-    GPT_MODELS = (
-        "us.openai.gpt-6-astra",
-        "us.openai.gpt-5.6-sol",
-        "us.openai.gpt-5.6-terra",
-        "us.openai.gpt-5.6-luna",
-    )
+    GPT_MODELS = ("us.openai.gpt-6-astra",)
 
     def test_catalog_gpt_models_use_runtime_responses(self):
         assert BEDROCK_RESPONSES_MODELS == frozenset(self.GPT_MODELS)
@@ -145,22 +157,31 @@ class TestBedrockRuntimeResponsesRouting:
         assert model.config["model_id"] == model_id
 
     @pytest.mark.parametrize(("legacy_id", "canonical_id"), [
+        ("openai.gpt-5.6-sol", "openai.gpt-6-sol"),
+        ("us.openai.gpt-5.6-sol", "openai.gpt-6-sol"),
+        ("openai.gpt-5.6-terra", "openai.gpt-6-sol"),
+        ("us.openai.gpt-5.6-terra", "openai.gpt-6-sol"),
+        ("openai.gpt-5.6-luna", "openai.gpt-6-luna"),
+        ("us.openai.gpt-5.6-luna", "openai.gpt-6-luna"),
+        ("us.openai.gpt-6-sol", "openai.gpt-6-sol"),
+        ("us.openai.gpt-6-luna", "openai.gpt-6-luna"),
         ("openai.gpt-6-astra", "us.openai.gpt-6-astra"),
-        ("openai.gpt-5.6-sol", "us.openai.gpt-5.6-sol"),
-        ("openai.gpt-5.6-terra", "us.openai.gpt-5.6-terra"),
-        ("openai.gpt-5.6-luna", "us.openai.gpt-5.6-luna"),
+        ("openai.gpt-6-sol", "openai.gpt-6-sol"),
+        ("openai.gpt-6-luna", "openai.gpt-6-luna"),
     ])
     @patch.dict(os.environ, {
         "AWS_BEARER_TOKEN_BEDROCK": "test-key",
         "AWS_REGION": "us-west-2",
     })
-    def test_legacy_gpt_ids_use_runtime_responses(self, legacy_id, canonical_id):
+    def test_legacy_gpt_ids_use_the_model_endpoint(self, legacy_id, canonical_id):
         model = build_model(legacy_id)
         assert model.config["model_id"] == canonical_id
-        assert (
-            model.client_args["base_url"]
-            == "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1"
+        expected = (
+            "https://bedrock-runtime.us-west-2.amazonaws.com/openai/v1"
+            if canonical_id == "us.openai.gpt-6-astra"
+            else "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
         )
+        assert model.client_args["base_url"] == expected
 
     @pytest.mark.parametrize(("file_format", "expected_mime"), [
         ("txt", "text/plain"),
@@ -185,7 +206,7 @@ class TestBedrockRuntimeResponsesRouting:
         file_format,
         expected_mime,
     ):
-        model = build_model("us.openai.gpt-5.6-sol")
+        model = build_model("openai.gpt-6-sol")
         block = {
             "document": {
                 "format": file_format,
@@ -207,10 +228,18 @@ class TestMantleRouting:
         assert "bedrock-mantle.us-east-2.api.aws/openai/v1" in model.client_args["base_url"]
         assert model.client_args["api_key"] == "test-key"
 
-    def test_only_gemma_models_remain_on_mantle(self):
-        assert MANTLE_MODELS
-        assert all(model_id.startswith("google.gemma-4") for model_id in MANTLE_MODELS)
-        assert all(spec.region == "us-east-2" for spec in MANTLE_MODELS.values())
+    def test_mantle_regions_match_verified_model_availability(self):
+        assert MANTLE_MODELS["openai.gpt-6-sol"].region == "us-east-1"
+        assert MANTLE_MODELS["openai.gpt-6-luna"].region == "us-east-1"
+        assert MANTLE_MODELS["google.gemma-4-31b"].region == "us-east-2"
+
+    @pytest.mark.parametrize("model_id", ["openai.gpt-6-sol", "openai.gpt-6-luna"])
+    @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key", "AWS_REGION": "us-west-2"})
+    def test_gpt_uses_mantle_in_us_east_1(self, model_id):
+        model = build_model(model_id)
+        assert isinstance(model, OpenAIResponsesModel)
+        assert model.config["model_id"] == model_id
+        assert model.client_args["base_url"] == "https://bedrock-mantle.us-east-1.api.aws/openai/v1"
 
     def test_all_mantle_models_have_responses_api(self):
         for spec in MANTLE_MODELS.values():

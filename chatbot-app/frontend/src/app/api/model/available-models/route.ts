@@ -1,20 +1,21 @@
 /**
  * Available Models endpoint - returns list of supported AI models
  *
- * Three backend execution paths (decided server-side by model_id):
+ * Model-specific backend execution paths (decided server-side by model_id):
  * - Bedrock Runtime Converse (BedrockModel): native/cross-Region profiles.
- * - Bedrock Runtime Responses (OpenAIResponsesModel): GPT-6 and GPT-5.6.
- * - Bedrock Mantle Responses (OpenAIResponsesModel): Gemma 4.
+ * - Bedrock Runtime Responses (OpenAIResponsesModel): GPT-6 Astra.
+ * - Bedrock Mantle Responses (OpenAIResponsesModel): GPT-6 Sol/Luna and Gemma 4.
+ * - Bedrock Mantle Messages (AnthropicModel): Opus 5.5.
  */
 import { NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
 
 const AVAILABLE_MODELS = [
-  // Claude (Anthropic) - native Bedrock, prompt caching
+  // Claude (Anthropic) - Mantle Messages for Opus; Runtime for Sonnet/Haiku
   {
-    id: 'us.anthropic.claude-opus-5',
-    name: 'Claude Opus 5',
+    id: 'anthropic.claude-opus-5-5',
+    name: 'Claude Opus 5.5',
     provider: 'Anthropic',
     description: 'Most intelligent model, best for complex tasks',
     noTemperature: true
@@ -33,7 +34,7 @@ const AVAILABLE_MODELS = [
     description: 'Fast and efficient, cost-effective'
   },
 
-  // GPT (OpenAI) - Bedrock Runtime Responses with cross-Region profiles
+  // GPT (OpenAI) - Runtime Responses for Astra; Mantle Responses for Sol/Luna
   {
     id: 'us.openai.gpt-6-astra',
     name: 'GPT-6 Astra',
@@ -42,24 +43,17 @@ const AVAILABLE_MODELS = [
     noTemperature: true
   },
   {
-    id: 'us.openai.gpt-5.6-sol',
-    name: 'GPT-5.6 Sol',
+    id: 'openai.gpt-6-sol',
+    name: 'GPT-6 Sol',
     provider: 'OpenAI',
-    description: 'Flagship frontier model via Bedrock Runtime',
+    description: 'Flagship frontier model via Bedrock Mantle',
     noTemperature: true
   },
   {
-    id: 'us.openai.gpt-5.6-terra',
-    name: 'GPT-5.6 Terra',
+    id: 'openai.gpt-6-luna',
+    name: 'GPT-6 Luna',
     provider: 'OpenAI',
-    description: 'Balanced frontier model via Bedrock Runtime',
-    noTemperature: true
-  },
-  {
-    id: 'us.openai.gpt-5.6-luna',
-    name: 'GPT-5.6 Luna',
-    provider: 'OpenAI',
-    description: 'Fast and cost-efficient model via Bedrock Runtime',
+    description: 'Fast and cost-efficient model via Bedrock Mantle',
     noTemperature: true
   },
   {

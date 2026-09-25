@@ -3,14 +3,20 @@
  *
  * Receives the current messages directly from the frontend (no need to
  * re-load from AgentCore Memory, which avoids actorId / payload format issues).
- * Generates a summary with GPT-5.6 Luna via Bedrock Runtime Converse.
+ * Generates a summary with GPT-6 Luna via Bedrock Mantle Responses in us-east-1.
  */
-import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime'
+import { SignatureV4 } from '@smithy/signature-v4'
+import { Sha256 } from '@aws-crypto/sha256-js'
+import { fromNodeProviderChain } from '@aws-sdk/credential-providers'
 import { NextRequest, NextResponse } from 'next/server'
 
-const COMPACTION_MODEL_ID = 'us.openai.gpt-5.6-luna'
-const bedrockRuntime = new BedrockRuntimeClient({
-  region: process.env.AWS_REGION || 'us-west-2',
+const COMPACTION_MODEL_ID = 'openai.gpt-6-luna'
+const COMPACTION_ENDPOINT = new URL('https://bedrock-mantle.us-east-1.api.aws/openai/v1/responses')
+const signer = new SignatureV4({
+  service: 'bedrock',
+  region: 'us-east-1',
+  credentials: fromNodeProviderChain(),
+  sha256: Sha256,
 })
 
 export const runtime = 'nodejs'
@@ -103,23 +109,38 @@ Now produce the summary following the instructions above.`
 }
 
 async function generateSummary(prompt: string): Promise<string> {
-  const response = await bedrockRuntime.send(new ConverseCommand({
-    modelId: COMPACTION_MODEL_ID,
-    messages: [{
-      role: 'user',
-      content: [{ text: prompt }],
-    }],
-    inferenceConfig: {
-      maxTokens: 4096,
-    },
-  }))
-
-  const text = response.output?.message?.content
-    ?.map(block => block.text ?? '')
-    .join('') ?? ''
+  const body = JSON.stringify({
+    model: COMPACTION_MODEL_ID,
+    input: prompt,
+    max_output_tokens: 4096,
+    reasoning: { effort: 'none' },
+  })
+  const request = await signer.sign({
+    method: 'POST',
+    protocol: COMPACTION_ENDPOINT.protocol,
+    hostname: COMPACTION_ENDPOINT.hostname,
+    path: COMPACTION_ENDPOINT.pathname,
+    headers: { host: COMPACTION_ENDPOINT.hostname, 'content-type': 'application/json' },
+    body,
+  })
+  const response = await fetch(COMPACTION_ENDPOINT, {
+    method: 'POST',
+    headers: request.headers,
+    body,
+    signal: AbortSignal.timeout(120_000),
+  })
+  if (!response.ok) {
+    throw new Error(`Bedrock Mantle summary failed (${response.status}): ${await response.text()}`)
+  }
+  const result: { output?: Array<{ content?: Array<{ type?: string; text?: string }> }> } = await response.json()
+  const text = (result.output ?? [])
+    .flatMap(item => item.content ?? [])
+    .filter(block => block.type === 'output_text')
+    .map(block => block.text ?? '')
+    .join('')
 
   if (!text) {
-    throw new Error('Bedrock Runtime returned no summary text')
+    throw new Error('Bedrock Mantle returned no summary text')
   }
   return text
 }

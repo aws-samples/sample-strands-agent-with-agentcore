@@ -212,18 +212,18 @@ class TestExtractMetadata:
         ctx = MagicMock()
         ctx.metadata = {
             "session_id": "s1",
-            "orchestrator_model_id": "us.openai.gpt-5.6-terra",
+            "orchestrator_model_id": "openai.gpt-6-sol",
         }
-        assert _extract_metadata(ctx)["orchestrator_model_id"] == "us.openai.gpt-5.6-terra"
+        assert _extract_metadata(ctx)["orchestrator_model_id"] == "openai.gpt-6-sol"
         assert "model_id" not in _extract_metadata(ctx)
 
 
 class TestModelRuntime:
     def test_request_model_overrides_process_default(self):
         assert effective_model_id(
-            {"model_id": "us.anthropic.claude-opus-5"},
+            {"model_id": "anthropic.claude-opus-5-5"},
             "us.anthropic.claude-sonnet-5",
-        ) == "us.anthropic.claude-opus-5"
+        ) == "anthropic.claude-opus-5-5"
 
     def test_missing_request_model_uses_process_default(self):
         assert effective_model_id(
