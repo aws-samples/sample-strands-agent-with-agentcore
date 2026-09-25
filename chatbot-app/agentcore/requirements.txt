@@ -58,7 +58,7 @@ mypy-boto3-s3
 
 # AG-UI Protocol (agent-to-UI streaming standard)
 # Keep the binary attachment contract shared with the frontend AG-UI client.
-ag-ui-protocol==0.1.22
+ag-ui-protocol==1.0.0
 
 # Registry YAML loader
 PyYAML>=6.0.3
