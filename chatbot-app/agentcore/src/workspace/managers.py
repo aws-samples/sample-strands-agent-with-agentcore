@@ -227,6 +227,7 @@ class PowerPointManager(BaseDocumentManager):
         filename: str,
         file_bytes: bytes,
         metadata: Optional[Dict[str, str]] = None,
+        expected_etag: Optional[str] = None,
     ) -> Dict[str, str]:
         """Publish a PPTX or persist hidden PowerPoint metadata."""
         if filename.lower().endswith(".pptx"):
@@ -250,7 +251,20 @@ class PowerPointManager(BaseDocumentManager):
             "ContentType": content_type,
         }
         if filename.lower().endswith(".pptx"):
-            put_args["IfNoneMatch"] = "*"
+            if expected_etag:
+                previous, head = self._get(key)
+                if head.get("ETag") != expected_etag:
+                    raise ValueError("This presentation changed while it was being edited. Reopen it and retry the edit.")
+                revision = hashlib.sha256(previous).hexdigest()
+                self.s3_client.put_object(
+                    Bucket=self.bucket,
+                    Key=f"{self.metadata_prefix}/revisions/{filename}/{revision}.pptx",
+                    Body=previous,
+                    ContentType=self._CONTENT_TYPE,
+                )
+                put_args["IfMatch"] = expected_etag
+            else:
+                put_args["IfNoneMatch"] = "*"
         self.s3_client.put_object(**put_args)
         result = self._save_result(key, file_bytes, self.bucket)
         logger.info("Saved PowerPoint Workspace object: %s", key)

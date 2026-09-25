@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Trash2 } from 'lucide-react';
+import { Search, Trash2 } from 'lucide-react';
 import { ChatSession } from '@/hooks/useChatSessions';
 import {
   Tooltip,
@@ -14,6 +14,8 @@ interface ChatSessionListProps {
   sessions: ChatSession[];
   currentSessionId: string | null;
   isLoading: boolean;
+  isSearching?: boolean;
+  onClearSearch?: () => void;
   onLoadSession?: (sessionId: string) => Promise<void>;
   onDeleteSession: (sessionId: string) => Promise<void>;
 }
@@ -63,21 +65,18 @@ function groupSessionsByDate(sessions: ChatSession[]): DateGroup[] {
     .map(([label, s]) => ({ label, sessions: s }));
 }
 
-const MAX_DISPLAY_LENGTH = 28;
-
-function truncateTitle(title: string): { display: string; isTruncated: boolean } {
-  if (title.length <= MAX_DISPLAY_LENGTH) return { display: title, isTruncated: false };
-  return { display: title.slice(0, MAX_DISPLAY_LENGTH) + '...', isTruncated: true };
-}
-
 export function ChatSessionList({
   sessions,
   currentSessionId,
   isLoading,
+  isSearching = false,
+  onClearSearch,
   onLoadSession,
   onDeleteSession,
 }: ChatSessionListProps) {
-  const dateGroups = useMemo(() => groupSessionsByDate(sessions), [sessions]);
+  const dateGroups = useMemo(() => isSearching
+    ? [{ label: 'Search results', sessions }]
+    : groupSessionsByDate(sessions), [sessions, isSearching]);
 
   const handleDeleteSession = async (sessionId: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -98,6 +97,19 @@ export function ChatSessionList({
     );
   }
 
+  if (sessions.length === 0 && isSearching) {
+    return (
+      <div className="px-5 py-8 text-center">
+        <Search aria-hidden="true" className="mx-auto mb-3 h-5 w-5 text-sidebar-foreground/40" />
+        <p className="text-[13px] font-medium text-sidebar-foreground">No matching chats</p>
+        <p className="mt-1 text-[12px] text-sidebar-foreground/60">Try a different title or keyword.</p>
+        <button type="button" onClick={onClearSearch} className="mt-3 rounded-sm px-2 py-1 text-[12px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          Show all chats
+        </button>
+      </div>
+    );
+  }
+
   if (sessions.length === 0) {
     return (
       <div className="px-2">
@@ -113,73 +125,57 @@ export function ChatSessionList({
       <div className="px-2">
         {dateGroups.map((group) => (
           <div key={group.label} className="mb-3">
-            <div className="px-3 py-2">
-              <span className="text-[11px] font-medium text-sidebar-foreground/45">
-                {group.label}
-              </span>
-            </div>
+            {!isSearching && (
+              <div className="px-3 pt-3 pb-1.5">
+                <span className="text-[11px] font-medium text-sidebar-foreground/60">
+                  {group.label}
+                </span>
+              </div>
+            )}
             <div className="space-y-1">
               {group.sessions.map((session) => {
                 const isCurrentSession = session.sessionId === currentSessionId;
                 const showUnseen =
                   session.hasUnseenUpdate === true && !isCurrentSession;
-                const { display, isTruncated } = truncateTitle(session.title);
-
-                const row = (
+                return (
                   <div
-                    className={`group/session flex items-center gap-2 py-2.5 px-3 rounded-md hover:bg-sidebar-accent/70 transition-colors cursor-pointer ${
+                    key={session.sessionId}
+                    className={`group/session flex items-center gap-1 rounded-lg px-1 transition-colors hover:bg-sidebar-accent/70 ${
                       isCurrentSession ? 'bg-sidebar-accent text-sidebar-accent-foreground' : ''
                     }`}
-                    onClick={() => {
-                      if (onLoadSession) {
-                        onLoadSession(session.sessionId);
-                      }
-                    }}
                   >
-                    <span className="text-[13px] text-sidebar-foreground leading-snug flex-1 min-w-0">
-                      {display}
-                    </span>
-                    <span className="relative h-5 w-5 flex-shrink-0">
-                      {showUnseen && (
-                        <span
-                          className="absolute inset-0 flex items-center justify-center opacity-100 group-hover/session:opacity-0 transition-opacity"
-                          role="status"
-                          aria-label="New activity"
-                          title="New activity"
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          aria-label={session.title}
+                          aria-current={isCurrentSession ? 'page' : undefined}
+                          disabled={!onLoadSession}
+                          onClick={() => onLoadSession?.(session.sessionId)}
+                          className={`flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-2.5 text-left text-[13px] leading-snug focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                            isCurrentSession ? 'font-medium text-primary' : 'text-sidebar-foreground'
+                          }`}
                         >
-                          <span className="h-1.5 w-1.5 rounded-full bg-sky-500 dark:bg-sky-400" />
-                        </span>
-                      )}
-                      <button
-                        onClick={(e) => handleDeleteSession(session.sessionId, e)}
-                        className="absolute inset-0 flex items-center justify-center opacity-0 group-hover/session:opacity-100 transition-opacity rounded-sm hover:bg-destructive/10 text-sidebar-foreground/40 hover:text-destructive"
-                        title="Delete"
-                        aria-label={`Delete ${session.title}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </span>
-                  </div>
-                );
-
-                if (!isTruncated) {
-                  return <React.Fragment key={session.sessionId}>{row}</React.Fragment>;
-                }
-
-                return (
-                  <Tooltip key={session.sessionId}>
-                    <TooltipTrigger asChild>
-                      {row}
-                    </TooltipTrigger>
-                    <TooltipContent
-                      side="bottom"
-                      align="start"
-                      className="max-w-[280px] text-[12px]"
-                      sideOffset={4}
+                          <span className="min-w-0 flex-1 truncate">{session.title}</span>
+                          {showUnseen && (
+                            <span role="status" aria-label="New activity" title="New activity" className="h-1.5 w-1.5 shrink-0 rounded-full bg-sky-500 dark:bg-sky-400" />
+                          )}
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" align="start" className="max-w-[280px] break-words text-[12px]" sideOffset={4}>
+                        <p>{session.title}</p>
+                      </TooltipContent>
+                    </Tooltip>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteSession(session.sessionId, e)}
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-sidebar-foreground/50 opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring [@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/session:opacity-100 group-focus-within/session:opacity-100"
+                      title="Delete"
+                      aria-label={`Delete ${session.title}`}
                     >
-                      <p>{session.title}</p>
-                    </TooltipContent>
-                  </Tooltip>
+                      <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 );
               })}
             </div>

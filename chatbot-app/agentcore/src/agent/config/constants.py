@@ -38,7 +38,7 @@ A2A_PREFIX = "agentcore_"
 # =============================================================================
 
 # Default text model ID
-DEFAULT_MODEL_ID = "us.openai.gpt-5.6-terra"
+DEFAULT_MODEL_ID = "openai.gpt-6-sol"
 
 # Default temperature for model inference
 DEFAULT_TEMPERATURE = 0.7

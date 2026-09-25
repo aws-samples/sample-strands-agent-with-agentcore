@@ -67,6 +67,12 @@ export const sessionMetadataHook: ChatHook = {
           title: existingSession?.title || context.message.substring(0, 50) + (context.message.length > 50 ? '...' : ''),
           lastMessageAt: new Date().toISOString(),
           messageCount: (existingSession?.messageCount || 0) + 1,
+          metadata: {
+            ...existingSession?.metadata,
+            lastModel: context.modelConfig.model_id,
+            lastTemperature: context.modelConfig.temperature,
+            ...context.metadata,
+          },
         })
       } else {
         const { upsertSession, getSession } = await import('@/lib/dynamodb-client')
@@ -76,6 +82,12 @@ export const sessionMetadataHook: ChatHook = {
           title: existingSession?.title || context.message.substring(0, 50) + (context.message.length > 50 ? '...' : ''),
           lastMessageAt: new Date().toISOString(),
           messageCount: (existingSession?.messageCount || 0) + 1,
+          metadata: {
+            ...existingSession?.metadata,
+            lastModel: context.modelConfig.model_id,
+            lastTemperature: context.modelConfig.temperature,
+            ...context.metadata,
+          },
         })
       }
 

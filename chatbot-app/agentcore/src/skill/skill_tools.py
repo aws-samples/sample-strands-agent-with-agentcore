@@ -21,7 +21,7 @@ from skill.tool_names import canonical_tool_name
 
 logger = logging.getLogger(__name__)
 
-# Module-level registry reference, set by SkillChatAgent during init
+# Legacy registry for direct callers; production resolves it from ToolContext.agent
 _registry = None
 _DEFAULT_SKILL_RESULT_MAX_CHARS = 100_000
 
@@ -173,9 +173,31 @@ def _sanitize_skill_result(result, max_chars: int | None = None):
 
 
 def set_dispatcher_registry(registry) -> None:
-    """Wire up the dispatcher/executor with a SkillRegistry instance."""
+    """Set a fallback registry for direct callers without a ToolContext."""
     global _registry
     _registry = registry
+
+
+def _registry_for(tool_context):
+    # Production tools are bound to their own agent. The module-level fallback
+    # supports direct/legacy callers without letting another agent replace it.
+    agent = getattr(tool_context, "agent", None)
+    return getattr(agent, "__dict__", {}).get("_skill_registry", _registry)
+
+
+def _stop_requested(tool_context) -> bool:
+    state = getattr(tool_context, "invocation_state", None)
+    if not isinstance(state, dict):
+        return False
+    identity = [state.get(key) for key in ("user_id", "session_id", "run_id")]
+    if not all(identity):
+        return False
+    from agent.stop_signal import get_local_stop_event
+    return get_local_stop_event(*identity).is_set()
+
+
+def _cancelled_before_tool() -> str:
+    return json.dumps({"status": "cancelled", "message": "Stopped before the tool was called."})
 
 
 def _run_async(coro):
@@ -320,8 +342,8 @@ async def _consume_async_generator(
     return final_text or json.dumps({"status": "success", "result": ""})
 
 
-@tool
-def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> str:
+@tool(context=True)
+def skill_dispatcher(skill_name: str, reference: str = "", source: str = "", tool_context: ToolContext = None) -> str:
     """Activate a skill, read a reference document, or read a tool's source code.
 
     **Basic activation** — call with just skill_name to receive SKILL.md instructions:
@@ -341,7 +363,8 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
     Returns:
         JSON with skill instructions, reference content, or source code
     """
-    if _registry is None:
+    registry = _registry_for(tool_context)
+    if registry is None:
         return json.dumps({
             "error": "SkillRegistry not initialized.",
             "status": "error",
@@ -350,7 +373,7 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
     try:
         # Source code mode: return function implementation
         if source:
-            code = _registry.load_source(skill_name, source)
+            code = registry.load_source(skill_name, source)
             logger.info(f"Skill source loaded: '{skill_name}/{source}'")
             return json.dumps({
                 "skill": skill_name,
@@ -361,7 +384,7 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
 
         # Reference file mode: return the requested document
         if reference:
-            content = _registry.load_reference(skill_name, reference)
+            content = registry.load_reference(skill_name, reference)
             logger.info(f"Skill reference loaded: '{skill_name}/{reference}'")
             return json.dumps({
                 "skill": skill_name,
@@ -371,11 +394,15 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
             })
 
         # Normal activation: return SKILL.md + tool list with schemas + sources + references + scripts
-        instructions = _registry.load_instructions(skill_name)
-        tools = _registry.get_tools(skill_name)
-        sources = _registry.list_sources(skill_name)
-        references = _registry.list_references(skill_name)
-        scripts = _registry.list_scripts(skill_name)
+        instructions = registry.load_instructions(skill_name)
+        if _stop_requested(tool_context):
+            return _cancelled_before_tool()
+        tools = registry.get_tools(skill_name)
+        if _stop_requested(tool_context):
+            return _cancelled_before_tool()
+        sources = registry.list_sources(skill_name)
+        references = registry.list_references(skill_name)
+        scripts = registry.list_scripts(skill_name)
 
         # Build tool info with input schemas so the LLM knows exact parameters
         tool_schemas = []
@@ -419,7 +446,7 @@ def skill_dispatcher(skill_name: str, reference: str = "", source: str = "") -> 
     except KeyError as e:
         return json.dumps({
             "error": str(e),
-            "available_skills": _registry.skill_names,
+            "available_skills": registry.skill_names,
             "status": "error",
         })
 
@@ -469,7 +496,8 @@ def skill_executor(
     Returns:
         The tool/script execution result
     """
-    if _registry is None:
+    registry = _registry_for(tool_context)
+    if registry is None:
         return json.dumps({
             "error": "SkillRegistry not initialized.",
             "status": "error",
@@ -561,9 +589,14 @@ def _execute_tool(
     tool_input: dict,
 ) -> str:
     """Execute a tool (existing logic extracted for clarity)."""
+    registry = _registry_for(tool_context)
     try:
         # Find the tool in the skill's tool list
-        tools = _registry.get_tools(skill_name)
+        if _stop_requested(tool_context):
+            return _cancelled_before_tool()
+        tools = registry.get_tools(skill_name)
+        if _stop_requested(tool_context):
+            return _cancelled_before_tool()
         target_tool = None
         for t in tools:
             if canonical_tool_name(t) == tool_name:
@@ -684,7 +717,7 @@ def _execute_tool(
     except KeyError as e:
         return json.dumps({
             "error": str(e),
-            "available_skills": _registry.skill_names,
+            "available_skills": registry.skill_names,
             "status": "error",
         })
 
@@ -737,9 +770,10 @@ def _execute_script(
     import sys
     from strands_tools.shell import shell
 
+    registry = _registry_for(tool_context)
     try:
         # Get script info from registry
-        script_info = _registry.get_script(skill_name, script_name)
+        script_info = registry.get_script(skill_name, script_name)
         script_path = script_info["path"]
 
         logger.info(f"Executing script: {skill_name}/{script_name}")
@@ -747,7 +781,7 @@ def _execute_script(
         logger.debug(f"Script input: {script_input}")
 
         # Security: verify script is within skill directory
-        skill_dir = os.path.join(_registry.skills_dir, skill_name)
+        skill_dir = os.path.join(registry.skills_dir, skill_name)
         script_abs = os.path.abspath(script_path)
         skill_abs = os.path.abspath(skill_dir)
 
@@ -834,7 +868,7 @@ def _execute_script(
     except KeyError as e:
         return json.dumps({
             "error": str(e),
-            "available_scripts": _registry.list_scripts(skill_name),
+            "available_scripts": registry.list_scripts(skill_name),
             "status": "error",
         })
 

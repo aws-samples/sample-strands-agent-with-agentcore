@@ -24,10 +24,12 @@ describe('Sidebar off-canvas positioning', () => {
     const panel = screen.getByText('Sidebar content').parentElement?.parentElement
     expect(panel).toHaveClass('left-0')
     expect(panel).toHaveClass('-translate-x-full')
+    expect(panel).toHaveAttribute('inert')
 
     fireEvent.click(screen.getByRole('button', { name: 'Toggle Sidebar' }))
 
     expect(panel).toHaveClass('translate-x-0')
     expect(panel).not.toHaveClass('-translate-x-full')
+    expect(panel).not.toHaveAttribute('inert')
   })
 })

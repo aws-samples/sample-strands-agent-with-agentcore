@@ -1,0 +1,7 @@
+{
+  "passed": true,
+  "model": "anthropic.claude-opus-5-5",
+  "state": "completed",
+  "file_content": "OPUS_A2A_OK",
+  "seconds": 10.24
+}

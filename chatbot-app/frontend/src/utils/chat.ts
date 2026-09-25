@@ -61,6 +61,17 @@ export const getToolDisplayName = (toolId: string, isComplete: boolean, toolInpu
     return isComplete ? `${profile} completed` : `${profile} working...`
   }
 
+  const activityLabels: Record<string, [string, string]> = {
+    ddg_web_search: ['Searching the web…', 'Searched the web'],
+    fetch_url_content: ['Reading sources…', 'Read sources'],
+    inspect_presentation: ['Inspecting slides…', 'Inspected slides'],
+    begin_presentation_edit: ['Preparing slide edits…', 'Prepared slide edits'],
+    validate_presentation: ['Checking slides…', 'Checked slides'],
+    finalize_presentation_edit: ['Saving presentation…', 'Saved presentation'],
+    preview_presentation_montage: ['Reviewing slide previews…', 'Reviewed slide previews'],
+  }
+  if (toolId === 'create_excalidraw_diagram' && toolInput?.artifact_id) return isComplete ? 'Updated diagram' : 'Updating diagram…'
+  if (activityLabels[toolId]) return activityLabels[toolId][isComplete ? 1 : 0]
   const mapping = displayNameMap[toolId]
   if (mapping) {
     return isComplete ? mapping.complete : mapping.running

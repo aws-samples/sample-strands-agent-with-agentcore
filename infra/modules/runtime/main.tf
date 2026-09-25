@@ -328,6 +328,21 @@ resource "aws_iam_role_policy" "execution_base" {
   })
 }
 
+resource "aws_iam_role_policy" "mantle_inference" {
+  count = var.component_name == "code-agent" ? 1 : 0
+  name  = "mantle-inference"
+  role  = aws_iam_role.execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["bedrock-mantle:CreateInference"]
+      Resource = "arn:aws:bedrock-mantle:us-east-1:${var.account_id}:project/default"
+    }]
+  })
+}
+
 resource "aws_iam_role_policy" "execution_ddb" {
   count = var.enable_ddb_policy ? 1 : 0
   name  = "ddb-policy"
@@ -679,7 +694,7 @@ resource "aws_bedrockagentcore_agent_runtime" "this" {
       REGISTRY_ID = var.registry_id
       MEMORY_ID   = var.memory_id
     } : {},
-    contains(["a2a_agent", "http_agent"], var.runtime_type) && var.artifact_bucket_name != "" ? {
+    contains(["orchestrator", "a2a_agent", "http_agent"], var.runtime_type) && var.artifact_bucket_name != "" ? {
       ARTIFACT_BUCKET = var.artifact_bucket_name
     } : {},
     var.extra_env_vars,

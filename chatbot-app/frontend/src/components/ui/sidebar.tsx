@@ -192,8 +192,9 @@ const Sidebar = React.forwardRef<
             />
           )}
           <div
+            inert={!openMobile}
             className={cn(
-              'fixed inset-y-0 left-0 z-50 w-[--sidebar-width] bg-sidebar-background transform transition-transform duration-200 ease-in-out',
+              'fixed inset-y-0 left-0 z-50 w-[var(--sidebar-width)] bg-sidebar-background transform transition-transform duration-200 ease-in-out',
               openMobile ? 'translate-x-0' : '-translate-x-full'
             )}
             style={
@@ -220,12 +221,13 @@ const Sidebar = React.forwardRef<
         <div
           className={cn(
             'duration-200 relative h-svh bg-transparent transition-[width] ease-linear',
-            state === 'collapsed' ? 'w-0' : 'w-[--sidebar-width]',
+            state === 'collapsed' ? 'w-0' : 'w-[var(--sidebar-width)]',
           )}
         />
         <div
+          inert={state === 'collapsed'}
           className={cn(
-            'duration-200 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-transform ease-linear md:flex',
+            'duration-200 fixed inset-y-0 z-20 hidden h-svh w-[var(--sidebar-width)] transition-transform ease-linear md:flex',
             side === 'left' ? 'left-0' : 'right-0',
             state === 'collapsed'
               ? side === 'left'

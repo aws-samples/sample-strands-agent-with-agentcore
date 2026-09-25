@@ -170,6 +170,8 @@ class CompactingSessionManager(AgentCoreMemorySessionManager):
     @override
     def append_message(self, message: Dict, agent: "Agent", **kwargs: Any) -> None:
         """Append message with empty content filtering, image offloading, and API call tracking."""
+        from .cancellation_history import prepare_message
+        message = prepare_message(message, agent)
         # Filter out empty content blocks before saving
         filtered_message = self._filter_empty_text(message)
 

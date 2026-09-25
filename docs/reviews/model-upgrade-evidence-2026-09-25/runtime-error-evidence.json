@@ -1,0 +1,7 @@
+[
+  {
+    "group": "/aws/bedrock-agentcore/runtimes/strands_agent_chatbot_dev_orchestrator-lrORASAuQb-DEFAULT",
+    "timestamp": 1790365466414,
+    "error": "AWS Marketplace subscription: INTERNAL_SERVICE_ERROR"
+  }
+]

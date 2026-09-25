@@ -192,3 +192,28 @@ describe('useSSEReconnect', () => {
     )
   })
 })
+
+it('replays from the beginning after refresh discards the active assistant turn', async () => {
+  Object.defineProperty(sessionStorage, 'length', { configurable: true, value: 1 })
+  sessionStorage.key = vi.fn().mockReturnValue('sse_exec_session-refresh:run')
+  vi.mocked(sessionStorage.getItem).mockReturnValue(JSON.stringify({ executionId: 'session-refresh:run', cursor: 12, ts: Date.now() }))
+  const hook = renderHook(() => useSSEReconnect())
+  act(() => {
+    hook.result.current.onStreamStart('session-refresh:run')
+    hook.result.current.onEventReceived('session-refresh:run', 12)
+    expect(hook.result.current.restoreFromSession('session-refresh')).toBe(true)
+    expect(hook.result.current.getExecutionId()).toBe('session-refresh:run')
+  })
+  const fetchMock = vi.fn().mockResolvedValueOnce(statusResponse()).mockResolvedValueOnce(streamResponse(
+    'id: 1\ndata: {"type":"TEXT_MESSAGE_START","messageId":"answer","role":"assistant"}\n\nid: 2\ndata: {"type":"TEXT_MESSAGE_CONTENT","messageId":"answer","delta":"Preserved prefix"}\n\nid: 3\ndata: {"type":"RUN_FINISHED","threadId":"session-refresh","runId":"run"}\n\n',
+  ))
+  vi.stubGlobal('fetch', fetchMock)
+  const onEvent = vi.fn()
+  await act(async () => {
+    await hook.result.current.attemptReconnect(onEvent, vi.fn(), vi.fn(), async () => ({}))
+  })
+  expect(fetchMock.mock.calls[1][0]).toContain('cursor=0')
+  expect(onEvent).toHaveBeenCalledWith(expect.objectContaining({ delta: 'Preserved prefix' }))
+  Object.defineProperty(sessionStorage, 'length', { configurable: true, value: 0 })
+  vi.mocked(sessionStorage.getItem).mockReset()
+})

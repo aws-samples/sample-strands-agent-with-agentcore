@@ -1,0 +1,6 @@
+{
+  "model": "us.anthropic.claude-sonnet-5",
+  "passed": true,
+  "text": "BASELINE_OK",
+  "errors": []
+}

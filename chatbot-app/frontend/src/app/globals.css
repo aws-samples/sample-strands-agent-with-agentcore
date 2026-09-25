@@ -147,9 +147,7 @@
 }
 
 /*
-  The default border color has changed to `currentColor` in Tailwind CSS v4,
-  so we've added these compatibility styles to make sure everything still
-  looks the same as it did with Tailwind CSS v3.
+  Use the theme border token for unqualified borders in both light and dark mode.
 */
 @layer base {
   *,
@@ -157,7 +155,7 @@
   ::before,
   ::backdrop,
   ::file-selector-button {
-    border-color: var(--color-gray-200, currentColor);
+    border-color: hsl(var(--border));
   }
 }
 
@@ -310,12 +308,12 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
     --border: 240 6% 90%;
     --input: 0 0% 100%;
     --ring: 184 74% 30%;
-    --radius: 0.5rem;
-    --chart-1: 214 95% 56%;
-    --chart-2: 159 64% 42%;
-    --chart-3: 347 77% 50%;
-    --chart-4: 280 87% 65%;
-    --chart-5: 25 95% 53%;
+    --radius: 0.75rem;
+    --chart-1: 184 74% 30%;
+    --chart-2: 214 62% 48%;
+    --chart-3: 35 78% 48%;
+    --chart-4: 263 40% 58%;
+    --chart-5: 340 48% 54%;
     --sidebar-background: 240 5% 97%;
     --sidebar-foreground: 240 6% 16%;
     --sidebar-primary: 184 74% 30%;
@@ -354,11 +352,11 @@ div[style*="position: fixed"][style*="top: 0"][style*="right: 0"][style*="z-inde
     --sidebar-accent-foreground: 240 5% 96%;
     --sidebar-border: 240 4% 21%;
     --sidebar-ring: 184 65% 48%;
-    --chart-1: 220 70% 80%;
-    --chart-2: 160 60% 75%;
-    --chart-3: 30 80% 85%;
-    --chart-4: 280 65% 85%;
-    --chart-5: 340 75% 80%;
+    --chart-1: 177 50% 62%;
+    --chart-2: 214 70% 70%;
+    --chart-3: 38 78% 68%;
+    --chart-4: 263 56% 76%;
+    --chart-5: 340 58% 72%;
   }
 }
 

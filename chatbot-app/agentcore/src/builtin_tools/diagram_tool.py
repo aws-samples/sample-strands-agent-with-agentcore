@@ -52,7 +52,7 @@ def _execute_code_interpreter(
     Returns:
         ToolResult dict with content and status
     """
-    from builtin_tools.code_interpreter_tool import get_ci_session
+    from builtin_tools.code_interpreter_tool import get_ci_session, _mounted_path
     from workspace import ImageManager
 
     # Validate filename extension
@@ -135,25 +135,14 @@ Please try again or simplify your code."""
 
         logger.info("Code execution successful, downloading file...")
 
+        # Python runs inside the mounted workspace; readFiles does not share its cwd.
+        output_path = _mounted_path(output_filename)
         # 5. Download the generated file
         file_content = None
         try:
-            download_response = code_interpreter.invoke("readFiles", {"paths": [output_filename]})
+            from builtin_tools.lib.code_interpreter_files import download_workspace_file
 
-            for event in download_response.get("stream", []):
-                result = event.get("result", {})
-                if "content" in result and len(result["content"]) > 0:
-                    content_block = result["content"][0]
-                    if "data" in content_block:
-                        file_content = content_block["data"]
-                    elif "resource" in content_block and "blob" in content_block["resource"]:
-                        file_content = content_block["resource"]["blob"]
-
-                    if file_content:
-                        break
-
-            if not file_content:
-                raise Exception(f"No file content returned for {output_filename}")
+            file_content = download_workspace_file(code_interpreter, output_path)
 
             logger.info(f"Successfully downloaded output: {output_filename} ({len(file_content)} bytes)")
 
@@ -173,7 +162,7 @@ Please try again or simplify your code."""
             # List available files for debugging
             available_files = []
             try:
-                file_list_response = code_interpreter.invoke("listFiles", {"path": ""})
+                file_list_response = code_interpreter.invoke("listFiles", {"path": _mounted_path(".")})
                 for event in file_list_response.get("stream", []):
                     result = event.get("result", {})
                     if "content" in result:

@@ -1,0 +1,28 @@
+{
+  "url": "https://d4ysazlxg9l8c.cloudfront.net",
+  "task_definition": "arn:aws:ecs:us-west-2:749614773728:task-definition/chatbot-frontend:101",
+  "desired": 1,
+  "running": 1,
+  "pending": 0,
+  "deployments": [
+    {
+      "status": "PRIMARY",
+      "rollout": "COMPLETED"
+    }
+  ],
+  "containers": [
+    {
+      "image": "749614773728.dkr.ecr.us-west-2.amazonaws.com/chatbot-frontend:9857de1b7412fe70442016d3073f16e5b81a178d",
+      "digest": "sha256:6c2df56c45fe5f67d378d51fc4adfdad019a3c0f59160a1b87452fa82b348cbe",
+      "status": "RUNNING"
+    }
+  ],
+  "health": {
+    "http": 200,
+    "body": {
+      "status": "healthy",
+      "service": "bff",
+      "version": "2.0.0"
+    }
+  }
+}

@@ -23,6 +23,8 @@ import {
   Pie,
   PieChart,
   XAxis,
+  YAxis,
+  LabelList,
 } from "recharts";
 import {
   ChartContainer,
@@ -32,31 +34,37 @@ import {
 import type { ChartData } from "@/types/chart";
 import { Button } from "@/components/ui/button";
 
+const formatNumber = (value: unknown) => typeof value === 'number'
+  ? new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(value)
+  : String(value ?? '');
+const formatAxis = (value: number) => new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+
 function BarChartComponent({ data }: { data: ChartData }) {
   const dataKey = Object.keys(data.chartConfig)[0];
 
   // Process data to include custom colors if provided
   const processedData = React.useMemo(() => {
-    return data.data.map((item, index) => {
+    return data.data.map((item) => {
       // Check if the item has a custom color field
       const customColor = item.color;
       return {
         ...item,
-        fill: customColor || `hsl(var(--chart-${index + 1}))`,
+        fill: customColor || data.chartConfig[dataKey]?.color || "hsl(var(--chart-1))",
       };
     });
-  }, [data.data]);
+  }, [data.data, data.chartConfig, dataKey]);
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-4 pr-16">
         <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={data.chartConfig}>
-          <BarChart accessibilityLayer data={processedData}>
-            <CartesianGrid vertical={false} />
+        <ChartContainer config={data.chartConfig} className="aspect-auto h-[280px] w-full sm:aspect-video sm:h-auto">
+          <BarChart accessibilityLayer data={processedData} margin={{ top: 24, right: 16 }}>
+            <CartesianGrid vertical={false} strokeDasharray="3 5" />
+            <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={formatAxis} />
             <XAxis
               dataKey={data.config.xAxisKey}
               tickLine={false}
@@ -64,20 +72,22 @@ function BarChartComponent({ data }: { data: ChartData }) {
               axisLine={false}
               tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
-                return value.length > 20
-                  ? `${value.substring(0, 17)}...`
-                  : value;
+                const label = String(value);
+                return label.length > 20 ? `${label.substring(0, 17)}…` : label;
               }}
             />
             <ChartTooltip
               cursor={false}
-              content={<ChartTooltipContent hideLabel />}
+              content={<ChartTooltipContent />}
             />
             <Bar
               dataKey={dataKey}
               fill={`var(--color-${dataKey}, hsl(var(--chart-1)))`}
-              radius={8}
-            />
+              radius={[5, 5, 0, 0]}
+              maxBarSize={72}
+            >
+              {processedData.length <= 12 && <LabelList dataKey={dataKey} position="top" offset={8} formatter={formatNumber} fill="hsl(var(--foreground))" fontSize={12} />}
+            </Bar>
           </BarChart>
         </ChartContainer>
       </CardContent>
@@ -106,14 +116,15 @@ function BarChartComponent({ data }: { data: ChartData }) {
 function MultiBarChartComponent({ data }: { data: ChartData }) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-4 pr-16">
         <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={data.chartConfig}>
+        <ChartContainer config={data.chartConfig} className="aspect-auto h-[280px] w-full sm:aspect-video sm:h-auto">
           <BarChart accessibilityLayer data={data.data}>
-            <CartesianGrid vertical={false} />
+            <CartesianGrid vertical={false} strokeDasharray="3 5" />
+            <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={formatAxis} />
             <XAxis
               dataKey={data.config.xAxisKey}
               tickLine={false}
@@ -121,9 +132,8 @@ function MultiBarChartComponent({ data }: { data: ChartData }) {
               axisLine={false}
               tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
-                return value.length > 20
-                  ? `${value.substring(0, 17)}...`
-                  : value;
+                const label = String(value);
+                return label.length > 20 ? `${label.substring(0, 17)}…` : label;
               }}
             />
             <ChartTooltip
@@ -134,7 +144,7 @@ function MultiBarChartComponent({ data }: { data: ChartData }) {
               <Bar
                 key={key}
                 dataKey={key}
-                fill={`var(--color-${key}, hsl(var(--chart-${index + 1})))`}
+                fill={`var(--color-${key}, hsl(var(--chart-${(index % 5) + 1})))`}
                 radius={4}
               />
             ))}
@@ -166,12 +176,12 @@ function MultiBarChartComponent({ data }: { data: ChartData }) {
 function LineChartComponent({ data }: { data: ChartData }) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-4 pr-16">
         <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={data.chartConfig}>
+        <ChartContainer config={data.chartConfig} className="aspect-auto h-[280px] w-full sm:aspect-video sm:h-auto">
           <LineChart
             accessibilityLayer
             data={data.data}
@@ -180,7 +190,8 @@ function LineChartComponent({ data }: { data: ChartData }) {
               right: 12,
             }}
           >
-            <CartesianGrid vertical={false} />
+            <CartesianGrid vertical={false} strokeDasharray="3 5" />
+            <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={formatAxis} />
             <XAxis
               dataKey={data.config.xAxisKey}
               tickLine={false}
@@ -188,18 +199,17 @@ function LineChartComponent({ data }: { data: ChartData }) {
               tickMargin={8}
               tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
-                return value.length > 20
-                  ? `${value.substring(0, 17)}...`
-                  : value;
+                const label = String(value);
+                return label.length > 20 ? `${label.substring(0, 17)}…` : label;
               }}
             />
             <ChartTooltip
               cursor={false}
-              content={<ChartTooltipContent hideLabel />}
+              content={<ChartTooltipContent />}
             />
             {Object.keys(data.chartConfig).map((key, index) => {
               const configColor = data.chartConfig[key]?.color;
-              const fallbackColor = `hsl(var(--chart-${index + 1}))`;
+              const fallbackColor = `hsl(var(--chart-${(index % 5) + 1}))`;
               const finalColor = configColor || fallbackColor;
               
               return (
@@ -251,7 +261,7 @@ function PieChartComponent({ data }: { data: ChartData }) {
 
     return {
       ...item,
-      fill: customColor || `hsl(var(--chart-${index + 1}))`,
+      fill: customColor || `hsl(var(--chart-${(index % 5) + 1}))`,
     };
   });
 
@@ -269,7 +279,7 @@ function PieChartComponent({ data }: { data: ChartData }) {
           <PieChart>
             <ChartTooltip
               cursor={false}
-              content={<ChartTooltipContent hideLabel />}
+              content={<ChartTooltipContent />}
             />
             <Pie
               data={chartData}
@@ -343,12 +353,12 @@ function AreaChartComponent({
 }) {
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-4 pr-16">
         <CardTitle className="text-heading-lg">{data.config.title}</CardTitle>
         <CardDescription>{data.config.description}</CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={data.chartConfig}>
+        <ChartContainer config={data.chartConfig} className="aspect-auto h-[280px] w-full sm:aspect-video sm:h-auto">
           <AreaChart
             accessibilityLayer
             data={data.data}
@@ -357,7 +367,8 @@ function AreaChartComponent({
               right: 12,
             }}
           >
-            <CartesianGrid vertical={false} />
+            <CartesianGrid vertical={false} strokeDasharray="3 5" />
+            <YAxis tickLine={false} axisLine={false} width={48} tickFormatter={formatAxis} />
             <XAxis
               dataKey={data.config.xAxisKey}
               tickLine={false}
@@ -365,9 +376,8 @@ function AreaChartComponent({
               tickMargin={8}
               tick={{ fill: 'hsl(var(--foreground))' }}
               tickFormatter={(value) => {
-                return value.length > 20
-                  ? `${value.substring(0, 17)}...`
-                  : value;
+                const label = String(value);
+                return label.length > 20 ? `${label.substring(0, 17)}…` : label;
               }}
             />
             <ChartTooltip
@@ -381,9 +391,9 @@ function AreaChartComponent({
                 key={key}
                 type="natural"
                 dataKey={key}
-                fill={`var(--color-${key}, hsl(var(--chart-${index + 1})))`}
+                fill={`var(--color-${key}, hsl(var(--chart-${(index % 5) + 1})))`}
                 fillOpacity={0.4}
-                stroke={`var(--color-${key}, hsl(var(--chart-${index + 1})))`}
+                stroke={`var(--color-${key}, hsl(var(--chart-${(index % 5) + 1})))`}
                 stackId={stacked ? "a" : undefined}
               />
             ))}

@@ -1,15 +1,17 @@
 "use client"
 
+import { DiagramEditor } from "./DiagramEditor"
+import { GeneratedFilePreview } from './GeneratedFilePreview'
+
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal, GripVertical, Monitor, Database, Layers, Files, FolderTree, PanelRightClose } from 'lucide-react'
+import { FileText, Image as ImageIcon, Code, FileDown, Sparkles, Printer, Clock, Tag, GripHorizontal, GripVertical, Monitor, Database, Layers, Files, FolderTree, PanelRightClose, Maximize2, Minimize2 } from 'lucide-react'
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import { Artifact } from '@/types/artifact'
 import { ResearchArtifact } from './ResearchArtifact'
 import { BrowserLiveView } from './BrowserLiveView'
 import { OfficeViewer, isOfficeFileUrl, getFilenameFromS3Url } from './OfficeViewer'
-import { ExcalidrawRenderer } from './ExcalidrawRenderer'
 import { marked } from 'marked'
 import { citationPrintCSS } from '@/components/ui/CitationLink'
 import { Markdown } from '@/components/ui/Markdown'
@@ -40,13 +42,14 @@ interface CanvasProps {
 
 const SIDEBAR_MIN_WIDTH = 360
 const SIDEBAR_MAX_WIDTH = 960
-const SIDEBAR_DEFAULT_WIDTH = 520
+const SIDEBAR_DEFAULT_WIDTH = 640
 const SIDEBAR_CHAT_MIN_WIDTH = 420
 const SIDEBAR_WIDTH_STORAGE_KEY = 'artifacts-sidebar:width'
 type SidebarMode = 'artifacts' | 'workspace'
 
 const getSidebarMaxWidth = () => {
-  if (typeof window === 'undefined') return SIDEBAR_MAX_WIDTH
+  // Mobile uses a full-screen overlay; retain the preferred desktop width.
+  if (typeof window === 'undefined' || window.innerWidth < 768) return SIDEBAR_MAX_WIDTH
   return Math.max(
     SIDEBAR_MIN_WIDTH,
     Math.min(SIDEBAR_MAX_WIDTH, window.innerWidth - SIDEBAR_CHAT_MIN_WIDTH),
@@ -154,7 +157,17 @@ export function Canvas({
   const sidebarResizeStartWidth = useRef(0)
   const pendingSidebarWidth = useRef(SIDEBAR_DEFAULT_WIDTH)
   const [sidebarWidth, setSidebarWidth] = useState(SIDEBAR_DEFAULT_WIDTH)
+  const [expanded, setExpanded] = useState(false)
   const [isSidebarResizing, setIsSidebarResizing] = useState(false)
+  useEffect(() => {
+    if (!isOpen) setExpanded(false)
+    if (!expanded) return
+    const restore = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setExpanded(false)
+    }
+    window.addEventListener('keydown', restore)
+    return () => window.removeEventListener('keydown', restore)
+  }, [expanded, isOpen])
   const [internalSidebarMode, setInternalSidebarMode] = useState<SidebarMode>('artifacts')
   const sidebarMode = activeView ?? internalSidebarMode
   const setSidebarMode = useCallback((view: SidebarMode) => {
@@ -388,17 +401,17 @@ export function Canvas({
     <div
       ref={sidebarRef}
       data-testid="artifacts-sidebar"
-      className={`relative hidden h-svh flex-none flex-col bg-sidebar text-sidebar-foreground md:flex ${
+      className={`${expanded ? 'fixed inset-y-0 right-0 z-40 shadow-xl' : 'fixed inset-0 z-40 md:relative md:inset-auto md:z-auto'} flex h-svh flex-none flex-col bg-sidebar text-sidebar-foreground max-md:!w-screen md:flex ${
         isOpen
           ? 'overflow-visible border-l border-sidebar-border'
-          : 'pointer-events-none overflow-hidden'
+          : 'pointer-events-none overflow-hidden max-md:!hidden'
       }`}
       style={{
-        width: isOpen ? `${sidebarWidth}px` : '0px',
+        width: isOpen ? (expanded ? 'calc(100vw - 64px)' : `${sidebarWidth}px`) : '0px',
         flexBasis: isOpen ? `${sidebarWidth}px` : '0px',
       }}
     >
-      {isOpen && (
+      {isOpen && !expanded && (
         <div
           role="separator"
           aria-label="Resize right sidebar"
@@ -407,7 +420,7 @@ export function Canvas({
           aria-valuemax={getSidebarMaxWidth()}
           aria-valuenow={sidebarWidth}
           tabIndex={0}
-          className={`group absolute inset-y-0 left-0 z-20 flex w-3 -translate-x-1/2 cursor-col-resize items-center justify-center outline-none ${
+          className={`group absolute inset-y-0 left-0 z-20 hidden md:flex w-3 -translate-x-1/2 cursor-col-resize items-center justify-center outline-none ${
             isSidebarResizing ? 'bg-primary/5' : ''
           }`}
           onPointerDown={handleSidebarResizeStart}
@@ -442,7 +455,7 @@ export function Canvas({
               aria-pressed={sidebarMode === 'artifacts'}
             >
               <Files className="h-3.5 w-3.5" />
-              Artifacts
+              Results
               {displayArtifacts.length > 0 && (
                 <span className="text-[11px] text-muted-foreground">
                   {displayArtifacts.length}
@@ -462,9 +475,14 @@ export function Canvas({
               aria-pressed={sidebarMode === 'workspace'}
             >
               <FolderTree className="h-3.5 w-3.5" />
-              Workspace
+              Files
             </Button>
           </div>
+          <div className="flex items-center gap-1">
+          <Button variant="ghost" size="sm" className="hidden md:flex gap-2 text-xs" onClick={() => setExpanded(value => !value)} aria-pressed={expanded} aria-label={expanded ? 'Restore panel size' : 'Expand results panel'}>
+            {expanded ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            {expanded ? 'Restore' : 'Expand'}
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -475,6 +493,7 @@ export function Canvas({
           >
             <PanelRightClose className="h-4 w-4" />
           </Button>
+          </div>
         </div>
       </div>
 
@@ -552,20 +571,14 @@ export function Canvas({
               {selectedArtifact.type === 'excalidraw' ? (
                 // Excalidraw diagram viewer - full height, interactive
                 <div className={`flex-1 min-h-0 flex flex-col transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
-                  <div className="flex-shrink-0 px-3 py-1.5 text-xs text-muted-foreground bg-muted/40 border-b border-border/40 flex items-center gap-1.5">
-                    <span>Manual edits are not saved.</span>
-                    <span className="text-muted-foreground/60">Ask the agent to modify, or export (⋮) to save locally.</span>
-                  </div>
-                  <div className="flex-1 min-h-0">
-                    <ExcalidrawRenderer
-                      data={selectedArtifact.content}
-                    />
-                  </div>
+                  <DiagramEditor key={selectedArtifact.id} artifact={selectedArtifact} sessionId={sessionId} onUpdate={onUpdateArtifact} />
                 </div>
               ) : (selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation' || (selectedArtifact.type === 'document' && typeof selectedArtifact.content === 'string' && isOfficeFileUrl(selectedArtifact.content))) ? (
                 // Office document viewer (Word/Excel/PowerPoint) - full height, no ScrollArea
                 <div className={`flex-1 min-h-0 transition-all duration-500 ${justUpdated ? 'bg-green-500/10 ring-2 ring-green-500/30 rounded-lg' : ''}`}>
                   <OfficeViewer
+                    key={`${selectedArtifact.id}-${selectedArtifact.timestamp}`}
+                    revision={selectedArtifact.timestamp}
                     s3Url={(selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation') ? (selectedArtifact.content || selectedArtifact.metadata?.s3_url || '') : selectedArtifact.content}
                     filename={(selectedArtifact.type === 'word_document' || selectedArtifact.type === 'excel_spreadsheet' || selectedArtifact.type === 'powerpoint_presentation') ? selectedArtifact.title : getFilenameFromS3Url(selectedArtifact.content)}
                   />
@@ -580,13 +593,9 @@ export function Canvas({
                         </Markdown>
                       </div>
                     ) : selectedArtifact.type === 'image' ? (
-                      <div className="flex items-center justify-center">
-                        <img
-                          src={selectedArtifact.content}
-                          alt={selectedArtifact.title}
-                          className="max-w-full h-auto rounded-lg shadow-lg"
-                        />
-                      </div>
+                      <GeneratedFilePreview key={selectedArtifact.id} source={selectedArtifact.content}
+                        filename={selectedArtifact.title} s3Key={selectedArtifact.metadata?.s3_key}
+                        revision={selectedArtifact.timestamp} sessionId={sessionId} />
                     ) : selectedArtifact.type === 'extracted_data' ? (
                       <div className="bg-muted rounded-lg p-4 overflow-auto border border-border">
                         <pre className="text-sm text-foreground whitespace-pre-wrap font-mono">
@@ -623,9 +632,9 @@ export function Canvas({
                 <EmptyMedia variant="icon" className="bg-sidebar-accent text-sidebar-foreground/50">
                   <Layers className="h-6 w-6" />
                 </EmptyMedia>
-                <EmptyTitle className="text-sidebar-foreground/80">No Content Selected</EmptyTitle>
+                <EmptyTitle className="text-sidebar-foreground/80">Your results, in one place</EmptyTitle>
                 <EmptyDescription className="text-sidebar-foreground/50">
-                  Select an item from the library below to preview
+                  Documents, diagrams, and browser sessions appear here. Select a result below to explore it.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
@@ -647,24 +656,25 @@ export function Canvas({
 
           <div className="px-4 py-3 flex-1 flex flex-col min-h-0">
             <div className="text-caption font-medium text-sidebar-foreground/60 uppercase tracking-wide mb-3">
-              Library ({displayArtifacts.length})
+              In this conversation ({displayArtifacts.length})
             </div>
             <div className="overflow-x-auto overflow-y-hidden flex-1">
               <div className="flex gap-4 pb-2 min-w-min h-full">
                 {displayArtifacts.length === 0 ? (
                   <div className="px-4 py-8 text-center text-label text-sidebar-foreground/50 w-full">
-                    No artifacts yet
+                    No results yet
                   </div>
                 ) : (
                   displayArtifacts.map((artifact) => {
                     return (
                       <button
                         key={artifact.id}
+                        aria-pressed={selectedArtifactId === artifact.id}
                         onClick={() => onSelectArtifact(artifact.id)}
-                        className={`flex-shrink-0 text-left p-3 rounded-xl border-2 transition-all ${
+                        className={`flex-shrink-0 text-left p-3 rounded-lg border transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
                           selectedArtifactId === artifact.id
-                            ? 'bg-primary/5 border-primary shadow-md ring-1 ring-primary/20'
-                            : 'bg-sidebar-background border-sidebar-border hover:border-primary/50 hover:bg-sidebar-accent/30 hover:shadow-xs'
+                            ? 'bg-primary/5 border-primary/50'
+                            : 'bg-sidebar-background border-sidebar-border hover:border-primary/50 hover:bg-sidebar-accent/30'
                         }`}
                       >
                         <div className="flex items-center gap-3">

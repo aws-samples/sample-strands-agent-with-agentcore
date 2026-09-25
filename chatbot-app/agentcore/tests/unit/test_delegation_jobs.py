@@ -222,14 +222,14 @@ def test_start_job_resolves_and_persists_model_selection(monkeypatch):
         idempotency_key="s1:r1:t1",
         profile="analyst",
         request=request,
-        model_id="us.openai.gpt-5.6-terra",
+        model_id="openai.gpt-6-sol",
     )
 
     record = delegation_jobs.get_job("u1", "s1", receipt.job_id)
-    assert record["parentModelId"] == "us.openai.gpt-5.6-terra"
-    assert record["modelId"] == "us.openai.gpt-5.6-sol"
+    assert record["parentModelId"] == "openai.gpt-6-sol"
+    assert record["modelId"] == "openai.gpt-6-sol"
     assert record["modelSelection"]["taskComplexity"] == "high"
-    assert record["modelSelection"]["catalogRevision"] == "2026-09-09.1"
+    assert record["modelSelection"]["catalogRevision"] == "2026-09-25.2"
     assert record["modelSelection"]["applied"] is True
 
 

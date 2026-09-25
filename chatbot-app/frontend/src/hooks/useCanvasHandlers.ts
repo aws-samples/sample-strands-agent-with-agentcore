@@ -9,6 +9,7 @@
 
 import { useCallback, useRef, useEffect } from 'react'
 import { ArtifactType, Artifact } from '@/types/artifact'
+import { officeArtifactId } from '@/lib/office-artifacts'
 
 // Document info from workspace API
 export interface WorkspaceDocument {
@@ -29,6 +30,8 @@ interface ArtifactMethods {
 
 // Excalidraw diagram data from create_excalidraw_diagram
 export interface ExcalidrawDiagramData {
+  artifactId?: string
+  updatedAt?: string
   elements: any[]
   appState: any
   title: string
@@ -97,8 +100,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     if (!addArtifactRef.current || !openArtifactRef.current || documents.length === 0) return
 
     // Generate artifact IDs first (for consistency)
-    const timestamp = Date.now()
-    const artifactIds = documents.map((doc, index) => `word-${doc.filename}-${timestamp}-${index}`)
+    const artifactIds = documents.map(doc => officeArtifactId('word_document', doc.filename)!)
 
     // Create artifacts for each Word document
     documents.forEach((doc, index) => {
@@ -113,9 +115,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     })
 
     // Open Canvas and select the most recent document
-    setTimeout(() => {
-      openArtifactRef.current!(artifactIds[0])
-    }, 100)
+    openArtifactRef.current(artifactIds[0])
   }, [])
 
   // Callback for Excel document creation - creates artifacts and opens Canvas
@@ -123,8 +123,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     if (!addArtifactRef.current || !openArtifactRef.current || documents.length === 0) return
 
     // Generate artifact IDs first (for consistency)
-    const timestamp = Date.now()
-    const artifactIds = documents.map((doc, index) => `excel-${doc.filename}-${timestamp}-${index}`)
+    const artifactIds = documents.map(doc => officeArtifactId('excel_spreadsheet', doc.filename)!)
 
     // Create artifacts for each Excel document
     documents.forEach((doc, index) => {
@@ -139,9 +138,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     })
 
     // Open Canvas and select the most recent document
-    setTimeout(() => {
-      openArtifactRef.current!(artifactIds[0])
-    }, 100)
+    openArtifactRef.current(artifactIds[0])
   }, [])
 
   // Callback for PowerPoint document creation - creates artifacts and opens Canvas
@@ -149,8 +146,7 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     if (!addArtifactRef.current || !openArtifactRef.current || documents.length === 0) return
 
     // Generate artifact IDs first (for consistency)
-    const timestamp = Date.now()
-    const artifactIds = documents.map((doc, index) => `ppt-${doc.filename}-${timestamp}-${index}`)
+    const artifactIds = documents.map(doc => officeArtifactId('powerpoint_presentation', doc.filename)!)
 
     // Create artifacts for each PowerPoint document
     documents.forEach((doc, index) => {
@@ -165,43 +161,19 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
     })
 
     // Open Canvas and select the most recent document
-    setTimeout(() => {
-      openArtifactRef.current!(artifactIds[0])
-    }, 100)
+    openArtifactRef.current(artifactIds[0])
   }, [])
 
-  // Callback for diagram creation - fetches presigned URL and opens in Canvas
-  const handleDiagramCreated = useCallback(async (s3Key: string, filename: string) => {
+  // Register the durable identity immediately; the viewer resolves its file URL.
+  const handleDiagramCreated = useCallback((s3Key: string, filename: string) => {
     if (!addArtifactRef.current || !openArtifactRef.current) return
-
-    try {
-      // Get presigned URL for the S3 image
-      const response = await fetch('/api/s3/presigned-url', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ s3Key }),
-      })
-
-      if (!response.ok) return
-      const { url } = await response.json()
-
-      const artifactId = `diagram-${filename}-${Date.now()}`
-      addArtifactRef.current({
-        id: artifactId,
-        type: 'image' as ArtifactType,
-        title: filename,
-        content: url,
-        description: 'Diagram',
-        timestamp: new Date().toISOString(),
-        metadata: { filename, s3_key: s3Key },
-      })
-
-      setTimeout(() => {
-        openArtifactRef.current!(artifactId)
-      }, 100)
-    } catch (error) {
-      // Failed to create diagram artifact - non-critical
-    }
+    const artifactId = `diagram-${filename.replace(/\.[^.]+$/, '')}`
+    addArtifactRef.current({
+      id: artifactId, type: 'image', title: filename, content: s3Key,
+      description: 'Image', timestamp: new Date().toISOString(),
+      metadata: { filename, s3_key: s3Key },
+    })
+    openArtifactRef.current(artifactId)
   }, [])
 
   // Callback for extracted data creation - creates artifact and opens Canvas
@@ -310,13 +282,13 @@ export const useCanvasHandlers = (): UseCanvasHandlersReturn => {
   const handleExcalidrawCreated = useCallback((data: ExcalidrawDiagramData, toolUseId: string) => {
     if (!addArtifactRef.current || !openArtifactRef.current) return
 
-    const artifactId = `excalidraw-${toolUseId}`
+    const artifactId = data.artifactId || `excalidraw-${toolUseId}`
     addArtifactRef.current({
       id: artifactId,
       type: 'excalidraw' as ArtifactType,
       title: data.title || 'Diagram',
       content: data,
-      timestamp: new Date().toISOString(),
+      timestamp: data.updatedAt || new Date().toISOString(),
     })
     setTimeout(() => {
       openArtifactRef.current!(artifactId)

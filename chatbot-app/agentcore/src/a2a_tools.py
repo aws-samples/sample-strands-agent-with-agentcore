@@ -17,7 +17,7 @@ from strands.types.tools import ToolContext
 
 import httpx
 from a2a.client import ClientConfig, ClientFactory
-from a2a.types import Message, Part, Role, TextPart, AgentCard
+from a2a.types import Message, Part, Role, TextPart, AgentCard, TaskIdParams
 
 from agent.config.model_catalog import resolve_code_agent_model
 from agent.mcp.client import BearerAuth
@@ -337,7 +337,7 @@ async def send_a2a_message(
     finally:
         if not completed and current_task_id and client:
             try:
-                await client.cancel_task(current_task_id)
+                await client.cancel_task(TaskIdParams(id=current_task_id))
                 logger.info(f"[A2A] Cancelled task {current_task_id} on {agent_id}")
             except Exception as e:
                 logger.warning(f"[A2A] Failed to cancel task {current_task_id} on {agent_id}: {e}")

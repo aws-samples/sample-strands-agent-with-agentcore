@@ -1,0 +1,12 @@
+[
+  {
+    "case": "luna_compaction",
+    "passed": false,
+    "error": "Server error '500 Internal Server Error' for url 'https://d4ysazlxg9l8c.cloudfront.net/api/session/compact/summarize'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/500"
+  },
+  {
+    "case": "luna_compaction",
+    "passed": true,
+    "response": "## 1. **Primary Request and Intent**\nThe user stated that the release is named **Aurora** and is scheduled to ship **Friday**.\n\n## 2. **Key Decisions and Outcomes**\nThe assistant confirmed the release name and schedule: **Aurora will ship Friday**.\n\n## 7. **Current Work**\nNo further work is pending. The latest exchange established the release name and planned shipping day."
+  }
+]

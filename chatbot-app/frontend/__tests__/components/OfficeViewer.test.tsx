@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { OfficeViewer } from '@/components/canvas/OfficeViewer'
 
 describe('OfficeViewer', () => {
@@ -24,9 +24,28 @@ describe('OfficeViewer', () => {
     render(<OfficeViewer s3Url="not-an-s3-url" filename="report.docx" />)
 
     await waitFor(() => {
-      expect(screen.getByText(/invalid s3 url format/i)).toBeInTheDocument()
+      expect(screen.getByRole('alert')).toHaveTextContent('The file link is unavailable')
+      expect(screen.getByRole('button', { name: 'Download' })).toBeDisabled()
     })
     expect(screen.queryByTitle('Preview: report.docx')).not.toBeInTheDocument()
     consoleError.mockRestore()
   })
+})
+
+it('keeps the current workbook when an earlier preview lookup finishes late', async () => {
+  let release!: (value: any) => void
+  vi.mocked(fetch).mockReturnValueOnce(new Promise(resolve => { release = resolve }))
+  const view = render(<OfficeViewer s3Url="s3://bucket/old.xlsx" filename="old.xlsx" />)
+  await waitFor(() => expect(fetch).toHaveBeenCalled())
+  view.rerender(<OfficeViewer previewUrl="https://example.test/new.xlsx" filename="new.xlsx" />)
+  await act(async () => release({ ok: true, json: async () => ({ url: 'https://example.test/old.xlsx' }) }))
+  expect(screen.getByTitle('Preview: new.xlsx')).toHaveAttribute('src', expect.stringContaining('new.xlsx'))
+})
+
+it('retries a failed lookup without regenerating the document', async () => {
+  vi.mocked(fetch).mockResolvedValueOnce({ ok: false, json: async () => ({}) } as Response)
+  vi.mocked(fetch).mockResolvedValueOnce({ ok: true, json: async () => ({ url: 'https://example.test/retry.xlsx' }) } as Response)
+  render(<OfficeViewer s3Url="s3://bucket/retry.xlsx" filename="retry.xlsx" />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Retry preview' }))
+  expect(await screen.findByTitle('Preview: retry.xlsx')).toHaveAttribute('src', expect.stringContaining('retry.xlsx'))
 })

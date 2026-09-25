@@ -168,10 +168,21 @@ def _is_current_deck_spec(spec: Any, source_sha256: str) -> bool:
 
 def _save_and_respond(
     ppt_manager, tool_context, output_filename, output_bytes,
-    tool_name, user_id, session_id, success_msg, extra_meta=None
+    tool_name, user_id, session_id, success_msg, extra_meta=None, expected_etag=None
 ):
     """Save bytes to S3, register artifact, return success response."""
-    s3_info = ppt_manager.save_to_s3(output_filename, output_bytes)
+    with PptxEngine(output_bytes) as engine:
+        engine.clean()
+        validation = engine.validate()
+        if not validation["valid"]:
+            return {
+                "content": [{"text": "The presentation could not be saved because its structure is invalid. Repair the reported issues and retry."}],
+                "status": "error",
+                "metadata": {"validation": validation},
+            }
+        output_bytes = engine.pack()
+    save_options = {"expected_etag": expected_etag} if expected_etag else {}
+    s3_info = ppt_manager.save_to_s3(output_filename, output_bytes, **save_options)
     _save_ppt_artifact(
         tool_context=tool_context,
         filename=output_filename,
@@ -416,7 +427,9 @@ def finalize_presentation_edit(
             return err
 
         output_filename = f"{output_name}.pptx"
-        if output_filename == edit_state["source_filename"]:
+        updating_source = output_filename == edit_state["source_filename"]
+        source_is_generated = edit_state["source_key"].startswith(ppt_manager.artifact_prefix + "/")
+        if updating_source and not source_is_generated:
             return {
                 "content": [{
                     "text": (
@@ -427,12 +440,14 @@ def finalize_presentation_edit(
                 "status": "error",
             }
         try:
+            if updating_source:
+                raise FileNotFoundError()  # updated conditionally against the source ETag below
             ppt_manager.resolve_presentation(output_filename)
             return {
                 "content": [{
                     "text": (
                         f"**Already exists**: {output_filename}\n\n"
-                        "Choose a final output name that is not already in Workspace."
+                        "If this is a retry, inspect the existing output before publishing again. Do not generate versioned names to bypass this conflict. Use a different name only for a distinct requested deliverable."
                     )
                 }],
                 "status": "error",
@@ -441,7 +456,9 @@ def finalize_presentation_edit(
             pass
 
         with PptxEngine(draft_bytes) as engine:
+            engine.clean()
             validation = engine.validate()
+            draft_bytes = engine.pack()
         if not validation["valid"]:
             return {
                 "content": [{
@@ -470,6 +487,7 @@ def finalize_presentation_edit(
             session_id,
             success_msg,
             {"edit_id": edit_id, "validation": validation},
+            expected_etag=edit_state["source_etag"] if updating_source else None,
         )
         try:
             ppt_manager.discard_edit(edit_id)
@@ -1143,7 +1161,7 @@ def create_presentation(
 
         try:
             ppt_manager.load_from_s3(output_filename)
-            return {"content": [{"text": f"**Already exists**: {output_filename}\n\nUse a different name or delete the existing file first."}], "status": "error"}
+            return {"content": [{"text": f"**Already exists**: {output_filename}\n\nInspect the existing file first. To revise it, call begin_presentation_edit and reuse its edit_id; do not retry create_presentation under v2/v3 names or delete the source. Use a new name only for a distinct requested deliverable."}], "status": "error"}
         except FileNotFoundError:
             pass
 
@@ -1162,7 +1180,10 @@ def create_presentation(
         success_msg = (
             f"**Created**: {output_filename}\n\n"
             f"{total_slides} slide(s), {len(output_bytes) // 1024} KB\n\n"
-            f"Use `analyze_presentation` to inspect, `update_slide_content` to edit."
+            f"Inspect and validate this file before reporting completion. "
+            f"For corrections, call `begin_presentation_edit` once, then use "
+            f"the returned `edit_id` for all edits and previews. "
+            f"Do not call `create_presentation` again to make intermediate versions."
         )
         return _save_and_respond(
             ppt_manager, tool_context, output_filename, output_bytes,

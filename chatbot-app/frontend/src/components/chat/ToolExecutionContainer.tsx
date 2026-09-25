@@ -1,9 +1,10 @@
+import { toolResultFailed, toolExecutionOutcome } from '@/lib/tool-outcome'
 import React, { useState, useCallback, useMemo } from 'react'
 import { Download, ChevronDown, ChevronUp, Sparkles, Loader2 } from 'lucide-react'
 import { fetchAuthSession } from 'aws-amplify/auth'
 import { ToolExecution } from '@/types/chat'
 import { getToolDisplayName } from '@/utils/chat'
-import { getToolImageSrc, getToolIcon, resolveEffectiveToolId } from '@/config/tool-icons'
+import { getToolImageSrc, getToolIcon, resolveEffectiveToolId, resolveIconId } from '@/config/tool-icons'
 import { ChartRenderer } from '@/components/canvas'
 import { ChartToolResult } from '@/types/chart'
 import { MapRenderer } from '@/components/MapRenderer'
@@ -309,9 +310,6 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
       return (
         <div className="my-4">
           <ChartRenderer chartData={result.chart_data} />
-          <p className="text-label text-green-600 mt-2">
-            {result.message}
-          </p>
         </div>
       );
     }
@@ -656,7 +654,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           .includes((toolExecution.toolResult || '').toLowerCase()) && onOpenResearchArtifact && (
         <button onClick={(e) => { e.stopPropagation(); onOpenResearchArtifact(toolExecution.id); }}
           className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
-          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+          <Sparkles className="h-3.5 w-3.5" /><span>Open result</span>
         </button>
       )}
       {WORD_DOCUMENT_TOOLS.includes(toolExecution.toolName) &&
@@ -664,7 +662,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
         extractWordFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenWordArtifact && (
         <button onClick={(e) => { e.stopPropagation(); const f = extractWordFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenWordArtifact(f); }}
           className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
-          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+          <Sparkles className="h-3.5 w-3.5" /><span>Open result</span>
         </button>
       )}
       {EXCEL_SPREADSHEET_TOOLS.includes(toolExecution.toolName) &&
@@ -672,7 +670,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
         extractExcelFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenExcelArtifact && (
         <button onClick={(e) => { e.stopPropagation(); const f = extractExcelFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenExcelArtifact(f); }}
           className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
-          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+          <Sparkles className="h-3.5 w-3.5" /><span>Open result</span>
         </button>
       )}
       {POWERPOINT_TOOLS.includes(toolExecution.toolName) &&
@@ -680,22 +678,22 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
         extractPptFilename(toolExecution.toolResult, toolExecution.metadata) && onOpenPptArtifact && (
         <button onClick={(e) => { e.stopPropagation(); const f = extractPptFilename(toolExecution.toolResult || '', toolExecution.metadata); if (f) onOpenPptArtifact(f); }}
           className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
-          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+          <Sparkles className="h-3.5 w-3.5" /><span>Open result</span>
         </button>
       )}
       {toolExecution.toolName === 'browser_extract' && toolExecution.isComplete && !toolExecution.isCancelled &&
         toolExecution.toolResult && extractArtifactId(toolExecution.toolResult) && onOpenExtractedDataArtifact && (
         <button onClick={(e) => { e.stopPropagation(); const a = extractArtifactId(toolExecution.toolResult || ''); if (a) onOpenExtractedDataArtifact(a); }}
           className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
-          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+          <Sparkles className="h-3.5 w-3.5" /><span>Open result</span>
         </button>
       )}
       {toolExecution.toolName === 'create_excalidraw_diagram' &&
         toolExecution.isComplete && !toolExecution.isCancelled && toolExecution.toolResult &&
         hasExcalidrawData(toolExecution.toolResult) && onOpenExcalidrawArtifact && (
-        <button onClick={(e) => { e.stopPropagation(); onOpenExcalidrawArtifact(`excalidraw-${toolExecution.id}`); }}
+        <button onClick={(e) => { e.stopPropagation(); const data = JSON.parse(toolExecution.toolResult || "{}"); onOpenExcalidrawArtifact(data.excalidraw_data?.artifactId || `excalidraw-${toolExecution.id}`); }}
           className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-caption font-medium text-primary border border-primary/40 hover:border-primary hover:bg-primary/10 rounded-full transition-colors">
-          <Sparkles className="h-3.5 w-3.5" /><span>Canvas</span>
+          <Sparkles className="h-3.5 w-3.5" /><span>Open result</span>
         </button>
       )}
     </>
@@ -781,7 +779,11 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
   )
 
   // Compact status indicator shared by every tool activity row.
-  const StatusIndicator = ({ isComplete }: { isComplete: boolean }) => isComplete ? (
+  const StatusIndicator = ({ isComplete, failed = false, stopped = false }: { isComplete: boolean; failed?: boolean; stopped?: boolean }) => failed ? (
+    <span className="text-destructive text-xs" role="img" aria-label="Failed">!</span>
+  ) : stopped ? (
+    <span className="h-2 w-2 rounded-sm bg-muted-foreground" role="img" aria-label="Stopped" />
+  ) : isComplete ? (
     <svg className="h-3.5 w-3.5 shrink-0 text-primary" viewBox="0 0 16 16" fill="none" aria-label="Complete">
       <circle cx="8" cy="8" r="7" fill="currentColor" />
       <path d="M5 8l2 2 4-4" stroke="hsl(var(--primary-foreground))" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -863,6 +865,17 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
           const { executions, imageSrc, IconComp, displayName, key } = group
           const completedCount = executions.filter(e => e.isComplete).length
           const allDone = completedCount === executions.length
+          const failed = executions.some(e => toolExecutionOutcome(e) === 'failed')
+          const stopped = executions.some(e => toolExecutionOutcome(e) === 'stopped')
+          const officeLabel: Record<string, string> = {
+            excel_spreadsheet_tools: 'Excel spreadsheet',
+            powerpoint_presentation_tools: 'PowerPoint presentation',
+            word_document_tools: 'Word document',
+          }
+          const officeType = resolveIconId(group.effectiveToolId, officeLabel)
+          const activityLabel = executions.length > 1 && officeType
+            ? `${officeLabel[officeType]} activity`
+            : allDone ? displayName.complete : displayName.running
           const count = executions.length
           const isExpanded = isToolExpanded(key)
           const liveProgress = count === 1 && !allDone
@@ -870,13 +883,22 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
             : undefined
 
           // Find the last completed execution for action buttons (Canvas, Download)
-          const lastCompleteExec = [...executions].reverse().find(e => e.isComplete)
+          const lastCompleteExec = [...executions].reverse().find(e => e.isComplete && !e.isCancelled && !toolResultFailed(e.toolResult))
 
           return (
             <React.Fragment key={key}>
               <div data-testid="tool-activity-group">
                 {/* Collapsed row */}
                 <div
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={isExpanded}
+                  onKeyDown={event => {
+                    if (event.target === event.currentTarget && (event.key === 'Enter' || event.key === ' ')) {
+                      event.preventDefault()
+                      toggleToolExpansion(key)
+                    }
+                  }}
                   onClick={() => toggleToolExpansion(key)}
                   className="flex items-center gap-2 py-1.5 px-2 -mx-2 rounded-md hover:bg-muted/50 transition-colors w-full text-left group cursor-pointer"
                 >
@@ -889,7 +911,7 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
 
                   {/* Display name — user-friendly running/complete form */}
                   <span className="text-label text-foreground">
-                    {allDone ? displayName.complete : displayName.running}
+                    {allDone && failed ? (executions.length > 1 ? 'Some actions failed' : `Could not complete: ${displayName.running.toLowerCase()}`) : allDone && stopped ? 'Stopped by you' : activityLabel}
                   </span>
                   {liveProgress && (
                     <span className="text-caption text-muted-foreground truncate">
@@ -900,12 +922,12 @@ export const ToolExecutionContainer = React.memo<ToolExecutionContainerProps>(({
                   {/* Count badge — only when count > 1 */}
                   {count > 1 && (
                     <span className="text-[11px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded-full tabular-nums">
-                      {allDone ? `×${count}` : `${completedCount}/${count}`}
+                      {allDone ? `${count} actions` : `${completedCount}/${count} actions`}
                     </span>
                   )}
 
                   {/* Status indicator */}
-                  <StatusIndicator isComplete={allDone} />
+                  <StatusIndicator isComplete={allDone} failed={allDone && failed} stopped={allDone && stopped} />
 
                   {/* Action buttons from last completed execution */}
                   {lastCompleteExec && renderActionButtons(lastCompleteExec)}

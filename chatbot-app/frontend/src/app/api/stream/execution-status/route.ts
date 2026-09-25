@@ -25,5 +25,5 @@ export async function GET(request: NextRequest) {
   const authToken = request.headers.get('authorization') || ''
 
   const result = await getExecutionStatus(executionId, user.userId, authToken)
-  return NextResponse.json(result)
+  return NextResponse.json(result, { status: result.status === 'unavailable' ? 503 : 200 })
 }

@@ -1,26 +1,48 @@
 "use client"
 
 import React, { useState, useEffect } from 'react'
-import { Loader2, AlertCircle } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
+import { Download, Loader2, AlertCircle } from 'lucide-react'
 
 interface OfficeViewerProps {
   s3Url?: string  // s3://bucket/path/file.docx
   previewUrl?: string
   filename: string
+  revision?: string
 }
 
 /**
  * Office document viewer using Microsoft Office Online.
  */
-export function OfficeViewer({ s3Url, previewUrl, filename }: OfficeViewerProps) {
+export function OfficeViewer({ s3Url, previewUrl, filename, revision }: OfficeViewerProps) {
+  const [retry, setRetry] = useState(0)
+  const hasFileLink = !!previewUrl || !!s3Url?.startsWith('s3://')
   const [viewerUrl, setViewerUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+  const download = async () => {
+    try {
+      setDownloadError(null)
+      let url = previewUrl
+      if (s3Url) {
+        const response = await apiFetch('s3/presigned-url', { method: 'POST', body: JSON.stringify({ s3Key: s3Url, filename }) })
+        if (!response.ok) throw new Error('Download unavailable. Please try again.')
+        url = (await response.json()).url
+      }
+      if (!url) throw new Error('Download unavailable. Please try again.')
+      const link = document.createElement('a'); link.href = url; link.download = filename; link.target = '_blank'; link.rel = 'noopener'; link.click()
+    } catch (e) { setDownloadError(e instanceof Error ? e.message : 'Download failed.') }
+  }
+
 
   useEffect(() => {
+    let active = true
     const loadDocument = async () => {
       setLoading(true)
       setError(null)
+      setViewerUrl(null)
+      setDownloadError(null)
 
       try {
         if (previewUrl) {
@@ -40,7 +62,7 @@ export function OfficeViewer({ s3Url, previewUrl, filename }: OfficeViewerProps)
 
         if (ext === 'xlsx' || isLocal) {
           // Excel or local dev: presigned URL (Office Online can't reach localhost)
-          const response = await fetch('/api/s3/presigned-url', {
+          const response = await apiFetch('s3/presigned-url', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ s3Key: s3Url })
@@ -53,53 +75,33 @@ export function OfficeViewer({ s3Url, previewUrl, filename }: OfficeViewerProps)
           docUrl = url
         } else {
           // Word/PPT in production: proxy avoids X-Amz-* param issues
-          docUrl = `${window.location.origin}/api/s3/proxy?key=${encodeURIComponent(s3Url)}`
+          docUrl = `${window.location.origin}/api/s3/proxy?key=${encodeURIComponent(s3Url)}&v=${encodeURIComponent(revision || "current")}`
         }
 
         // Build Office Online viewer URL
         const officeViewerUrl = `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(docUrl)}`
-        setViewerUrl(officeViewerUrl)
+        if (active) setViewerUrl(officeViewerUrl)
       } catch (err) {
         console.error('[OfficeViewer] Error:', err)
-        setError(err instanceof Error ? err.message : 'Failed to load document')
+        if (active) setError(err instanceof Error ? err.message : 'Failed to load document')
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
-    if (s3Url || previewUrl) {
-      loadDocument()
-    }
-  }, [previewUrl, s3Url])
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-sidebar-foreground/60">
-        <Loader2 className="h-8 w-8 animate-spin" />
-        <p className="text-label">Loading document...</p>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-sidebar-foreground/60">
-        <AlertCircle className="h-8 w-8 text-destructive" />
-        <p className="text-label">{error}</p>
-      </div>
-    )
-  }
+    loadDocument()
+    return () => { active = false }
+  }, [previewUrl, s3Url, revision, retry])
 
   return (
-    <div className="h-full">
-      {viewerUrl && (
-        <iframe
-          src={viewerUrl}
-          className="w-full h-full border-0"
-          title={`Preview: ${filename}`}
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads"
-        />
-      )}
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center justify-end gap-3 border-b px-3 py-2 text-xs">
+        {downloadError && <span role="alert" className="text-destructive">{downloadError}</span>}
+        <button disabled={!hasFileLink} className="flex items-center gap-1.5 text-primary disabled:opacity-50" onClick={download}><Download className="h-4 w-4" />Download</button>
+      </div>
+      {loading ? <div className="flex flex-1 items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin" />Loading preview…</div>
+        : error ? <div role="alert" className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-sm text-muted-foreground"><AlertCircle className="h-6 w-6" /><p>{hasFileLink ? 'The preview is unavailable. Try downloading the file, or retry the preview.' : 'The file link is unavailable. Reopen this result from the conversation.'}</p>{hasFileLink && <button className="mt-2 text-primary underline underline-offset-4" onClick={() => setRetry(value => value + 1)}>Retry preview</button>}</div>
+        : viewerUrl && <iframe src={viewerUrl} className="min-h-0 w-full flex-1 border-0" title={`Preview: ${filename}`} sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox allow-downloads" />}
     </div>
   )
 }

@@ -1,13 +1,14 @@
 ---
 name: visualization
-description: Create interactive chart visualizations (bar, line, pie) from data.
+description: Create interactive in-app charts (bar, line, pie). For a saved PNG or PDF, use visual-design instead.
 ---
 
 # Visualization
 
 ## When to Use This Skill
 
-Use `create_visualization` when the user wants to visualize **numerical data** — comparisons, trends, distributions, or proportions.
+Use `create_visualization` for interactive in-app charts of numerical data.
+For an explicit PNG or PDF deliverable, use the visual-design skill instead. This tool returns a chart specification, not a downloadable image file. If the requested chart needs controls absent from this schema, such as fixed axis bounds, choose a tool that supports them rather than dropping the requirement.
 
 | Use this skill for... | Use excalidraw skill for... |
 |-----------------------|-----------------------------|

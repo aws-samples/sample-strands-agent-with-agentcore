@@ -112,7 +112,7 @@ After every mutation:
 4. Call `preview_presentation_montage` for the full-deck pass.
 5. Call `preview_presentation_slides` only for affected slides at higher detail.
 6. Fix issues and repeat validation plus targeted rendering.
-7. Call `finalize_presentation_edit` once with the desired output name.
+7. Call `finalize_presentation_edit` once with the desired output name. For an app-generated presentation, keep the original filename unless the user requests a separate deliverable: finalization updates the existing result and preserves the previous bytes. Uploaded source files remain immutable and require a different output name.
 
 LibreOffice rendering is an approximation of Microsoft PowerPoint. Missing fonts
 or complex Office features require final inspection in PowerPoint when available.

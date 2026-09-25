@@ -8,7 +8,7 @@ tool execution, memory, browser automation, and agent-to-agent collaboration.
 It is intended as a realistic, extensible sample for teams exploring advanced agent architectures on AWS.
 
 > [!NOTE]
-> **Expanded Bedrock Runtime models.** The model picker includes the OpenAI **GPT-5.6 family (Sol, Terra, and Luna)** through the Bedrock Runtime Responses API and **xAI Grok 4.6** through Bedrock Runtime Converse. **Google Gemma 4** remains available through Bedrock Mantle.
+> **Updated Bedrock models.** The model picker includes the OpenAI **GPT-6 family (Astra, Sol, and Luna)** through the Bedrock Responses API (Sol/Luna via Mantle in `us-east-1`; Astra via Runtime) and **xAI Grok 4.6** through Bedrock Runtime Converse. **Claude Opus 5.5** uses Mantle Messages in `us-east-1`; **Google Gemma 4** remains available through Mantle in `us-east-2`.
 
 ---
 
@@ -61,7 +61,7 @@ This sample combines **Strands Agent orchestration** with **Amazon Bedrock Agent
 - Built-in Code Interpreter for charts and documents
 - Multimodal input and output (vision, charts, documents, screenshots)
 - Real-time voice interaction with Amazon Nova Sonic 2
-- Wide model selection — Bedrock Runtime Converse models, GPT-5.6 via Bedrock Runtime Responses, and Gemma 4 via Bedrock Mantle
+- Wide model selection — Bedrock Runtime Converse models, GPT-6 via Bedrock Responses, and Gemma 4 via Bedrock Mantle
 
 ---
 

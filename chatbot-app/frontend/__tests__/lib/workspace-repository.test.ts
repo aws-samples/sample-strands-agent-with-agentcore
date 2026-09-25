@@ -25,6 +25,7 @@ describe('S3WorkspaceRepository', () => {
     const page = await repository.list('user-1', 'session-1')
 
     expect(page.entries.map(entry => entry.path)).toEqual([
+      'presentations',
       'uploads',
       'documents',
       'outputs',

@@ -164,7 +164,7 @@ for (const group of allGroups) {
  * Resolve a tool ID to the one that has an icon mapping.
  * Checks direct match first, then falls back to parent group ID.
  */
-function resolveIconId(toolId: string, map: Record<string, any>): string | null {
+export function resolveIconId(toolId: string, map: Record<string, any>): string | null {
   if (toolId in map) return toolId;
   const parentId = subToolToParent[toolId];
   if (parentId && parentId in map) return parentId;

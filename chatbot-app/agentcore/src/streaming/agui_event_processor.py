@@ -70,7 +70,7 @@ class AGUIStreamEventProcessor:
         self.tool_use_registry = {}
         self._streamed_tool_calls = {}
         self._active_streamed_tool_id = None
-        self.partial_response_text = ""  # Track partial response for graceful abort
+        self.was_cancelled = False
         self.tool_use_started = False  # Track if tool_use has been emitted (to prevent duplicate assistant messages)
 
         # Code agent heartbeat tracking
@@ -354,30 +354,18 @@ class AGUIStreamEventProcessor:
                 logger.warning(f"[StopSignal] Error clearing stop signal: {e}")
 
     def _fix_cancelled_history(self, agent) -> None:
-        """Replace SDK's 'Cancelled by user' placeholder with actual partial text.
-
-        When agent.cancel() triggers, the SDK discards the in-progress assistant
-        message and stores {"text": "Cancelled by user"} instead. We replace that
-        with the text that was actually streamed to the frontend, or remove it
-        entirely if no text was streamed yet.
-        """
-        if not agent.messages:
+        """Persist a stop marker when cancellation happened between model calls."""
+        state = agent._cancellation_history
+        if state.persisted:
             return
-
-        last_msg = agent.messages[-1]
-        if last_msg.get("role") != "assistant":
-            return
-
-        if self.partial_response_text.strip():
-            actual_text = self.partial_response_text.strip() + "\n\n**[Response interrupted by user]**"
-        else:
-            actual_text = "**[Response interrupted by user]**"
-
-        # Replace text blocks only — preserve toolUse blocks if present
-        content = last_msg.get("content", [])
-        non_text = [block for block in content if not (isinstance(block, dict) and "text" in block)]
-        last_msg["content"] = non_text + [{"text": actual_text}]
-        logger.debug(f"[Cancel] Fixed history: kept {len(non_text)} non-text blocks, set text ({len(actual_text)} chars)")
+        message = state.message()
+        agent.messages.append(message)
+        manager = getattr(agent, "session_manager", None) or getattr(agent, "_session_manager", None)
+        if manager:
+            manager.append_message(message, agent)
+            if hasattr(manager, "flush"):
+                manager.flush()
+        state.persisted = True
 
     def _get_last_pending_tool_id(self) -> str:
         """Get the last tool_use_id that was started but hasn't received a result yet.
@@ -495,7 +483,10 @@ class AGUIStreamEventProcessor:
         self._active_streamed_tool_id = None
 
         # Reset partial response tracking for this stream
-        self.partial_response_text = ""
+        from agent.session.cancellation_history import CancellationHistory
+        if agent:
+            agent._cancellation_history = CancellationHistory()
+        self.was_cancelled = False
 
         # Reset tool_use tracking flag
         self.tool_use_started = False
@@ -600,6 +591,7 @@ class AGUIStreamEventProcessor:
                         if self._check_stop_signal() and not self._cancel_called:
                             self._cancel_called = True
                             logger.info(f"[StopSignal] Cancelling agent during elicitation polling for session {session_id}")
+                            agent._cancellation_history.requested = True
                             agent.cancel()
                         continue
 
@@ -625,6 +617,7 @@ class AGUIStreamEventProcessor:
                         if self._check_stop_signal() and not self._cancel_called:
                             self._cancel_called = True
                             logger.info(f"[StopSignal] Cancelling agent during tool execution for session {session_id}")
+                            agent._cancellation_history.requested = True
                             agent.cancel()
                         continue
                     try:
@@ -640,6 +633,7 @@ class AGUIStreamEventProcessor:
                 if self._check_stop_signal() and not self._cancel_called:
                     self._cancel_called = True
                     logger.info(f"[StopSignal] Cancelling agent for session {session_id}")
+                    agent._cancellation_history.requested = True
                     agent.cancel()
 
                 # Check for browser session ARN in invocation_state (for Live View)
@@ -698,8 +692,9 @@ class AGUIStreamEventProcessor:
                         else:
                             logger.warning("[Interrupt] stop_reason is interrupt but no interrupts attribute!")
                     # Handle cancellation via agent.cancel()
-                    elif hasattr(final_result, 'stop_reason') and final_result.stop_reason == "cancelled":
+                    elif self._cancel_called or getattr(final_result, "stop_reason", None) == "cancelled":
                         logger.info(f"[Cancel] Agent cancelled for session {session_id}")
+                        self.was_cancelled = True
                         self._fix_cancelled_history(agent)
                         self._clear_stop_signal()
                         yield self.formatter.format_event("stop")
@@ -778,12 +773,13 @@ class AGUIStreamEventProcessor:
                     text_data = event["data"]
 
                     # Accumulate text for potential abort handling
-                    self.partial_response_text += text_data
+                    agent._cancellation_history.partial_text += text_data
 
                     # Check stop signal and trigger SDK cancellation (once)
                     if self._check_stop_signal() and not self._cancel_called:
                         self._cancel_called = True
                         logger.info(f"[StopSignal] Cancelling agent during text streaming for session {session_id}")
+                        agent._cancellation_history.requested = True
                         agent.cancel()
 
                     # Check if this is a raw XML tool call that needs parsing
