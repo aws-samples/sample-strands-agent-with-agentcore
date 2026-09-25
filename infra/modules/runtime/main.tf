@@ -328,6 +328,21 @@ resource "aws_iam_role_policy" "execution_base" {
   })
 }
 
+resource "aws_iam_role_policy" "mantle_inference" {
+  count = var.component_name == "code-agent" ? 1 : 0
+  name  = "mantle-inference"
+  role  = aws_iam_role.execution.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["bedrock-mantle:CreateInference"]
+      Resource = "arn:aws:bedrock-mantle:us-east-1:${var.account_id}:project/default"
+    }]
+  })
+}
+
 resource "aws_iam_role_policy" "execution_ddb" {
   count = var.enable_ddb_policy ? 1 : 0
   name  = "ddb-policy"

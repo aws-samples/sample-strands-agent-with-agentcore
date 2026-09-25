@@ -1,0 +1,35 @@
+[
+  {
+    "modelId": "anthropic.claude-opus-5-5",
+    "agreementAvailability": {
+      "status": "ERROR",
+      "errorMessage": "INTERNAL_SERVICE_ERROR:Internal service error."
+    },
+    "authorizationStatus": "AUTHORIZED",
+    "entitlementAvailability": "AVAILABLE",
+    "regionAvailability": "AVAILABLE",
+    "requestId": "7cee355e-fdce-47d7-8fa9-d68bcf085882"
+  },
+  {
+    "modelId": "openai.gpt-6-sol",
+    "agreementAvailability": {
+      "status": "ERROR",
+      "errorMessage": "INTERNAL_SERVICE_ERROR:Internal service error."
+    },
+    "authorizationStatus": "AUTHORIZED",
+    "entitlementAvailability": "AVAILABLE",
+    "regionAvailability": "AVAILABLE",
+    "requestId": "f93e8832-d5c1-4ca1-9f1c-48571baafad3"
+  },
+  {
+    "modelId": "openai.gpt-6-luna",
+    "agreementAvailability": {
+      "status": "ERROR",
+      "errorMessage": "INTERNAL_SERVICE_ERROR:Internal service error."
+    },
+    "authorizationStatus": "AUTHORIZED",
+    "entitlementAvailability": "AVAILABLE",
+    "regionAvailability": "AVAILABLE",
+    "requestId": "1f120941-0689-4f92-9171-9207d81d1344"
+  }
+]

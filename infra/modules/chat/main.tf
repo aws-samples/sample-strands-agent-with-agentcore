@@ -304,6 +304,11 @@ resource "aws_iam_role_policy" "ecs_task" {
           ]
         },
         {
+          Effect   = "Allow"
+          Action   = ["bedrock-mantle:CreateInference"]
+          Resource = "arn:aws:bedrock-mantle:us-east-1:${var.account_id}:project/default"
+        },
+        {
           Effect = "Allow"
           Action = ["bedrock-agentcore:CompleteResourceTokenAuth"]
           Resource = [

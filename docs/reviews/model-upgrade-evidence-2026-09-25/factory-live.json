@@ -1,0 +1,26 @@
+[
+  {
+    "model": "openai.gpt-6-sol",
+    "passed": true,
+    "calls": [
+      "ROUTING_OK"
+    ],
+    "response": "TOOL_OK\n"
+  },
+  {
+    "model": "openai.gpt-6-luna",
+    "passed": true,
+    "calls": [
+      "ROUTING_OK"
+    ],
+    "response": "TOOL_OK\n"
+  },
+  {
+    "model": "anthropic.claude-opus-5-5",
+    "passed": true,
+    "calls": [
+      "ROUTING_OK"
+    ],
+    "response": "I called `routing_probe` with the value ROUTING_OK, and it returned **TOOL_OK** instead of ROUTING_OK. The call went through, but the tool didn't send back the value it was given.\n"
+  }
+]

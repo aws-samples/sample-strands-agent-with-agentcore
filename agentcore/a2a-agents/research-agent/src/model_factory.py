@@ -9,17 +9,27 @@ from strands.models import BedrockModel
 
 
 MANTLE_MODEL_REGIONS: dict[str, str] = {
+    "openai.gpt-6-sol": "us-east-1",
+    "openai.gpt-6-luna": "us-east-1",
     "google.gemma-4-31b": "us-east-2",
     "google.gemma-4-26b-a4b": "us-east-2",
     "google.gemma-4-e2b": "us-east-2",
 }
 
 MODEL_ID_ALIASES: dict[str, str] = {
-    "openai.gpt-5.6-sol": "us.openai.gpt-5.6-sol",
-    "openai.gpt-5.6-terra": "us.openai.gpt-5.6-terra",
-    "openai.gpt-5.6-luna": "us.openai.gpt-5.6-luna",
+    "anthropic.claude-opus-5": "anthropic.claude-opus-5-5",
+    "us.anthropic.claude-opus-5": "anthropic.claude-opus-5-5",
+    "openai.gpt-5.6-sol": "openai.gpt-6-sol",
+    "us.openai.gpt-5.6-sol": "openai.gpt-6-sol",
+    "openai.gpt-5.6-terra": "openai.gpt-6-sol",
+    "us.openai.gpt-5.6-terra": "openai.gpt-6-sol",
+    "openai.gpt-5.6-luna": "openai.gpt-6-luna",
+    "us.openai.gpt-5.6-luna": "openai.gpt-6-luna",
     "xai.grok-4.3": "us.xai.grok-4.6",
     "xai.grok-4.6": "us.xai.grok-4.6",
+    "us.openai.gpt-6-sol": "openai.gpt-6-sol",
+    "us.openai.gpt-6-luna": "openai.gpt-6-luna",
+    "us.anthropic.claude-opus-5-5": "anthropic.claude-opus-5-5",
 }
 
 NATIVE_MODEL_REGION_OVERRIDES: dict[str, str] = {
@@ -59,6 +69,18 @@ def build_model(
 ):
     """Build a Mantle Responses model or a Bedrock Runtime model."""
     model_id = MODEL_ID_ALIASES.get(model_id, model_id)
+    if model_id == "anthropic.claude-opus-5-5":
+        from strands.models.anthropic import AnthropicModel
+
+        return AnthropicModel(
+            model_id=model_id,
+            max_tokens=max_tokens,
+            client_args={
+                "base_url": "https://bedrock-mantle.us-east-1.api.aws/anthropic",
+                "auth_token": _get_bedrock_api_key(),
+                "api_key": None,
+            },
+        )
     mantle_region = MANTLE_MODEL_REGIONS.get(model_id)
     if mantle_region:
         from strands.models.openai_responses import OpenAIResponsesModel

@@ -14,7 +14,7 @@ import uuid
 ORCHESTRATOR_URL = os.environ["ORCH_URL"]
 ACCESS_TOKEN = os.environ["ACCESS_TOKEN"]
 USER_ID = os.environ["USER_ID"]
-MODEL_ID = os.environ.get("MODEL_SMOKE_MODEL_ID", "us.openai.gpt-5.6-terra")
+MODEL_ID = os.environ.get("MODEL_SMOKE_MODEL_ID", "openai.gpt-6-sol")
 
 
 def _thread_id(prefix: str) -> str:

@@ -1,12 +1,13 @@
 """Model factory - builds the right Strands model provider for a given model_id.
 
-Three execution paths coexist:
+Model-specific execution paths coexist:
 - Bedrock Runtime Converse (`BedrockModel`): default for native and
   cross-Region inference-profile IDs.
 - Bedrock Runtime OpenAI-compatible Responses (`OpenAIResponsesModel`):
-  GPT-5.6 models, including file inputs that Converse rejects.
+  GPT-6 Astra, including file inputs that Converse rejects.
 - Bedrock Mantle OpenAI-compatible Responses (`OpenAIResponsesModel`):
-  models not yet available through Bedrock Runtime, currently Gemma 4.
+  GPT-6 Sol/Luna in us-east-1 and Gemma 4 in us-east-2.
+- Bedrock Mantle Anthropic Messages (`AnthropicModel`): Opus 5.5 in us-east-1.
 
 Responses models differ by endpoint and region, but share request formatting.
 An empty Responses turn can otherwise be swallowed by the Strands SDK, so the
@@ -258,11 +259,45 @@ def build_model(
 ):
     """Build the appropriate Strands model for `model_id`.
 
-    GPT-6/GPT-5.6 -> Bedrock Runtime OpenAI-compatible Responses API.
-    Mantle-only models -> Bedrock Mantle Responses API.
+    GPT-6 Astra -> Bedrock Runtime OpenAI-compatible Responses API.
+    GPT-6 Sol/Luna and Gemma -> Bedrock Mantle Responses API.
+    Opus 5.5 -> Bedrock Mantle Anthropic Messages API.
     Everything else -> BedrockModel Converse with IAM authentication.
     """
     model_id = normalize_model_id(model_id)
+
+    catalog_spec = _MODEL_CATALOG.models_by_id.get(model_id)
+    if catalog_spec is not None and catalog_spec.transport == "mantle_anthropic":
+        from strands.models.anthropic import AnthropicModel
+
+        class MantleAnthropicModel(AnthropicModel):
+            def _format_request_message_content(self, content):
+                document = content.get("document", {})
+                if document.get("format") in {"doc", "docx", "xls", "xlsx"}:
+                    # Uploads are persisted to the workspace before inference.
+                    # Messages accepts PDF/text documents, but not Office bytes.
+                    import json
+
+                    filename = f"{document.get('name', 'document')}.{document['format']}"
+                    return {
+                        "type": "text",
+                        "text": (
+                            f"Uploaded file {json.dumps(filename)} is available in the workspace. "
+                            "Read it with the document/workspace tools before answering about its contents."
+                        ),
+                    }
+                return super()._format_request_message_content(content)
+
+        return MantleAnthropicModel(
+            model_id=model_id,
+            max_tokens=max_tokens,
+            cache_config=CacheConfig(strategy="auto") if caching_enabled else None,
+            client_args={
+                "base_url": f"https://bedrock-mantle.{catalog_spec.region}.api.aws/anthropic",
+                "auth_token": _get_bedrock_api_key(),
+                "api_key": None,
+            },
+        )
 
     if model_id in BEDROCK_RESPONSES_MODELS:
         region = os.environ.get("AWS_REGION", "us-west-2")

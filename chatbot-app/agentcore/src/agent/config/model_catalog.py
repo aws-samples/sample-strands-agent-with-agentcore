@@ -15,19 +15,28 @@ _ALLOWED_TRANSPORTS = frozenset({
     "bedrock",
     "bedrock_responses",
     "mantle_responses",
+    "mantle_anthropic",
 })
 MODEL_ID_ALIASES = {
+    "anthropic.claude-opus-5": "anthropic.claude-opus-5-5",
+    "us.anthropic.claude-opus-5": "anthropic.claude-opus-5-5",
+    "openai.gpt-5.6-sol": "openai.gpt-6-sol",
+    "us.openai.gpt-5.6-sol": "openai.gpt-6-sol",
+    "openai.gpt-5.6-terra": "openai.gpt-6-sol",
+    "us.openai.gpt-5.6-terra": "openai.gpt-6-sol",
+    "openai.gpt-5.6-luna": "openai.gpt-6-luna",
+    "us.openai.gpt-5.6-luna": "openai.gpt-6-luna",
     "openai.gpt-6-astra": "us.openai.gpt-6-astra",
-    "openai.gpt-5.6-sol": "us.openai.gpt-5.6-sol",
-    "openai.gpt-5.6-terra": "us.openai.gpt-5.6-terra",
-    "openai.gpt-5.6-luna": "us.openai.gpt-5.6-luna",
     "xai.grok-4.3": "us.xai.grok-4.6",
     "xai.grok-4.6": "us.xai.grok-4.6",
+    "us.openai.gpt-6-sol": "openai.gpt-6-sol",
+    "us.openai.gpt-6-luna": "openai.gpt-6-luna",
+    "us.anthropic.claude-opus-5-5": "anthropic.claude-opus-5-5",
 }
 
 
 def normalize_model_id(model_id: str) -> str:
-    """Map persisted legacy IDs to the canonical Bedrock Runtime profile ID."""
+    """Map persisted legacy IDs to the canonical model ID for its configured endpoint."""
     return MODEL_ID_ALIASES.get(model_id, model_id)
 
 
@@ -123,7 +132,7 @@ class ModelCatalog:
             raise ValueError(
                 f"Unsupported transport for {spec.key}: {spec.transport}"
             )
-        if spec.transport == "mantle_responses" and not spec.region:
+        if spec.transport.startswith("mantle_") and not spec.region:
             raise ValueError(f"Mantle model {spec.key} requires a region")
         if spec.max_input_tokens <= 0:
             raise ValueError(f"Invalid maxInputTokens for {spec.key}")

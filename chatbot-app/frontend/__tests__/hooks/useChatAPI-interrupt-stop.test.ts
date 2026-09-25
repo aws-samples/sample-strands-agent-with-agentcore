@@ -102,7 +102,7 @@ function setup(handleStreamEvent = vi.fn()) {
       resetStreamingState: vi.fn(),
       sessionId: 'session-1',
       setSessionId,
-      currentModelId: 'us.anthropic.claude-opus-5',
+      currentModelId: 'anthropic.claude-opus-5-5',
       currentTemperature: 0.5,
     } as any),
   )

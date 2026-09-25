@@ -162,7 +162,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
   // Filter models based on search
   const filteredModels = useMemo(() => {
     if (!searchQuery.trim()) {
-      return showAll ? availableModels : availableModels.filter(model => /Terra|Sol|Luna|Sonnet/.test(model.name) || model.id === selectedModelId);
+      return showAll ? availableModels : availableModels.filter(model => /Sol|Luna|Sonnet/.test(model.name) || model.id === selectedModelId);
     }
 
     // MOBILE FIX: Normalize search query (trim + lowercase) to handle mobile keyboard input
@@ -299,7 +299,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
                               {model.name}
                             </div>
                             <div className="text-caption text-muted-foreground/70 mt-0.5 line-clamp-2">
-                              {/Terra/.test(model.name) ? 'Balanced for everyday work' : /Sol/.test(model.name) ? 'For complex reasoning and demanding tasks' : /Luna/.test(model.name) ? 'Quick answers for simpler tasks' : model.description.replace(/\s*\(?via Bedrock[^)]*\)?/gi, '')}
+                              {/Sol/.test(model.name) ? 'For complex reasoning and demanding tasks' : /Luna/.test(model.name) ? 'Quick answers for simpler tasks' : model.description.replace(/\s*\(?via Bedrock[^)]*\)?/gi, '')}
                             </div>
                           </div>
                         </div>

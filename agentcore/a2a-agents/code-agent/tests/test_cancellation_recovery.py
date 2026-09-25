@@ -102,3 +102,31 @@ def test_client_keeps_commands_attached_without_losing_resume_options(main, monk
     assert options.cwd == str(tmp_path)
     assert options.max_turns == 12
     assert options.model == 'chosen-model'
+
+
+def test_opus_options_use_mantle_without_changing_process_environment(main, monkeypatch):
+    monkeypatch.setenv('CLAUDE_CODE_USE_BEDROCK', '1')
+    monkeypatch.setattr(main, 'ClaudeAgentOptions', lambda **kwargs: SimpleNamespace(**kwargs))
+    options = main._build_client_options(model_id='anthropic.claude-opus-5-5')
+    assert options.env['CLAUDE_CODE_USE_BEDROCK'] == '1'
+    assert options.env['CLAUDE_CODE_USE_MANTLE'] == '1'
+    assert options.env['AWS_REGION'] == 'us-east-1'
+    assert main.os.environ['CLAUDE_CODE_USE_BEDROCK'] == '1'
+    assert 'CLAUDE_CODE_USE_MANTLE' not in main._model_environment('us.anthropic.claude-sonnet-5')
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('previous', 'requested'), [
+    ('us.anthropic.claude-sonnet-5', 'anthropic.claude-opus-5-5'),
+    ('anthropic.claude-opus-5-5', 'us.anthropic.claude-sonnet-5'),
+])
+async def test_backend_switch_recreates_the_claude_subprocess(main, monkeypatch, previous, requested):
+    old = SimpleNamespace(_query=object(), disconnect=AsyncMock(), set_model=AsyncMock())
+    fresh = SimpleNamespace(connect=AsyncMock())
+    main._sdk_clients['switch-session'] = old
+    main._sdk_client_models['switch-session'] = previous
+    monkeypatch.setattr(main, 'ClaudeSDKClient', lambda **kwargs: fresh)
+    assert await main._get_or_create_client('switch-session', None, requested) is fresh
+    old.set_model.assert_not_awaited()
+    old.disconnect.assert_awaited_once()
+    fresh.connect.assert_awaited_once()

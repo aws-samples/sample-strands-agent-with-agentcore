@@ -1,0 +1,136 @@
+{
+  "runtimes": [
+    {
+      "resource": "module.runtime_code_agent.aws_bedrockagentcore_agent_runtime.this",
+      "version": "15",
+      "status": "READY",
+      "endpoint_status": "READY",
+      "endpoint_version": "15",
+      "image": "749614773728.dkr.ecr.us-west-2.amazonaws.com/strands-agent-chatbot/code-agent:814d44905d5e8c0e37ea69cc791573e1fdda887f",
+      "expected_image_matches": true
+    },
+    {
+      "resource": "module.runtime_general_subagent.aws_bedrockagentcore_agent_runtime.this",
+      "version": "46",
+      "status": "READY",
+      "endpoint_status": "READY",
+      "endpoint_version": "46",
+      "image": "749614773728.dkr.ecr.us-west-2.amazonaws.com/strands-agent-chatbot/general-subagent:f288600d635a0588e1685376b0af530a3b1bc9cd",
+      "expected_image_matches": true
+    },
+    {
+      "resource": "module.runtime_orchestrator.aws_bedrockagentcore_agent_runtime.this",
+      "version": "89",
+      "status": "READY",
+      "endpoint_status": "READY",
+      "endpoint_version": "89",
+      "image": "749614773728.dkr.ecr.us-west-2.amazonaws.com/strands-agent-chatbot/orchestrator:f288600d635a0588e1685376b0af530a3b1bc9cd",
+      "expected_image_matches": true
+    },
+    {
+      "resource": "module.runtime_research_agent.aws_bedrockagentcore_agent_runtime.this",
+      "version": "16",
+      "status": "READY",
+      "endpoint_status": "READY",
+      "endpoint_version": "16",
+      "image": "749614773728.dkr.ecr.us-west-2.amazonaws.com/strands-agent-chatbot/research-agent:644015ff52f54fc4c558a15b690bb4f9eceb2096",
+      "expected_image_matches": true
+    }
+  ],
+  "services": [
+    {
+      "resource": "module.chat.aws_ecs_service.frontend",
+      "task_definition": "arn:aws:ecs:us-west-2:749614773728:task-definition/chatbot-frontend:103",
+      "desired": 1,
+      "running": 1,
+      "pending": 0,
+      "deployments": [
+        {
+          "status": "PRIMARY",
+          "rolloutState": "COMPLETED",
+          "taskDefinition": "arn:aws:ecs:us-west-2:749614773728:task-definition/chatbot-frontend:103"
+        }
+      ],
+      "tasks": [
+        {
+          "health": "UNKNOWN",
+          "last_status": "RUNNING",
+          "containers": [
+            {
+              "name": "chatbot-frontend",
+              "image": "749614773728.dkr.ecr.us-west-2.amazonaws.com/chatbot-frontend:2b8e44490cba76a9e10860cdcce227aa3aeb25ed",
+              "digest": "sha256:12b8667594057ef11087af3f41cd935e136791b0e0324123660b0ee9eac75dbd",
+              "health": "UNKNOWN"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": "module.telegram[0].aws_ecs_service.telegram",
+      "task_definition": "arn:aws:ecs:us-west-2:749614773728:task-definition/strands-agent-chatbot-dev-tg-task:8",
+      "desired": 1,
+      "running": 1,
+      "pending": 0,
+      "deployments": [
+        {
+          "status": "PRIMARY",
+          "rolloutState": "COMPLETED",
+          "taskDefinition": "arn:aws:ecs:us-west-2:749614773728:task-definition/strands-agent-chatbot-dev-tg-task:8"
+        }
+      ],
+      "tasks": [
+        {
+          "health": "HEALTHY",
+          "last_status": "RUNNING",
+          "containers": [
+            {
+              "name": "telegram-adapter",
+              "image": "749614773728.dkr.ecr.us-west-2.amazonaws.com/strands-agent-chatbot/telegram:7442580547c0f7af0d820d2b01941110f0599acd",
+              "digest": "sha256:9f6020eec1aef53a5b4571f8c3d7336e4c569347b4820463ab504d6ba7e850f2",
+              "health": "HEALTHY"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "builds": [
+    {
+      "project": "strands-agent-chatbot-dev-chat-build",
+      "id": "strands-agent-chatbot-dev-chat-build:74b724ab-7072-4e4e-90ae-9a57202ea47c",
+      "status": "SUCCEEDED",
+      "phase": "COMPLETED"
+    },
+    {
+      "project": "strands-agent-chatbot-dev-code-agent-build",
+      "id": "strands-agent-chatbot-dev-code-agent-build:d7d12ca4-7c27-49b6-970a-abd3649ab12b",
+      "status": "SUCCEEDED",
+      "phase": "COMPLETED"
+    },
+    {
+      "project": "strands-agent-chatbot-dev-general-subagent-build",
+      "id": "strands-agent-chatbot-dev-general-subagent-build:8c14040a-1324-42d5-8423-cc00a1d91e42",
+      "status": "SUCCEEDED",
+      "phase": "COMPLETED"
+    },
+    {
+      "project": "strands-agent-chatbot-dev-orchestrator-build",
+      "id": "strands-agent-chatbot-dev-orchestrator-build:e51fa234-0820-49db-8544-d1a73cc61b79",
+      "status": "SUCCEEDED",
+      "phase": "COMPLETED"
+    },
+    {
+      "project": "strands-agent-chatbot-dev-research-agent-build",
+      "id": "strands-agent-chatbot-dev-research-agent-build:5d4377d0-24a1-4121-9233-9f94fcd90f7d",
+      "status": "SUCCEEDED",
+      "phase": "COMPLETED"
+    },
+    {
+      "project": "strands-agent-chatbot-dev-tg-build",
+      "id": "strands-agent-chatbot-dev-tg-build:d465de4c-df35-47eb-91f3-1ab9d889454f",
+      "status": "SUCCEEDED",
+      "phase": "COMPLETED"
+    }
+  ]
+}

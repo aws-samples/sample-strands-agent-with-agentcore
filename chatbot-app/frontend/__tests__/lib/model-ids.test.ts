@@ -4,14 +4,23 @@ import { DEFAULT_MODEL_ID, normalizeModelId } from '@/lib/model-ids'
 
 describe('model ID normalization', () => {
   it('uses the Bedrock Runtime inference profile as the default', () => {
-    expect(DEFAULT_MODEL_ID).toBe('us.openai.gpt-5.6-terra')
+    expect(DEFAULT_MODEL_ID).toBe('openai.gpt-6-sol')
   })
 
   it.each([
+    ['us.anthropic.claude-opus-5', 'anthropic.claude-opus-5-5'],
+    ['openai.gpt-5.6-sol', 'openai.gpt-6-sol'],
+    ['us.openai.gpt-5.6-sol', 'openai.gpt-6-sol'],
+    ['openai.gpt-5.6-terra', 'openai.gpt-6-sol'],
+    ['us.openai.gpt-5.6-terra', 'openai.gpt-6-sol'],
+    ['openai.gpt-5.6-luna', 'openai.gpt-6-luna'],
+    ['us.openai.gpt-5.6-luna', 'openai.gpt-6-luna'],
+    ['us.openai.gpt-6-sol', 'openai.gpt-6-sol'],
+    ['us.openai.gpt-6-luna', 'openai.gpt-6-luna'],
+    ['us.anthropic.claude-opus-5-5', 'anthropic.claude-opus-5-5'],
     ['openai.gpt-6-astra', 'us.openai.gpt-6-astra'],
-    ['openai.gpt-5.6-sol', 'us.openai.gpt-5.6-sol'],
-    ['openai.gpt-5.6-terra', 'us.openai.gpt-5.6-terra'],
-    ['openai.gpt-5.6-luna', 'us.openai.gpt-5.6-luna'],
+    ['openai.gpt-6-sol', 'openai.gpt-6-sol'],
+    ['openai.gpt-6-luna', 'openai.gpt-6-luna'],
     ['xai.grok-4.3', 'us.xai.grok-4.6'],
     ['xai.grok-4.6', 'us.xai.grok-4.6'],
   ])('maps %s to %s', (legacyId, canonicalId) => {

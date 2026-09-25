@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "2026-09-09.1",
+  "revision": "2026-09-25.2",
   "providerMatchers": {
     "anthropic": [
       "anthropic.",
@@ -21,12 +21,13 @@
   },
   "models": {
     "claude.opus.latest": {
-      "id": "us.anthropic.claude-opus-5",
+      "id": "anthropic.claude-opus-5-5",
       "provider": "anthropic",
       "family": "claude",
-      "transport": "bedrock",
+      "transport": "mantle_anthropic",
       "maxInputTokens": 1000000,
-      "rejectsTemperature": true
+      "rejectsTemperature": true,
+      "region": "us-east-1"
     },
     "claude.sonnet.latest": {
       "id": "us.anthropic.claude-sonnet-5",
@@ -53,28 +54,22 @@
       "rejectsTemperature": true
     },
     "gpt.sol.latest": {
-      "id": "us.openai.gpt-5.6-sol",
+      "id": "openai.gpt-6-sol",
       "provider": "openai",
       "family": "gpt",
-      "transport": "bedrock_responses",
+      "transport": "mantle_responses",
       "maxInputTokens": 1000000,
-      "rejectsTemperature": true
-    },
-    "gpt.terra.latest": {
-      "id": "us.openai.gpt-5.6-terra",
-      "provider": "openai",
-      "family": "gpt",
-      "transport": "bedrock_responses",
-      "maxInputTokens": 1000000,
-      "rejectsTemperature": true
+      "rejectsTemperature": true,
+      "region": "us-east-1"
     },
     "gpt.luna.latest": {
-      "id": "us.openai.gpt-5.6-luna",
+      "id": "openai.gpt-6-luna",
       "provider": "openai",
       "family": "gpt",
-      "transport": "bedrock_responses",
+      "transport": "mantle_responses",
       "maxInputTokens": 1000000,
-      "rejectsTemperature": true
+      "rejectsTemperature": true,
+      "region": "us-east-1"
     },
     "gpt.oss.120b": {
       "id": "openai.gpt-oss-120b-1:0",
@@ -186,7 +181,7 @@
       },
       "gpt": {
         "low": "gpt.luna.latest",
-        "medium": "gpt.terra.latest",
+        "medium": "gpt.sol.latest",
         "high": "gpt.sol.latest"
       }
     },

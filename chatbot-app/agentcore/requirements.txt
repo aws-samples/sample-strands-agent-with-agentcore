@@ -6,7 +6,7 @@ fastapi==0.141.1
 uvicorn[standard]==0.52.4
 
 # Strands Agent Framework
-strands-agents[a2a,otel]==1.54.0
+strands-agents[a2a,anthropic,otel]==1.54.0
 strands-agents-tools[a2a_client]>=0.8.8
 mcp>=1.28.1,<2.0.0
 
@@ -57,7 +57,8 @@ install_playwright>=1.0.2,<2.0.0
 mypy-boto3-s3
 
 # AG-UI Protocol (agent-to-UI streaming standard)
-ag-ui-protocol>=0.1.21
+# Keep the binary attachment contract shared with the frontend AG-UI client.
+ag-ui-protocol==0.1.22
 
 # Registry YAML loader
 PyYAML>=6.0.3
