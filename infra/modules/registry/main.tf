@@ -116,18 +116,18 @@ resource "aws_iam_role_policy" "registry_manager" {
       {
         Effect = "Allow"
         Action = [
-          "bedrock-agentcore:CreateRegistry",
-          "bedrock-agentcore:GetRegistry",
-          "bedrock-agentcore:UpdateRegistry",
-          "bedrock-agentcore:DeleteRegistry",
-          "bedrock-agentcore:ListRegistries",
-          "bedrock-agentcore:CreateRegistryRecord",
-          "bedrock-agentcore:GetRegistryRecord",
-          "bedrock-agentcore:UpdateRegistryRecord",
-          "bedrock-agentcore:DeleteRegistryRecord",
-          "bedrock-agentcore:ListRegistryRecords",
-          "bedrock-agentcore:SubmitRegistryRecordForApproval",
-          "bedrock-agentcore:UpdateRegistryRecordStatus",
+          "agent-registry:CreateRegistry",
+          "agent-registry:GetRegistry",
+          "agent-registry:UpdateRegistry",
+          "agent-registry:DeleteRegistry",
+          "agent-registry:ListRegistries",
+          "agent-registry:CreateRegistryRecord",
+          "agent-registry:GetRegistryRecord",
+          "agent-registry:UpdateRegistryRecord",
+          "agent-registry:DeleteRegistryRecord",
+          "agent-registry:ListRegistryRecords",
+          "agent-registry:SubmitRegistryRecordForApproval",
+          "agent-registry:UpdateRegistryRecordStatus",
         ]
         Resource = "*"
       },
@@ -209,6 +209,8 @@ locals {
       DescriptorType    = "AGENT_SKILLS"
       SkillMdContent    = v.skill_md
       SkillDefinitionJson = jsonencode({
+        name        = k
+        description = v.description
         _meta = {
           source       = lookup(v, "source", "builtin")
           sourceRecord = lookup(v, "sourceRecord", null)

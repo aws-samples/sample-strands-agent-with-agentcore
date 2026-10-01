@@ -93,7 +93,7 @@ class TestMeasuredModelWindows:
 
     def test_grok_46_window_matches_runtime_profile(self):
         get_max_input_tokens = _model_factory().get_max_input_tokens
-        assert get_max_input_tokens("us.xai.grok-4.6") == 500_000
+        assert get_max_input_tokens("us.xai.grok-4.7") == 500_000
         assert get_max_input_tokens("xai.grok-4.3") == 500_000
 
     def test_small_window_model_is_not_overstated(self):

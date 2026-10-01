@@ -1,7 +1,7 @@
 """Custom Resource Lambda for AgentCore Registry management.
 
 Handles Registry and RegistryRecord lifecycle (Create/Update/Delete) via
-the bedrock-agentcore-control boto3 API, since CloudFormation/Terraform does
+the agent-registry-control boto3 API, since CloudFormation/Terraform does
 not yet have native resource types for Registry.
 
 Invoked by Terraform's aws_cloudformation_stack resource as a custom resource.
@@ -19,7 +19,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 client = boto3.client(
-    "bedrock-agentcore-control",
+    "agent-registry-control",
     region_name=os.environ.get("AWS_REGION", "us-west-2"),
 )
 
@@ -75,7 +75,7 @@ def handle_registry(event, props):
         resp = client.create_registry(
             name=name,
             description=description,
-            approvalConfiguration={"autoApproval": auto_approval},
+            approvalConfiguration={"autoApprovalRules": ["APPROVE_ALL"] if auto_approval else []},
         )
         registry_arn = resp["registryArn"]
         registry_id = registry_arn.split("/")[-1]
@@ -93,8 +93,8 @@ def handle_registry(event, props):
         registry_id = event["PhysicalResourceId"]
         client.update_registry(
             registryId=registry_id,
-            description=description,
-            approvalConfiguration={"autoApproval": auto_approval},
+            description={"optionalValue": description},
+            approvalConfiguration={"optionalValue": {"autoApprovalRules": ["APPROVE_ALL"] if auto_approval else []}},
         )
         wait_for_registry_ready(registry_id)
         resp = client.get_registry(registryId=registry_id)
@@ -117,7 +117,7 @@ def handle_registry(event, props):
             for status in statuses:
                 token = None
                 while True:
-                    kwargs = {"registryId": registry_id, "status": status, "maxResults": 100}
+                    kwargs = {"registryId": registry_id, "filters": [{"name": "status", "values": [status]}], "maxResults": 100}
                     if token:
                         kwargs["nextToken"] = token
                     resp = client.list_registry_records(**kwargs)
@@ -158,6 +158,16 @@ def _wait_for_record(registry_id, record_id, transient_status, max_wait=60):
     return transient_status
 
 
+def _update_descriptors(skill_md_content, skill_def_json):
+    return {"optionalValue": {"agentSkillsDefinition": {"optionalValue": {
+        "data": {"optionalValue": skill_def_json or "{}"},
+        "dataSchemaVersion": {"optionalValue": "0.1.0"},
+        "additionalData": {"optionalValue": {"skillMd": {"optionalValue": {
+            "data": {"optionalValue": skill_md_content},
+        }}}},
+    }}}}
+
+
 def handle_record(event, props):
     """Manage AGENT_SKILLS RegistryRecord lifecycle."""
     request_type = event["RequestType"]
@@ -170,15 +180,12 @@ def handle_record(event, props):
     skill_def_json = props.get("SkillDefinitionJson", "")
 
     descriptors = {
-        "agentSkills": {
-            "skillMd": {"inlineContent": skill_md_content},
+        "agentSkillsDefinition": {
+            "data": skill_def_json or "{}",
+            "dataSchemaVersion": "0.1.0",
+            "additionalData": {"skillMd": {"data": skill_md_content}},
         }
     }
-    if skill_def_json:
-        descriptors["agentSkills"]["skillDefinition"] = {
-            "schemaVersion": "0.1.0",
-            "inlineContent": skill_def_json,
-        }
 
     if request_type == "Create":
         resp = client.create_registry_record(
@@ -186,7 +193,7 @@ def handle_record(event, props):
             name=name,
             description=description,
             recordVersion=record_version,
-            descriptorType="AGENT_SKILLS",
+            recordType="SKILL",
             descriptors=descriptors,
         )
         record_arn = resp.get("recordArn", "")
@@ -208,22 +215,12 @@ def handle_record(event, props):
     elif request_type == "Update":
         record_id = event["PhysicalResourceId"]
 
-        update_skills = {
-            "skillMd": {"optionalValue": descriptors["agentSkills"]["skillMd"]},
-        }
-        if "skillDefinition" in descriptors["agentSkills"]:
-            update_skills["skillDefinition"] = {
-                "optionalValue": descriptors["agentSkills"]["skillDefinition"]
-            }
-
         client.update_registry_record(
             registryId=registry_id,
             recordId=record_id,
             description={"optionalValue": description},
             recordVersion=record_version,
-            descriptors={"optionalValue": {
-                "agentSkills": {"optionalValue": update_skills},
-            }},
+            descriptors=_update_descriptors(skill_md_content, skill_def_json),
         )
         logger.info(f"Updated record: {record_id}")
 
@@ -267,18 +264,12 @@ def handle_update_record_direct(event):
     skill_md_content = event.get("skill_md_content", "")
     skill_def_json = event.get("skill_definition_json", "")
 
-    update_skills = {"skillMd": {"optionalValue": {"inlineContent": skill_md_content}}}
-    if skill_def_json:
-        update_skills["skillDefinition"] = {"optionalValue": {
-            "schemaVersion": "0.1.0", "inlineContent": skill_def_json,
-        }}
-
     client.update_registry_record(
         registryId=registry_id,
         recordId=record_id,
         description={"optionalValue": description},
         recordVersion=record_version,
-        descriptors={"optionalValue": {"agentSkills": {"optionalValue": update_skills}}},
+        descriptors=_update_descriptors(skill_md_content, skill_def_json),
     )
     logger.info(f"Direct-invoke updated record: {record_id}")
 

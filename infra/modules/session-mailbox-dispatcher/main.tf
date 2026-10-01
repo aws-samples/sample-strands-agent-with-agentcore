@@ -224,9 +224,10 @@ resource "aws_lambda_function" "worker" {
 }
 
 resource "aws_lambda_event_source_mapping" "this" {
+  count                              = var.processing_enabled ? 1 : 0
   event_source_arn                   = var.orchestration_stream_arn
   function_name                      = aws_lambda_function.this.arn
-  starting_position                  = "TRIM_HORIZON"
+  starting_position                  = var.stream_starting_position
   batch_size                         = 10
   maximum_batching_window_in_seconds = 1
   maximum_record_age_in_seconds      = -1
@@ -236,6 +237,7 @@ resource "aws_lambda_event_source_mapping" "this" {
 }
 
 resource "aws_lambda_event_source_mapping" "worker" {
+  count                   = var.processing_enabled ? 1 : 0
   event_source_arn        = aws_sqs_queue.wake.arn
   function_name           = aws_lambda_function.worker.arn
   batch_size              = 10
@@ -243,6 +245,7 @@ resource "aws_lambda_event_source_mapping" "worker" {
 }
 
 resource "aws_cloudwatch_event_rule" "delegation_reconcile" {
+  state               = var.processing_enabled ? "ENABLED" : "DISABLED"
   name                = "${var.project_name}-${var.environment}-delegation-reconcile"
   schedule_expression = "rate(2 minutes)"
 }
@@ -259,4 +262,14 @@ resource "aws_lambda_permission" "delegation_reconcile" {
   function_name = aws_lambda_function.this.function_name
   principal     = "events.amazonaws.com"
   source_arn    = aws_cloudwatch_event_rule.delegation_reconcile.arn
+}
+
+# Keep existing deployments at their original Terraform addresses logically.
+moved {
+  from = aws_lambda_event_source_mapping.this
+  to   = aws_lambda_event_source_mapping.this[0]
+}
+moved {
+  from = aws_lambda_event_source_mapping.worker
+  to   = aws_lambda_event_source_mapping.worker[0]
 }

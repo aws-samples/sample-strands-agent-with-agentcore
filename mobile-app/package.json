@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "expo-router/entry",
   "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.mjs",
     "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",

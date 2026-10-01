@@ -38,7 +38,7 @@ class RegistryClient:
         self._region = region or os.environ.get("AWS_REGION", "us-west-2")
         self._registry_id = registry_id
         self._client = boto3.client(
-            "bedrock-agentcore-control", region_name=self._region
+            "agent-registry-control", region_name=self._region
         )
 
         self._skills: Dict[str, SkillRecord] = {}
@@ -62,7 +62,7 @@ class RegistryClient:
 
         records = self._list_all_records()
         for record in records:
-            if record.get("descriptorType") == "AGENT_SKILLS":
+            if record.get("recordType") == "SKILL":
                 self._process_skill_record(record.get("name", ""), record.get("recordId", ""))
 
         for skill_name, skill in self._skills.items():
@@ -83,7 +83,7 @@ class RegistryClient:
             while True:
                 kwargs = {
                     "registryId": self._registry_id,
-                    "status": status,
+                    "filters": [{"name": "status", "values": [status]}],
                     "maxResults": 100,
                 }
                 if token:
@@ -105,21 +105,21 @@ class RegistryClient:
             return
 
         descriptors = detail.get("descriptors", {})
-        agent_skills = descriptors.get("agentSkills", {})
+        agent_skills = descriptors.get("agentSkillsDefinition", {})
 
         skill_md = ""
-        skill_md_obj = agent_skills.get("skillMd", {})
+        skill_md_obj = agent_skills.get("additionalData", {}).get("skillMd", {})
         if skill_md_obj:
-            skill_md = skill_md_obj.get("inlineContent", "")
+            skill_md = skill_md_obj.get("data", "")
 
         source = "builtin"
         source_record = None
         tools: List[str] = []
         endpoint_url = ""
 
-        skill_def = agent_skills.get("skillDefinition", {})
+        skill_def = agent_skills
         if skill_def:
-            content = skill_def.get("inlineContent", "")
+            content = skill_def.get("data", "")
             if content:
                 try:
                     parsed = json.loads(content)

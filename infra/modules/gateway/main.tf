@@ -107,8 +107,8 @@ resource "aws_bedrockagentcore_gateway" "this" {
 # IAM trust policy propagation delay — Gateway service needs time to
 # recognize AssumeRole permission on the role before targets can be created.
 resource "time_sleep" "wait_for_iam_propagation" {
-  depends_on      = [aws_bedrockagentcore_gateway.this]
-  create_duration = "5s"
+  depends_on      = [aws_bedrockagentcore_gateway.this, aws_iam_role_policy.gateway]
+  create_duration = "30s"
 }
 
 # ============================================================

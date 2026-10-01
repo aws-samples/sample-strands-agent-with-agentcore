@@ -60,3 +60,17 @@ variable "runtime_request_timeout_seconds" {
     error_message = "runtime_request_timeout_seconds must be between 60 and 870."
   }
 }
+
+variable "processing_enabled" {
+  description = "Keep false during migration imports so copied rows cannot launch work."
+  type        = bool
+  default     = true
+}
+variable "stream_starting_position" {
+  type    = string
+  default = "TRIM_HORIZON"
+  validation {
+    condition     = contains(["TRIM_HORIZON", "LATEST"], var.stream_starting_position)
+    error_message = "Use TRIM_HORIZON or LATEST."
+  }
+}

@@ -464,7 +464,7 @@ resource "aws_security_group" "ecs" {
 }
 
 resource "aws_lb" "this" {
-  name               = "chatbot-alb"
+  name               = var.load_balancer_name
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
@@ -505,7 +505,7 @@ resource "aws_ecs_service" "frontend" {
   task_definition                    = aws_ecs_task_definition.frontend.arn
   desired_count                      = 1
   launch_type                        = "FARGATE"
-  deployment_minimum_healthy_percent = 0
+  deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
 
   network_configuration {

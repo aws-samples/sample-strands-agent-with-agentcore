@@ -417,9 +417,9 @@ resource "aws_iam_role_policy" "orchestrator_extra" {
       {
         Effect = "Allow"
         Action = [
-          "bedrock-agentcore:SearchRegistryRecords",
-          "bedrock-agentcore:ListRegistryRecords",
-          "bedrock-agentcore:GetRegistryRecord",
+          "agent-registry:SearchDiscoverableRegistryRecords",
+          "agent-registry:ListRegistryRecords",
+          "agent-registry:GetRegistryRecord",
           "bedrock-agentcore:RetrieveMemoryRecords",
           "bedrock-agentcore:ListMemoryRecords",
           "bedrock-agentcore:CreateMemoryRecord",

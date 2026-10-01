@@ -14,34 +14,34 @@ class TestGeneralSubagentSelection:
         ("parent_model_id", "complexity", "expected_model_id"),
         [
             (
-                "us.anthropic.claude-sonnet-5",
+                "global.anthropic.claude-sonnet-5-5",
                 "low",
                 "us.anthropic.claude-haiku-4-5-20251001-v1:0",
             ),
             (
-                "us.anthropic.claude-sonnet-5",
+                "global.anthropic.claude-sonnet-5-5",
                 "medium",
-                "us.anthropic.claude-sonnet-5",
+                "global.anthropic.claude-sonnet-5-5",
             ),
             (
-                "us.anthropic.claude-sonnet-5",
+                "global.anthropic.claude-sonnet-5-5",
                 "high",
                 "anthropic.claude-opus-5-5",
             ),
             (
-                "openai.gpt-6-sol",
+                "openai.gpt-6.1-sol",
                 "low",
                 "openai.gpt-6-luna",
             ),
             (
-                "openai.gpt-6-sol",
+                "openai.gpt-6.1-sol",
                 "medium",
-                "openai.gpt-6-sol",
+                "openai.gpt-6.1-sol",
             ),
             (
-                "openai.gpt-6-sol",
+                "openai.gpt-6.1-sol",
                 "high",
-                "openai.gpt-6-sol",
+                "openai.gpt-6.1-sol",
             ),
         ],
     )
@@ -60,7 +60,7 @@ class TestGeneralSubagentSelection:
 
     def test_unknown_provider_keeps_parent_model(self):
         selection = resolve_general_subagent_model("xai.grok-4.3", "high")
-        assert selection.effective_model_id == "us.xai.grok-4.6"
+        assert selection.effective_model_id == "us.xai.grok-4.7"
         assert selection.applied is False
 
     def test_other_openai_family_keeps_parent_model(self):
@@ -73,10 +73,10 @@ class TestGeneralSubagentSelection:
 
     def test_omitted_complexity_keeps_parent_model(self):
         selection = resolve_general_subagent_model(
-            "us.anthropic.claude-sonnet-5",
+            "global.anthropic.claude-sonnet-5-5",
             None,
         )
-        assert selection.effective_model_id == "us.anthropic.claude-sonnet-5"
+        assert selection.effective_model_id == "global.anthropic.claude-sonnet-5-5"
         assert selection.applied is False
 
     def test_provider_matcher_supports_other_bedrock_claude_ids(self):
@@ -92,7 +92,7 @@ class TestCodeAgentSelection:
         ("complexity", "expected_model_id"),
         [
             ("low", "us.anthropic.claude-haiku-4-5-20251001-v1:0"),
-            ("medium", "us.anthropic.claude-sonnet-5"),
+            ("medium", "global.anthropic.claude-sonnet-5-5"),
             ("high", "anthropic.claude-opus-5-5"),
         ],
     )
@@ -105,7 +105,7 @@ class TestCodeAgentSelection:
     def test_defaults_to_medium(self):
         assert (
             resolve_code_agent_model(None).effective_model_id
-            == "us.anthropic.claude-sonnet-5"
+            == "global.anthropic.claude-sonnet-5-5"
         )
 
 
@@ -126,18 +126,18 @@ def test_models_use_verified_endpoint_and_region():
 
 @pytest.mark.parametrize(("legacy_id", "canonical_id"), [
     ("us.anthropic.claude-opus-5", "anthropic.claude-opus-5-5"),
-    ("openai.gpt-5.6-sol", "openai.gpt-6-sol"),
-    ("us.openai.gpt-5.6-sol", "openai.gpt-6-sol"),
-    ("openai.gpt-5.6-terra", "openai.gpt-6-sol"),
-    ("us.openai.gpt-5.6-terra", "openai.gpt-6-sol"),
+    ("openai.gpt-5.6-sol", "openai.gpt-6.1-sol"),
+    ("us.openai.gpt-5.6-sol", "openai.gpt-6.1-sol"),
+    ("openai.gpt-5.6-terra", "openai.gpt-6.1-sol"),
+    ("us.openai.gpt-5.6-terra", "openai.gpt-6.1-sol"),
     ("openai.gpt-5.6-luna", "openai.gpt-6-luna"),
     ("us.openai.gpt-5.6-luna", "openai.gpt-6-luna"),
-    ("us.openai.gpt-6-sol", "openai.gpt-6-sol"),
+    ("us.openai.gpt-6-sol", "openai.gpt-6.1-sol"),
     ("us.openai.gpt-6-luna", "openai.gpt-6-luna"),
     ("us.anthropic.claude-opus-5-5", "anthropic.claude-opus-5-5"),
     ("openai.gpt-6-astra", "us.openai.gpt-6-astra"),
-    ("openai.gpt-6-sol", "openai.gpt-6-sol"),
-    ("xai.grok-4.3", "us.xai.grok-4.6"),
+    ("openai.gpt-6.1-sol", "openai.gpt-6.1-sol"),
+    ("xai.grok-4.3", "us.xai.grok-4.7"),
 ])
 def test_legacy_model_ids_are_normalized(legacy_id, canonical_id):
     assert normalize_model_id(legacy_id) == canonical_id

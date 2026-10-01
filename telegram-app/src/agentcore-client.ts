@@ -1,3 +1,4 @@
+import { DEFAULT_MODEL_ID, resolveModelId } from "./model-config.js";
 import { randomUUID } from "node:crypto";
 import { config, logger } from "./config.js";
 
@@ -78,18 +79,18 @@ async function getAccessToken(): Promise<string> {
 
 const sessionEpochs = new Map<number, number>();
 const selectedModels = new Map<number, string>();
-export const DEFAULT_MODEL_ID = "openai.gpt-6-sol";
+export { DEFAULT_MODEL_ID } from "./model-config.js";
 
 export function resetSession(chatId: number): void {
   sessionEpochs.set(chatId, Date.now());
 }
 
 export function setModel(chatId: number, modelId: string): void {
-  selectedModels.set(chatId, modelId);
+  selectedModels.set(chatId, resolveModelId(modelId));
 }
 
 export function getModel(chatId: number): string {
-  return selectedModels.get(chatId) ?? DEFAULT_MODEL_ID;
+  return resolveModelId(selectedModels.get(chatId) ?? DEFAULT_MODEL_ID);
 }
 
 function buildSessionId(chatId: number): string {

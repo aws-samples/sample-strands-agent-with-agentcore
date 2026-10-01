@@ -261,7 +261,7 @@ export const EXAMPLE_USER_RECORD: UserProfileRecord = {
   createdAt: '2025-01-14T10:00:00Z',
   lastAccessAt: '2025-01-14T15:30:00Z',
   preferences: {
-    defaultModel: 'openai.gpt-6-sol',
+    defaultModel: 'global.anthropic.claude-sonnet-5-5',
     defaultTemperature: 0.5,
     systemPrompt: 'You are a helpful AI assistant.',
     enabledTools: ['calculator', 'web_search', 'code_interpreter'],
@@ -282,7 +282,7 @@ export const EXAMPLE_SESSION_RECORD: SessionRecord = {
   tags: ['aws', 'lambda', 'deployment'],
   starred: true,
   metadata: {
-    lastModel: 'openai.gpt-6-sol',
+    lastModel: 'global.anthropic.claude-sonnet-5-5',
     lastTemperature: 0.5,
     totalTokens: 8500,
     agentCoreTraceId: 'trace-abc123',

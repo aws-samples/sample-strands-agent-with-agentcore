@@ -57,7 +57,7 @@ resource "aws_ecs_service" "telegram" {
   name                               = "${local.prefix}-service"
   cluster                            = aws_ecs_cluster.telegram.id
   task_definition                    = aws_ecs_task_definition.telegram.arn
-  desired_count                      = 1
+  desired_count                      = var.desired_count
   launch_type                        = "FARGATE"
   deployment_minimum_healthy_percent = 0
   deployment_maximum_percent         = 100

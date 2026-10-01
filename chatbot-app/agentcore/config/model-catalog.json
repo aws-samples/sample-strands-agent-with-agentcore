@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": "2026-09-25.2",
+  "revision": "2026-09-30.2",
   "providerMatchers": {
     "anthropic": [
       "anthropic.",
@@ -30,7 +30,7 @@
       "region": "us-east-1"
     },
     "claude.sonnet.latest": {
-      "id": "us.anthropic.claude-sonnet-5",
+      "id": "global.anthropic.claude-sonnet-5-5",
       "provider": "anthropic",
       "family": "claude",
       "transport": "bedrock",
@@ -54,7 +54,7 @@
       "rejectsTemperature": true
     },
     "gpt.sol.latest": {
-      "id": "openai.gpt-6-sol",
+      "id": "openai.gpt-6.1-sol",
       "provider": "openai",
       "family": "gpt",
       "transport": "mantle_responses",
@@ -80,7 +80,7 @@
       "rejectsTemperature": false
     },
     "grok.latest": {
-      "id": "us.xai.grok-4.6",
+      "id": "us.xai.grok-4.7",
       "provider": "xai",
       "family": "grok",
       "transport": "bedrock",
@@ -138,14 +138,6 @@
       "maxInputTokens": 202752,
       "rejectsTemperature": false
     },
-    "kimi.k2.5": {
-      "id": "moonshotai.kimi-k2.5",
-      "provider": "moonshotai",
-      "family": "kimi",
-      "transport": "bedrock",
-      "maxInputTokens": 262144,
-      "rejectsTemperature": false
-    },
     "minimax.m2.5": {
       "id": "minimax.minimax-m2.5",
       "provider": "minimax",
@@ -170,6 +162,14 @@
       "transport": "bedrock",
       "maxInputTokens": 262144,
       "rejectsTemperature": false
+    },
+    "kimi.latest": {
+      "id": "us.moonshotai.kimi-k3",
+      "provider": "moonshotai",
+      "family": "kimi",
+      "transport": "bedrock",
+      "maxInputTokens": 1000000,
+      "rejectsTemperature": true
     }
   },
   "selectionPolicies": {

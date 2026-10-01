@@ -227,9 +227,9 @@ def test_start_job_resolves_and_persists_model_selection(monkeypatch):
 
     record = delegation_jobs.get_job("u1", "s1", receipt.job_id)
     assert record["parentModelId"] == "openai.gpt-6-sol"
-    assert record["modelId"] == "openai.gpt-6-sol"
+    assert record["modelId"] == "openai.gpt-6.1-sol"
     assert record["modelSelection"]["taskComplexity"] == "high"
-    assert record["modelSelection"]["catalogRevision"] == "2026-09-25.2"
+    assert record["modelSelection"]["catalogRevision"] == "2026-09-30.2"
     assert record["modelSelection"]["applied"] is True
 
 

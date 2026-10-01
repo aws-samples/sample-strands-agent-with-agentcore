@@ -71,3 +71,13 @@ variable "artifact_bucket_arn" {
   type        = string
   default     = ""
 }
+
+variable "desired_count" {
+  description = "Number of Telegram receivers; set zero during migration preparation."
+  type        = number
+  default     = 1
+  validation {
+    condition     = contains([0, 1], var.desired_count)
+    error_message = "Only zero or one Telegram receiver is supported."
+  }
+}
