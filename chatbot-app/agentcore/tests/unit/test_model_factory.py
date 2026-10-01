@@ -33,11 +33,11 @@ def _reset_key_cache():
 class TestTemperatureGuard:
     @pytest.mark.parametrize("model_id", [
         "anthropic.claude-opus-5-5",
-        "us.anthropic.claude-sonnet-5",
+        "global.anthropic.claude-sonnet-5-5",
         "us.openai.gpt-6-astra",
-        "openai.gpt-6-sol",
+        "openai.gpt-6.1-sol",
         "openai.gpt-6-luna",
-        "us.xai.grok-4.6",
+        "us.xai.grok-4.7",
     ])
     def test_rejects(self, model_id):
         assert model_rejects_temperature(model_id) is True
@@ -73,7 +73,7 @@ class TestBedrockRouting:
 
     def test_no_temperature_for_sonnet_5(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-sonnet-5", temperature=0.7)
+            build_model("global.anthropic.claude-sonnet-5-5", temperature=0.7)
             assert "temperature" not in MockBedrock.call_args.kwargs
 
     @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key"})
@@ -89,7 +89,7 @@ class TestBedrockRouting:
 
     def test_no_temperature_for_grok_46(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.xai.grok-4.6", temperature=0.7)
+            build_model("us.xai.grok-4.7", temperature=0.7)
             assert "temperature" not in MockBedrock.call_args.kwargs
 
     @pytest.mark.parametrize("file_format", ["docx", "xlsx"])
@@ -106,7 +106,7 @@ class TestBedrockRouting:
 
     def test_no_cache_when_disabled(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-sonnet-5", caching_enabled=False)
+            build_model("global.anthropic.claude-sonnet-5-5", caching_enabled=False)
             assert "cache_config" not in MockBedrock.call_args.kwargs
 
     def test_region_override_for_restricted_native_model(self):
@@ -116,18 +116,18 @@ class TestBedrockRouting:
 
     def test_no_region_override_for_global_model(self):
         with patch.object(mf, "BedrockModel") as MockBedrock:
-            build_model("us.anthropic.claude-sonnet-5")
+            build_model("global.anthropic.claude-sonnet-5-5")
             assert "region_name" not in MockBedrock.call_args.kwargs
 
-    @pytest.mark.parametrize("model_id", ["us.xai.grok-4.6"])
+    @pytest.mark.parametrize("model_id", ["us.xai.grok-4.7"])
     def test_runtime_profile_models_use_bedrock(self, model_id):
         with patch.object(mf, "BedrockModel") as MockBedrock:
             build_model(model_id)
             assert MockBedrock.call_args.kwargs["model_id"] == model_id
 
     @pytest.mark.parametrize(("legacy_id", "canonical_id"), [
-        ("xai.grok-4.3", "us.xai.grok-4.6"),
-        ("xai.grok-4.6", "us.xai.grok-4.6"),
+        ("xai.grok-4.3", "us.xai.grok-4.7"),
+        ("xai.grok-4.6", "us.xai.grok-4.7"),
     ])
     def test_legacy_ids_are_normalized(self, legacy_id, canonical_id):
         with patch.object(mf, "BedrockModel") as MockBedrock:
@@ -157,16 +157,16 @@ class TestBedrockRuntimeResponsesRouting:
         assert model.config["model_id"] == model_id
 
     @pytest.mark.parametrize(("legacy_id", "canonical_id"), [
-        ("openai.gpt-5.6-sol", "openai.gpt-6-sol"),
-        ("us.openai.gpt-5.6-sol", "openai.gpt-6-sol"),
-        ("openai.gpt-5.6-terra", "openai.gpt-6-sol"),
-        ("us.openai.gpt-5.6-terra", "openai.gpt-6-sol"),
+        ("openai.gpt-5.6-sol", "openai.gpt-6.1-sol"),
+        ("us.openai.gpt-5.6-sol", "openai.gpt-6.1-sol"),
+        ("openai.gpt-5.6-terra", "openai.gpt-6.1-sol"),
+        ("us.openai.gpt-5.6-terra", "openai.gpt-6.1-sol"),
         ("openai.gpt-5.6-luna", "openai.gpt-6-luna"),
         ("us.openai.gpt-5.6-luna", "openai.gpt-6-luna"),
-        ("us.openai.gpt-6-sol", "openai.gpt-6-sol"),
+        ("us.openai.gpt-6-sol", "openai.gpt-6.1-sol"),
         ("us.openai.gpt-6-luna", "openai.gpt-6-luna"),
         ("openai.gpt-6-astra", "us.openai.gpt-6-astra"),
-        ("openai.gpt-6-sol", "openai.gpt-6-sol"),
+        ("openai.gpt-6.1-sol", "openai.gpt-6.1-sol"),
         ("openai.gpt-6-luna", "openai.gpt-6-luna"),
     ])
     @patch.dict(os.environ, {
@@ -206,7 +206,7 @@ class TestBedrockRuntimeResponsesRouting:
         file_format,
         expected_mime,
     ):
-        model = build_model("openai.gpt-6-sol")
+        model = build_model("openai.gpt-6.1-sol")
         block = {
             "document": {
                 "format": file_format,
@@ -229,11 +229,11 @@ class TestMantleRouting:
         assert model.client_args["api_key"] == "test-key"
 
     def test_mantle_regions_match_verified_model_availability(self):
-        assert MANTLE_MODELS["openai.gpt-6-sol"].region == "us-east-1"
+        assert MANTLE_MODELS["openai.gpt-6.1-sol"].region == "us-east-1"
         assert MANTLE_MODELS["openai.gpt-6-luna"].region == "us-east-1"
         assert MANTLE_MODELS["google.gemma-4-31b"].region == "us-east-2"
 
-    @pytest.mark.parametrize("model_id", ["openai.gpt-6-sol", "openai.gpt-6-luna"])
+    @pytest.mark.parametrize("model_id", ["openai.gpt-6.1-sol", "openai.gpt-6-luna"])
     @patch.dict(os.environ, {"AWS_BEARER_TOKEN_BEDROCK": "test-key", "AWS_REGION": "us-west-2"})
     def test_gpt_uses_mantle_in_us_east_1(self, model_id):
         model = build_model(model_id)

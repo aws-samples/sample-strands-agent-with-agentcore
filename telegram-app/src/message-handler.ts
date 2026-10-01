@@ -15,14 +15,7 @@ import { InlineKeyboard } from "grammy";
 import { bufferMessage, setFlushHandler, clearBusy } from "./inbound-buffer.js";
 import { bufferPhotoGroup } from "./media-group-buffer.js";
 
-const MODELS = [
-  { id: "us.anthropic.claude-sonnet-5", label: "Sonnet 5" },
-  { id: "us.anthropic.claude-haiku-4-5-20251001-v1:0", label: "Haiku 4.5" },
-  { id: "anthropic.claude-opus-5-5", label: "Opus 5.5" },
-  { id: "openai.gpt-6-sol", label: "GPT-6 Sol" },
-  { id: "openai.gpt-6-luna", label: "GPT-6 Luna" },
-  { id: "us.xai.grok-4.6", label: "Grok 4.6" },
-] as const;
+import { MODELS } from "./model-config.js";
 
 export function setupMessageHandlers(bot: Bot): void {
   setFlushHandler(handleBufferedMessage);
@@ -54,7 +47,7 @@ async function handleModelCommand(ctx: Context): Promise<void> {
   for (let i = 0; i < MODELS.length; i++) {
     const m = MODELS[i];
     const check = m.id === current ? " *" : "";
-    keyboard.text(`${m.label}${check}`, `model:${i}`);
+    keyboard.text(`${m.label}${check}`, `model:v2:${m.id}`).row();
   }
 
   await ctx.reply("Select a model:", { reply_markup: keyboard });
@@ -132,9 +125,13 @@ async function handleCallbackQuery(ctx: Context): Promise<void> {
   if (!data || !chatId) return;
 
   if (data.startsWith("model:")) {
-    const idx = parseInt(data.slice(6), 10);
-    const model = MODELS[idx];
-    if (!model) return;
+    const model = data.startsWith("model:v2:")
+      ? MODELS.find((entry) => entry.id === data.slice(9))
+      : undefined;
+    if (!model) {
+      await ctx.answerCallbackQuery({ text: "This model menu has expired. Use /model to open the current list." });
+      return;
+    }
     setModel(chatId, model.id);
     await ctx.answerCallbackQuery({ text: `Switched to ${model.label}` });
     if (ctx.callbackQuery?.message?.message_id) {

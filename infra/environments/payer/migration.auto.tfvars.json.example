@@ -1,0 +1,14 @@
+{
+  "aws_region": "us-west-2",
+  "destination_account_id": "123456789012",
+  "existing_auth": {
+    "user_pool_id": "us-west-2_REPLACE_ME",
+    "domain": "replace-with-existing-cognito-domain-prefix",
+    "app_client_id": "replace-with-existing-app-client-id",
+    "web_client_id": "replace-with-existing-web-client-id",
+    "m2m_client_id": "replace-with-existing-m2m-client-id"
+  },
+  "enable_telegram": false,
+  "telegram_desired_count": 0,
+  "background_processing_enabled": false
+}

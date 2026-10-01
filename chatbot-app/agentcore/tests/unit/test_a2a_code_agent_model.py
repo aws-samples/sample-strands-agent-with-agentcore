@@ -93,7 +93,7 @@ async def test_code_agent_defaults_to_sonnet(code_tool):
     await _drain(
         tool_impl(task="Fix a bug", workspace_paths=[], tool_context=_context())
     )
-    assert sent[0]["metadata"]["model_id"] == "us.anthropic.claude-sonnet-5"
+    assert sent[0]["metadata"]["model_id"] == "global.anthropic.claude-sonnet-5-5"
 
 
 @pytest.mark.asyncio

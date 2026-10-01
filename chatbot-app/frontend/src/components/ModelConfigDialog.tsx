@@ -20,7 +20,7 @@ interface AvailableModel {
   id: string;
   name: string;
   provider: string;
-  description: string;
+  description?: string;
 }
 
 interface ModelConfigDialogProps {
@@ -299,7 +299,7 @@ export function ModelConfigDialog({ sessionId, trigger, agentStatus, currentMode
                               {model.name}
                             </div>
                             <div className="text-caption text-muted-foreground/70 mt-0.5 line-clamp-2">
-                              {/Sol/.test(model.name) ? 'For complex reasoning and demanding tasks' : /Luna/.test(model.name) ? 'Quick answers for simpler tasks' : model.description.replace(/\s*\(?via Bedrock[^)]*\)?/gi, '')}
+                              {/Sol/.test(model.name) ? 'For complex reasoning and demanding tasks' : /Luna/.test(model.name) ? 'Quick answers for simpler tasks' : (model.description?.replace(/\s*\(?via Bedrock[^)]*\)?/gi, '') ?? '')}
                             </div>
                           </div>
                         </div>
