@@ -72,7 +72,7 @@
     "remark-math": "^6.0.0",
     "sharp": "~0.35.5",
     "swr": "^2.5.0",
-    "tailwind-merge": "^2.0.0",
+    "tailwind-merge": "^3.7.0",
     "tailwindcss-animate": "^1.0.7",
     "uuid": "^14.0.2",
     "vaul": "^1.1.2",
