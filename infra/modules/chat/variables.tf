@@ -119,9 +119,3 @@ variable "task_memory" {
   type    = number
   default = 4096
 }
-
-variable "load_balancer_name" {
-  type        = string
-  default     = "chatbot-alb"
-  description = "Override the ALB name when a destination account already has a chatbot load balancer."
-}

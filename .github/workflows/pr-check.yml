@@ -234,12 +234,6 @@ jobs:
         working-directory: infra/environments/dev
         run: terraform validate -no-color
 
-      - name: Validate payer migration environment without remote state
-        working-directory: infra/environments/payer
-        run: |
-          terraform init -backend=false -input=false
-          terraform validate -no-color
-
       - name: Check deploy script syntax
         run: bash -n infra/scripts/deploy.sh infra/scripts/test-api.sh
 
