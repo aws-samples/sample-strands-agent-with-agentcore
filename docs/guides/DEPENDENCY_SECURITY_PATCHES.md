@@ -17,6 +17,10 @@ Do not use `--ignore-scripts` for production or CI installs: it skips these fixe
   `decode-uri-component` 0.5 release. This preserves query parsing in the Expo
   dependency tree while upgrading the vulnerable decoder; the test suite also
   checks Unicode query strings and Metro image decoding after dependency updates.
+- **Metro 0.83.3 / Expo's Metro 0.83.7 compatibility:** read asset files into
+  buffers before passing them to the fixed `image-size` 2.x API, which no longer
+  accepts filesystem paths. Tests cover both buffer dimensions and file-based
+  asset metadata in both Metro copies.
 
 The first two packages currently lack a fixed npm release. Their original versions and
 registry integrity hashes remain in the lockfiles, so version-based scanners

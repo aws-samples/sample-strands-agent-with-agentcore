@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 
 const require = createRequire(import.meta.url)
@@ -46,12 +49,22 @@ test('RSA verification rejects extra DigestAlgorithm children while accepting va
   assert.throws(() => keys.publicKey.verify(bytes, signature), /valid RSASSA-PKCS1/)
 })
 
-test('patched image-size remains compatible with Metro asset dimensions', () => {
+test('patched image-size remains compatible with Metro buffers and asset files', async () => {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jDkcAAAAASUVORK5CYII=', 'base64')
   const expoRequire = createRequire(require.resolve('@expo/metro/package.json'))
-  for (const load of [require, expoRequire]) {
-    const { getAssetSize } = load('metro/private/Assets')
-    assert.deepEqual(getAssetSize('png', png, 'tiny.png'), { width: 1, height: 1 })
+  const directory = mkdtempSync(join(tmpdir(), 'metro-security-test-'))
+  const file = join(directory, 'tiny.png')
+  writeFileSync(file, png)
+  try {
+    for (const load of [require, expoRequire]) {
+      const { getAssetSize, getAssetData } = load('metro/private/Assets')
+      assert.deepEqual(getAssetSize('png', png, 'tiny.png'), { width: 1, height: 1 })
+      const asset = await getAssetData(file, 'tiny.png', [], null, '/assets')
+      assert.equal(asset.width, 1)
+      assert.equal(asset.height, 1)
+    }
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
   }
 })
 

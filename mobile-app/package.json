@@ -48,7 +48,8 @@
     "react-native-zip-archive": "^7.0.2",
     "text-encoding": "^0.7.0",
     "web-streams-polyfill": "^4.2.0",
-    "patch-package": "8.0.1"
+    "patch-package": "8.0.1",
+    "uuid": "~11.1.1"
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
