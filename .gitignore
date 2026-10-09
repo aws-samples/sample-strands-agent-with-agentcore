@@ -188,10 +188,3 @@ browser-use
 **/pytest_cache/
 
 results
-# Private account migration exports, credentials, plans and validation data.
-.migration/
-/migration-new-files.tar.gz
-/migration-overlay.patch
-
-# Local payer account and retained identity settings.
-/infra/environments/payer/*.auto.tfvars.json

@@ -464,7 +464,7 @@ resource "aws_security_group" "ecs" {
 }
 
 resource "aws_lb" "this" {
-  name               = var.load_balancer_name
+  name               = "chatbot-alb"
   internal           = false
   load_balancer_type = "application"
   security_groups    = [aws_security_group.alb.id]
