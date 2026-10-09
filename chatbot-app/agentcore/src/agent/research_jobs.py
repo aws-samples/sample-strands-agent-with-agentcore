@@ -8,6 +8,7 @@ and the report is persisted before completion is announced or delivered.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -66,8 +67,9 @@ def _terminal_ttl() -> int:
 
 
 def _safe_component(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "_", value)
-    return cleaned or "unknown"
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+        raise ValueError("Invalid local research job or session ID")
+    return value
 
 
 def _job_sk(session_id: str, job_id: str) -> str:
@@ -82,10 +84,53 @@ def _orchestration_job_key(job_id: str) -> str:
     return f"JOB#{job_id}"
 
 
+def _local_storage_key(value: str) -> str:
+    return hashlib.sha256(_safe_component(value).encode("utf-8")).hexdigest()
+
+
+def _checked_local_path(candidate: Path, root: Path) -> Path:
+    path = candidate.resolve()
+    if candidate.is_symlink() or not path.is_relative_to(root):
+        raise ValueError("Local research path escapes its storage directory")
+    return path
+
+
 def _local_job_dir(session_id: str) -> Path:
-    path = get_sessions_dir() / f"session_{_safe_component(session_id)}" / "research_jobs"
+    session_key = _local_storage_key(session_id)
+    root = get_sessions_dir().resolve()
+    storage = _checked_local_path(root / "research_jobs", root)
+    path = _checked_local_path(storage / session_key, storage)
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _local_job_path(session_id: str, job_id: str, *, report: bool = False) -> Path:
+    job_key = _local_storage_key(job_id)
+    directory = _local_job_dir(session_id)
+    return _checked_local_path(directory / f"{job_key}{'.md' if report else '.json'}", directory)
+
+
+def _legacy_job_dir(session_id: str) -> Optional[Path]:
+    # Match directory entries instead of constructing a path from a request ID.
+    # Existing files are read in place; all new writes use opaque storage keys.
+    name = f"session_{_safe_component(session_id)}"
+    root = get_sessions_dir().resolve()
+    for candidate in root.glob("session_*"):
+        if candidate.name == name:
+            session = _checked_local_path(candidate, root)
+            path = _checked_local_path(session / "research_jobs", session)
+            return path if path.is_dir() else None
+    return None
+
+
+def _legacy_job_path(session_id: str, job_id: str, *, report: bool = False) -> Optional[Path]:
+    name = f"{_safe_component(job_id)}{'.md' if report else '.json'}"
+    directory = _legacy_job_dir(session_id)
+    if directory is not None:
+        for candidate in directory.iterdir():
+            if candidate.name == name:
+                return _checked_local_path(candidate, directory)
+    return None
 
 
 def _atomic_write(path: Path, content: str) -> None:
@@ -165,7 +210,7 @@ def _save_job(record: Dict[str, Any]) -> None:
         boto3.resource("dynamodb", region_name=region).Table(table_name).put_item(Item=item)
         return
 
-    path = _local_job_dir(record["sessionId"]) / f"{_safe_component(record['jobId'])}.json"
+    path = _local_job_path(record["sessionId"], record["jobId"])
     _atomic_write(path, json.dumps(stored_record, ensure_ascii=False, indent=2))
 
 
@@ -462,15 +507,21 @@ def _get_job(
         )
         return response.get("Item")
 
-    path = _local_job_dir(session_id) / f"{_safe_component(job_id)}.json"
+    path = _local_job_path(session_id, job_id)
     if not path.exists():
-        return None
+        path = _legacy_job_path(session_id, job_id)
+        if path is None:
+            return None
     try:
         record = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         logger.warning("[ResearchJob] Ignoring unreadable job file %s", path)
         return None
-    if record.get("userId") != user_id or record.get("sessionId") != session_id:
+    if (
+        record.get("userId") != user_id
+        or record.get("sessionId") != session_id
+        or record.get("jobId") != job_id
+    ):
         return None
     return record
 
@@ -495,7 +546,7 @@ def _save_report(record: Dict[str, Any], report: str) -> Dict[str, str]:
         )
         return {"artifactBucket": bucket, "artifactS3Key": key}
 
-    path = _local_job_dir(record["sessionId"]) / f"{_safe_component(record['jobId'])}.md"
+    path = _local_job_path(record["sessionId"], record["jobId"], report=True)
     _atomic_write(path, report)
     return {"artifactPath": str(path)}
 
@@ -509,7 +560,11 @@ def _load_report(record: Dict[str, Any]) -> str:
         )
         return response["Body"].read().decode("utf-8")
 
-    path = _local_job_dir(record["sessionId"]) / f"{_safe_component(record['jobId'])}.md"
+    path = _local_job_path(record["sessionId"], record["jobId"], report=True)
+    if not path.exists():
+        legacy = _legacy_job_path(record["sessionId"], record["jobId"], report=True)
+        if legacy is not None:
+            path = legacy
     return path.read_text(encoding="utf-8")
 
 
@@ -571,15 +626,27 @@ def _list_jobs(user_id: str, session_id: str) -> list[Dict[str, Any]]:
             if not start_key:
                 return list(jobs_by_id.values())
 
-    jobs = []
-    for path in _local_job_dir(session_id).glob("*.json"):
-        try:
-            record = json.loads(path.read_text(encoding="utf-8"))
-            if record.get("userId") == user_id and record.get("sessionId") == session_id:
-                jobs.append(record)
-        except (OSError, ValueError):
-            logger.warning("[ResearchJob] Ignoring unreadable job file %s", path)
-    return jobs
+    jobs = {}
+    directories = [_local_job_dir(session_id)]
+    legacy = _legacy_job_dir(session_id)
+    if legacy is not None:
+        directories.append(legacy)
+    for directory in directories:
+        for path in directory.glob("*.json"):
+            try:
+                path = _checked_local_path(path, directory)
+                record = json.loads(path.read_text(encoding="utf-8"))
+                job_id = _safe_component(record.get("jobId", ""))
+                expected_name = job_id if directory == legacy else _local_storage_key(job_id)
+                if (
+                    record.get("userId") == user_id
+                    and record.get("sessionId") == session_id
+                    and path.stem == expected_name
+                ):
+                    jobs.setdefault(job_id, record)
+            except (OSError, ValueError):
+                logger.warning("[ResearchJob] Ignoring unreadable job file %s", path)
+    return list(jobs.values())
 
 
 def _build_artifact(record: Dict[str, Any], report: str) -> Dict[str, Any]:
