@@ -66,8 +66,9 @@ def _terminal_ttl() -> int:
 
 
 def _safe_component(value: str) -> str:
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]", "_", value)
-    return cleaned or "unknown"
+    if not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,128}", value):
+        raise ValueError("Invalid local research job or session ID")
+    return value
 
 
 def _job_sk(session_id: str, job_id: str) -> str:
@@ -83,8 +84,25 @@ def _orchestration_job_key(job_id: str) -> str:
 
 
 def _local_job_dir(session_id: str) -> Path:
-    path = get_sessions_dir() / f"session_{_safe_component(session_id)}" / "research_jobs"
+    root = get_sessions_dir().resolve()
+    session = root / f"session_{_safe_component(session_id)}"
+    if session.is_symlink() or session.resolve().parent != root:
+        raise ValueError("Local research session directory escapes the sessions root")
+    candidate = session / "research_jobs"
+    path = candidate.resolve()
+    if candidate.is_symlink() or not path.is_relative_to(root):
+        raise ValueError("Local research job directory escapes the sessions root")
     path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _local_job_path(session_id: str, job_id: str, *, report: bool = False) -> Path:
+    component = _safe_component(job_id)
+    directory = _local_job_dir(session_id)
+    candidate = directory / f"{component}{'.md' if report else '.json'}"
+    path = candidate.resolve()
+    if candidate.is_symlink() or not path.is_relative_to(directory):
+        raise ValueError("Local research job file escapes the job directory")
     return path
 
 
@@ -165,7 +183,7 @@ def _save_job(record: Dict[str, Any]) -> None:
         boto3.resource("dynamodb", region_name=region).Table(table_name).put_item(Item=item)
         return
 
-    path = _local_job_dir(record["sessionId"]) / f"{_safe_component(record['jobId'])}.json"
+    path = _local_job_path(record["sessionId"], record["jobId"])
     _atomic_write(path, json.dumps(stored_record, ensure_ascii=False, indent=2))
 
 
@@ -462,7 +480,7 @@ def _get_job(
         )
         return response.get("Item")
 
-    path = _local_job_dir(session_id) / f"{_safe_component(job_id)}.json"
+    path = _local_job_path(session_id, job_id)
     if not path.exists():
         return None
     try:
@@ -470,7 +488,11 @@ def _get_job(
     except (OSError, ValueError):
         logger.warning("[ResearchJob] Ignoring unreadable job file %s", path)
         return None
-    if record.get("userId") != user_id or record.get("sessionId") != session_id:
+    if (
+        record.get("userId") != user_id
+        or record.get("sessionId") != session_id
+        or record.get("jobId") != job_id
+    ):
         return None
     return record
 
@@ -495,7 +517,7 @@ def _save_report(record: Dict[str, Any], report: str) -> Dict[str, str]:
         )
         return {"artifactBucket": bucket, "artifactS3Key": key}
 
-    path = _local_job_dir(record["sessionId"]) / f"{_safe_component(record['jobId'])}.md"
+    path = _local_job_path(record["sessionId"], record["jobId"], report=True)
     _atomic_write(path, report)
     return {"artifactPath": str(path)}
 
@@ -509,7 +531,7 @@ def _load_report(record: Dict[str, Any]) -> str:
         )
         return response["Body"].read().decode("utf-8")
 
-    path = _local_job_dir(record["sessionId"]) / f"{_safe_component(record['jobId'])}.md"
+    path = _local_job_path(record["sessionId"], record["jobId"], report=True)
     return path.read_text(encoding="utf-8")
 
 
@@ -574,8 +596,13 @@ def _list_jobs(user_id: str, session_id: str) -> list[Dict[str, Any]]:
     jobs = []
     for path in _local_job_dir(session_id).glob("*.json"):
         try:
+            path = _local_job_path(session_id, path.stem)
             record = json.loads(path.read_text(encoding="utf-8"))
-            if record.get("userId") == user_id and record.get("sessionId") == session_id:
+            if (
+                record.get("userId") == user_id
+                and record.get("sessionId") == session_id
+                and record.get("jobId") == path.stem
+            ):
                 jobs.append(record)
         except (OSError, ValueError):
             logger.warning("[ResearchJob] Ignoring unreadable job file %s", path)
