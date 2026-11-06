@@ -11,6 +11,7 @@ import json
 import logging
 import re
 from typing import Any
+from public_url import PublicURLFetchError, fetch_public_url
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -80,31 +81,17 @@ def _extract_text(html: str, max_length: int) -> str:
 
 
 def _fetch_url(url: str, include_html: bool = False, max_length: int = 50000) -> dict:
-    import urllib.request
-    import urllib.error
-
-    if not url.startswith(("http://", "https://")):
-        return {"success": False, "error": "URL must start with http:// or https://", "url": url}
-
-    req = urllib.request.Request(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0 (compatible; StrandsAgent/1.0; +https://strands.ai)"
-        },
-    )
-
     try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            status = resp.status
-            html = resp.read().decode("utf-8", errors="replace")
-            content_type = resp.headers.get("content-type", "")
-    except urllib.error.HTTPError as e:
-        return {
+        html, content_type, status = fetch_public_url(url)
+    except PublicURLFetchError as e:
+        result = {
             "success": False,
-            "error": f"HTTP error {e.code}: {e.reason}",
+            "error": str(e),
             "url": url,
-            "status_code": e.code,
         }
+        if e.status_code is not None:
+            result["status_code"] = e.status_code
+        return result
     except Exception as e:
         return {"success": False, "error": str(e), "url": url}
 

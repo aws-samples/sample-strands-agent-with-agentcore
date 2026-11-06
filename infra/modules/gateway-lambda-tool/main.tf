@@ -4,15 +4,15 @@ locals {
   zip_path  = "${path.module}/.build/${var.tool_name}.zip"
   fn_name   = "${var.project_name}-${var.environment}-tool-${var.tool_name}"
 
-  # Source hash = lambda_function.py + requirements.txt (if present).
-  source_hash = sha1(join("", compact([
-    fileexists("${local.src_dir}/lambda_function.py") ? filesha1("${local.src_dir}/lambda_function.py") : "",
-    fileexists("${local.src_dir}/requirements.txt") ? filesha1("${local.src_dir}/requirements.txt") : "",
-  ])))
+  # Include helper modules so security fixes trigger a rebuild as well.
+  source_hash = sha1(join("", concat(
+    [for name in sort(tolist(fileset(local.src_dir, "*.py"))) : filesha1("${local.src_dir}/${name}")],
+    [fileexists("${local.src_dir}/requirements.txt") ? filesha1("${local.src_dir}/requirements.txt") : ""],
+  )))
 }
 
 # ----------------------------------------------------------------
-# Build: pip install deps into build dir, copy source file.
+# Build: pip install deps into build dir, copy source modules.
 # Produces <module>/.build/<tool>.zip gated by source_hash.
 # ----------------------------------------------------------------
 
@@ -30,7 +30,7 @@ resource "null_resource" "build" {
       set -e
       rm -rf "${local.build_dir}"
       mkdir -p "${local.build_dir}"
-      cp "${local.src_dir}/lambda_function.py" "${local.build_dir}/"
+      cp "${local.src_dir}/"*.py "${local.build_dir}/"
       if [ -f "${local.src_dir}/requirements.txt" ]; then
         # Binary-only on ARM64 Linux for compiled deps; fall back to any-platform
         # for pure-Python deps that only ship as sdist (e.g., sgmllib3k).
