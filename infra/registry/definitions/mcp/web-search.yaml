@@ -9,10 +9,10 @@ tools:
       - { name: query, type: string, description: Search query string, required: true }
       - { name: max_results, type: integer, description: "Maximum results (1-10, default: 5)" }
   - name: fetch_url_content
-    description: Fetch and extract text content from a web page URL. Useful for articles, job postings, documentation.
+    description: Fetch and extract text content from a public web page URL. Internal addresses are blocked, including after redirects. Supports up to five redirects and 5 MiB response bodies.
     input_type: object
     input_description: URL fetch parameters
     properties:
-      - { name: url, type: string, description: "URL to fetch (http:// or https://)", required: true }
+      - { name: url, type: string, description: "Public URL to fetch (http:// or https://); internal addresses are not supported", required: true }
       - { name: include_html, type: boolean, description: "If true, include raw HTML in response (default: false)" }
       - { name: max_length, type: integer, description: "Maximum extracted text length (default: 50000)" }

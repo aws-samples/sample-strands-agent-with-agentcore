@@ -4,9 +4,11 @@ Web Search and URL Fetcher Tools - Strands Native
 - URL content fetcher
 """
 
+import asyncio
 import json
 import logging
 from strands import tool
+from public_url import PublicURLFetchError, fetch_public_url
 
 logger = logging.getLogger(__name__)
 
@@ -128,11 +130,13 @@ async def fetch_url_content(
     max_length: int = 50000
 ) -> str:
     """
-    Fetch and extract text content from a web page URL.
+    Fetch and extract text content from a public web page URL.
     Useful for retrieving job descriptions, articles, documentation, or any web content.
+    Internal addresses are blocked, including after redirects. Follows at most
+    five redirects and accepts response bodies up to 5 MiB.
 
     Args:
-        url: The URL to fetch (must start with http:// or https://)
+        url: A public http:// or https:// URL (internal addresses are blocked)
         include_html: If True, includes raw HTML in response (default: False)
         max_length: Maximum character length of extracted text (default: 50000)
 
@@ -150,72 +154,51 @@ async def fetch_url_content(
         fetch_url_content("https://example.com", include_html=True)
     """
     try:
-        import httpx
+        html_content, content_type, status_code = await asyncio.to_thread(fetch_public_url, url)
 
-        # Validate URL
-        if not url.startswith(('http://', 'https://')):
-            return json.dumps({
-                "success": False,
-                "error": "URL must start with http:// or https://",
-                "url": url
-            })
+        # Extract title
+        title = "No title"
+        try:
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(html_content, 'html.parser')
+            title_tag = soup.find('title')
+            if title_tag:
+                title = title_tag.get_text().strip()
+        except:  # noqa: E722
+            pass
 
-        # Fetch URL with timeout
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (compatible; StrandsAgent/1.0; +https://strands.ai)"
-            }
+        # Extract text
+        text_content = extract_text_from_html(html_content, max_length)
 
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-
-            # Get content
-            html_content = response.text
-            content_type = response.headers.get('content-type', '')
-
-            # Extract title
-            title = "No title"
-            try:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(html_content, 'html.parser')
-                title_tag = soup.find('title')
-                if title_tag:
-                    title = title_tag.get_text().strip()
-            except:  # noqa: E722
-                pass
-
-            # Extract text
-            text_content = extract_text_from_html(html_content, max_length)
-
-            # Build response
-            result = {
-                "success": True,
-                "url": url,
-                "title": title,
-                "content_type": content_type,
-                "text_content": text_content,
-                "text_length": len(text_content),
-                "status_code": response.status_code
-            }
-
-            if include_html:
-                result["html_content"] = html_content[:max_length]
-
-            logger.info(f"Successfully fetched content from: {url} ({len(text_content)} chars)")
-
-            return json.dumps(result, indent=2)
-
-    except httpx.HTTPStatusError as e:
-        error_msg = f"HTTP error {e.response.status_code}: {e.response.reason_phrase}"
-        logger.error(f"HTTP error fetching {url}: {error_msg}")
-        return json.dumps({
-            "success": False,
-            "error": error_msg,
+        # Build response
+        result = {
+            "success": True,
             "url": url,
-            "status_code": e.response.status_code
-        })
+            "title": title,
+            "content_type": content_type,
+            "text_content": text_content,
+            "text_length": len(text_content),
+            "status_code": status_code
+        }
 
-    except httpx.TimeoutException:
+        if include_html:
+            result["html_content"] = html_content[:max_length]
+
+        logger.info(f"Successfully fetched content from: {url} ({len(text_content)} chars)")
+
+        return json.dumps(result, indent=2)
+
+    except PublicURLFetchError as e:
+        result = {
+            "success": False,
+            "error": str(e),
+            "url": url,
+        }
+        if e.status_code is not None:
+            result["status_code"] = e.status_code
+        return json.dumps(result)
+
+    except TimeoutError:
         error_msg = "Request timed out (30 seconds)"
         logger.error(f"Timeout fetching {url}")
         return json.dumps({
