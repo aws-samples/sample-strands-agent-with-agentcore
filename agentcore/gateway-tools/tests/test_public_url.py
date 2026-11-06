@@ -174,7 +174,9 @@ def test_https_uses_original_hostname_and_verifies_certificate(fetcher, network,
     raw_socket, tls_socket = Mock(), response_socket()
     sockets.side_effect = [raw_socket]
     # Verify the helper requests a secure default context, not an unverified one.
-    context = Mock(wraps=ssl.create_default_context())
+    context = ssl.create_default_context()
+    # Verify the policy even if the environment's default permits older TLS.
+    context.minimum_version = ssl.TLSVersion.MINIMUM_SUPPORTED
     context.wrap_socket = Mock(return_value=tls_socket)
     monkeypatch.setattr(ssl, "create_default_context", Mock(return_value=context))
     if not valid_certificate:
@@ -187,6 +189,7 @@ def test_https_uses_original_hostname_and_verifies_certificate(fetcher, network,
         tls_socket.close.assert_called_once()
     raw_socket.connect.assert_called_once_with(("93.184.216.34", 443))
     context.wrap_socket.assert_called_once_with(raw_socket, server_hostname="example.org")
+    assert context.minimum_version == ssl.TLSVersion.TLSv1_2
 
 
 def test_response_size_limit(fetcher, network, monkeypatch):

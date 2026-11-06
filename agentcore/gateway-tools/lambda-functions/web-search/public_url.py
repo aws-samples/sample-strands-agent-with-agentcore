@@ -81,7 +81,9 @@ class _PinnedConnection(http.client.HTTPConnection):
                 sock.connect(sockaddr)
                 if self._use_tls:
                     # Preserve certificate verification and SNI for the URL host.
-                    sock = ssl.create_default_context().wrap_socket(sock, server_hostname=self.host)
+                    context = ssl.create_default_context()
+                    context.minimum_version = ssl.TLSVersion.TLSv1_2
+                    sock = context.wrap_socket(sock, server_hostname=self.host)
                 self.sock = sock
                 return
             except OSError as exc:
