@@ -133,11 +133,20 @@ locals {
     }
   } : {}
 
+  _keenable_tool = var.enable_keenable ? {
+    "keenable-search" = {
+      secrets      = []
+      env          = {}
+      upload_to_s3 = false
+    }
+  } : {}
+
   lambda_tool_config = merge(
     local._base_tools,
     local._tavily_tool,
     local._google_search_tool,
     local._google_maps_tool,
+    local._keenable_tool,
   )
 }
 

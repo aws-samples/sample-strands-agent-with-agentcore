@@ -102,7 +102,7 @@ skills/
 |--------------|----------|----------|----------------|
 | Local Tools | Direct Python | Web Search, URL Fetcher, Visualization | None |
 | Built-in Tools | AWS SDK / WebSocket | Code Interpreter, Browser (Nova Act) | IAM |
-| Gateway Tools | MCP | Google Search, Maps, Wikipedia, ArXiv, Finance | SigV4 |
+| Gateway Tools | MCP | Google Search, Maps, Wikipedia, ArXiv, Finance, optional Keenable Search | SigV4 |
 | Private API Tools | MCP (3LO OAuth) | Gmail, Google Calendar, Notion, GitHub | OAuth 2.0 |
 | A2A Tools | A2A | Research Agent, Browser-Use Agent | JWT |
 
