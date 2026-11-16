@@ -160,3 +160,14 @@ variable "telegram_owner_user_id" {
   type        = string
   default     = ""
 }
+
+variable "keenable_api_key_secret_name" {
+  description = "Optional Secrets Manager secret containing the plain-text Keenable API key. Null uses keyless search."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.keenable_api_key_secret_name == null ? true : trimspace(var.keenable_api_key_secret_name) != ""
+    error_message = "Provide a non-empty secret name or null for keyless search."
+  }
+}

@@ -109,3 +109,35 @@ def test_http_error(monkeypatch):
     result = lambda_handler({"query": "q"}, MockContext("prefix___keenable_search"))
     assert result["statusCode"] == 400
     assert "502" in _body(result)["error"]
+
+
+def test_secret_failure_stops_search_and_retries(monkeypatch):
+    from unittest.mock import Mock
+    from botocore.exceptions import ClientError
+
+    for failure in ("AccessDeniedException", "ResourceNotFoundException", "empty"):
+        _reset(monkeypatch)
+        monkeypatch.setenv("KEENABLE_API_KEY_SECRET_NAME", "test-secret")
+        client = Mock()
+        first_result = {"SecretString": "   "} if failure == "empty" else ClientError(
+            {"Error": {"Code": failure, "Message": "test failure"}}, "GetSecretValue"
+        )
+        client.get_secret_value.side_effect = [first_result, {"SecretString": "test-key"}]
+        session = Mock()
+        session.client.return_value = client
+        monkeypatch.setattr(lf.boto3.session, "Session", Mock(return_value=session))
+        post = Mock(return_value=_Resp(200, {"results": []}))
+        monkeypatch.setattr(lf.requests, "post", post)
+
+        result = lambda_handler({"query": "q"}, MockContext("keenable_search"))
+        assert result["statusCode"] == 400
+        post.assert_not_called()
+        assert not lf._api_key_loaded
+
+        result = lambda_handler({"query": "q"}, MockContext("keenable_search"))
+        assert result["statusCode"] == 200
+        assert post.call_args.args[0] == lf.KEENABLE_KEYED_URL
+        assert post.call_args.kwargs["headers"]["X-API-Key"] == "test-key"
+        assert client.get_secret_value.call_count == 2
+        lambda_handler({"query": "q"}, MockContext("keenable_search"))
+        assert client.get_secret_value.call_count == 2

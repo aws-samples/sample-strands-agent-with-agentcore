@@ -70,14 +70,15 @@ def get_keenable_api_key() -> Optional[str]:
         client = session.client(service_name="secretsmanager")
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
         secret = get_secret_value_response["SecretString"]
+        if not secret.strip():
+            raise ValueError("Configured Keenable API key secret is empty")
         _api_key_cache = secret
         _api_key_loaded = True
         logger.info("Keenable API key loaded from Secrets Manager")
         return secret
     except ClientError as e:
         logger.error(f"Failed to get Keenable API key from Secrets Manager: {e}")
-        _api_key_loaded = True
-        return None
+        raise RuntimeError("Failed to read configured Keenable API key secret") from e
 
 
 def keenable_search(params: Dict[str, Any]) -> Dict[str, Any]:
