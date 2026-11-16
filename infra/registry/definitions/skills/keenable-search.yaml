@@ -1,0 +1,7 @@
+name: keenable-search
+description: "Keenable web search"
+skill_md_path: keenable-search/SKILL.md
+source: gateway
+sourceRecord: keenable-search
+tools:
+  - keenable_search

@@ -164,6 +164,8 @@ aws secretsmanager put-secret-value \
   --secret-string '{"api_key":"YOUR_KEY","search_engine_id":"YOUR_ID"}'
 ```
 
+To deploy the optional Keenable Search gateway tool, set `enable_keenable = true` in `terraform.tfvars`. It works without an API key. To use a key, store it as a plain-text Secrets Manager secret and set `keenable_api_key_secret_name` in `terraform.tfvars`. Terraform wires the secret name and its read permission into the Lambda. A configured secret that cannot be read or is empty causes the search to fail.
+
 ### Step 4: Access Application
 
 After deployment completes, Terraform outputs the CloudFront URL:

@@ -1,0 +1,10 @@
+name: keenable-search
+description: Keenable web search (optional, keyless by default)
+tools:
+  - name: keenable_search
+    description: Search the web using Keenable. Returns titled results with URLs and snippets. Works without an API key; set KEENABLE_API_KEY for higher limits.
+    input_type: object
+    input_description: Search parameters
+    properties:
+      - { name: query, type: string, description: Search query string, required: true }
+      - { name: num_results, type: integer, description: "Number of results to return (1-10, default 5)" }

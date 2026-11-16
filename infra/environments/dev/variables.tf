@@ -31,6 +31,12 @@ variable "enable_google_maps" {
   default     = true
 }
 
+variable "enable_keenable" {
+  description = "Deploy the optional Keenable Search Lambda + Gateway target. Off by default. The tool works without an API key."
+  type        = bool
+  default     = false
+}
+
 variable "enable_mantle_models" {
   description = "Wire the Bedrock API key secret into model-calling runtimes. Required for GPT-6 through Bedrock Runtime/Mantle Responses and for Mantle models (Opus 5.5 and Gemma 4). Grok 4.6 continues to use Bedrock Runtime IAM authentication. Requires a Secrets Manager secret at <project_name>/bedrock/api-key."
   type        = bool
@@ -153,4 +159,15 @@ variable "telegram_owner_user_id" {
   description = "Cognito user ID to link Telegram sessions with web identity."
   type        = string
   default     = ""
+}
+
+variable "keenable_api_key_secret_name" {
+  description = "Optional Secrets Manager secret containing the plain-text Keenable API key. Null uses keyless search."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.keenable_api_key_secret_name == null ? true : trimspace(var.keenable_api_key_secret_name) != ""
+    error_message = "Provide a non-empty secret name or null for keyless search."
+  }
 }

@@ -97,6 +97,11 @@ data "aws_secretsmanager_secret" "bedrock_api_key" {
   name  = "${var.project_name}/bedrock/api-key"
 }
 
+data "aws_secretsmanager_secret" "keenable" {
+  count = var.enable_keenable && var.keenable_api_key_secret_name != null ? 1 : 0
+  name  = var.keenable_api_key_secret_name
+}
+
 locals {
   lambda_tools_root = "${local.root_dir}/agentcore/gateway-tools/lambda-functions"
 
@@ -133,11 +138,20 @@ locals {
     }
   } : {}
 
+  _keenable_tool = var.enable_keenable ? {
+    "keenable-search" = {
+      secrets      = [for secret in data.aws_secretsmanager_secret.keenable : secret.arn]
+      env          = { for secret in data.aws_secretsmanager_secret.keenable : "KEENABLE_API_KEY_SECRET_NAME" => secret.name }
+      upload_to_s3 = false
+    }
+  } : {}
+
   lambda_tool_config = merge(
     local._base_tools,
     local._tavily_tool,
     local._google_search_tool,
     local._google_maps_tool,
+    local._keenable_tool,
   )
 }
 
