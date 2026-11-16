@@ -1,40 +1,58 @@
 version: 2
-# Updates are grouped per ecosystem so a weekly run produces a few grouped PRs
-# rather than dozens. mobile-app is intentionally NOT tracked (the Expo app is
-# not in active use and has no CI build to validate native upgrades).
+# Disable routine version-update PRs and group security updates per directory.
+# The schedule is required by Dependabot; security updates are event-driven.
 updates:
   - package-ecosystem: npm
     directory: /chatbot-app/frontend
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
-      frontend:
+      frontend-security:
+        applies-to: security-updates
         patterns:
           - "*"
-        update-types:
-          - minor
-          - patch
+
+  - package-ecosystem: npm
+    directory: /mobile-app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      mobile-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /telegram-app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 0
+    groups:
+      telegram-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
 
   - package-ecosystem: pip
     directory: /chatbot-app/agentcore
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
-      python:
+      python-security:
+        applies-to: security-updates
         patterns:
           - "*"
-        update-types:
-          - minor
-          - patch
 
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 0
     groups:
-      actions:
+      actions-security:
+        applies-to: security-updates
         patterns:
           - "*"
